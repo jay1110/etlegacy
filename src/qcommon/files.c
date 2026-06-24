@@ -4596,10 +4596,13 @@ static void FS_Startup(const char *gameName)
 
 #ifndef DEDICATED
 	// clients: don't start if base == home, so downloads won't overwrite original files! DO NOT CHANGE!
+#ifndef __EMSCRIPTEN__
+	// Skip this check on Emscripten - the virtual filesystem allows this
 	if (FS_IsSamePath(fs_homepath->string, fs_basepath->string))
 	{
 		Com_Error(ERR_FATAL, "FS_Startup: fs_homepath and fs_basepath are equal - set different paths!");
 	}
+#endif
 
 	// only translate default mod
 	// - other mods don't support our unicode translation files

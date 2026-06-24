@@ -202,7 +202,10 @@ static void InitOpenGL(void)
 		Info_SetValueForKey(glConfigString, "samples", va("%d", r_ext_multisample->integer));
 
 		// FIXME: check if both Rpi and Android can use the "EGL" one.
-#ifdef __ANDROID__
+#ifdef __EMSCRIPTEN__
+		// Emscripten: SDL handles WebGL context creation; use ES context type
+		Info_SetValueForKey(glConfigString, "context", va("%i", GL_CONTEXT_ES));
+#elif defined(__ANDROID__)
 		Info_SetValueForKey(glConfigString, "context", va("%i", GL_CONTEXT_EGL));
 #else
 		Info_SetValueForKey(glConfigString, "context", va("%i", GL_CONTEXT_ES));
