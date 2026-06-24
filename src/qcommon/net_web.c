@@ -44,6 +44,9 @@
 // Packet buffer for received data
 #define WS_RECV_BUFFER_SIZE (MAX_MSGLEN * 4)
 
+// Default WebSocket relay server URL (must match tools/ws-relay default port)
+#define WS_DEFAULT_RELAY_URL "ws://localhost:8080"
+
 typedef struct
 {
 	EMSCRIPTEN_WEBSOCKET_T socket;
@@ -203,7 +206,7 @@ static wsConnection_t *WS_GetConnection(const netadr_t *to)
 	}
 	else
 	{
-		Com_sprintf(url, sizeof(url), "ws://localhost:8080/%d.%d.%d.%d:%d",
+		Com_sprintf(url, sizeof(url), WS_DEFAULT_RELAY_URL "/%d.%d.%d.%d:%d",
 		            to->ip[0], to->ip[1], to->ip[2], to->ip[3],
 		            BigShort(to->port));
 	}
@@ -597,7 +600,7 @@ void NET_Init(void)
 	packetQueueHead = 0;
 	packetQueueTail = 0;
 
-	net_wsRelayServer = Cvar_Get("net_wsRelayServer", "ws://localhost:8080", CVAR_ARCHIVE);
+	net_wsRelayServer = Cvar_Get("net_wsRelayServer", WS_DEFAULT_RELAY_URL, CVAR_ARCHIVE);
 
 	Com_Printf("WebSocket networking initialized\n");
 	Com_Printf("Relay server: %s\n", net_wsRelayServer->string);

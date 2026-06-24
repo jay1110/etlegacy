@@ -231,7 +231,7 @@ unsigned int DL_BeginDownload(const char *localName, const char *remoteName,
 	}
 
 	emscripten_fetch_attr_init(&attr);
-	strcpy(attr.requestMethod, "GET");
+	Q_strncpyz(attr.requestMethod, "GET", sizeof(attr.requestMethod));
 	attr.attributes   = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
 	attr.onsuccess    = FetchOnSuccess;
 	attr.onerror      = FetchOnError;
@@ -285,12 +285,12 @@ unsigned int Web_CreateRequest(const char *url, const char *authToken,
 
 	if (upload)
 	{
-		strcpy(attr.requestMethod, "POST");
+		Q_strncpyz(attr.requestMethod, "POST", sizeof(attr.requestMethod));
 		req->request.upload = qtrue;
 	}
 	else
 	{
-		strcpy(attr.requestMethod, "GET");
+		Q_strncpyz(attr.requestMethod, "GET", sizeof(attr.requestMethod));
 	}
 
 	attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;

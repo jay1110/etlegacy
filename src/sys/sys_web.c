@@ -139,10 +139,12 @@ char *Sys_Cwd(void)
  */
 dialogResult_t Sys_Dialog(dialogType_t type, const char *message, const char *title)
 {
-	char script[4096];
-
-	Com_sprintf(script, sizeof(script), "alert('%s: %s');", title, message);
-	emscripten_run_script(script);
+	// Use EM_ASM with parameters to avoid JavaScript injection issues
+	EM_ASM({
+		var title = UTF8ToString($0);
+		var message = UTF8ToString($1);
+		alert(title + ': ' + message);
+	}, title, message);
 
 	return DR_OK;
 }

@@ -942,8 +942,11 @@ void *Sys_LoadGameDll(const char *name, qboolean extract,
 	Com_Printf("Sys_LoadGameDll(%s) using static linking for Emscripten\n", name);
 	dllEntry(systemcalls);
 
-	// Return a non-NULL sentinel value since there's no real library handle
-	return (void *)0x1;
+	// Return a non-NULL sentinel value since there's no real library handle.
+	// Emscripten doesn't support dlopen; this satisfies callers that check for NULL.
+#define EMSCRIPTEN_STATIC_MODULE_HANDLE ((void *)0x1)
+	return EMSCRIPTEN_STATIC_MODULE_HANDLE;
+#undef EMSCRIPTEN_STATIC_MODULE_HANDLE
 #else
 	void *libHandle;
 	void (*dllEntry)(intptr_t (*syscallptr)(intptr_t, ...));
