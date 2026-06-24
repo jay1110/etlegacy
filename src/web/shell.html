@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ET: Legacy</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #1a1a2e;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #canvas-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        canvas#canvas {
+            display: block;
+            background-color: #000;
+            cursor: none;
+        }
+
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #1a1a2e;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            transition: opacity 0.5s ease;
+        }
+
+        #loading-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #loading-title {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #c4a000;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(196, 160, 0, 0.3);
+        }
+
+        #loading-subtitle {
+            font-size: 1.1em;
+            color: #888;
+            margin-bottom: 40px;
+        }
+
+        #progress-container {
+            width: 400px;
+            max-width: 80%;
+            background-color: #2a2a4a;
+            border-radius: 8px;
+            overflow: hidden;
+            height: 20px;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        #progress-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #c4a000, #e0c000);
+            border-radius: 8px;
+            transition: width 0.3s ease;
+        }
+
+        #progress-text {
+            margin-top: 15px;
+            font-size: 0.9em;
+            color: #aaa;
+        }
+
+        #status-text {
+            margin-top: 8px;
+            font-size: 0.8em;
+            color: #666;
+        }
+
+        #controls-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: rgba(26, 26, 46, 0.9);
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 50;
+            border-top: 1px solid #333;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        #controls-bar:hover {
+            opacity: 1;
+        }
+
+        .control-btn {
+            background-color: #2a2a4a;
+            color: #e0e0e0;
+            border: 1px solid #444;
+            padding: 6px 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: background-color 0.2s;
+        }
+
+        .control-btn:hover {
+            background-color: #3a3a5a;
+        }
+
+        .control-btn:active {
+            background-color: #4a4a6a;
+        }
+
+        #controls-info {
+            font-size: 0.8em;
+            color: #888;
+        }
+
+        #error-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(26, 26, 46, 0.95);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+        }
+
+        #error-message {
+            max-width: 600px;
+            padding: 30px;
+            background-color: #2a2a4a;
+            border-radius: 8px;
+            border: 1px solid #c44;
+            text-align: center;
+        }
+
+        #error-message h2 {
+            color: #c44;
+            margin-bottom: 15px;
+        }
+
+        #error-message p {
+            color: #ccc;
+            line-height: 1.6;
+        }
+
+        /* Console output panel */
+        #console-panel {
+            position: fixed;
+            bottom: 40px;
+            left: 0;
+            right: 0;
+            height: 200px;
+            background-color: rgba(0, 0, 0, 0.85);
+            color: #0f0;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            padding: 8px;
+            overflow-y: auto;
+            display: none;
+            z-index: 50;
+            border-top: 1px solid #333;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading overlay -->
+    <div id="loading-overlay">
+        <div id="loading-title">ET: Legacy</div>
+        <div id="loading-subtitle">WebAssembly Edition</div>
+        <div id="progress-container">
+            <div id="progress-bar"></div>
+        </div>
+        <div id="progress-text">Loading...</div>
+        <div id="status-text"></div>
+    </div>
+
+    <!-- Error overlay -->
+    <div id="error-overlay">
+        <div id="error-message">
+            <h2>Error</h2>
+            <p id="error-text">An error occurred while loading the game.</p>
+        </div>
+    </div>
+
+    <!-- Game canvas -->
+    <div id="canvas-container">
+        <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+    </div>
+
+    <!-- Controls bar -->
+    <div id="controls-bar">
+        <div>
+            <button class="control-btn" onclick="requestFullscreen()">Fullscreen</button>
+            <button class="control-btn" onclick="requestPointerLock()">Capture Mouse</button>
+            <button class="control-btn" onclick="toggleConsole()">Console</button>
+        </div>
+        <div id="controls-info">
+            Click the game to capture mouse | ESC to release | Move mouse to show controls
+        </div>
+    </div>
+
+    <!-- Console panel -->
+    <div id="console-panel"></div>
+
+    <script>
+        // Module configuration for Emscripten
+        var Module = {
+            canvas: (function() {
+                var canvas = document.getElementById('canvas');
+                return canvas;
+            })(),
+
+            print: function(text) {
+                if (text) {
+                    console.log(text);
+                    appendConsole(text);
+                }
+            },
+
+            printErr: function(text) {
+                if (text) {
+                    console.error(text);
+                    appendConsole('[ERR] ' + text);
+                }
+            },
+
+            setStatus: function(text) {
+                if (!text) return;
+
+                var progressBar = document.getElementById('progress-bar');
+                var progressText = document.getElementById('progress-text');
+                var statusText = document.getElementById('status-text');
+                var loadingOverlay = document.getElementById('loading-overlay');
+
+                if (!Module.setStatus.last) Module.setStatus.last = { time: Date.now(), text: '' };
+
+                if (text === Module.setStatus.last.text) return;
+                Module.setStatus.last.text = text;
+
+                var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+                if (m) {
+                    var current = parseInt(m[2]);
+                    var total = parseInt(m[4]);
+                    var percent = (current / total * 100).toFixed(0);
+                    progressBar.style.width = percent + '%';
+                    progressText.textContent = m[1].trim();
+                    statusText.textContent = percent + '% (' + current + '/' + total + ')';
+                } else {
+                    progressBar.style.width = '100%';
+                    progressText.textContent = text;
+                    statusText.textContent = '';
+
+                    if (text === '') {
+                        // Loading complete
+                        loadingOverlay.classList.add('hidden');
+                        setTimeout(function() {
+                            loadingOverlay.style.display = 'none';
+                        }, 500);
+                    }
+                }
+            },
+
+            onRuntimeInitialized: function() {
+                console.log('ET: Legacy WASM runtime initialized');
+            },
+
+            onAbort: function(what) {
+                showError('The game has aborted: ' + what);
+            },
+
+            monitorRunDependencies: function(left) {
+                Module.setStatus(left ? 'Preparing... (' + (Module.totalDependencies - left) + '/' + Module.totalDependencies + ')' : '');
+            },
+
+            totalDependencies: 0
+        };
+
+        Module.setStatus('Downloading...');
+
+        // Error handler
+        window.onerror = function(event) {
+            Module.setStatus('Error');
+            showError('An exception was thrown: ' + event);
+        };
+
+        function showError(message) {
+            var overlay = document.getElementById('error-overlay');
+            var text = document.getElementById('error-text');
+            overlay.style.display = 'flex';
+            text.textContent = message;
+        }
+
+        // Fullscreen support
+        function requestFullscreen() {
+            var canvas = document.getElementById('canvas');
+            if (canvas.requestFullscreen) {
+                canvas.requestFullscreen();
+            } else if (canvas.webkitRequestFullscreen) {
+                canvas.webkitRequestFullscreen();
+            } else if (canvas.mozRequestFullScreen) {
+                canvas.mozRequestFullScreen();
+            }
+        }
+
+        // Pointer lock support
+        function requestPointerLock() {
+            var canvas = document.getElementById('canvas');
+            canvas.requestPointerLock = canvas.requestPointerLock ||
+                                        canvas.mozRequestPointerLock ||
+                                        canvas.webkitRequestPointerLock;
+            if (canvas.requestPointerLock) {
+                canvas.requestPointerLock();
+            }
+        }
+
+        // Click on canvas to capture mouse
+        document.getElementById('canvas').addEventListener('click', function() {
+            requestPointerLock();
+        });
+
+        // Console panel
+        var consoleVisible = false;
+        function toggleConsole() {
+            consoleVisible = !consoleVisible;
+            document.getElementById('console-panel').style.display = consoleVisible ? 'block' : 'none';
+        }
+
+        function appendConsole(text) {
+            var panel = document.getElementById('console-panel');
+            var line = document.createElement('div');
+            line.textContent = text;
+            panel.appendChild(line);
+
+            // Keep only last 500 lines
+            while (panel.children.length > 500) {
+                panel.removeChild(panel.firstChild);
+            }
+
+            panel.scrollTop = panel.scrollHeight;
+        }
+
+        // Resize canvas to fill window
+        function resizeCanvas() {
+            var canvas = document.getElementById('canvas');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Show controls bar when mouse moves to bottom of screen
+        document.addEventListener('mousemove', function(e) {
+            var controlsBar = document.getElementById('controls-bar');
+            if (e.clientY > window.innerHeight - 60) {
+                controlsBar.style.opacity = '1';
+            }
+        });
+    </script>
+
+    {{{ SCRIPT }}}
+</body>
+</html>
