@@ -50,6 +50,10 @@
 #include <ctype.h>
 #include <errno.h>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #include "sys_local.h"
 #include "sys_loadlib.h"
 
@@ -884,6 +888,63 @@ void *Sys_LoadGameDll(const char *name, qboolean extract,
                       VM_EntryPoint_t *entryPoint,
                       intptr_t (*systemcalls)(intptr_t, ...))
 {
+#ifdef __EMSCRIPTEN__
+	// Emscripten: modules are statically linked. Look up entry points by module name.
+	// The game modules (cgame, ui, qagame) must be compiled with renamed entry points
+	// to avoid symbol conflicts when statically linked.
+	extern void cgame_dllEntry(intptr_t (*syscallptr)(intptr_t, ...));
+	extern intptr_t cgame_vmMain(intptr_t command, intptr_t arg0, intptr_t arg1, intptr_t arg2,
+	                             intptr_t arg3, intptr_t arg4, intptr_t arg5, intptr_t arg6,
+	                             intptr_t arg7, intptr_t arg8, intptr_t arg9, intptr_t arg10,
+	                             intptr_t arg11);
+	extern void ui_dllEntry(intptr_t (*syscallptr)(intptr_t, ...));
+	extern intptr_t ui_vmMain(intptr_t command, intptr_t arg0, intptr_t arg1, intptr_t arg2,
+	                          intptr_t arg3, intptr_t arg4, intptr_t arg5, intptr_t arg6,
+	                          intptr_t arg7, intptr_t arg8, intptr_t arg9, intptr_t arg10,
+	                          intptr_t arg11);
+	extern void qagame_dllEntry(intptr_t (*syscallptr)(intptr_t, ...));
+	extern intptr_t qagame_vmMain(intptr_t command, intptr_t arg0, intptr_t arg1, intptr_t arg2,
+	                              intptr_t arg3, intptr_t arg4, intptr_t arg5, intptr_t arg6,
+	                              intptr_t arg7, intptr_t arg8, intptr_t arg9, intptr_t arg10,
+	                              intptr_t arg11);
+
+	void (*dllEntry)(intptr_t (*syscallptr)(intptr_t, ...)) = NULL;
+
+	etl_assert(name);
+
+	if (!Q_stricmp(name, "cgame"))
+	{
+		dllEntry    = cgame_dllEntry;
+		*entryPoint = (VM_EntryPoint_t)cgame_vmMain;
+	}
+	else if (!Q_stricmp(name, "ui"))
+	{
+		dllEntry    = ui_dllEntry;
+		*entryPoint = (VM_EntryPoint_t)ui_vmMain;
+	}
+	else if (!Q_stricmp(name, "qagame"))
+	{
+		dllEntry    = qagame_dllEntry;
+		*entryPoint = (VM_EntryPoint_t)qagame_vmMain;
+	}
+	else
+	{
+		Com_Printf("Sys_LoadGameDll: unknown module '%s' for Emscripten static linking\n", name);
+		return NULL;
+	}
+
+	if (!dllEntry || !*entryPoint)
+	{
+		Com_Printf("Sys_LoadGameDll: failed to find static entry points for '%s'\n", name);
+		return NULL;
+	}
+
+	Com_Printf("Sys_LoadGameDll(%s) using static linking for Emscripten\n", name);
+	dllEntry(systemcalls);
+
+	// Return a non-NULL sentinel value since there's no real library handle
+	return (void *)0x1;
+#else
 	void *libHandle;
 	void (*dllEntry)(intptr_t (*syscallptr)(intptr_t, ...));
 	char fname[MAX_OSPATH];
@@ -1006,6 +1067,7 @@ void *Sys_LoadGameDll(const char *name, qboolean extract,
 
 	return libHandle;
 }
+#endif /* !__EMSCRIPTEN__ */
 
 void Sys_ParseArgsDrawBanner(FILE *stream)
 {
@@ -1266,6 +1328,7 @@ void Sys_SetUpConsoleAndSignals(void)
 	CON_Init();
 #endif
 
+#ifndef __EMSCRIPTEN__
 // don't set signal handlers for anything that will generate coredump (in DEBUG builds)
 #if !defined(ETLEGACY_DEBUG)
 	signal(SIGILL, Sys_SigHandler);
@@ -1274,11 +1337,29 @@ void Sys_SetUpConsoleAndSignals(void)
 #endif
 	signal(SIGINT, Sys_SigHandler);
 	signal(SIGTERM, Sys_SigHandler);
+#endif /* !__EMSCRIPTEN__ */
 }
 
 /**
  * @brief Main game loop
  */
+#ifdef __EMSCRIPTEN__
+/**
+ * @brief Single frame callback for Emscripten main loop
+ */
+static void Sys_EmscriptenFrame(void)
+{
+	Com_Frame();
+}
+
+static int Sys_GameLoop(void)
+{
+	// Use emscripten_set_main_loop to yield control back to the browser each frame.
+	// Parameters: callback, fps (0 = use requestAnimationFrame), simulate_infinite_loop
+	emscripten_set_main_loop(Sys_EmscriptenFrame, 0, 1);
+	return EXIT_SUCCESS;
+}
+#else
 static int Sys_GameLoop(void)
 {
 	int return_code = EXIT_SUCCESS;
@@ -1335,6 +1416,7 @@ static int Sys_GameLoop(void)
 #endif /* __clang__ */
 	return return_code;
 }
+#endif /* !__EMSCRIPTEN__ */
 
 /**
  * @brief SDL_main
@@ -1360,6 +1442,12 @@ int main(int argc, char **argv)
 
 	// Set the initial time base
 	Sys_Milliseconds();
+
+#ifdef __EMSCRIPTEN__
+	// Emscripten: set paths to virtual filesystem locations
+	Sys_SetBinaryPath("/etlegacy");
+	Sys_SetDefaultInstallPath("/etlegacy");
+#else
 
 #ifdef __APPLE__
 	// This is passed if we are launched by double-clicking
@@ -1429,6 +1517,8 @@ int main(int argc, char **argv)
 #else
 	Sys_SetDefaultInstallPath(Cmd_Argv(1)); // Sys_BinaryPath() by default
 #endif
+
+#endif /* !__EMSCRIPTEN__ */
 
 	// Concatenate the command line for passing to Com_Init
 	Sys_BuildCommandLine(argc, argv, commandLine, sizeof(commandLine));
