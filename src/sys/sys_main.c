@@ -884,11 +884,11 @@ static void *Sys_TryLibraryLoad(const char *base, const char *gamedir, const cha
  *
  * @return libHandle or NULL
  */
+#ifdef __EMSCRIPTEN__
 void *Sys_LoadGameDll(const char *name, qboolean extract,
                       VM_EntryPoint_t *entryPoint,
                       intptr_t (*systemcalls)(intptr_t, ...))
 {
-#ifdef __EMSCRIPTEN__
 	// Emscripten: modules are statically linked. Look up entry points by module name.
 	// The game modules (cgame, ui, qagame) must be compiled with renamed entry points
 	// to avoid symbol conflicts when statically linked.
@@ -947,7 +947,12 @@ void *Sys_LoadGameDll(const char *name, qboolean extract,
 #define EMSCRIPTEN_STATIC_MODULE_HANDLE ((void *)0x1)
 	return EMSCRIPTEN_STATIC_MODULE_HANDLE;
 #undef EMSCRIPTEN_STATIC_MODULE_HANDLE
+}
 #else
+void *Sys_LoadGameDll(const char *name, qboolean extract,
+                      VM_EntryPoint_t *entryPoint,
+                      intptr_t (*systemcalls)(intptr_t, ...))
+{
 	void *libHandle;
 	void (*dllEntry)(intptr_t (*syscallptr)(intptr_t, ...));
 	char fname[MAX_OSPATH];

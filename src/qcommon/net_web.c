@@ -50,15 +50,15 @@
 typedef struct
 {
 	EMSCRIPTEN_WEBSOCKET_T socket;
-	qboolean               active;
-	netadr_t               remoteAddr;
-	char                   url[MAX_STRING_CHARS];
+	qboolean active;
+	netadr_t remoteAddr;
+	char url[MAX_STRING_CHARS];
 } wsConnection_t;
 
 typedef struct
 {
-	byte     data[MAX_MSGLEN];
-	int      length;
+	byte data[MAX_MSGLEN];
+	int length;
 	netadr_t from;
 } wsPacket_t;
 
@@ -66,8 +66,8 @@ typedef struct
 
 static wsConnection_t wsConnections[MAX_WS_CONNECTIONS];
 static wsPacket_t     packetQueue[WS_PACKET_QUEUE_SIZE];
-static int            packetQueueHead = 0;
-static int            packetQueueTail = 0;
+static int            packetQueueHead   = 0;
+static int            packetQueueTail   = 0;
 static qboolean       networkingEnabled = qfalse;
 
 static cvar_t *net_wsRelayServer;
@@ -169,7 +169,7 @@ static EM_BOOL WS_OnClose(int eventType, const EmscriptenWebSocketCloseEvent *ws
  */
 static wsConnection_t *WS_GetConnection(const netadr_t *to)
 {
-	int i;
+	int  i;
 	char url[MAX_STRING_CHARS];
 
 	// Look for existing connection
@@ -212,7 +212,8 @@ static wsConnection_t *WS_GetConnection(const netadr_t *to)
 	}
 
 	// Create WebSocket
-	EmscriptenWebSocketCreateAttributes wsAttrs = {
+	EmscriptenWebSocketCreateAttributes wsAttrs =
+	{
 		url,
 		"binary",
 		EM_TRUE
@@ -400,7 +401,7 @@ qboolean Sys_StringToAdr(const char *s, netadr_t *a, netadrtype_t family)
 	if (!strcmp(s, "localhost"))
 	{
 		Com_Memset(a, 0, sizeof(*a));
-		a->type  = NA_LOOPBACK;
+		a->type = NA_LOOPBACK;
 		return qtrue;
 	}
 
@@ -409,7 +410,7 @@ qboolean Sys_StringToAdr(const char *s, netadr_t *a, netadrtype_t family)
 	port = strstr(base, ":");
 	if (port)
 	{
-		*port   = '\0';
+		*port = '\0';
 		port++;
 	}
 

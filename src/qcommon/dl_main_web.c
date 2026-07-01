@@ -38,13 +38,13 @@
 
 typedef struct
 {
-	unsigned int          id;
-	qboolean              active;
-	emscripten_fetch_t   *fetch;
-	webCallbackFunc_t     completeCb;
+	unsigned int id;
+	qboolean active;
+	emscripten_fetch_t *fetch;
+	webCallbackFunc_t completeCb;
 	webProgressCallbackFunc_t progressCb;
-	void                 *userData;
-	webRequest_t          request;
+	void *userData;
+	webRequest_t request;
 } webFetchRequest_t;
 
 static webFetchRequest_t fetchRequests[MAX_WEB_REQUESTS];
@@ -195,7 +195,7 @@ unsigned int DL_BeginDownload(const char *localName, const char *remoteName,
                               void *userData, webCallbackFunc_t complete,
                               webProgressCallbackFunc_t progress)
 {
-	webFetchRequest_t *req;
+	webFetchRequest_t       *req;
 	emscripten_fetch_attr_t attr;
 
 	req = AllocFetchRequest();
@@ -204,11 +204,11 @@ unsigned int DL_BeginDownload(const char *localName, const char *remoteName,
 		return 0;
 	}
 
-	req->completeCb = complete;
-	req->progressCb = progress;
-	req->userData   = userData;
+	req->completeCb       = complete;
+	req->progressCb       = progress;
+	req->userData         = userData;
 	req->request.userData = userData;
-	req->request.id = req->id;
+	req->request.id       = req->id;
 
 	Q_strncpyz(req->request.url, remoteName, sizeof(req->request.url));
 	Q_strncpyz(req->request.data.name, localName, sizeof(req->request.data.name));
@@ -232,10 +232,10 @@ unsigned int DL_BeginDownload(const char *localName, const char *remoteName,
 
 	emscripten_fetch_attr_init(&attr);
 	Q_strncpyz(attr.requestMethod, "GET", sizeof(attr.requestMethod));
-	attr.attributes   = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
-	attr.onsuccess    = FetchOnSuccess;
-	attr.onerror      = FetchOnError;
-	attr.onprogress   = FetchOnProgress;
+	attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
+	attr.onsuccess  = FetchOnSuccess;
+	attr.onerror    = FetchOnError;
+	attr.onprogress = FetchOnProgress;
 
 	req->fetch = emscripten_fetch(&attr, remoteName);
 
@@ -264,7 +264,7 @@ unsigned int Web_CreateRequest(const char *url, const char *authToken,
                                webCallbackFunc_t complete,
                                webProgressCallbackFunc_t progress)
 {
-	webFetchRequest_t *req;
+	webFetchRequest_t       *req;
 	emscripten_fetch_attr_t attr;
 
 	req = AllocFetchRequest();
@@ -302,7 +302,7 @@ unsigned int Web_CreateRequest(const char *url, const char *authToken,
 	if (authToken && *authToken)
 	{
 		static const char *headers[] = { "Authorization", NULL, NULL };
-		static char        authHeader[MAX_STRING_CHARS];
+		static char       authHeader[MAX_STRING_CHARS];
 
 		Q_strncpyz(authHeader, authToken, sizeof(authHeader));
 		headers[1] = authHeader;

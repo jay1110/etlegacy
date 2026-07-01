@@ -141,7 +141,7 @@ dialogResult_t Sys_Dialog(dialogType_t type, const char *message, const char *ti
 {
 	// Use EM_ASM with parameters to avoid JavaScript injection issues
 	EM_ASM({
-		var title = UTF8ToString($0);
+		var title   = UTF8ToString($0);
 		var message = UTF8ToString($1);
 		alert(title + ': ' + message);
 	}, title, message);
@@ -233,12 +233,12 @@ void Sys_Chmod(const char *file, int mode)
  */
 void Sys_ListFilteredFiles(const char *basedir, const char *subdirs, const char *filter, char **list, int *numfiles)
 {
-	char search[MAX_OSPATH];
-	char newsubdirs[MAX_OSPATH];
-	char filename[MAX_OSPATH];
-	DIR  *fdir;
+	char          search[MAX_OSPATH];
+	char          newsubdirs[MAX_OSPATH];
+	char          filename[MAX_OSPATH];
+	DIR           *fdir;
 	struct dirent *d;
-	struct stat    st;
+	struct stat   st;
 
 	if (*numfiles >= MAX_FOUND_FILES - 1)
 	{
