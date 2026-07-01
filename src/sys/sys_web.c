@@ -528,20 +528,6 @@ void CON_Print(const char *msg)
 }
 
 /**
- * @brief Sys_GetDLLName - Return the DLL name for a module (stub for Emscripten)
- * @param[in] name Module base name
- * @return Formatted name (unused in Emscripten since modules are statically linked)
- */
-const char *Sys_GetDLLName(const char *name)
-{
-	static char dllName[MAX_OSPATH];
-
-	Com_sprintf(dllName, sizeof(dllName), "%s.wasm", name);
-
-	return dllName;
-}
-
-/**
  * @brief Sys_DllExtension - Check if a filename has a valid DLL extension
  * @param[in] name Filename to check
  * @return qtrue if the extension is valid
