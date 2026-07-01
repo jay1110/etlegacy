@@ -377,6 +377,20 @@ static ID_INLINE float idSqrt(float x)
 
 #endif // __ANDROID__
 
+//======================= EMSCRIPTEN DEFINES =================================
+
+#ifdef __EMSCRIPTEN__
+
+#ifndef CPUSTRING
+#define CPUSTRING   "wasm32"
+#endif
+
+#ifndef PATH_SEP
+#define PATH_SEP '/'
+#endif
+
+#endif // __EMSCRIPTEN__
+
 //=============================================================
 
 typedef int qhandle_t;
