@@ -38,6 +38,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/html5.h>
+#endif
+
 #include "../client/client.h"
 #include "../sys/sys_local.h"
 
@@ -683,7 +688,10 @@ static void IN_ActivateMouse(void)
 
 	if (!mouseActive)
 	{
-#ifdef __ANDROID__
+#ifdef __EMSCRIPTEN__
+		// Request pointer lock via Emscripten for FPS-style mouse look
+		emscripten_request_pointerlock("#canvas", EM_TRUE);
+#elif defined(__ANDROID__)
 		SDL_ShowCursor(qfalse);
 #endif
 		IN_GrabMouse(qtrue, qtrue);
@@ -750,11 +758,15 @@ static void IN_DeactivateMouse(void)
 		IN_GobbleMotionEvents();
 		IN_GrabMouse(qfalse, qfalse);
 
+#ifdef __EMSCRIPTEN__
+		emscripten_exit_pointerlock();
+#else
 		// Don't warp the mouse unless the cursor is within the window
 		if (SDL_GetWindowFlags(mainScreen) & SDL_WINDOW_MOUSE_FOCUS)
 		{
 			SDL_WarpMouseInWindow(mainScreen, cls.glconfig.windowWidth / 2, cls.glconfig.windowHeight / 2);
 		}
+#endif
 
 		mouseActive = qfalse;
 	}

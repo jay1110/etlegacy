@@ -166,6 +166,11 @@ include(cmake/ETLCommon.cmake)
 # Dummy targets for library binding
 include(cmake/ETLTargets.cmake)
 
+# Emscripten/WebAssembly configuration (must come before ETLPlatform)
+if(EMSCRIPTEN)
+	include(cmake/ETLEmscripten.cmake)
+endif()
+
 # Platform specific compiler settings
 include(cmake/ETLPlatform.cmake)
 

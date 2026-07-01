@@ -51,7 +51,12 @@ if(CROSS_COMPILE32 AND ETL_ARM)
 	message(FATAL_ERROR "Cross compiling not supported for ARM!")
 endif()
 
-if(UNIX)
+if(EMSCRIPTEN)
+	# Emscripten platform - minimal OS library setup
+	# No native libraries needed; SDL2, GL, etc. are provided by Emscripten ports
+	target_link_libraries(os_libraries INTERFACE m)
+	set(LIB_SUFFIX ".wasm.")
+elseif(UNIX)
 	# optimization/debug flags
 	set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -ffast-math")
 	if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")

@@ -13,15 +13,29 @@ FILE(GLOB COMMON_SRC_REMOVE
 	"src/qcommon/dl_main_curl.c"
 	"src/qcommon/dl_main_android.c"
 	"src/qcommon/dl_main_stubs.c"
+	"src/qcommon/dl_main_web.c"
+	"src/qcommon/net_web.c"
 	"src/qcommon/i18n.c"
 	"src/qcommon/i18n_*"
 	"src/qcommon/auth.c"
 )
 
+# For Emscripten, replace net_ip.c with net_web.c
+if(EMSCRIPTEN)
+	LIST(APPEND COMMON_SRC_REMOVE "src/qcommon/net_ip.c")
+endif()
+
 LIST(REMOVE_ITEM COMMON_SRC ${COMMON_SRC_REMOVE})
 
+# Add Emscripten-specific networking source
+if(EMSCRIPTEN)
+	LIST(APPEND COMMON_SRC "src/qcommon/net_web.c")
+endif()
+
 # Platform specific code for server and client
-if(UNIX)
+if(EMSCRIPTEN)
+	LIST(APPEND PLATFORM_SRC "src/sys/sys_web.c")
+elseif(UNIX)
 	if(APPLE)
 		LIST(APPEND PLATFORM_SRC "src/sys/sys_osx.m")
 		SET_SOURCE_FILES_PROPERTIES("src/sys/sys_osx.m" PROPERTIES LANGUAGE C)

@@ -347,6 +347,22 @@
 
 #endif
 
+//============================================================ EMSCRIPTEN ===
+
+#ifdef __EMSCRIPTEN__
+
+#define OS_STRING "web"
+#define ID_INLINE inline
+#define PATH_SEP '/'
+
+#define ARCH_STRING "wasm32"
+
+#define Q3_LITTLE_ENDIAN
+
+#define DLL_EXT ".wasm"
+
+#endif
+
 //=============================================================== ANDROID ===
 
 #ifdef __ANDROID__
