@@ -209,16 +209,6 @@ void Sys_ErrorDialog(const char *error)
 }
 
 /**
- * @brief Sys_AnsiColorPrint - Print with ANSI color codes (no-op for web)
- * @param[in] msg Message to print
- */
-void Sys_AnsiColorPrint(const char *msg)
-{
-	// In the browser, we just print directly to console
-	fputs(msg, stderr);
-}
-
-/**
  * @brief Sys_Chmod - Change file permissions (stub for Emscripten)
  * @param[in] file Filename
  * @param[in] mode Access mode

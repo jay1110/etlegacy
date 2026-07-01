@@ -21,15 +21,17 @@ FILE(GLOB COMMON_SRC_REMOVE
 )
 
 # For Emscripten, replace net_ip.c with net_web.c
+# FILE(GLOB) populates COMMON_SRC with absolute paths, so the removal entry
+# must also be absolute for REMOVE_ITEM to match it.
 if(EMSCRIPTEN)
-	LIST(APPEND COMMON_SRC_REMOVE "src/qcommon/net_ip.c")
+	LIST(APPEND COMMON_SRC_REMOVE "${CMAKE_CURRENT_SOURCE_DIR}/src/qcommon/net_ip.c")
 endif()
 
 LIST(REMOVE_ITEM COMMON_SRC ${COMMON_SRC_REMOVE})
 
 # Add Emscripten-specific networking source
 if(EMSCRIPTEN)
-	LIST(APPEND COMMON_SRC "src/qcommon/net_web.c")
+	LIST(APPEND COMMON_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/qcommon/net_web.c")
 endif()
 
 # Platform specific code for server and client
