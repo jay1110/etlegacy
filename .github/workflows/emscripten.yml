@@ -1,0 +1,83 @@
+# ______   _______   _
+#|  ____| |__   __| | |
+#| |__       | |    | |        ___    __ _    __ _    ___   _   _
+#|  __|      | |    | |       / _ \  / _` |  / _` |  / __| | | | |
+#| |____     | |    | |____  |  __/ | (_| | | (_| | | (__  | |_| |
+#|______|    |_|    |______|  \___|  \__, |  \__,_|  \___|  \__, |
+#                                     __/ |                  __/ |
+#                                    |___/                  |___/
+name: Emscripten (WebAssembly)
+
+on:
+  workflow_dispatch:
+    inputs:
+      emscripten_version:
+        description: 'Emscripten SDK version'
+        required: false
+        default: 'latest'
+        type: string
+      build_type:
+        description: 'CMake build type'
+        required: false
+        default: 'Release'
+        type: choice
+        options:
+          - Release
+          - Debug
+          - RelWithDebInfo
+
+jobs:
+  wasm-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ inputs.emscripten_version || 'latest' }}
+
+      - name: Verify Emscripten
+        run: |
+          emcc --version
+          em++ --version
+
+      - name: Configure with CMake
+        run: |
+          emcmake cmake -B build-wasm \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type || 'Release' }} \
+            -DBUILD_CLIENT=ON \
+            -DBUILD_SERVER=OFF \
+            -DBUILD_MOD=OFF \
+            -DFEATURE_RENDERER_GLES=ON \
+            -DRENDERER_DYNAMIC=OFF \
+            -DFEATURE_OPENAL=OFF \
+            -DFEATURE_RENDERER_VULKAN=OFF \
+            -DFEATURE_RENDERER2=OFF \
+            -DFEATURE_RENDERER1=OFF \
+            -DFEATURE_IRC_CLIENT=OFF \
+            -DFEATURE_IRC_SERVER=OFF \
+            -DFEATURE_AUTOUPDATE=OFF \
+            -DFEATURE_DBMS=OFF \
+            -DFEATURE_CURL=OFF \
+            -DFEATURE_SSL=OFF \
+            -DFEATURE_AUTH=OFF \
+            -DFEATURE_OMNIBOT=OFF \
+            -DFEATURE_TRACKER=OFF \
+            -DFEATURE_ANTICHEAT=OFF
+
+      - name: Build
+        run: cmake --build build-wasm --parallel $(nproc)
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: etlegacy-wasm-${{ github.sha }}
+          path: |
+            build-wasm/*.html
+            build-wasm/*.js
+            build-wasm/*.wasm
+            build-wasm/*.data
+          if-no-files-found: warn
