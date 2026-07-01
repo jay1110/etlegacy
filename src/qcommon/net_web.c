@@ -495,7 +495,7 @@ qboolean Sys_IsLANAddress(const netadr_t *adr)
 	}
 
 	// Class B: 172.16.x.x - 172.31.x.x
-	if (adr->ip[0] == 172 && (adr->ip[1] & 0xf0) == 16)
+	if (adr->ip[0] == 172 && adr->ip[1] >= 16 && adr->ip[1] <= 31)
 	{
 		return qtrue;
 	}
