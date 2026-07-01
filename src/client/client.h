@@ -834,8 +834,8 @@ void DB_InsertFavorite(const char *profile, int source, const char *name, const 
 void DB_DeleteFavorite(const char *profile, const char *address);
 void DB_UpdateFavorite(const char *profile, const char *address);
 void DB_LoadFavorites(const char *profile);
+#endif
 
 void CL_InitServerInfo(serverInfo_t *server, const netadr_t *address);
-#endif
 
 #endif // #ifndef INCLUDE_CLIENT_H
