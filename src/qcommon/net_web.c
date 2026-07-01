@@ -37,6 +37,7 @@
 
 #include <emscripten/websocket.h>
 #include <string.h>
+#include <sys/select.h>
 
 // Maximum number of simultaneous WebSocket connections
 #define MAX_WS_CONNECTIONS 4
@@ -563,12 +564,6 @@ Sys_SendPacket
 void Sys_SendPacket(int length, const void *data, const netadr_t *to)
 {
 	wsConnection_t *conn;
-
-	if (to->type == NA_LOOPBACK)
-	{
-		NET_SendLoopPacket(NS_SERVER, length, data, to);
-		return;
-	}
 
 	if (to->type != NA_IP && to->type != NA_IP6)
 	{
