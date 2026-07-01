@@ -32,7 +32,12 @@ set(FEATURE_OMNIBOT OFF CACHE BOOL "Disable Omnibot for Emscripten" FORCE)
 set(FEATURE_TRACKER OFF CACHE BOOL "Disable tracker for Emscripten" FORCE)
 set(FEATURE_ANTICHEAT OFF CACHE BOOL "Disable anticheat for Emscripten" FORCE)
 set(FEATURE_PAKISOLATION OFF CACHE BOOL "Disable pak isolation for Emscripten" FORCE)
+set(FEATURE_OGG_VORBIS OFF CACHE BOOL "Disable OGG Vorbis for Emscripten" FORCE)
+set(FEATURE_THEORA OFF CACHE BOOL "Disable Theora for Emscripten" FORCE)
+set(FEATURE_IPV6 OFF CACHE BOOL "Disable IPv6 for Emscripten" FORCE)
+set(FEATURE_FREETYPE OFF CACHE BOOL "Disable Freetype for Emscripten" FORCE)
 set(BUILD_SERVER OFF CACHE BOOL "Disable dedicated server for Emscripten" FORCE)
+set(BUILD_MOD OFF CACHE BOOL "Disable mod building for Emscripten" FORCE)
 
 #-----------------------------------------------------------------
 # Emscripten compiler and linker flags
