@@ -306,7 +306,11 @@ endif()
 
 # Get the system architecture
 # Not that this is NOT APPLE because in macos we bundle everything into a single file
-if(NOT APPLE)
+# NOT EMSCRIPTEN: cmake/ETLEmscripten.cmake already set ARCH to "wasm32" (which
+# must match ARCH_STRING in src/qcommon/q_platform.h so Sys_GetDLLName() finds
+# the cgame/ui side modules); the x86 detection below would override it to
+# "i386" because Emscripten reports an x86-like 32-bit processor.
+if(NOT APPLE AND NOT EMSCRIPTEN)
 	if(ETL_X86 AND ETL_32BITS)
 		if(WIN32)
 			set(ARCH "x86")

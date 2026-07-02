@@ -96,6 +96,12 @@ set(EMSCRIPTEN_LINK_FLAGS
 	# Runtime helpers used by the asset bootstrap in src/web/shell.html to fetch
 	# the etmain paks into the virtual filesystem before main() runs.
 	"-s EXPORTED_RUNTIME_METHODS=['FS','callMain','addRunDependency','removeRunDependency','ccall','cwrap']"
+	# emcc's HTML minifier collapses ALL newlines in the inline <script> blocks
+	# of the custom shell (src/web/shell.html) without minifying the JS itself,
+	# so the first "//" line comment swallows the rest of the statement stream.
+	# That silently breaks the whole bootstrap script ("Module is not defined",
+	# no TextDecoder workaround, no asset download). Keep the shell unminified.
+	"-s MINIFY_HTML=0"
 	"-l idbfs.js" # IndexedDB-backed FS so downloaded paks are cached across loads
 	"-lwebsocket.js" # WebSocket API used by src/qcommon/net_web.c
 )

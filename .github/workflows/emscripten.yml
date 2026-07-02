@@ -20,7 +20,7 @@ on:
       emscripten_version:
         description: "Emscripten SDK version"
         required: false
-        default: "latest"
+        default: "4.0.23"
         type: string
       build_type:
         description: "CMake build type"
@@ -36,7 +36,8 @@ jobs:
   wasm-build:
     runs-on: ubuntu-24.04
     permissions:
-      contents: read
+      # contents: write is needed to attach the packaged web build to releases
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,7 +46,9 @@ jobs:
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: ${{ inputs.emscripten_version || 'latest' }}
+          # Pinned: "latest" has broken web builds before (changed defaults in
+          # newer SDKs). 4.0.23 is verified to produce a working browser build.
+          version: ${{ inputs.emscripten_version || '4.0.23' }}
 
       - name: Verify Emscripten
         run: |
@@ -82,18 +85,69 @@ jobs:
             -DFEATURE_THEORA=OFF \
             -DFEATURE_IPV6=OFF \
             -DFEATURE_FREETYPE=OFF \
-            -DFEATURE_PAKISOLATION=OFF
+            -DFEATURE_PAKISOLATION=OFF \
+            -DINSTALL_EXTRA=OFF
 
       - name: Build
         run: cmake --build build-wasm --parallel "$(nproc)"
 
+      - name: Package web release
+        run: |
+          mkdir -p dist/etlegacy-web
+          cp build-wasm/etl.html build-wasm/etl.js build-wasm/etl.wasm build-wasm/etl.data dist/etlegacy-web/
+          # Serve the game at the site root as well
+          cp build-wasm/etl.html dist/etlegacy-web/index.html
+          # Standalone copies of the game logic side modules. They are already
+          # embedded in etl.data, this is only the same-origin fallback location.
+          mkdir -p dist/etlegacy-web/legacy
+          cp build-wasm/cgame.mp.wasm32.wasm build-wasm/ui.mp.wasm32.wasm dist/etlegacy-web/legacy/ 2>/dev/null || true
+          # Placeholder for the retail assets the user must supply
+          mkdir -p dist/etlegacy-web/etmain
+          cat > dist/etlegacy-web/etmain/README.txt <<'EOF'
+          Copy the retail Wolfenstein: Enemy Territory data files here:
+            pak0.pk3  pak1.pk3  pak2.pk3
+          They are downloaded by the game at startup from this etmain/ folder
+          (same origin), or from the URL given via ?assets=<base-url>.
+          EOF
+          cat > dist/etlegacy-web/README.txt <<'EOF'
+          ET: Legacy - WebAssembly build
+          ==============================
+
+          Contents:
+            index.html / etl.html  - game page (same file)
+            etl.js                 - engine JavaScript loader
+            etl.wasm               - engine WebAssembly binary
+            etl.data               - engine data image (incl. cgame/ui modules)
+            legacy/                - cgame/ui side modules (fallback copies)
+            etmain/                - put pak0.pk3, pak1.pk3, pak2.pk3 here
+
+          How to run:
+            1. Copy pak0.pk3, pak1.pk3 and pak2.pk3 from a retail
+               Wolfenstein: Enemy Territory installation into etmain/.
+               (These are NOT included; they may not be redistributed.)
+            2. Upload this whole folder to any static web server and open
+               index.html (or etl.html) in the browser. All files must be
+               served with HTTP 200; serve .wasm as application/wasm.
+               For a quick local test: python3 -m http.server
+            3. Optional URL parameters:
+                 ?assets=<base-url>    download the paks from another host
+                                       (that host must allow CORS)
+                 ?relay=<ws-url>       WebSocket->UDP relay (tools/ws-relay)
+                 ?connect=<host:port>  game server to join through the relay
+          EOF
+          (cd dist && zip -9 -r etlegacy-web.zip etlegacy-web)
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: etlegacy-wasm-${{ github.sha }}
-          path: |
-            build-wasm/*.html
-            build-wasm/*.js
-            build-wasm/*.wasm
-            build-wasm/*.data
-          if-no-files-found: warn
+          name: etlegacy-web-${{ github.sha }}
+          path: dist/etlegacy-web.zip
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" dist/etlegacy-web.zip --clobber --repo "${GITHUB_REPOSITORY}" \
+            || gh release create "${GITHUB_REF_NAME}" dist/etlegacy-web.zip --title "${GITHUB_REF_NAME}" --generate-notes --repo "${GITHUB_REPOSITORY}"
