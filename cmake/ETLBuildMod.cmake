@@ -98,6 +98,8 @@ endif()
 # the file packager can embed them.
 if(EMSCRIPTEN AND BUILD_CLIENT_MOD AND TARGET etl AND TARGET cgame AND TARGET ui)
 	add_dependencies(etl cgame ui)
+	# SHELL: keeps each "--preload-file src@dst" pair as one argument (CMake
+	# otherwise de-duplicates/space-splits it), which emcc's file packager needs.
 	target_link_options(etl PRIVATE
 		"SHELL:--preload-file $<TARGET_FILE:cgame>@/etlegacy/${MODNAME}/$<TARGET_FILE_NAME:cgame>"
 		"SHELL:--preload-file $<TARGET_FILE:ui>@/etlegacy/${MODNAME}/$<TARGET_FILE_NAME:ui>"
