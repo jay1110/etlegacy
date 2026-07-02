@@ -36,6 +36,7 @@
 #include <errno.h>
 #include <time.h>
 #include <math.h>
+#include <libgen.h>
 
 #ifndef DEDICATED
 #include "../sdl/sdl_defs.h"
@@ -537,6 +538,81 @@ qboolean Sys_DllExtension(const char *name)
 	}
 
 	return qfalse;
+}
+
+/**
+ * @brief Sys_RandomBytes - Fill a buffer with random bytes
+ * @param[out] bytes Destination buffer
+ * @param[in] len Number of bytes to write
+ * @return qtrue on success
+ *
+ * Emscripten backs /dev/urandom with the browser's crypto.getRandomValues().
+ */
+qboolean Sys_RandomBytes(void *bytes, int len)
+{
+	FILE *fp;
+
+	fp = fopen("/dev/urandom", "r");
+	if (!fp)
+	{
+		return qfalse;
+	}
+
+	setvbuf(fp, NULL, _IONBF, 0); // don't buffer reads from /dev/urandom
+
+	if (fread(bytes, sizeof(byte), len, fp) != len)
+	{
+		fclose(fp);
+		return qfalse;
+	}
+
+	fclose(fp);
+	return qtrue;
+}
+
+/**
+ * @brief Sys_GetCurrentUser - Get current user username
+ * @return username (there is no real user account in the browser)
+ */
+char *Sys_GetCurrentUser(void)
+{
+	return "player";
+}
+
+/**
+ * @brief Sys_LowPhysicalMemory
+ * @return qfalse (memory growth is handled by the browser)
+ */
+qboolean Sys_LowPhysicalMemory(void)
+{
+	return qfalse;
+}
+
+/**
+ * @brief Sys_Dirname - Return the directory portion of a path
+ * @param[in] path
+ * @return pointer to the directory component
+ */
+const char *Sys_Dirname(char *path)
+{
+	return dirname(path);
+}
+
+/**
+ * @brief Sys_OpenURL - Open a URL in a new browser tab
+ * @param[in] url URL to open
+ * @param[in] doexit Unused in the browser environment
+ */
+void Sys_OpenURL(const char *url, qboolean doexit)
+{
+	Com_Printf("Open URL: %s\n", url);
+
+	// window.open() is the browser equivalent of launching an external browser.
+	// The URL is passed as a UTF8 string parameter so it is not interpreted as code.
+	EM_ASM({
+		var target = UTF8ToString($0);
+		window.open(target, '_blank');
+	}, url);
 }
 
 #endif /* __EMSCRIPTEN__ */

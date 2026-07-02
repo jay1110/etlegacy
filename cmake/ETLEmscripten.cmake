@@ -58,6 +58,7 @@ set(EMSCRIPTEN_LINK_FLAGS
 	"-s ASYNCIFY_STACK_SIZE=65536"
 	"-s GL_UNSAFE_OPTS=0"
 	"-s FORCE_FILESYSTEM=1"
+	"-lwebsocket.js" # WebSocket API used by src/qcommon/net_web.c
 )
 string(REPLACE ";" " " EMSCRIPTEN_LINK_FLAGS_STR "${EMSCRIPTEN_LINK_FLAGS}")
 
