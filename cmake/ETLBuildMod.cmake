@@ -24,8 +24,10 @@ endfunction()
 # requires them to be built as SIDE_MODULEs (the engine is the MAIN_MODULE, see
 # cmake/ETLEmscripten.cmake). The output filename must match what the engine
 # asks for via Sys_GetDLLName(): "<name>.mp." ARCH_STRING DLL_EXT, i.e.
-# "cgame.mp.wasm32.wasm". The modules are emitted next to etl.html so they are
-# uploaded as build artifacts and fetched same-origin by src/web/shell.html.
+# "cgame.mp.wasm32.wasm". The modules are emitted next to etl.html (so they are
+# uploaded as build artifacts) and are additionally embedded into the engine
+# filesystem image (etl.data) below, so a deployment does not have to serve them
+# separately.
 function(etl_configure_wasm_side_module target_name base_name)
 	if(EMSCRIPTEN)
 		target_link_options(${target_name} PRIVATE "-sSIDE_MODULE=1")
@@ -83,6 +85,23 @@ if(BUILD_CLIENT_MOD)
 	)
 	target_compile_definitions(ui PRIVATE UIDLL=1 MODLIB=1)
 	etl_configure_wasm_side_module(ui ui)
+endif()
+
+# On Emscripten the client loads the game logic (cgame/ui) at runtime through
+# dlopen (see Sys_LoadGameDll). Rather than requiring those SIDE_MODULE .wasm
+# files to be served next to etl.html and fetched at startup - which fails with
+# a 404 whenever a deployment forgets to copy them - bake them straight into the
+# engine's virtual filesystem image (etl.data) at the exact path the engine
+# dlopen()s them from (fs_basepath "/etlegacy" + fs_game "legacy"). This way the
+# modules always ship with the page and never need separate hosting. The
+# add_dependencies() call guarantees the modules are built before etl links so
+# the file packager can embed them.
+if(EMSCRIPTEN AND BUILD_CLIENT_MOD AND TARGET etl AND TARGET cgame AND TARGET ui)
+	add_dependencies(etl cgame ui)
+	target_link_options(etl PRIVATE
+		"SHELL:--preload-file $<TARGET_FILE:cgame>@/etlegacy/${MODNAME}/$<TARGET_FILE_NAME:cgame>"
+		"SHELL:--preload-file $<TARGET_FILE:ui>@/etlegacy/${MODNAME}/$<TARGET_FILE_NAME:ui>"
+	)
 endif()
 
 #

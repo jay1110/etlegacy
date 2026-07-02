@@ -452,8 +452,13 @@
             var LEGACY_DIR = INSTALL_DIR + '/legacy';
 
             // Game logic side-modules (built by cmake/ETLBuildMod.cmake). They
-            // are served next to etl.html, so they are fetched same-origin (no
-            // CORS needed) into the mod directory where the engine dlopen()s them.
+            // are baked into the engine filesystem image (etl.data) at build
+            // time and mounted before main() runs, so normally they are already
+            // present in LEGACY_DIR and need no download. As a fallback (e.g. an
+            // older build without the embedded modules) they can also be served
+            // same-origin next to etl.html; a missing module here is therefore
+            // non-fatal - the engine reports a clear error later if one is truly
+            // absent.
             var MOD_FILES = ['cgame.mp.wasm32.wasm', 'ui.mp.wasm32.wasm'];
 
             // Build the engine command line from URL parameters.
@@ -581,9 +586,23 @@
                         }, Promise.resolve());
                     })
                     .then(function () {
-                        // legacy mod side-modules (same-origin).
+                        // legacy mod side-modules. These are normally already
+                        // present in LEGACY_DIR (embedded in etl.data), so
+                        // downloadMod() skips them. When they are not embedded we
+                        // try to fetch them same-origin, but a failure here is
+                        // non-fatal: swallow it so a missing/served-elsewhere
+                        // module does not abort startup. The engine still emits a
+                        // clear error later if a required module is truly absent.
                         return MOD_FILES.reduce(function (chain, name) {
-                            return chain.then(function () { return downloadMod(name); });
+                            return chain.then(function () {
+                                return downloadMod(name).catch(function (err) {
+                                    if (typeof console !== 'undefined' && console.warn) {
+                                        console.warn('Optional module ' + name +
+                                            ' not fetched: ' + err.message +
+                                            ' (expected when embedded in etl.data)');
+                                    }
+                                });
+                            });
                         }, Promise.resolve());
                     })
                     .then(persist)
@@ -592,6 +611,7 @@
                         Module.removeRunDependency('etl-assets');
                     })
                     .catch(function (err) {
+                        // Only the retail paks reach here as fatal errors.
                         var msg = 'Could not load game data from ' + ASSET_BASE +
                             '.\n' + err.message;
                         if (assetsAreCrossOrigin()) {

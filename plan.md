@@ -22,7 +22,10 @@ Concrete decisions taken:
   browser clients join it through the **WebSocket->UDP relay** in
   `tools/ws-relay`. Connect via `?relay=<ws-url>&connect=<host:port>`.
 - **Game modules** are built as Emscripten `SIDE_MODULE`s (`cgame`, `ui`) and
-  loaded by the `MAIN_MODULE` engine via `dlopen`.
+  loaded by the `MAIN_MODULE` engine via `dlopen`. They are embedded into the
+  engine filesystem image (`etl.data`, via `--preload-file` in
+  `cmake/ETLBuildMod.cmake`) at `/etlegacy/legacy/`, so they ship with the page
+  and do not need to be served/fetched separately.
 
 ## Why it is not yet playable (gaps)
 
