@@ -13,8 +13,10 @@ now also builds the client game-logic modules (`cgame`, `ui`) and ships an asset
 Concrete decisions taken:
 
 - **Retail assets** (`pak0.pk3`, `pak1.pk3`, `pak2.pk3`) are downloaded at
-  runtime from a web space, default `https://et.clan-etc.de/etmain/` (override
-  with `?assets=<url>`). See `src/web/shell.html`. They are cached in IndexedDB.
+  runtime, by default same-origin from an `etmain/` folder served next to the
+  page (no CORS needed); override the location with `?assets=<url>` (a
+  cross-origin URL then requires the remote web space to allow CORS downloads).
+  See `src/web/shell.html`. They are cached in IndexedDB.
 - **Hosting model** (same approach as the Quake 3 / QuakeJS web port): the
   browser cannot host a server, so a **native dedicated server** is the host and
   browser clients join it through the **WebSocket->UDP relay** in
@@ -67,8 +69,9 @@ Legend: `[ ]` = TODO, `[x]` = done.
       IndexedDB (IDBFS) caching — see `src/web/shell.html`.
 - [x] Mount assets at the engine-expected path (`/etlegacy/etmain`,
       `/etlegacy/legacy`); matches `Sys_SetDefaultInstallPath("/etlegacy")`.
-- [x] Retail `pak0-2.pk3` fetched from a configurable web space (default
-      `https://et.clan-etc.de/etmain/`) instead of being redistributed.
+- [x] Retail `pak0-2.pk3` fetched from a configurable location (default
+      same-origin `etmain/`, override with `?assets=`) instead of being
+      redistributed.
 - [x] Game side-modules fetched same-origin into `/etlegacy/legacy`.
 - [ ] Verify a map loads and renders in the browser (needs emcc build + a live
       web space that serves the paks with CORS enabled).

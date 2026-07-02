@@ -399,11 +399,15 @@
         ----------------------------------------
         A browser build ships no game data and cannot open raw UDP sockets, so
         before the engine starts we:
-          1. Download the etmain paks (pak0-2.pk3) from a web space into the
-             in-browser filesystem (cached in IndexedDB so it is fetched once).
+          1. Download the etmain paks (pak0-2.pk3) into the in-browser
+             filesystem (cached in IndexedDB so they are fetched once). By
+             default they are loaded same-origin (from an "etmain/" folder next
+             to this page) so no CORS configuration is required.
           2. Optionally point the client at a WebSocket->UDP relay and auto-join
              a server, driven by URL query parameters:
-               ?assets=<base-url>   override where the paks are downloaded from
+               ?assets=<base-url>   override where the paks are downloaded from.
+                                    A cross-origin URL requires the web space to
+                                    allow CORS downloads of the paks.
                ?relay=<ws-url>      WebSocket relay (see tools/ws-relay)
                ?connect=<host:port> game server to join through the relay
         Example:
@@ -413,11 +417,25 @@
         (function () {
             var params = new URLSearchParams(window.location.search);
 
-            // Where to download the retail etmain data from. The user-provided
-            // web space is the default; override with ?assets=<url>.
-            var ASSET_BASE = params.get('assets') || 'https://et.clan-etc.de/etmain/';
+            // Where to download the retail etmain data from. Defaults to an
+            // "etmain/" folder served next to this page, so the paks are fetched
+            // same-origin (no CORS needed), just like the mod side-modules
+            // below. Override with ?assets=<url>; a cross-origin URL requires
+            // the remote web space to allow CORS downloads of the paks.
+            var ASSET_BASE = params.get('assets') || 'etmain/';
             if (ASSET_BASE.charAt(ASSET_BASE.length - 1) !== '/') {
                 ASSET_BASE += '/';
+            }
+
+            // True when ASSET_BASE resolves to a different origin than this page,
+            // in which case the remote server must send CORS headers.
+            function assetsAreCrossOrigin() {
+                try {
+                    return new URL(ASSET_BASE, window.location.href).origin !==
+                        window.location.origin;
+                } catch (e) {
+                    return false;
+                }
             }
 
             // Retail paks required to run. These are NOT redistributed with
@@ -551,7 +569,8 @@
 
                 mountCache()
                     .then(function () {
-                        // etmain retail paks (cross-origin, cached in IndexedDB).
+                        // etmain retail paks (same-origin by default, cached in
+                        // IndexedDB; may be cross-origin via ?assets=).
                         return PAK_FILES.reduce(function (chain, name) {
                             return chain.then(function () { return downloadPak(name); });
                         }, Promise.resolve());
@@ -568,9 +587,18 @@
                         Module.removeRunDependency('etl-assets');
                     })
                     .catch(function (err) {
-                        showError('Could not load game data from ' + ASSET_BASE +
-                            '.\n' + err.message +
-                            '\n\nThe web space must allow cross-origin (CORS) downloads of the paks.');
+                        var msg = 'Could not load game data from ' + ASSET_BASE +
+                            '.\n' + err.message;
+                        if (assetsAreCrossOrigin()) {
+                            msg += '\n\nThe web space must allow cross-origin ' +
+                                '(CORS) downloads of the paks, or host ' +
+                                'pak0-2.pk3 next to this page.';
+                        } else {
+                            msg += '\n\nMake sure pak0.pk3, pak1.pk3 and ' +
+                                'pak2.pk3 are present in the "' + ASSET_BASE +
+                                '" folder next to this page.';
+                        }
+                        showError(msg);
                         Module.removeRunDependency('etl-assets');
                     });
             });
