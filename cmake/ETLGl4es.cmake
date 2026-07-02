@@ -41,6 +41,9 @@ endif()
 
 ExternalProject_Add(bundled_gl4es
 	GIT_REPOSITORY https://github.com/ptitSeb/gl4es.git
+	# Pinned to a known-good gl4es commit (master, 2024-06-06) verified to build
+	# for Emscripten and link against the OpenGL1 renderer. Bump deliberately
+	# after re-verifying the browser build.
 	GIT_TAG 17f0894e19d1553e4176276c759915dab44c08e2
 	PREFIX "${GL4ES_PREFIX}"
 	BUILD_BYPRODUCTS "${GL4ES_LIBRARY}"
