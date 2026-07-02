@@ -26,6 +26,11 @@ set(FEATURE_RENDERER2 OFF CACHE BOOL "Disable renderer2 for Emscripten" FORCE)
 # glPushMatrix/glMatrixMode), so it cannot link against a pure GLES2 context.
 set(FEATURE_RENDERER1 ON CACHE BOOL "Enable OpenGL1 renderer for Emscripten" FORCE)
 set(FEATURE_RENDERER_GLES OFF CACHE BOOL "Disable GLES renderer for Emscripten" FORCE)
+# Use Emscripten's own WebGL-backed GLEW emulation (linked via -lGLEW in
+# cmake/ETLSetupFeatures.cmake) instead of the bundled desktop GLEW, whose
+# object files reference GLX/WGL entry points (glXGetProcAddressARB, ...) that
+# cannot be linked in a WebAssembly build.
+set(BUNDLED_GLEW OFF CACHE BOOL "Use Emscripten's built-in GLEW for Emscripten" FORCE)
 set(FEATURE_IRC_CLIENT OFF CACHE BOOL "Disable IRC for Emscripten" FORCE)
 set(FEATURE_IRC_SERVER OFF CACHE BOOL "Disable IRC server for Emscripten" FORCE)
 set(FEATURE_AUTOUPDATE OFF CACHE BOOL "Disable autoupdate for Emscripten" FORCE)

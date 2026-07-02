@@ -42,7 +42,16 @@ if(BUILD_CLIENT)
 	if(FEATURE_RENDERER1 OR FEATURE_RENDERER2 OR FEATURE_RENDERER_VULKAN)
 		# ghost target to link all opengl renderer libraries
 		add_library(opengl_renderer_libs INTERFACE)
-		if(NOT BUNDLED_GLEW)
+		if(EMSCRIPTEN)
+			# Emscripten ships its own WebGL-backed GLEW emulation. The bundled
+			# desktop GLEW cannot be used in the browser because it resolves GL
+			# entry points through GLX/WGL (glXGetProcAddressARB, ...), which do
+			# not exist in a WASM environment. Link Emscripten's GLEW port and use
+			# its <GL/glew.h>; the remaining legacy desktop GL entry points that
+			# the OpenGL 1.x renderer references are provided by
+			# src/renderer/tr_gl_emscripten.c.
+			target_link_libraries(opengl_renderer_libs INTERFACE "-lGLEW")
+		elseif(NOT BUNDLED_GLEW)
 			find_package(GLEW REQUIRED)
 			target_link_libraries(opengl_renderer_libs INTERFACE ${GLEW_LIBRARY})
 			target_include_directories(opengl_renderer_libs INTERFACE ${GLEW_INCLUDE_PATH})
