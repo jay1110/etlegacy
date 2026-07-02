@@ -239,6 +239,34 @@
     <div id="console-panel"></div>
 
     <script>
+        // --- Firefox resizable-ArrayBuffer / TextDecoder workaround ----------
+        // Built with ALLOW_MEMORY_GROWTH, the growable WebAssembly.Memory is
+        // backed by a *resizable* ArrayBuffer in browsers such as Firefox.
+        // Firefox's TextDecoder.decode() rejects any ArrayBuffer(View) whose
+        // backing buffer is resizable/growable and throws:
+        //   "TextDecoder.decode: ArrayBufferView branch of (ArrayBufferView or
+        //    ArrayBuffer) can't be a resizable ArrayBuffer or ArrayBufferView".
+        // Emscripten's UTF8ArrayToString() decodes a subarray of the heap, so
+        // the first filesystem syscall (mkdirat -> getStr -> UTF8ToString)
+        // aborts startup. Copy such inputs into a plain, fixed-size buffer
+        // before decoding so the string helpers work on every browser. This
+        // must run before etl.js (injected via {{{ SCRIPT }}} below) loads.
+        (function () {
+            if (typeof TextDecoder === 'undefined') return;
+            var proto = TextDecoder.prototype;
+            var originalDecode = proto.decode;
+            proto.decode = function (input, options) {
+                if (input) {
+                    var buf = (input instanceof ArrayBuffer) ? input : input.buffer;
+                    if (buf && (buf.resizable || buf.growable)) {
+                        // slice() returns a copy backed by a fixed-size buffer.
+                        input = input.slice();
+                    }
+                }
+                return originalDecode.call(this, input, options);
+            };
+        })();
+
         // Module configuration for Emscripten
         var Module = {
             canvas: (function() {
