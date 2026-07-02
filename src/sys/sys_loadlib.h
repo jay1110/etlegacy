@@ -38,14 +38,7 @@
 #    include "../sdl/sdl_defs.h"
 #endif
 
-#ifdef __EMSCRIPTEN__
-// Emscripten does not support dlopen/dynamic loading.
-// All modules are statically linked. These stubs satisfy the API.
-#    define Sys_LoadLibrary(f)       ((void *)0)
-#    define Sys_UnloadLibrary(h)     ((void)0)
-#    define Sys_LoadFunction(h, fn)  ((void *)0)
-#    define Sys_LibraryError()       "dynamic loading not supported on Emscripten"
-#elif defined(_WIN32)
+#if defined(_WIN32)
 #    include <windows.h>
 void *Sys_LoadLibrary(const char *library);
 #    define Sys_UnloadLibrary(h)     FreeLibrary((HMODULE)h)

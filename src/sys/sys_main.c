@@ -884,71 +884,6 @@ static void *Sys_TryLibraryLoad(const char *base, const char *gamedir, const cha
  *
  * @return libHandle or NULL
  */
-#ifdef __EMSCRIPTEN__
-void *Sys_LoadGameDll(const char *name, qboolean extract,
-                      VM_EntryPoint_t *entryPoint,
-                      intptr_t (*systemcalls)(intptr_t, ...))
-{
-	// Emscripten: modules are statically linked. Look up entry points by module name.
-	// The game modules (cgame, ui, qagame) must be compiled with renamed entry points
-	// to avoid symbol conflicts when statically linked.
-	extern void cgame_dllEntry(intptr_t (*syscallptr)(intptr_t, ...));
-	extern intptr_t cgame_vmMain(intptr_t command, intptr_t arg0, intptr_t arg1, intptr_t arg2,
-	                             intptr_t arg3, intptr_t arg4, intptr_t arg5, intptr_t arg6,
-	                             intptr_t arg7, intptr_t arg8, intptr_t arg9, intptr_t arg10,
-	                             intptr_t arg11);
-	extern void ui_dllEntry(intptr_t (*syscallptr)(intptr_t, ...));
-	extern intptr_t ui_vmMain(intptr_t command, intptr_t arg0, intptr_t arg1, intptr_t arg2,
-	                          intptr_t arg3, intptr_t arg4, intptr_t arg5, intptr_t arg6,
-	                          intptr_t arg7, intptr_t arg8, intptr_t arg9, intptr_t arg10,
-	                          intptr_t arg11);
-	extern void qagame_dllEntry(intptr_t (*syscallptr)(intptr_t, ...));
-	extern intptr_t qagame_vmMain(intptr_t command, intptr_t arg0, intptr_t arg1, intptr_t arg2,
-	                              intptr_t arg3, intptr_t arg4, intptr_t arg5, intptr_t arg6,
-	                              intptr_t arg7, intptr_t arg8, intptr_t arg9, intptr_t arg10,
-	                              intptr_t arg11);
-
-	void (*dllEntry)(intptr_t (*syscallptr)(intptr_t, ...)) = NULL;
-
-	etl_assert(name);
-
-	if (!Q_stricmp(name, "cgame"))
-	{
-		dllEntry    = cgame_dllEntry;
-		*entryPoint = (VM_EntryPoint_t)cgame_vmMain;
-	}
-	else if (!Q_stricmp(name, "ui"))
-	{
-		dllEntry    = ui_dllEntry;
-		*entryPoint = (VM_EntryPoint_t)ui_vmMain;
-	}
-	else if (!Q_stricmp(name, "qagame"))
-	{
-		dllEntry    = qagame_dllEntry;
-		*entryPoint = (VM_EntryPoint_t)qagame_vmMain;
-	}
-	else
-	{
-		Com_Printf("Sys_LoadGameDll: unknown module '%s' for Emscripten static linking\n", name);
-		return NULL;
-	}
-
-	if (!dllEntry || !*entryPoint)
-	{
-		Com_Printf("Sys_LoadGameDll: failed to find static entry points for '%s'\n", name);
-		return NULL;
-	}
-
-	Com_Printf("Sys_LoadGameDll(%s) using static linking for Emscripten\n", name);
-	dllEntry(systemcalls);
-
-	// Return a non-NULL sentinel value since there's no real library handle.
-	// Emscripten doesn't support dlopen; this satisfies callers that check for NULL.
-#define EMSCRIPTEN_STATIC_MODULE_HANDLE ((void *)0x1)
-	return EMSCRIPTEN_STATIC_MODULE_HANDLE;
-#undef EMSCRIPTEN_STATIC_MODULE_HANDLE
-}
-#else
 void *Sys_LoadGameDll(const char *name, qboolean extract,
                       VM_EntryPoint_t *entryPoint,
                       intptr_t (*systemcalls)(intptr_t, ...))
@@ -1075,7 +1010,6 @@ void *Sys_LoadGameDll(const char *name, qboolean extract,
 
 	return libHandle;
 }
-#endif /* !__EMSCRIPTEN__ */
 
 void Sys_ParseArgsDrawBanner(FILE *stream)
 {
