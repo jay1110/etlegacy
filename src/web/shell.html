@@ -394,6 +394,189 @@
         });
     </script>
 
+    <!--
+        ET: Legacy asset + networking bootstrap
+        ----------------------------------------
+        A browser build ships no game data and cannot open raw UDP sockets, so
+        before the engine starts we:
+          1. Download the etmain paks (pak0-2.pk3) from a web space into the
+             in-browser filesystem (cached in IndexedDB so it is fetched once).
+          2. Optionally point the client at a WebSocket->UDP relay and auto-join
+             a server, driven by URL query parameters:
+               ?assets=<base-url>   override where the paks are downloaded from
+               ?relay=<ws-url>      WebSocket relay (see tools/ws-relay)
+               ?connect=<host:port> game server to join through the relay
+        Example:
+          etl.html?relay=wss://relay.example.com&connect=203.0.113.10:27960
+    -->
+    <script>
+        (function () {
+            var params = new URLSearchParams(window.location.search);
+
+            // Where to download the retail etmain data from. The user-provided
+            // web space is the default; override with ?assets=<url>.
+            var ASSET_BASE = params.get('assets') || 'https://et.clan-etc.de/etmain/';
+            if (ASSET_BASE.charAt(ASSET_BASE.length - 1) !== '/') {
+                ASSET_BASE += '/';
+            }
+
+            // Retail paks required to run. These are NOT redistributed with
+            // ET: Legacy; they are fetched from ASSET_BASE at runtime.
+            var PAK_FILES = ['pak0.pk3', 'pak1.pk3', 'pak2.pk3'];
+
+            var INSTALL_DIR = '/etlegacy';       // must match Sys_SetDefaultInstallPath()
+            var ETMAIN_DIR = INSTALL_DIR + '/etmain';
+            var LEGACY_DIR = INSTALL_DIR + '/legacy';
+
+            // Game logic side-modules (built by cmake/ETLBuildMod.cmake). They
+            // are served next to etl.html, so they are fetched same-origin (no
+            // CORS needed) into the mod directory where the engine dlopen()s them.
+            var MOD_FILES = ['cgame.mp.wasm32.wasm', 'ui.mp.wasm32.wasm'];
+
+            // Build the engine command line from URL parameters.
+            var args = [];
+            var relay = params.get('relay');
+            if (relay) {
+                args.push('+set', 'net_wsRelayServer', relay);
+            }
+            var connect = params.get('connect');
+            if (connect) {
+                args.push('+connect', connect);
+            }
+            Module.arguments = args;
+
+            function statusFor(name, received, total) {
+                if (total) {
+                    Module.setStatus('Downloading ' + name + ' (' + received + '/' + total + ')');
+                } else {
+                    Module.setStatus('Downloading ' + name + ' (' + received + '/' + received + ')');
+                }
+            }
+
+            // Fetch a file with progress reporting and write it to the FS.
+            function downloadInto(sourceUrl, target, label) {
+                // Skip if it is already present (e.g. restored from IndexedDB).
+                try {
+                    if (Module.FS.analyzePath(target).exists) {
+                        return Promise.resolve();
+                    }
+                } catch (e) { /* FS not ready yet - fall through and download */ }
+
+                return fetch(sourceUrl).then(function (response) {
+                    if (!response.ok) {
+                        throw new Error('Failed to download ' + label + ': HTTP ' + response.status);
+                    }
+
+                    var total = parseInt(response.headers.get('content-length') || '0', 10);
+
+                    // Prefer streaming so we can report progress; fall back to
+                    // arrayBuffer() when the stream reader is unavailable.
+                    if (!response.body || !response.body.getReader) {
+                        return response.arrayBuffer().then(function (buf) {
+                            Module.FS.writeFile(target, new Uint8Array(buf));
+                        });
+                    }
+
+                    var reader = response.body.getReader();
+                    var chunks = [];
+                    var received = 0;
+
+                    function pump() {
+                        return reader.read().then(function (result) {
+                            if (result.done) {
+                                var data = new Uint8Array(received);
+                                var offset = 0;
+                                for (var i = 0; i < chunks.length; i++) {
+                                    data.set(chunks[i], offset);
+                                    offset += chunks[i].length;
+                                }
+                                Module.FS.writeFile(target, data);
+                                return;
+                            }
+                            chunks.push(result.value);
+                            received += result.value.length;
+                            statusFor(label, received, total);
+                            return pump();
+                        });
+                    }
+
+                    return pump();
+                });
+            }
+
+            function downloadPak(name) {
+                return downloadInto(ASSET_BASE + name, ETMAIN_DIR + '/' + name, name);
+            }
+
+            function downloadMod(name) {
+                // Relative URL: served from the same directory as etl.html.
+                return downloadInto(name, LEGACY_DIR + '/' + name, name);
+            }
+
+            // Persist the etmain data to IndexedDB so subsequent loads are fast.
+            function persist() {
+                return new Promise(function (resolve) {
+                    try {
+                        Module.FS.syncfs(false, function () { resolve(); });
+                    } catch (e) {
+                        resolve();
+                    }
+                });
+            }
+
+            // Mount an IndexedDB-backed filesystem for the etmain directory and
+            // load anything cached from a previous session.
+            function mountCache() {
+                return new Promise(function (resolve) {
+                    try {
+                        Module.FS.mkdirTree(ETMAIN_DIR);
+                        Module.FS.mkdirTree(LEGACY_DIR);
+                        Module.FS.mount(Module.FS.filesystems.IDBFS, {}, ETMAIN_DIR);
+                        Module.FS.syncfs(true, function () { resolve(); });
+                    } catch (e) {
+                        // IDBFS unavailable - fall back to a plain in-memory FS.
+                        try {
+                            Module.FS.mkdirTree(ETMAIN_DIR);
+                            Module.FS.mkdirTree(LEGACY_DIR);
+                        } catch (e2) { /* ignore */ }
+                        resolve();
+                    }
+                });
+            }
+
+            // Run before the engine's main(): block startup until assets exist.
+            Module.preRun = Module.preRun || [];
+            Module.preRun.push(function () {
+                Module.addRunDependency('etl-assets');
+
+                mountCache()
+                    .then(function () {
+                        // etmain retail paks (cross-origin, cached in IndexedDB).
+                        return PAK_FILES.reduce(function (chain, name) {
+                            return chain.then(function () { return downloadPak(name); });
+                        }, Promise.resolve());
+                    })
+                    .then(function () {
+                        // legacy mod side-modules (same-origin).
+                        return MOD_FILES.reduce(function (chain, name) {
+                            return chain.then(function () { return downloadMod(name); });
+                        }, Promise.resolve());
+                    })
+                    .then(persist)
+                    .then(function () {
+                        Module.setStatus('Starting ET: Legacy...');
+                        Module.removeRunDependency('etl-assets');
+                    })
+                    .catch(function (err) {
+                        showError('Could not load game data from ' + ASSET_BASE +
+                            '.\n' + err.message +
+                            '\n\nThe web space must allow cross-origin (CORS) downloads of the paks.');
+                        Module.removeRunDependency('etl-assets');
+                    });
+            });
+        })();
+    </script>
+
     {{{ SCRIPT }}}
 </body>
 </html>

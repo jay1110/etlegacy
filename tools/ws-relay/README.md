@@ -51,6 +51,38 @@ In the ET: Legacy web client, set the relay server address:
 /set net_wsRelayServer "ws://your-relay-server:8080"
 ```
 
+You can also configure everything from the page URL (no console needed). The web
+shell (`src/web/shell.html`) reads these query parameters:
+
+| Parameter | Purpose | Example |
+|-----------|---------|---------|
+| `assets`  | Base URL to download `pak0-2.pk3` from | `?assets=https://et.clan-etc.de/etmain/` |
+| `relay`   | WebSocket relay URL (`net_wsRelayServer`) | `?relay=wss://relay.example.com` |
+| `connect` | Game server `host:port` to auto-join | `?connect=203.0.113.10:27960` |
+
+Full example:
+
+```
+etl.html?relay=wss://relay.example.com&connect=203.0.113.10:27960
+```
+
+## Hosting a game others can join
+
+The browser client **cannot host a server** (browsers have no raw/listening UDP
+sockets). This works exactly like the Quake 3 / QuakeJS web port: the actual
+host is a **native dedicated server**, and browser players reach it through this
+relay.
+
+1. Run a normal native ET: Legacy dedicated server (`etlded`) on a host with a
+   public UDP port (default `27960`).
+2. Run this relay next to it: `npm install && npm start` (see above). Put it
+   behind TLS (`wss://`) if your page is served over HTTPS.
+3. Share a link with the relay and server baked in, e.g.
+   `https://your-page/etl.html?relay=wss://your-relay:8080&connect=<server-ip>:27960`.
+4. Anyone who opens that link downloads the game data, connects through the
+   relay, and joins the server — multiple browser players can join the same
+   server at once (each gets its own UDP socket on the relay side).
+
 ## Deployment
 
 For production use, consider:

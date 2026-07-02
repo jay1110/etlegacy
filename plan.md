@@ -6,16 +6,21 @@ other players can also join).
 
 ## Current state (what already works)
 
-Running `.github/workflows/emscripten.yml` today builds a WebAssembly **client
-shell** only. It produces `etl.html` + `.js` + `.wasm`, but the result is **not
-yet playable**:
+Running `.github/workflows/emscripten.yml` builds a WebAssembly **client** that
+now also builds the client game-logic modules (`cgame`, `ui`) and ships an asset
++ networking bootstrap. Remaining gaps are noted below.
 
-- Client engine compiles/links for wasm (renderer OpenGL1 via gl4es, SDL2 port,
-  WebGL). See `cmake/ETLEmscripten.cmake`.
-- WebSocket networking layer exists (`src/qcommon/net_web.c`) and is wired into
-  the build in place of `net_ip.c` (`cmake/ETLSources.cmake`).
-- A WebSocket-to-UDP relay exists as a tool (`tools/ws-relay/relay.js`).
-- An HTML shell exists (`src/web/shell.html`).
+Concrete decisions taken:
+
+- **Retail assets** (`pak0.pk3`, `pak1.pk3`, `pak2.pk3`) are downloaded at
+  runtime from a web space, default `https://et.clan-etc.de/etmain/` (override
+  with `?assets=<url>`). See `src/web/shell.html`. They are cached in IndexedDB.
+- **Hosting model** (same approach as the Quake 3 / QuakeJS web port): the
+  browser cannot host a server, so a **native dedicated server** is the host and
+  browser clients join it through the **WebSocket->UDP relay** in
+  `tools/ws-relay`. Connect via `?relay=<ws-url>&connect=<host:port>`.
+- **Game modules** are built as Emscripten `SIDE_MODULE`s (`cgame`, `ui`) and
+  loaded by the `MAIN_MODULE` engine via `dlopen`.
 
 ## Why it is not yet playable (gaps)
 
@@ -43,48 +48,46 @@ Legend: `[ ]` = TODO, `[x]` = done.
 
 ### 1. Build the game-logic modules for WebAssembly
 
-- [ ] Decide on the wasm module strategy: Emscripten dynamic linking
+- [x] Decide on the wasm module strategy: Emscripten dynamic linking
       (`MAIN_MODULE` for the engine + `SIDE_MODULE` for each game lib, loaded via
-      `dlopen`). Confirm the duplicate-symbol constraints noted in prior work
-      (llvm-objcopy/wasm-ld cannot localize symbols) are handled by
-      `SIDE_MODULE` isolation.
-- [ ] Add `MAIN_MODULE`/`SIDE_MODULE` (and required `EXPORTED_FUNCTIONS` /
-      `dlopen` support flags) to `cmake/ETLEmscripten.cmake` /
-      `cmake/ETLSetupFeatures.cmake`.
-- [ ] Enable `BUILD_MOD=ON` for the wasm build and make `cgame_mp`, `ui_mp`, and
-      `qagame_mp` compile and link as `SIDE_MODULE` `.wasm` files.
-- [ ] Verify `Sys_LoadGameDll`/`Sys_LoadDll` resolve `dllEntry`/`vmMain` from the
-      wasm side modules at runtime.
+      `dlopen`).
+- [x] Add `MAIN_MODULE` (engine) and `EXPORTED_RUNTIME_METHODS`/`FORCE_FILESYSTEM`
+      to `cmake/ETLEmscripten.cmake`.
+- [x] Enable `BUILD_MOD`/`BUILD_CLIENT_MOD` for the wasm build and build
+      `cgame` + `ui` as `SIDE_MODULE` `.wasm` files with loader-matching names
+      (`cgame.mp.wasm32.wasm`, `ui.mp.wasm32.wasm`) — see `cmake/ETLBuildMod.cmake`.
+- [ ] **Verify with a real emcc build** that the `MAIN_MODULE`/`SIDE_MODULE`
+      link succeeds and that `Sys_LoadGameDll` resolves `dllEntry`/`vmMain` from
+      the side modules at runtime. (Not verifiable in this environment — no emcc.)
 - [ ] Confirm the client reaches the main menu (ui module loads).
 
 ### 2. Package and mount game assets
 
-- [ ] Choose an asset-delivery method: `--preload-file`, lazy `emscripten_fetch`
-      (FETCH is already enabled), or IDBFS + runtime download.
-- [ ] Mount assets at the paths the engine expects
-      (`Sys_SetDefaultInstallPath("/etlegacy")` in `src/sys/sys_main.c`).
-- [ ] Bundle the freely-distributable ET:Legacy paks (`legacy/*.pk3`). Do **not**
-      commit or redistribute the original retail `pak0.pk3`/`pak1.pk3`/`pak2.pk3`
-      (copyrighted) — document that users must supply their own `etmain` data.
-- [ ] Provide a documented mechanism for the user to load their retail `etmain`
-      data into the browser FS (upload or fetch from a URL they control).
-- [ ] Verify a map loads and renders in the browser.
+- [x] Asset-delivery method chosen: runtime `fetch` into the browser FS with
+      IndexedDB (IDBFS) caching — see `src/web/shell.html`.
+- [x] Mount assets at the engine-expected path (`/etlegacy/etmain`,
+      `/etlegacy/legacy`); matches `Sys_SetDefaultInstallPath("/etlegacy")`.
+- [x] Retail `pak0-2.pk3` fetched from a configurable web space (default
+      `https://et.clan-etc.de/etmain/`) instead of being redistributed.
+- [x] Game side-modules fetched same-origin into `/etlegacy/legacy`.
+- [ ] Verify a map loads and renders in the browser (needs emcc build + a live
+      web space that serves the paks with CORS enabled).
 
 ### 3. Server + relay so other players can join
 
-- [ ] Document clearly that hosting happens **outside** the browser: a native
-      (or containerized) `etlded` dedicated server is the actual game host.
-- [ ] Package/document running the WebSocket-to-UDP relay
-      (`tools/ws-relay`) next to the dedicated server, including a
-      `package.json`/lockfile so `npm install` works reproducibly.
-- [ ] Add TLS (`wss://`) guidance/config so the relay works from HTTPS-hosted
-      pages (browsers block `ws://` from `https://`).
-- [ ] Expose a `net_wsRelayServer` cvar UI/entry in `src/web/shell.html` (or the
-      in-game console) so users can point the client at a relay.
+- [x] Document that hosting happens **outside** the browser (native `etlded`)
+      and that browser clients join via the relay — see `tools/ws-relay/README.md`
+      and `plan.md`.
+- [x] Make the WebSocket-to-UDP relay reproducibly runnable: added
+      `tools/ws-relay/package.json` (`npm install` / `npm start`). Smoke-tested
+      that it accepts a WebSocket connection.
+- [x] Expose relay/connect entry points to the client via URL parameters
+      (`?relay=`, `?connect=`) that set `net_wsRelayServer` and `+connect`.
+- [ ] Add TLS (`wss://`) guidance/config so the relay works from HTTPS pages
+      (browsers block `ws://` from `https://`).
 - [ ] End-to-end test: browser client -> relay -> dedicated server connect.
 - [ ] Verify two browser clients can join the same server simultaneously.
-- [ ] (Optional/perf) Investigate WebRTC data channels to reduce TCP/WebSocket
-      latency (noted as future work in `tools/ws-relay/README.md`).
+- [ ] (Optional/perf) Investigate WebRTC data channels to reduce latency.
 
 ### 4. Hosting the "link"
 
@@ -96,15 +99,16 @@ Legend: `[ ]` = TODO, `[x]` = done.
 
 ### 5. Shell / UX
 
-- [ ] Update `src/web/shell.html` with a server/relay connect UI and basic
-      instructions (controls, pointer-lock, audio-enable gesture).
+- [x] Web shell drives asset download + relay/connect via URL parameters
+      (`?assets=`, `?relay=`, `?connect=`) in `src/web/shell.html`.
+- [ ] Add an in-page server/relay connect UI (form) instead of URL-only config.
 - [ ] Handle browser constraints: user-gesture required for audio, pointer lock
       for mouse look, fullscreen toggle.
 
 ### 6. CI / verification
 
-- [ ] Update `emscripten.yml` so the artifact bundle includes the game
-      `SIDE_MODULE` `.wasm` files and any packaged `.data`.
+- [x] `emscripten.yml` builds the client mod (`-DBUILD_MOD=ON`) and its artifact
+      glob (`build-wasm/*.wasm`) now captures the `SIDE_MODULE` `.wasm` files.
 - [ ] Add a smoke test (e.g. headless browser) that boots the wasm client and
       confirms it reaches the main menu without fatal errors.
 - [ ] Document the full local workflow (build, run relay, run dedicated server,

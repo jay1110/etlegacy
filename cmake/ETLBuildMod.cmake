@@ -20,6 +20,27 @@ function(etl_enforce_linux_mod_no_undefined target_name)
 	endif()
 endfunction()
 
+# On Emscripten the game modules are loaded at runtime through dlopen, which
+# requires them to be built as SIDE_MODULEs (the engine is the MAIN_MODULE, see
+# cmake/ETLEmscripten.cmake). The output filename must match what the engine
+# asks for via Sys_GetDLLName(): "<name>.mp." ARCH_STRING DLL_EXT, i.e.
+# "cgame.mp.wasm32.wasm". The modules are emitted next to etl.html so they are
+# uploaded as build artifacts and fetched same-origin by src/web/shell.html.
+function(etl_configure_wasm_side_module target_name base_name)
+	if(EMSCRIPTEN)
+		target_link_options(${target_name} PRIVATE "-sSIDE_MODULE=1")
+		set_target_properties(${target_name} PROPERTIES
+			PREFIX ""
+			SUFFIX ".wasm"
+			OUTPUT_NAME "${base_name}.mp.${ARCH}"
+			LIBRARY_OUTPUT_DIRECTORY ""
+			LIBRARY_OUTPUT_DIRECTORY_DEBUG ""
+			LIBRARY_OUTPUT_DIRECTORY_RELEASE ""
+			LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO ""
+		)
+	endif()
+endfunction()
+
 #
 # cgame
 #
@@ -39,6 +60,7 @@ if(BUILD_CLIENT_MOD)
 		LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO "${MODNAME}"
 	)
 	target_compile_definitions(cgame PRIVATE CGAMEDLL=1 MODLIB=1)
+	etl_configure_wasm_side_module(cgame cgame)
 endif()
 
 #
@@ -60,6 +82,7 @@ if(BUILD_CLIENT_MOD)
 		LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO "${MODNAME}"
 	)
 	target_compile_definitions(ui PRIVATE UIDLL=1 MODLIB=1)
+	etl_configure_wasm_side_module(ui ui)
 endif()
 
 #

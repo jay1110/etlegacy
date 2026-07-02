@@ -52,7 +52,18 @@ set(FEATURE_THEORA OFF CACHE BOOL "Disable Theora for Emscripten" FORCE)
 set(FEATURE_IPV6 OFF CACHE BOOL "Disable IPv6 for Emscripten" FORCE)
 set(FEATURE_FREETYPE OFF CACHE BOOL "Disable Freetype for Emscripten" FORCE)
 set(BUILD_SERVER OFF CACHE BOOL "Disable dedicated server for Emscripten" FORCE)
-set(BUILD_MOD OFF CACHE BOOL "Disable mod building for Emscripten" FORCE)
+# The browser build is a *client*. It cannot host a game server itself (no raw
+# UDP sockets / no listen sockets), so it joins a native dedicated server
+# through the WebSocket->UDP relay in tools/ws-relay (see src/qcommon/net_web.c).
+# It does however need the client-side game logic modules (cgame + ui); these
+# are built as Emscripten SIDE_MODULEs and loaded at runtime via dlopen (see
+# cmake/ETLBuildMod.cmake and the MAIN_MODULE flag below). The server-side
+# modules (qagame/tvgame) run on the native dedicated server, not in the
+# browser, so only the client mod is built here.
+set(BUILD_MOD ON CACHE BOOL "Build client mod libraries (cgame/ui) for Emscripten" FORCE)
+set(BUILD_CLIENT_MOD ON CACHE BOOL "Build cgame/ui for Emscripten" FORCE)
+set(BUILD_SERVER_MOD OFF CACHE BOOL "Server modules run natively, not in the browser" FORCE)
+set(BUILD_MOD_PK3 OFF CACHE BOOL "Do not pack a mod pk3 for Emscripten" FORCE)
 
 #-----------------------------------------------------------------
 # Emscripten compiler and linker flags
@@ -77,6 +88,15 @@ set(EMSCRIPTEN_LINK_FLAGS
 	"-s ASYNCIFY_STACK_SIZE=65536"
 	"-s GL_UNSAFE_OPTS=0"
 	"-s FORCE_FILESYSTEM=1"
+	# The client loads the game logic (cgame/ui) at runtime via dlopen. On wasm
+	# that requires dynamic linking: the engine is the MAIN_MODULE and the mods
+	# are SIDE_MODULEs (see cmake/ETLBuildMod.cmake). MAIN_MODULE=1 keeps all
+	# symbols so the side modules can resolve engine functions at load time.
+	"-s MAIN_MODULE=1"
+	# Runtime helpers used by the asset bootstrap in src/web/shell.html to fetch
+	# the etmain paks into the virtual filesystem before main() runs.
+	"-s EXPORTED_RUNTIME_METHODS=['FS','callMain','addRunDependency','removeRunDependency','ccall','cwrap']"
+	"-l idbfs.js" # IndexedDB-backed FS so downloaded paks are cached across loads
 	"-lwebsocket.js" # WebSocket API used by src/qcommon/net_web.c
 )
 
