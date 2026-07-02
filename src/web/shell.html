@@ -316,6 +316,9 @@
 
                     if (text === '') {
                         // Loading complete
+                        if (typeof startupWatchdog !== 'undefined') {
+                            clearTimeout(startupWatchdog);
+                        }
                         loadingOverlay.classList.add('hidden');
                         setTimeout(function() {
                             loadingOverlay.style.display = 'none';
@@ -346,6 +349,42 @@
             Module.setStatus('Error');
             showError('An exception was thrown: ' + event);
         };
+
+        // Startup runs largely inside promises (asset/mod fetch, the ASYNCIFY
+        // main loop). A rejected promise does NOT trigger window.onerror, so
+        // without this handler an async failure (e.g. a TextDecoder/WebGL/asset
+        // error) would leave the loading overlay frozen with no visible reason.
+        // Surface it on screen so it is diagnosable instead of a silent hang.
+        window.addEventListener('unhandledrejection', function (e) {
+            var reason = e && e.reason;
+            var msg = (reason && (reason.stack || reason.message)) ||
+                String(reason) || 'Unknown error';
+            Module.setStatus('Error');
+            showError('Startup failed: ' + msg);
+        });
+
+        // Watchdog: if the engine has not started (overlay still visible) after
+        // a generous delay and nothing has errored, tell the user where it is
+        // stuck instead of leaving them staring at a frozen "Loading..." screen.
+        var startupWatchdog = setTimeout(function () {
+            var overlay = document.getElementById('loading-overlay');
+            var errorOverlay = document.getElementById('error-overlay');
+            if (overlay && !overlay.classList.contains('hidden') &&
+                errorOverlay && errorOverlay.style.display !== 'flex') {
+                var where = (Module.setStatus.last && Module.setStatus.last.text) ||
+                    'initializing';
+                showError('The game is taking unusually long to start ' +
+                    '(stuck at: ' + where + ').\n\n' +
+                    'Open the browser console (F12) for the exact error. ' +
+                    'Common causes:\n' +
+                    '\u2022 etl.wasm or etl.data failed to download (check the ' +
+                    'Network tab \u2013 both must load with HTTP 200 and .wasm ' +
+                    'must be served as application/wasm).\n' +
+                    '\u2022 The retail paks (pak0-2.pk3) could not be fetched ' +
+                    'from the etmain/ folder next to etl.html.\n' +
+                    '\u2022 WebGL is unavailable or disabled in this browser.');
+            }
+        }, 60000);
 
         function showError(message) {
             var overlay = document.getElementById('error-overlay');
