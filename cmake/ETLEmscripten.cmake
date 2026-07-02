@@ -31,6 +31,11 @@ set(FEATURE_RENDERER_GLES OFF CACHE BOOL "Disable GLES renderer for Emscripten" 
 # object files reference GLX/WGL entry points (glXGetProcAddressARB, ...) that
 # cannot be linked in a WebAssembly build.
 set(BUNDLED_GLEW OFF CACHE BOOL "Use Emscripten's built-in GLEW for Emscripten" FORCE)
+# Emscripten ships its own WebGL-backed SDL2 (linked via -s USE_SDL=2, set in the
+# linker flags below). Building the bundled desktop SDL2 is both redundant and
+# incompatible with the browser target, so disable it and rely on the port for
+# the SDL2 headers and library.
+set(BUNDLED_SDL OFF CACHE BOOL "Use Emscripten's built-in SDL2 for Emscripten" FORCE)
 set(FEATURE_IRC_CLIENT OFF CACHE BOOL "Disable IRC for Emscripten" FORCE)
 set(FEATURE_IRC_SERVER OFF CACHE BOOL "Disable IRC server for Emscripten" FORCE)
 set(FEATURE_AUTOUPDATE OFF CACHE BOOL "Disable autoupdate for Emscripten" FORCE)
