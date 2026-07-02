@@ -55,6 +55,21 @@ static int gammaResetTime = 0;
 #endif
 #endif // __APPLE__
 
+#ifdef FEATURE_GL4ES
+// gl4es (desktop GL over GLES2/WebGL, see cmake/ETLGl4es.cmake) is linked as a
+// static library and must be initialised explicitly once a GL context exists:
+// its GLES loader needs a proc-address resolver and its hardware probe needs a
+// current context. Prototypes from gl4es' include/gl4esinit.h, declared here so
+// the client does not need the gl4es include path.
+extern void set_getprocaddress(void *(*new_proc_address)(const char *));
+extern void initialize_gl4es(void);
+
+static void *GLimp_GL4ES_GetProcAddress(const char *name)
+{
+	return SDL_GL_GetProcAddress(name);
+}
+#endif
+
 static int GLimp_CompareModes(const void *a, const void *b);
 
 SDL_Window           *main_window  = NULL;
@@ -1051,6 +1066,15 @@ static int GLimp_SetMode(glconfig_t *glConfig, int mode, qboolean fullscreen, qb
 		{
 			Com_Printf("SDL_GL_MakeCurrent failed: %s\n", SDL_GetError());
 		}
+
+#ifdef FEATURE_GL4ES
+		// Initialise gl4es against the freshly created (WebGL) context so its
+		// hardware probe sees the real GLES2 capabilities. Without this the
+		// wrapper stays unconfigured (empty GL_VERSION, zeroed limits) and the
+		// renderer crashes on the first translated GL call.
+		set_getprocaddress(GLimp_GL4ES_GetProcAddress);
+		initialize_gl4es();
+#endif
 
 		if (SDL_GL_SetSwapInterval(r_swapInterval->integer) == -1)
 		{
