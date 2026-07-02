@@ -42,7 +42,30 @@ if(BUILD_CLIENT)
 	if(FEATURE_RENDERER1 OR FEATURE_RENDERER2 OR FEATURE_RENDERER_VULKAN)
 		# ghost target to link all opengl renderer libraries
 		add_library(opengl_renderer_libs INTERFACE)
-		if(NOT BUNDLED_GLEW)
+		if(EMSCRIPTEN AND FEATURE_GL4ES)
+			# gl4es (https://github.com/ptitSeb/gl4es) implements the desktop
+			# GL 1.x/2.x API on top of GLES2/WebGL, replacing both the desktop
+			# GLEW loader and Emscripten's -sLEGACY_GL_EMULATION path. It also
+			# supplies the legacy GL entry points that tr_gl_emscripten.c would
+			# otherwise stub, so that shim is excluded from the build (see
+			# ETLSources.cmake). A small <GL/glew.h> compat header
+			# (src/renderercommon/gl4es_compat) satisfies the renderer's GLEW
+			# symbol usage and is placed on the include path ahead of the gl4es
+			# headers.
+			target_link_libraries(opengl_renderer_libs INTERFACE bundled_gl4es_int)
+			target_include_directories(opengl_renderer_libs INTERFACE
+				"${CMAKE_SOURCE_DIR}/src/renderercommon/gl4es_compat")
+			target_compile_definitions(opengl_renderer_libs INTERFACE FEATURE_GL4ES)
+		elseif(EMSCRIPTEN)
+			# Emscripten ships its own WebGL-backed GLEW emulation. The bundled
+			# desktop GLEW cannot be used in the browser because it resolves GL
+			# entry points through GLX/WGL (glXGetProcAddressARB, ...), which do
+			# not exist in a WASM environment. Link Emscripten's GLEW port and use
+			# its <GL/glew.h>; the remaining legacy desktop GL entry points that
+			# the OpenGL 1.x renderer references are provided by
+			# src/renderer/tr_gl_emscripten.c.
+			target_link_libraries(opengl_renderer_libs INTERFACE "-lGLEW")
+		elseif(NOT BUNDLED_GLEW)
 			find_package(GLEW REQUIRED)
 			target_link_libraries(opengl_renderer_libs INTERFACE ${GLEW_LIBRARY})
 			target_include_directories(opengl_renderer_libs INTERFACE ${GLEW_INCLUDE_PATH})
@@ -51,21 +74,27 @@ if(BUILD_CLIENT)
 			target_compile_definitions(opengl_renderer_libs INTERFACE BUNDLED_GLEW)
 		endif()
 
-		# On 2.77 release the default usage of GLVND just caused issues as
-		# libOpenGL was not installed on systems by default
-		# cmake_policy(SET CMP0072 NEW) # use GLVND by default
-		# Revert to using legacy libraries if available for now
-		# FIXME: recheck before a new release
-		if(CLIENT_GLVND)
-			message(STATUS "Using GLVND instead of legacy GL library")
-			set(OpenGL_GL_PREFERENCE GLVND)
-		else()
-			message(STATUS "Using legacy OpenGL instead of GLVND")
-			set(OpenGL_GL_PREFERENCE LEGACY)
-		endif ()
-		find_package(OpenGL REQUIRED COMPONENTS OpenGL)
-		target_link_libraries(opengl_renderer_libs INTERFACE OpenGL::GL)
-		target_include_directories(opengl_renderer_libs INTERFACE ${OPENGL_INCLUDE_DIR})
+		# Emscripten provides OpenGL/WebGL through its own JS-backed GL library
+		# (linked automatically by emcc, together with -lGLEW above), so there is
+		# no system OpenGL package to find and no OpenGL::GL imported target. Only
+		# run find_package(OpenGL) for native targets.
+		if(NOT EMSCRIPTEN)
+			# On 2.77 release the default usage of GLVND just caused issues as
+			# libOpenGL was not installed on systems by default
+			# cmake_policy(SET CMP0072 NEW) # use GLVND by default
+			# Revert to using legacy libraries if available for now
+			# FIXME: recheck before a new release
+			if(CLIENT_GLVND)
+				message(STATUS "Using GLVND instead of legacy GL library")
+				set(OpenGL_GL_PREFERENCE GLVND)
+			else()
+				message(STATUS "Using legacy OpenGL instead of GLVND")
+				set(OpenGL_GL_PREFERENCE LEGACY)
+			endif ()
+			find_package(OpenGL REQUIRED COMPONENTS OpenGL)
+			target_link_libraries(opengl_renderer_libs INTERFACE OpenGL::GL)
+			target_include_directories(opengl_renderer_libs INTERFACE ${OPENGL_INCLUDE_DIR})
+		endif()
 
 		target_link_libraries(renderer_gl1_libraries INTERFACE opengl_renderer_libs)
 		target_link_libraries(renderer_gl2_libraries INTERFACE opengl_renderer_libs)

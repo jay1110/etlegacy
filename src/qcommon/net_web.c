@@ -381,16 +381,6 @@ const char *NET_AdrToString(const netadr_t *a)
 
 /*
 ====================
-NET_StringToAdr
-====================
-*/
-int NET_StringToAdr(const char *s, netadr_t *a, netadrtype_t family)
-{
-	return Sys_StringToAdr(s, a, family);
-}
-
-/*
-====================
 Sys_StringToAdr
 ====================
 */

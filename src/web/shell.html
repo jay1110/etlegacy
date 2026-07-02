@@ -208,6 +208,7 @@
         </div>
         <div id="progress-text">Loading...</div>
         <div id="status-text"></div>
+        <div id="build-marker" style="margin-top:24px;font-size:12px;color:#6c6c8a;">shell build: 2026-07-02-D</div>
     </div>
 
     <!-- Error overlay -->
@@ -239,6 +240,52 @@
     <div id="console-panel"></div>
 
     <script>
+        // --- Firefox resizable-ArrayBuffer / TextDecoder workaround ----------
+        // Built with ALLOW_MEMORY_GROWTH, the growable WebAssembly.Memory is
+        // backed by a *resizable* ArrayBuffer in browsers such as Firefox.
+        // Firefox's TextDecoder.decode() rejects any ArrayBuffer(View) whose
+        // backing buffer is resizable/growable and throws:
+        //   "TextDecoder.decode: ArrayBufferView branch of (ArrayBufferView or
+        //    ArrayBuffer) can't be a resizable ArrayBuffer or ArrayBufferView".
+        // Emscripten's UTF8ArrayToString() decodes a subarray of the heap, so
+        // the first filesystem syscall (mkdirat -> getStr -> UTF8ToString)
+        // aborts startup. Copy such inputs into a plain, fixed-size buffer
+        // before decoding so the string helpers work on every browser. This
+        // must run before etl.js (injected via {{{ SCRIPT }}} below) loads.
+        (function () {
+            if (typeof TextDecoder === 'undefined') return;
+            var proto = TextDecoder.prototype;
+            var originalDecode = proto.decode;
+            proto.decode = function (input, options) {
+                if (input && typeof input === 'object') {
+                    var buf = (input instanceof ArrayBuffer) ? input : input.buffer;
+                    if (buf && (buf.resizable || buf.growable)) {
+                        // Copy into a fixed-size buffer. ArrayBuffer and typed
+                        // arrays expose slice(); a DataView does not, so fall
+                        // back to copying its underlying bytes explicitly.
+                        if (typeof input.slice === 'function') {
+                            input = input.slice();
+                        } else if (input.buffer) {
+                            input = new Uint8Array(input.buffer.slice(
+                                input.byteOffset,
+                                input.byteOffset + input.byteLength));
+                        }
+                    }
+                }
+                return originalDecode.call(this, input, options);
+            };
+        })();
+
+        // Keep the most recent engine log/error lines so a fatal error can be
+        // shown on screen. Users may not have the dev console (F12) open, so
+        // this is the only way many will ever see the real failure reason.
+        var recentLog = [];
+        function recordLog(text) {
+            if (!text) return;
+            recentLog.push(String(text));
+            if (recentLog.length > 12) recentLog.shift();
+        }
+
         // Module configuration for Emscripten
         var Module = {
             canvas: (function() {
@@ -256,6 +303,7 @@
             printErr: function(text) {
                 if (text) {
                     console.error(text);
+                    recordLog(text);
                     appendConsole('[ERR] ' + text);
                 }
             },
@@ -288,6 +336,9 @@
 
                     if (text === '') {
                         // Loading complete
+                        if (typeof startupWatchdog !== 'undefined') {
+                            clearTimeout(startupWatchdog);
+                        }
                         loadingOverlay.classList.add('hidden');
                         setTimeout(function() {
                             loadingOverlay.style.display = 'none';
@@ -319,11 +370,53 @@
             showError('An exception was thrown: ' + event);
         };
 
+        // Startup runs largely inside promises (asset/mod fetch, the ASYNCIFY
+        // main loop). A rejected promise does NOT trigger window.onerror, so
+        // without this handler an async failure (e.g. a TextDecoder/WebGL/asset
+        // error) would leave the loading overlay frozen with no visible reason.
+        // Surface it on screen so it is diagnosable instead of a silent hang.
+        window.addEventListener('unhandledrejection', function (e) {
+            var reason = e && e.reason;
+            var msg = (reason && (reason.stack || reason.message)) ||
+                String(reason) || 'Unknown error';
+            Module.setStatus('Error');
+            showError('Startup failed: ' + msg);
+        });
+
+        // Watchdog: if the engine has not started (overlay still visible) after
+        // a generous delay and nothing has errored, tell the user where it is
+        // stuck instead of leaving them staring at a frozen "Loading..." screen.
+        var startupWatchdog = setTimeout(function () {
+            var overlay = document.getElementById('loading-overlay');
+            var errorOverlay = document.getElementById('error-overlay');
+            if (overlay && !overlay.classList.contains('hidden') &&
+                errorOverlay && errorOverlay.style.display !== 'flex') {
+                var where = (Module.setStatus.last && Module.setStatus.last.text) ||
+                    'initializing';
+                showError('The game is taking unusually long to start ' +
+                    '(stuck at: ' + where + ').\n\n' +
+                    'Open the browser console (F12) for the exact error. ' +
+                    'Common causes:\n' +
+                    '\u2022 etl.wasm or etl.data failed to download (check the ' +
+                    'Network tab \u2013 both must load with HTTP 200 and .wasm ' +
+                    'must be served as application/wasm).\n' +
+                    '\u2022 The retail paks (pak0-2.pk3) could not be fetched ' +
+                    'from the etmain/ folder next to etl.html.\n' +
+                    '\u2022 WebGL is unavailable or disabled in this browser.');
+            }
+        }, 25000);
+
         function showError(message) {
             var overlay = document.getElementById('error-overlay');
             var text = document.getElementById('error-text');
             overlay.style.display = 'flex';
-            text.textContent = message;
+            var full = message;
+            if (recentLog.length) {
+                full += '\n\nLast engine messages:\n' + recentLog.slice(-8).join('\n');
+            }
+            text.style.whiteSpace = 'pre-wrap';
+            text.style.textAlign = 'left';
+            text.textContent = full;
         }
 
         // Fullscreen support
@@ -392,6 +485,243 @@
                 controlsBar.style.opacity = '1';
             }
         });
+    </script>
+
+    <!--
+        ET: Legacy asset + networking bootstrap
+        ----------------------------------------
+        A browser build ships no game data and cannot open raw UDP sockets, so
+        before the engine starts we:
+          1. Download the etmain paks (pak0-2.pk3) into the in-browser
+             filesystem (cached in IndexedDB so they are fetched once). By
+             default they are loaded same-origin (from an "etmain/" folder next
+             to this page) so no CORS configuration is required.
+          2. Optionally point the client at a WebSocket->UDP relay and auto-join
+             a server, driven by URL query parameters:
+               ?assets=<base-url>   override where the paks are downloaded from.
+                                    A cross-origin URL requires the web space to
+                                    allow CORS downloads of the paks.
+               ?relay=<ws-url>      WebSocket relay (see tools/ws-relay)
+               ?connect=<host:port> game server to join through the relay
+        Example:
+          etl.html?relay=wss://relay.example.com&connect=203.0.113.10:27960
+    -->
+    <script>
+        (function () {
+            var params = new URLSearchParams(window.location.search);
+
+            // Where to download the retail etmain data from. Defaults to an
+            // "etmain/" folder served next to this page, so the paks are fetched
+            // same-origin (no CORS needed), just like the mod side-modules
+            // below. Override with ?assets=<url>; a cross-origin URL requires
+            // the remote web space to allow CORS downloads of the paks.
+            var ASSET_BASE = params.get('assets');
+            if (ASSET_BASE) {
+                // Normalise a user-supplied override to end in a single slash.
+                if (ASSET_BASE.charAt(ASSET_BASE.length - 1) !== '/') {
+                    ASSET_BASE += '/';
+                }
+            } else {
+                ASSET_BASE = 'etmain/';
+            }
+
+            // True when ASSET_BASE resolves to a different origin than this page,
+            // in which case the remote server must send CORS headers.
+            function assetsAreCrossOrigin() {
+                try {
+                    return new URL(ASSET_BASE, window.location.href).origin !==
+                        window.location.origin;
+                } catch (e) {
+                    return false;
+                }
+            }
+
+            // Retail paks required to run. These are NOT redistributed with
+            // ET: Legacy; they are fetched from ASSET_BASE at runtime.
+            var PAK_FILES = ['pak0.pk3', 'pak1.pk3', 'pak2.pk3'];
+
+            var INSTALL_DIR = '/etlegacy';       // must match Sys_SetDefaultInstallPath()
+            var ETMAIN_DIR = INSTALL_DIR + '/etmain';
+            var LEGACY_DIR = INSTALL_DIR + '/legacy';
+
+            // Game logic side-modules (built by cmake/ETLBuildMod.cmake). They
+            // are baked into the engine filesystem image (etl.data) at build
+            // time and mounted before main() runs, so normally they are already
+            // present in LEGACY_DIR and need no download. As a fallback (e.g. an
+            // older build without the embedded modules) they can also be served
+            // same-origin next to etl.html; a missing module here is therefore
+            // non-fatal - the engine reports a clear error later if one is truly
+            // absent.
+            var MOD_FILES = ['cgame.mp.wasm32.wasm', 'ui.mp.wasm32.wasm'];
+
+            // Build the engine command line from URL parameters.
+            var args = [];
+            var relay = params.get('relay');
+            if (relay) {
+                args.push('+set', 'net_wsRelayServer', relay);
+            }
+            var connect = params.get('connect');
+            if (connect) {
+                args.push('+connect', connect);
+            }
+            Module.arguments = args;
+
+            function statusFor(name, received, total) {
+                if (total) {
+                    Module.setStatus('Downloading ' + name + ' (' + received + '/' + total + ')');
+                } else {
+                    Module.setStatus('Downloading ' + name + ' (' + received + '/' + received + ')');
+                }
+            }
+
+            // Fetch a file with progress reporting and write it to the FS.
+            function downloadInto(sourceUrl, target, label) {
+                // Skip if it is already present (e.g. restored from IndexedDB).
+                try {
+                    if (Module.FS.analyzePath(target).exists) {
+                        return Promise.resolve();
+                    }
+                } catch (e) { /* FS not ready yet - fall through and download */ }
+
+                return fetch(sourceUrl).then(function (response) {
+                    if (!response.ok) {
+                        throw new Error('Failed to download ' + label + ': HTTP ' + response.status);
+                    }
+
+                    var total = parseInt(response.headers.get('content-length') || '0', 10);
+
+                    // Prefer streaming so we can report progress; fall back to
+                    // arrayBuffer() when the stream reader is unavailable.
+                    if (!response.body || !response.body.getReader) {
+                        return response.arrayBuffer().then(function (buf) {
+                            Module.FS.writeFile(target, new Uint8Array(buf));
+                        });
+                    }
+
+                    var reader = response.body.getReader();
+                    var chunks = [];
+                    var received = 0;
+
+                    function pump() {
+                        return reader.read().then(function (result) {
+                            if (result.done) {
+                                var data = new Uint8Array(received);
+                                var offset = 0;
+                                for (var i = 0; i < chunks.length; i++) {
+                                    data.set(chunks[i], offset);
+                                    offset += chunks[i].length;
+                                }
+                                Module.FS.writeFile(target, data);
+                                return;
+                            }
+                            chunks.push(result.value);
+                            received += result.value.length;
+                            statusFor(label, received, total);
+                            return pump();
+                        });
+                    }
+
+                    return pump();
+                });
+            }
+
+            function downloadPak(name) {
+                return downloadInto(ASSET_BASE + name, ETMAIN_DIR + '/' + name, name);
+            }
+
+            function downloadMod(name) {
+                // Relative URL: served from the same directory as etl.html.
+                return downloadInto(name, LEGACY_DIR + '/' + name, name);
+            }
+
+            // Persist the etmain data to IndexedDB so subsequent loads are fast.
+            function persist() {
+                return new Promise(function (resolve) {
+                    try {
+                        Module.FS.syncfs(false, function () { resolve(); });
+                    } catch (e) {
+                        resolve();
+                    }
+                });
+            }
+
+            // Mount an IndexedDB-backed filesystem for the etmain directory and
+            // load anything cached from a previous session.
+            function mountCache() {
+                return new Promise(function (resolve) {
+                    try {
+                        Module.FS.mkdirTree(ETMAIN_DIR);
+                        Module.FS.mkdirTree(LEGACY_DIR);
+                        Module.FS.mount(Module.FS.filesystems.IDBFS, {}, ETMAIN_DIR);
+                        Module.FS.syncfs(true, function () { resolve(); });
+                    } catch (e) {
+                        // IDBFS unavailable - fall back to a plain in-memory FS.
+                        try {
+                            Module.FS.mkdirTree(ETMAIN_DIR);
+                            Module.FS.mkdirTree(LEGACY_DIR);
+                        } catch (e2) { /* ignore */ }
+                        resolve();
+                    }
+                });
+            }
+
+            // Run before the engine's main(): block startup until assets exist.
+            Module.preRun = Module.preRun || [];
+            Module.preRun.push(function () {
+                Module.addRunDependency('etl-assets');
+
+                mountCache()
+                    .then(function () {
+                        // etmain retail paks (same-origin by default, cached in
+                        // IndexedDB; may be cross-origin via ?assets=).
+                        return PAK_FILES.reduce(function (chain, name) {
+                            return chain.then(function () { return downloadPak(name); });
+                        }, Promise.resolve());
+                    })
+                    .then(function () {
+                        // legacy mod side-modules. These are normally already
+                        // present in LEGACY_DIR (embedded in etl.data), so
+                        // downloadMod() skips them. When they are not embedded we
+                        // try to fetch them same-origin, but a failure here is
+                        // non-fatal: swallow it so a missing/served-elsewhere
+                        // module does not abort startup. The engine still emits a
+                        // clear error later if a required module is truly absent.
+                        return MOD_FILES.reduce(function (chain, name) {
+                            return chain.then(function () {
+                                return downloadMod(name).catch(function (err) {
+                                    if (console && console.warn) {
+                                        console.warn('Optional module ' + name +
+                                            ' not fetched: ' + err.message +
+                                            ' (expected when embedded in etl.data)');
+                                    }
+                                });
+                            });
+                        }, Promise.resolve());
+                    })
+                    .then(persist)
+                    .then(function () {
+                        Module.setStatus('Starting ET: Legacy...');
+                        Module.removeRunDependency('etl-assets');
+                    })
+                    .catch(function (err) {
+                        // Only the retail paks reach here as fatal errors.
+                        var msg = 'Could not load game data from ' + ASSET_BASE +
+                            '.\n' + err.message;
+                        if (assetsAreCrossOrigin()) {
+                            msg += '\n\nThe web space must allow cross-origin ' +
+                                '(CORS) downloads of the paks, or host ' +
+                                'pak0-2.pk3 next to this page.';
+                        } else {
+                            msg += '\n\nMake sure pak0.pk3, pak1.pk3 and ' +
+                                'pak2.pk3 are present in the "' +
+                                ASSET_BASE.replace(/\/$/, '') +
+                                '" folder next to this page.';
+                        }
+                        showError(msg);
+                        Module.removeRunDependency('etl-assets');
+                    });
+            });
+        })();
     </script>
 
     {{{ SCRIPT }}}

@@ -36,6 +36,7 @@
 #include <errno.h>
 #include <time.h>
 #include <math.h>
+#include <libgen.h>
 
 #ifndef DEDICATED
 #include "../sdl/sdl_defs.h"
@@ -206,16 +207,6 @@ qboolean Sys_PIDIsRunning(unsigned int pid)
 void Sys_ErrorDialog(const char *error)
 {
 	Sys_Dialog(DT_ERROR, error, "Error");
-}
-
-/**
- * @brief Sys_AnsiColorPrint - Print with ANSI color codes (no-op for web)
- * @param[in] msg Message to print
- */
-void Sys_AnsiColorPrint(const char *msg)
-{
-	// In the browser, we just print directly to console
-	fputs(msg, stderr);
 }
 
 /**
@@ -528,20 +519,6 @@ void CON_Print(const char *msg)
 }
 
 /**
- * @brief Sys_GetDLLName - Return the DLL name for a module (stub for Emscripten)
- * @param[in] name Module base name
- * @return Formatted name (unused in Emscripten since modules are statically linked)
- */
-const char *Sys_GetDLLName(const char *name)
-{
-	static char dllName[MAX_OSPATH];
-
-	Com_sprintf(dllName, sizeof(dllName), "%s.wasm", name);
-
-	return dllName;
-}
-
-/**
  * @brief Sys_DllExtension - Check if a filename has a valid DLL extension
  * @param[in] name Filename to check
  * @return qtrue if the extension is valid
@@ -561,6 +538,81 @@ qboolean Sys_DllExtension(const char *name)
 	}
 
 	return qfalse;
+}
+
+/**
+ * @brief Sys_RandomBytes - Fill a buffer with random bytes
+ * @param[out] bytes Destination buffer
+ * @param[in] len Number of bytes to write
+ * @return qtrue on success
+ *
+ * Emscripten backs /dev/urandom with the browser's crypto.getRandomValues().
+ */
+qboolean Sys_RandomBytes(void *bytes, int len)
+{
+	FILE *fp;
+
+	fp = fopen("/dev/urandom", "r");
+	if (!fp)
+	{
+		return qfalse;
+	}
+
+	setvbuf(fp, NULL, _IONBF, 0); // don't buffer reads from /dev/urandom
+
+	if (fread(bytes, sizeof(byte), len, fp) != len)
+	{
+		fclose(fp);
+		return qfalse;
+	}
+
+	fclose(fp);
+	return qtrue;
+}
+
+/**
+ * @brief Sys_GetCurrentUser - Get current user username
+ * @return username (there is no real user account in the browser)
+ */
+char *Sys_GetCurrentUser(void)
+{
+	return "player";
+}
+
+/**
+ * @brief Sys_LowPhysicalMemory
+ * @return qfalse (memory growth is handled by the browser)
+ */
+qboolean Sys_LowPhysicalMemory(void)
+{
+	return qfalse;
+}
+
+/**
+ * @brief Sys_Dirname - Return the directory portion of a path
+ * @param[in] path
+ * @return pointer to the directory component
+ */
+const char *Sys_Dirname(char *path)
+{
+	return dirname(path);
+}
+
+/**
+ * @brief Sys_OpenURL - Open a URL in a new browser tab
+ * @param[in] url URL to open
+ * @param[in] doexit Unused in the browser environment
+ */
+void Sys_OpenURL(const char *url, qboolean doexit)
+{
+	Com_Printf("Open URL: %s\n", url);
+
+	// window.open() is the browser equivalent of launching an external browser.
+	// The URL is passed as a UTF8 string parameter so it is not interpreted as code.
+	EM_ASM({
+		var target = UTF8ToString($0);
+		window.open(target, '_blank');
+	}, url);
 }
 
 #endif /* __EMSCRIPTEN__ */

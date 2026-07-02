@@ -77,6 +77,7 @@ option(FEATURE_RENDERER1		"Build and use the vanilla renderer (OpenGL 1/2)"		ON)
 option(FEATURE_RENDERER2		"Build and use the extended renderer (OpenGL 3)"		OFF)
 option(FEATURE_RENDERER_GLES	"Build and use OpenGL ES renderer"						OFF)
 option(FEATURE_RENDERER_VULKAN	"Build and use Vulkan renderer"							OFF)
+option(FEATURE_GL4ES			"Use gl4es (desktop GL -> GLES2/WebGL) for the OpenGL1 renderer (Emscripten)"	OFF)
 option(FEATURE_IPV6				"Enable IPv6 networking code"							ON)
 option(FEATURE_IRC_CLIENT		"Enable IRC client client side"							ON)
 option(FEATURE_IRC_SERVER		"Enable IRC client server side"							ON)
@@ -184,6 +185,9 @@ include(cmake/ETLVersion.cmake)
 if(BUNDLED_LIBS)
 	include(cmake/ETLBundledLibs.cmake)
 endif(BUNDLED_LIBS)
+
+# gl4es (desktop GL -> GLES2/WebGL) for the Emscripten browser build
+include(cmake/ETLGl4es.cmake)
 
 # Set up includes and libraries based on feature options
 include(cmake/ETLSetupFeatures.cmake)

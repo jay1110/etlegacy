@@ -19,8 +19,23 @@ set(RENDERER_DYNAMIC OFF CACHE BOOL "Disable dynamic renderer loading for Emscri
 set(FEATURE_OPENAL OFF CACHE BOOL "Disable OpenAL for Emscripten" FORCE)
 set(FEATURE_RENDERER_VULKAN OFF CACHE BOOL "Disable Vulkan for Emscripten" FORCE)
 set(FEATURE_RENDERER2 OFF CACHE BOOL "Disable renderer2 for Emscripten" FORCE)
-set(FEATURE_RENDERER1 OFF CACHE BOOL "Disable renderer1 for Emscripten" FORCE)
-set(FEATURE_RENDERER_GLES ON CACHE BOOL "Enable GLES renderer for Emscripten" FORCE)
+# Use the OpenGL 1.x (fixed-function) renderer and let Emscripten emulate the
+# legacy immediate-mode/matrix-stack GL calls on top of WebGL via
+# -sLEGACY_GL_EMULATION=1 (see linker flags below). The rendererGLES target
+# still pulls in shared fixed-function code (e.g. src/renderer/tr_flares.c uses
+# glPushMatrix/glMatrixMode), so it cannot link against a pure GLES2 context.
+set(FEATURE_RENDERER1 ON CACHE BOOL "Enable OpenGL1 renderer for Emscripten" FORCE)
+set(FEATURE_RENDERER_GLES OFF CACHE BOOL "Disable GLES renderer for Emscripten" FORCE)
+# Use Emscripten's own WebGL-backed GLEW emulation (linked via -lGLEW in
+# cmake/ETLSetupFeatures.cmake) instead of the bundled desktop GLEW, whose
+# object files reference GLX/WGL entry points (glXGetProcAddressARB, ...) that
+# cannot be linked in a WebAssembly build.
+set(BUNDLED_GLEW OFF CACHE BOOL "Use Emscripten's built-in GLEW for Emscripten" FORCE)
+# Emscripten ships its own WebGL-backed SDL2 (linked via -s USE_SDL=2, set in the
+# linker flags below). Building the bundled desktop SDL2 is both redundant and
+# incompatible with the browser target, so disable it and rely on the port for
+# the SDL2 headers and library.
+set(BUNDLED_SDL OFF CACHE BOOL "Use Emscripten's built-in SDL2 for Emscripten" FORCE)
 set(FEATURE_IRC_CLIENT OFF CACHE BOOL "Disable IRC for Emscripten" FORCE)
 set(FEATURE_IRC_SERVER OFF CACHE BOOL "Disable IRC server for Emscripten" FORCE)
 set(FEATURE_AUTOUPDATE OFF CACHE BOOL "Disable autoupdate for Emscripten" FORCE)
@@ -37,28 +52,62 @@ set(FEATURE_THEORA OFF CACHE BOOL "Disable Theora for Emscripten" FORCE)
 set(FEATURE_IPV6 OFF CACHE BOOL "Disable IPv6 for Emscripten" FORCE)
 set(FEATURE_FREETYPE OFF CACHE BOOL "Disable Freetype for Emscripten" FORCE)
 set(BUILD_SERVER OFF CACHE BOOL "Disable dedicated server for Emscripten" FORCE)
-set(BUILD_MOD OFF CACHE BOOL "Disable mod building for Emscripten" FORCE)
+# The browser build is a *client*. It cannot host a game server itself (no raw
+# UDP sockets / no listen sockets), so it joins a native dedicated server
+# through the WebSocket->UDP relay in tools/ws-relay (see src/qcommon/net_web.c).
+# It does however need the client-side game logic modules (cgame + ui); these
+# are built as Emscripten SIDE_MODULEs and loaded at runtime via dlopen (see
+# cmake/ETLBuildMod.cmake and the MAIN_MODULE flag below). The server-side
+# modules (qagame/tvgame) run on the native dedicated server, not in the
+# browser, so only the client mod is built here.
+set(BUILD_MOD ON CACHE BOOL "Build client mod libraries (cgame/ui) for Emscripten" FORCE)
+set(BUILD_CLIENT_MOD ON CACHE BOOL "Build cgame/ui for Emscripten" FORCE)
+set(BUILD_SERVER_MOD OFF CACHE BOOL "Server modules run natively, not in the browser" FORCE)
+set(BUILD_MOD_PK3 OFF CACHE BOOL "Do not pack a mod pk3 for Emscripten" FORCE)
 
 #-----------------------------------------------------------------
 # Emscripten compiler and linker flags
 #-----------------------------------------------------------------
 # USE_SDL=2: Use Emscripten's built-in SDL2 port
-# FULL_ES2=1: Provide full OpenGL ES 2.0 API (maps to WebGL 1.0)
+# LEGACY_GL_EMULATION=1: Emulate fixed-function/immediate-mode desktop GL
+#   (glBegin/glEnd, glPushMatrix, glMatrixMode, ...) on top of WebGL. The
+#   OpenGL 1.x renderer relies on these, so this is required at link time.
 # ALLOW_MEMORY_GROWTH=1: Allow the WASM heap to grow dynamically
 # WASM=1: Output WebAssembly (not asm.js)
 # ASYNCIFY: Enable async/await support for the main loop
+# FETCH=1: Provide the emscripten_fetch API used by src/qcommon/dl_main_web.c
 # INITIAL_MEMORY: Set initial memory allocation
 #-----------------------------------------------------------------
-set(EMSCRIPTEN_COMMON_FLAGS "-s USE_SDL=2 -s FULL_ES2=1")
+set(EMSCRIPTEN_COMMON_FLAGS "-s USE_SDL=2")
 set(EMSCRIPTEN_LINK_FLAGS
 	"-s ALLOW_MEMORY_GROWTH=1"
 	"-s WASM=1"
 	"-s ASYNCIFY"
+	"-s FETCH=1"
 	"-s INITIAL_MEMORY=536870912" # 512 MiB
 	"-s ASYNCIFY_STACK_SIZE=65536"
 	"-s GL_UNSAFE_OPTS=0"
 	"-s FORCE_FILESYSTEM=1"
+	# The client loads the game logic (cgame/ui) at runtime via dlopen. On wasm
+	# that requires dynamic linking: the engine is the MAIN_MODULE and the mods
+	# are SIDE_MODULEs (see cmake/ETLBuildMod.cmake). MAIN_MODULE=1 keeps all
+	# symbols so the side modules can resolve engine functions at load time.
+	"-s MAIN_MODULE=1"
+	# Runtime helpers used by the asset bootstrap in src/web/shell.html to fetch
+	# the etmain paks into the virtual filesystem before main() runs.
+	"-s EXPORTED_RUNTIME_METHODS=['FS','callMain','addRunDependency','removeRunDependency','ccall','cwrap']"
+	"-l idbfs.js" # IndexedDB-backed FS so downloaded paks are cached across loads
+	"-lwebsocket.js" # WebSocket API used by src/qcommon/net_web.c
 )
+
+# LEGACY_GL_EMULATION=1 emulates fixed-function/immediate-mode desktop GL
+# (glBegin/glEnd, glPushMatrix, glMatrixMode, ...) on top of WebGL, which the
+# OpenGL 1.x renderer relies on. When FEATURE_GL4ES is enabled, gl4es provides
+# that translation instead, so Emscripten's emulation must be left off to avoid
+# clashing GL implementations.
+if(NOT FEATURE_GL4ES)
+	list(APPEND EMSCRIPTEN_LINK_FLAGS "-s LEGACY_GL_EMULATION=1")
+endif()
 string(REPLACE ";" " " EMSCRIPTEN_LINK_FLAGS_STR "${EMSCRIPTEN_LINK_FLAGS}")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS}")
@@ -93,4 +142,8 @@ endif()
 message(STATUS "Emscripten configuration complete")
 message(STATUS "  Architecture: ${ARCH}")
 message(STATUS "  Memory: 512MB initial, growable")
-message(STATUS "  Renderer: OpenGL ES (WebGL 1.0)")
+if(FEATURE_GL4ES)
+	message(STATUS "  Renderer: OpenGL 1.x (via gl4es -> GLES2/WebGL)")
+else()
+	message(STATUS "  Renderer: OpenGL 1.x (via WebGL LEGACY_GL_EMULATION)")
+endif()
