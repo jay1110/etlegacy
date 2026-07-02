@@ -208,6 +208,7 @@
         </div>
         <div id="progress-text">Loading...</div>
         <div id="status-text"></div>
+        <div id="build-marker" style="margin-top:24px;font-size:12px;color:#6c6c8a;">shell build: 2026-07-02-D</div>
     </div>
 
     <!-- Error overlay -->
@@ -259,13 +260,31 @@
                 if (input && typeof input === 'object') {
                     var buf = (input instanceof ArrayBuffer) ? input : input.buffer;
                     if (buf && (buf.resizable || buf.growable)) {
-                        // slice() returns a copy backed by a fixed-size buffer.
-                        input = input.slice();
+                        // Copy into a fixed-size buffer. ArrayBuffer and typed
+                        // arrays expose slice(); a DataView does not, so fall
+                        // back to copying its underlying bytes explicitly.
+                        if (typeof input.slice === 'function') {
+                            input = input.slice();
+                        } else if (input.buffer) {
+                            input = new Uint8Array(input.buffer.slice(
+                                input.byteOffset,
+                                input.byteOffset + input.byteLength));
+                        }
                     }
                 }
                 return originalDecode.call(this, input, options);
             };
         })();
+
+        // Keep the most recent engine log/error lines so a fatal error can be
+        // shown on screen. Users may not have the dev console (F12) open, so
+        // this is the only way many will ever see the real failure reason.
+        var recentLog = [];
+        function recordLog(text) {
+            if (!text) return;
+            recentLog.push(String(text));
+            if (recentLog.length > 12) recentLog.shift();
+        }
 
         // Module configuration for Emscripten
         var Module = {
@@ -284,6 +303,7 @@
             printErr: function(text) {
                 if (text) {
                     console.error(text);
+                    recordLog(text);
                     appendConsole('[ERR] ' + text);
                 }
             },
@@ -384,13 +404,19 @@
                     'from the etmain/ folder next to etl.html.\n' +
                     '\u2022 WebGL is unavailable or disabled in this browser.');
             }
-        }, 60000);
+        }, 25000);
 
         function showError(message) {
             var overlay = document.getElementById('error-overlay');
             var text = document.getElementById('error-text');
             overlay.style.display = 'flex';
-            text.textContent = message;
+            var full = message;
+            if (recentLog.length) {
+                full += '\n\nLast engine messages:\n' + recentLog.slice(-8).join('\n');
+            }
+            text.style.whiteSpace = 'pre-wrap';
+            text.style.textAlign = 'left';
+            text.textContent = full;
         }
 
         // Fullscreen support
