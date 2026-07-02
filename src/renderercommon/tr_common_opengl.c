@@ -545,7 +545,12 @@ int RE_InitOpenGlSubsystems(void)
 
 	// ignore GLEW_ERROR_NO_GLX_DISPLAY for now due to GLEW upstream issue
 	// see https://github.com/nigels-com/glew/issues/172
-	if (GLEW_OK != glewResult && glewResult != GLEW_ERROR_NO_GLX_DISPLAY)
+	// GLEW_ERROR_NO_GLX_DISPLAY is only defined on GLX platforms (e.g. Linux/X11)
+	if (GLEW_OK != glewResult
+#ifdef GLEW_ERROR_NO_GLX_DISPLAY
+	    && glewResult != GLEW_ERROR_NO_GLX_DISPLAY
+#endif
+	    )
 	{
 		// glewInit failed, something is seriously wrong
 		Ren_Fatal("GLW_StartOpenGL() - could not load OpenGL subsystem: %s", glewGetErrorString(glewResult));
