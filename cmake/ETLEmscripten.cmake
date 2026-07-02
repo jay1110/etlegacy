@@ -72,7 +72,6 @@ set(EMSCRIPTEN_LINK_FLAGS
 	"-s ALLOW_MEMORY_GROWTH=1"
 	"-s WASM=1"
 	"-s ASYNCIFY"
-	"-s LEGACY_GL_EMULATION=1"
 	"-s FETCH=1"
 	"-s INITIAL_MEMORY=536870912" # 512 MiB
 	"-s ASYNCIFY_STACK_SIZE=65536"
@@ -80,6 +79,15 @@ set(EMSCRIPTEN_LINK_FLAGS
 	"-s FORCE_FILESYSTEM=1"
 	"-lwebsocket.js" # WebSocket API used by src/qcommon/net_web.c
 )
+
+# LEGACY_GL_EMULATION=1 emulates fixed-function/immediate-mode desktop GL
+# (glBegin/glEnd, glPushMatrix, glMatrixMode, ...) on top of WebGL, which the
+# OpenGL 1.x renderer relies on. When FEATURE_GL4ES is enabled, gl4es provides
+# that translation instead, so Emscripten's emulation must be left off to avoid
+# clashing GL implementations.
+if(NOT FEATURE_GL4ES)
+	list(APPEND EMSCRIPTEN_LINK_FLAGS "-s LEGACY_GL_EMULATION=1")
+endif()
 string(REPLACE ";" " " EMSCRIPTEN_LINK_FLAGS_STR "${EMSCRIPTEN_LINK_FLAGS}")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EMSCRIPTEN_COMMON_FLAGS}")

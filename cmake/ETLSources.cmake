@@ -203,6 +203,13 @@ FILE(GLOB RENDERER1_FILES
 	"src/renderer/*.h"
 )
 
+# gl4es supplies the legacy desktop GL entry points that tr_gl_emscripten.c
+# stubs for the Emscripten WebGL/GLEW path. Building both would define the same
+# symbols twice, so drop the shim when gl4es is used.
+if(EMSCRIPTEN AND FEATURE_GL4ES)
+	list(FILTER RENDERER1_FILES EXCLUDE REGEX "tr_gl_emscripten\\.c$")
+endif()
+
 FILE(GLOB RENDERERGLES_FILES
 	"src/rendererGLES/*.c"
 	"src/rendererGLES/*.h"
