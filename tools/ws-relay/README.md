@@ -16,11 +16,14 @@ npm install
 ## Usage
 
 ```bash
-# Start with default settings (port 8080)
+# Start with default settings (port 8080, plain ws://)
 npm start
 
 # Or with custom options
 node relay.js --port 9090 --host 0.0.0.0
+
+# Serve secure wss:// directly (required from HTTPS pages, see below)
+node relay.js --tls-cert /path/cert.pem --tls-key /path/key.pem
 ```
 
 ## How it works
@@ -42,6 +45,44 @@ node relay.js --port 9090 --host 0.0.0.0
 |--------|---------|-------------|
 | `--port` | 8080 | WebSocket listen port |
 | `--host` | 0.0.0.0 | WebSocket listen host |
+| `--tls-cert` | _(none)_ | TLS certificate (PEM); enables `wss://` |
+| `--tls-key` | _(none)_ | TLS private key (PEM); enables `wss://` |
+
+Provide **both** `--tls-cert` and `--tls-key` to accept secure `wss://`
+connections. With neither, the relay serves plain `ws://`.
+
+## Secure `wss://` from HTTPS pages
+
+Browsers refuse to open an insecure `ws://` socket from a page served over
+`https://` (mixed-content blocking). Any HTTPS-hosted client — including the
+GitHub Pages deploy produced by `.github/workflows/emscripten.yml` — therefore
+needs the relay reachable over `wss://`. There are two ways to do this:
+
+**A. Terminate TLS in the relay** (simplest for a single host):
+
+```bash
+node relay.js --port 8443 --tls-cert /etc/letsencrypt/live/EXAMPLE/fullchain.pem \
+                          --tls-key  /etc/letsencrypt/live/EXAMPLE/privkey.pem
+```
+
+Then point the client at `?relay=wss://your-host:8443`.
+
+**B. Terminate TLS in a reverse proxy** (nginx) and keep the relay on plain
+`ws://` behind it:
+
+```nginx
+location /relay/ {
+    proxy_pass http://127.0.0.1:8080/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+```
+
+Then point the client at `?relay=wss://your-host/relay`.
+
+Use a certificate trusted by browsers (e.g. Let's Encrypt); self-signed
+certificates are rejected unless manually trusted.
 
 ## Client Configuration
 
