@@ -53,9 +53,11 @@ const MIME = {
 const server = http.createServer((req, res) => {
     const root = path.resolve(dir);
     const urlPath = decodeURIComponent(req.url.split('?')[0]);
-    const rel = urlPath === '/' ? '/index.html' : urlPath;
-    const filePath = path.resolve(root, '.' + path.normalize(rel));
-    if (filePath !== root && !filePath.startsWith(root + path.sep)) {
+    const rel = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
+    const filePath = path.resolve(root, rel);
+    // Confine the resolved path to the served root (block path traversal).
+    const relative = path.relative(root, filePath);
+    if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
         res.writeHead(403).end();
         return;
     }
