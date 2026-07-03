@@ -844,9 +844,10 @@ static void *Sys_TryLibraryLoad(const char *base, const char *gamedir, const cha
 	// filesystem-absolute path is then resolved against the page origin, which
 	// yields an invalid URL (e.g. "https://host//home/web_user/.etlegacy/legacy/
 	// ui.mp.wasm32.so"), a spurious 404 and a browser source-map error. Only
-	// the module baked into the engine's filesystem image (etl.data) can
-	// actually be loaded, so skip candidates that do not exist to avoid that
-	// misleading network request and let the search continue to the next path.
+	// a module already present on the virtual filesystem (extracted from the
+	// downloaded legacy pk3 into fs_homepath) can actually be loaded, so skip
+	// candidates that do not exist to avoid that misleading network request and
+	// let the search continue to the next path.
 	if (access(fn, F_OK) != 0)
 	{
 		Com_Printf("skipped (not present in virtual filesystem)\n");
