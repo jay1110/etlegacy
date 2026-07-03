@@ -172,6 +172,18 @@ jobs:
                  ?connect=<host:port>  game server to join through the relay
           EOF
           (cd dist && zip -9 -r etlegacy-web.zip etlegacy-web)
+          # GitHub Pages (actions/deploy-pages) serves the artifact verbatim, but
+          # add .nojekyll so no file is ever dropped by Jekyll processing.
+          touch dist/etlegacy-web/.nojekyll
+
+      - name: Smoke test - packaged build structure
+        run: node tools/web-smoke/verify-dist.mjs dist/etlegacy-web
+
+      - name: Smoke test - headless browser boot
+        run: |
+          npm --prefix tools/web-smoke install --no-audit --no-fund
+          (cd tools/web-smoke && npx playwright install --with-deps chromium)
+          node tools/web-smoke/boot-smoke.mjs dist/etlegacy-web 90000
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -180,6 +192,19 @@ jobs:
           path: dist/etlegacy-web.zip
           if-no-files-found: error
 
+      # Publish the built web client to GitHub Pages from the default branch.
+      # Note: the retail paks are NOT deployed (they may not be redistributed),
+      # so the published page serves the engine + mod only; players supply the
+      # paks by hosting an etmain/ folder next to the page or via ?assets=.
+      # The build uses no wasm threads/SharedArrayBuffer, so no COOP/COEP
+      # cross-origin-isolation headers are required (GitHub Pages cannot set
+      # custom headers anyway); .wasm is served as application/wasm by Pages.
+      - name: Upload GitHub Pages artifact
+        if: github.ref_name == github.event.repository.default_branch
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/etlegacy-web
+
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         env:
@@ -187,3 +212,21 @@ jobs:
         run: |
           gh release upload "${GITHUB_REF_NAME}" dist/etlegacy-web.zip --clobber --repo "${GITHUB_REPOSITORY}" \
             || gh release create "${GITHUB_REF_NAME}" dist/etlegacy-web.zip --title "${GITHUB_REF_NAME}" --generate-notes --repo "${GITHUB_REPOSITORY}"
+
+  # Deploy the packaged web client to GitHub Pages (default branch only).
+  # Requires Pages to be enabled for the repository with "GitHub Actions" as the
+  # source (Settings -> Pages).
+  deploy-pages:
+    needs: wasm-build
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

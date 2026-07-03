@@ -6,6 +6,9 @@ A lightweight Node.js relay server that bridges WebSocket connections from brows
 
 Web browsers cannot send raw UDP packets. ET: Legacy game servers communicate via UDP. This relay server accepts WebSocket connections from the browser client and forwards the packets to/from the game server over UDP.
 
+> For the full end-to-end web workflow (build the client, supply game data, run
+> a server, run this relay, open the page), see [`docs/web.md`](../../docs/web.md).
+
 ## Installation
 
 ```bash
