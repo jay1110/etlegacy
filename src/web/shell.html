@@ -36,6 +36,15 @@
         canvas#canvas {
             display: block;
             background-color: #000;
+            /* Let the engine's SDL touch handling receive raw touch events:
+               without touch-action:none mobile browsers consume touches for
+               scrolling/zooming (and synthesize a 300ms delayed click) instead
+               of forwarding them as SDL finger events (see sdl_input.c). */
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
         }
 
         #loading-overlay {
@@ -208,7 +217,7 @@
         </div>
         <div id="progress-text">Loading...</div>
         <div id="status-text"></div>
-        <div id="build-marker" style="margin-top:24px;font-size:12px;color:#6c6c8a;">shell build: 2026-07-02-D</div>
+        <div id="build-marker" style="margin-top:24px;font-size:12px;color:#6c6c8a;">shell build: 2026-07-03-A</div>
     </div>
 
     <!-- Error overlay -->
@@ -277,6 +286,84 @@
                 }
                 return originalDecode.call(this, input, options);
             };
+        })();
+
+        // --- Web Audio background suspend / autoplay unlock -----------------
+        // The engine's audio backend (SDL2 / OpenAL on Emscripten) drives a Web
+        // Audio AudioContext. Two browser behaviours need handling from the page
+        // that hosts the canvas:
+        //   1. Autoplay policy: an AudioContext starts 'suspended' until a user
+        //      gesture resumes it, so sound is silent until the first click/key.
+        //   2. Background tabs: a hidden tab keeps its AudioContext running, so
+        //      the game would keep playing sound while not visible.
+        // Patch the AudioContext constructor (before etl.js creates any context)
+        // to track every instance, resume them on the first user gesture, and
+        // suspend/resume them together with page visibility. All of this is
+        // additive and guarded, so it is a no-op when no context ever exists.
+        (function () {
+            var Ctx = window.AudioContext || window.webkitAudioContext;
+            if (typeof Ctx !== 'function') return;
+
+            var contexts = [];
+            function track(ctx) {
+                if (ctx && contexts.indexOf(ctx) === -1) {
+                    contexts.push(ctx);
+                }
+                return ctx;
+            }
+            function resumeAll() {
+                for (var i = 0; i < contexts.length; i++) {
+                    var c = contexts[i];
+                    if (c && c.state === 'suspended' && c.resume) {
+                        // resume() may reject before the first gesture; ignore.
+                        try { c.resume().catch(function () {}); } catch (e) {}
+                    }
+                }
+            }
+            function suspendAll() {
+                for (var i = 0; i < contexts.length; i++) {
+                    var c = contexts[i];
+                    if (c && c.state === 'running' && c.suspend) {
+                        try { c.suspend().catch(function () {}); } catch (e) {}
+                    }
+                }
+            }
+
+            // Wrap the constructor so every context the engine creates is
+            // tracked. Preserve prototype/statics so nothing else breaks.
+            function TrackedAudioContext() {
+                var ctx = new (Function.prototype.bind.apply(
+                    Ctx, [null].concat([].slice.call(arguments))))();
+                return track(ctx);
+            }
+            TrackedAudioContext.prototype = Ctx.prototype;
+            window.AudioContext = TrackedAudioContext;
+            if (window.webkitAudioContext) {
+                window.webkitAudioContext = TrackedAudioContext;
+            }
+
+            // Resume on the first user gesture (autoplay unlock). Emscripten
+            // also does this for its own contexts, but tracking here covers any
+            // context and is harmless if already running.
+            var unlockEvents = ['pointerdown', 'keydown', 'touchstart'];
+            function unlock() {
+                resumeAll();
+                for (var i = 0; i < unlockEvents.length; i++) {
+                    window.removeEventListener(unlockEvents[i], unlock, true);
+                }
+            }
+            for (var i = 0; i < unlockEvents.length; i++) {
+                window.addEventListener(unlockEvents[i], unlock, true);
+            }
+
+            // Mute while the tab is hidden; restore when visible again.
+            document.addEventListener('visibilitychange', function () {
+                if (document.hidden) {
+                    suspendAll();
+                } else {
+                    resumeAll();
+                }
+            });
         })();
 
         // Keep the most recent engine log/error lines so a fatal error can be
