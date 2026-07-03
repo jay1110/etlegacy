@@ -843,9 +843,11 @@ static void *Sys_TryLibraryLoad(const char *base, const char *gamedir, const cha
 	// whenever the requested path is not present on the virtual filesystem. The
 	// filesystem-absolute path is then resolved against the page origin, which
 	// yields an invalid URL (e.g. "https://host//home/web_user/.etlegacy/legacy/
-	// ui.mp.wasm32.so"), a spurious 404 and a browser source-map error. Only
-	// a module already present on the virtual filesystem (extracted from the
-	// downloaded legacy pk3 into fs_homepath) can actually be loaded, so skip
+	// ui.mp.wasm32.so"), a spurious 404 and a browser source-map error. Only a
+	// module already present on the virtual filesystem can actually be loaded -
+	// the shell precompiles the cgame/ui side modules into fs_basepath/legacy
+	// (FS.createPreloadedFile, see src/web/shell.html) and the engine may also
+	// extract them from the downloaded legacy pk3 into fs_homepath. Skip
 	// candidates that do not exist to avoid that misleading network request and
 	// let the search continue to the next path.
 	if (access(fn, F_OK) != 0)

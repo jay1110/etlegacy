@@ -120,13 +120,17 @@ jobs:
             cp build-wasm/etmain/ui/version_generated.h legacy-stage/ui/version_generated.h
           fi
           (cd legacy-stage && zip -9 -r -X "../dist/etlegacy-web/legacy/${PK3_NAME}" . >/dev/null)
-          # Standalone copies of the game logic side modules: the same-origin
-          # fallback the shell uses when the pk3 cannot be fetched.
+          # Standalone copies of the game logic side modules. The shell preloads
+          # (fetches + precompiles) these so the engine's dlopen() can load them;
+          # a side module cannot be dlopen()ed straight out of the pk3 on wasm
+          # (it must go through Emscripten's wasm preload plugin first), so these
+          # standalone .so files are required, not just a fallback.
           for so in cgame.mp.wasm32.so ui.mp.wasm32.so; do
             if [ -f "build-wasm/${so}" ]; then
               cp "build-wasm/${so}" dist/etlegacy-web/legacy/
             else
-              echo "WARNING: fallback side module build-wasm/${so} not found; skipping" >&2
+              echo "ERROR: required side module build-wasm/${so} not found" >&2
+              exit 1
             fi
           done
           # Placeholder for the retail assets the user must supply
@@ -146,7 +150,9 @@ jobs:
             etl.js                 - engine JavaScript loader
             etl.wasm               - engine WebAssembly binary
             legacy/                - ET: Legacy mod pk3 (cgame/ui + ui menus)
-                                     plus fallback copies of the cgame/ui modules
+                                     plus the standalone cgame/ui side modules
+                                     (required; the engine loads its game logic
+                                     from these)
             etmain/                - put pak0.pk3, pak1.pk3, pak2.pk3 here
 
           How to run:
