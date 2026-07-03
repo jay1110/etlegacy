@@ -52,6 +52,7 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#include <unistd.h>
 #endif
 
 #include "sys_local.h"
@@ -836,6 +837,22 @@ static void *Sys_TryLibraryLoad(const char *base, const char *gamedir, const cha
 
 	fn = FS_BuildOSPath(base, gamedir, fname);
 	Com_Printf("Sys_LoadDll(%s)... ", fn);
+
+#ifdef __EMSCRIPTEN__
+	// Emscripten's dlopen() falls back to fetching the library over the network
+	// whenever the requested path is not present on the virtual filesystem. The
+	// filesystem-absolute path is then resolved against the page origin, which
+	// yields an invalid URL (e.g. "https://host//home/web_user/.etlegacy/legacy/
+	// ui.mp.wasm32.wasm"), a spurious 404 and a browser source-map error. Only
+	// the module baked into the engine's filesystem image (etl.data) can
+	// actually be loaded, so skip candidates that do not exist to avoid that
+	// misleading network request and let the search continue to the next path.
+	if (access(fn, F_OK) != 0)
+	{
+		Com_Printf("skipped (not present in virtual filesystem)\n");
+		return NULL;
+	}
+#endif
 
 #ifndef __ANDROID__
 	libHandle = Sys_LoadLibrary(fn);
