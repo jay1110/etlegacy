@@ -977,6 +977,34 @@
                 });
             }
 
+            // Every pk3 present in LEGACY_DIR, in the order they should be tried
+            // for the cgame/ui side modules. The configured MOD_PK3 name(s) come
+            // first (so the intended mod pk3 wins), followed by any other *.pk3
+            // the user hosts in legacy/ or that was cached from a previous
+            // session. This mirrors the engine, which scans the whole fs_game
+            // folder for *.pk3 (FS_CL_ExtractFromPakFile) rather than relying on
+            // one exact filename: a legacy pk3 served under a name that does not
+            // match @ETL_MOD_PK3_NAME@ (e.g. a different version) is still found,
+            // instead of failing to preload and falling back to a standalone .so
+            // that may not be hosted.
+            function listModPk3s() {
+                var seen = {};
+                var pk3s = [];
+                MOD_PK3.forEach(function (name) {
+                    if (name && !seen[name]) { seen[name] = true; pk3s.push(name); }
+                });
+                try {
+                    Module.FS.readdir(LEGACY_DIR).forEach(function (entry) {
+                        if (entry === '.' || entry === '..') { return; }
+                        if (!/\.pk3$/i.test(entry)) { return; }
+                        if (seen[entry]) { return; }
+                        seen[entry] = true;
+                        pk3s.push(entry);
+                    });
+                } catch (e) { /* dir missing/unreadable - use configured names */ }
+                return pk3s;
+            }
+
             // Extract a side module (cgame/ui) from one of the already-downloaded
             // mod pk3s in LEGACY_DIR. Returns the module bytes, or null if none of
             // the pk3s contains it. The pk3 is the primary, always-present source
@@ -984,7 +1012,7 @@
             // modules from it removes any dependency on separate standalone .so
             // files being hosted and served correctly.
             function extractSideModuleFromPk3(name) {
-                return MOD_PK3.reduce(function (chain, pk3) {
+                return listModPk3s().reduce(function (chain, pk3) {
                     return chain.then(function (found) {
                         if (found) { return found; }
                         var pk3Path = LEGACY_DIR + '/' + pk3;
@@ -1205,7 +1233,7 @@
                             msg = 'Could not load the ET: Legacy game module ' +
                                 which + '.\n' + (err.message || err) +
                                 '\n\nThe game logic is loaded from the mod pk3 (' +
-                                MOD_PK3.join(', ') + ') in the "' +
+                                MOD_PK3.join(', ') + ', or any other .pk3) in the "' +
                                 LEGACY_BASE.replace(/\/$/, '') + '" folder next to ' +
                                 'this page, or from the standalone ' +
                                 MOD_FILES.join(', ') + ' there. Make sure at least ' +
