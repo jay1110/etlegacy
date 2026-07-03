@@ -58,10 +58,16 @@ etlegacy-web/
 ├── etl.wasm
 ├── etmain/             # put pak0.pk3, pak1.pk3, pak2.pk3 here
 └── legacy/
-    ├── legacy_<ver>.pk3        # mod pk3 (ui .menu files + media)
-    ├── cgame.mp.wasm32.so      # standalone side module (required)
-    └── ui.mp.wasm32.so         # standalone side module (required)
+    ├── legacy_<ver>.pk3        # mod pk3 (cgame/ui game logic + ui menus + media)
+    ├── cgame.mp.wasm32.so      # standalone side module (fallback)
+    └── ui.mp.wasm32.so         # standalone side module (fallback)
 ```
+
+The game logic (`cgame`/`ui`) is loaded from `legacy_<ver>.pk3`: the page reads
+the side modules straight out of that pk3 and compiles them up front so the
+engine's `dlopen()` can load them. The standalone `cgame.mp.wasm32.so` /
+`ui.mp.wasm32.so` next to it are only a fallback used when a module is missing
+from the pk3, so the pk3 is the one file that must be present.
 
 Copy `pak0.pk3`, `pak1.pk3`, `pak2.pk3` from a retail Wolfenstein: Enemy
 Territory install into `etmain/`. **These are not included and may not be
