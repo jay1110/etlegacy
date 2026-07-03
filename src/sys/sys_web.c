@@ -532,7 +532,10 @@ qboolean Sys_DllExtension(const char *name)
 		return qfalse;
 	}
 
-	if (!Q_stricmp(p, ".wasm"))
+	// Game logic modules are Emscripten SIDE_MODULEs named "<name>.mp.wasm32.so"
+	// (see DLL_EXT in q_platform.h); the ".so" suffix lets Emscripten precompile
+	// them at preload time so dlopen() succeeds.
+	if (!Q_stricmp(p, ".so"))
 	{
 		return qtrue;
 	}

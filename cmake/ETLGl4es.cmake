@@ -32,6 +32,11 @@ set(GL4ES_CMAKE_ARGS
 	-DNOEGL=ON
 	-DNO_GBM=ON
 	-DNO_LOADER=ON
+	# Static library: do NOT auto-initialise via a constructor at program
+	# start (there is no GL context yet, so the hardware probe would record
+	# a dead wrapper). The engine calls initialize_gl4es() itself right after
+	# SDL_GL_CreateContext() (see src/sdl/sdl_glimp.c).
+	-DNO_INIT_CONSTRUCTOR=ON
 )
 
 # Forward the (Emscripten) toolchain so gl4es is built for the same target.

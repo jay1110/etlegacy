@@ -59,8 +59,10 @@ Legend: `[ ]` = TODO, `[x]` = done.
 - [x] Add `MAIN_MODULE` (engine) and `EXPORTED_RUNTIME_METHODS`/`FORCE_FILESYSTEM`
       to `cmake/ETLEmscripten.cmake`.
 - [x] Enable `BUILD_MOD`/`BUILD_CLIENT_MOD` for the wasm build and build
-      `cgame` + `ui` as `SIDE_MODULE` `.wasm` files with loader-matching names
-      (`cgame.mp.wasm32.wasm`, `ui.mp.wasm32.wasm`) — see `cmake/ETLBuildMod.cmake`.
+      `cgame` + `ui` as `SIDE_MODULE`s with loader-matching names. They use a
+      `.so` suffix (`cgame.mp.wasm32.so`, `ui.mp.wasm32.so`) so Emscripten
+      precompiles the preloaded modules and the engine's `dlopen` succeeds as a
+      cache hit — see `cmake/ETLBuildMod.cmake`.
 - [ ] **Verify with a real emcc build** that the `MAIN_MODULE`/`SIDE_MODULE`
       link succeeds and that `Sys_LoadGameDll` resolves `dllEntry`/`vmMain` from
       the side modules at runtime. (Not verifiable in this environment — no emcc.)
@@ -89,36 +91,47 @@ Legend: `[ ]` = TODO, `[x]` = done.
       that it accepts a WebSocket connection.
 - [x] Expose relay/connect entry points to the client via URL parameters
       (`?relay=`, `?connect=`) that set `net_wsRelayServer` and `+connect`.
-- [ ] Add TLS (`wss://`) guidance/config so the relay works from HTTPS pages
-      (browsers block `ws://` from `https://`).
+- [x] Add TLS (`wss://`) guidance/config so the relay works from HTTPS pages
+      (browsers block `ws://` from `https://`): `relay.js` now serves `wss://`
+      directly via `--tls-cert`/`--tls-key` (smoke-tested), and the README
+      documents both that and an nginx reverse-proxy setup.
 - [ ] End-to-end test: browser client -> relay -> dedicated server connect.
 - [ ] Verify two browser clients can join the same server simultaneously.
 - [ ] (Optional/perf) Investigate WebRTC data channels to reduce latency.
 
 ### 4. Hosting the "link"
 
-- [ ] Add a deploy step to `emscripten.yml` (e.g. GitHub Pages / static host)
-      that publishes `etl.html`, `.js`, `.wasm`, and any `.data`.
-- [ ] Ensure the page is served with the headers required by wasm threads/large
-      memory if needed (COOP/COEP) and correct MIME types.
+- [x] Add a deploy step to `emscripten.yml` (GitHub Pages) that publishes
+      `etl.html`, `.js`, `.wasm`, the mod `.pk3` and side modules on the default
+      branch (`deploy-pages` job + `upload-pages-artifact`; `.nojekyll` added).
+- [x] Ensure the page is served with correct MIME types and document header
+      requirements: the build uses no wasm threads/`SharedArrayBuffer`, so no
+      COOP/COEP is required; GitHub Pages serves `.wasm` as `application/wasm`.
+      Documented in `docs/web.md` and the workflow.
 - [ ] Confirm the published URL loads and runs in a fresh browser.
 
 ### 5. Shell / UX
 
 - [x] Web shell drives asset download + relay/connect via URL parameters
       (`?assets=`, `?relay=`, `?connect=`) in `src/web/shell.html`.
-- [ ] Add an in-page server/relay connect UI (form) instead of URL-only config.
-- [ ] Handle browser constraints: user-gesture required for audio, pointer lock
-      for mouse look, fullscreen toggle.
+- [x] Add an in-page server/relay connect UI (form) instead of URL-only config:
+      a "Connect…" panel writes `?relay`/`?connect` (preserving other params)
+      and reloads through the same bootstrap.
+- [x] Handle browser constraints: user-gesture required for audio (AudioContext
+      resume on first gesture), pointer lock for mouse look (click-to-capture),
+      fullscreen toggle (enter/exit).
 
 ### 6. CI / verification
 
 - [x] `emscripten.yml` builds the client mod (`-DBUILD_MOD=ON`) and its artifact
       glob (`build-wasm/*.wasm`) now captures the `SIDE_MODULE` `.wasm` files.
-- [ ] Add a smoke test (e.g. headless browser) that boots the wasm client and
-      confirms it reaches the main menu without fatal errors.
-- [ ] Document the full local workflow (build, run relay, run dedicated server,
-      open page) in `tools/ws-relay/README.md` or a new `docs/web.md`.
+- [x] Add a smoke test that boots the wasm client and confirms it reaches its
+      asset-bootstrap stage without fatal errors (`tools/web-smoke/boot-smoke.mjs`,
+      headless Chromium via Playwright), plus a deterministic structural check
+      (`tools/web-smoke/verify-dist.mjs`). A full "reaches the main menu" run is
+      not possible in CI because the retail paks are not redistributable.
+- [x] Document the full local workflow (build, run relay, run dedicated server,
+      open page) in `docs/web.md`.
 
 ---
 

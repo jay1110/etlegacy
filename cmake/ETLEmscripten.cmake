@@ -96,6 +96,12 @@ set(EMSCRIPTEN_LINK_FLAGS
 	# Runtime helpers used by the asset bootstrap in src/web/shell.html to fetch
 	# the etmain paks into the virtual filesystem before main() runs.
 	"-s EXPORTED_RUNTIME_METHODS=['FS','callMain','addRunDependency','removeRunDependency','ccall','cwrap']"
+	# emcc's HTML minifier collapses ALL newlines in the inline <script> blocks
+	# of the custom shell (src/web/shell.html) without minifying the JS itself,
+	# so the first "//" line comment swallows the rest of the statement stream.
+	# That silently breaks the whole bootstrap script ("Module is not defined",
+	# no TextDecoder workaround, no asset download). Keep the shell unminified.
+	"-s MINIFY_HTML=0"
 	"-l idbfs.js" # IndexedDB-backed FS so downloaded paks are cached across loads
 	"-lwebsocket.js" # WebSocket API used by src/qcommon/net_web.c
 )
@@ -133,11 +139,12 @@ target_compile_definitions(shared_libraries INTERFACE __EMSCRIPTEN__=1)
 set(CMAKE_EXECUTABLE_SUFFIX ".html")
 
 #-----------------------------------------------------------------
-# Use Emscripten's HTML shell template if available
+# HTML shell template
 #-----------------------------------------------------------------
-if(EXISTS "${CMAKE_SOURCE_DIR}/src/web/shell.html")
-	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --shell-file ${CMAKE_SOURCE_DIR}/src/web/shell.html")
-endif()
+# The custom shell (src/web/shell.html) needs the legacy mod pk3 filename, which
+# embeds the project version and is only known after ETLVersion.cmake runs (that
+# happens later than this file). The shell is therefore configured and wired up
+# as --shell-file in cmake/ETLBuildMod.cmake, not here.
 
 message(STATUS "Emscripten configuration complete")
 message(STATUS "  Architecture: ${ARCH}")

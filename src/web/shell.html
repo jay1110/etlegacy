@@ -36,6 +36,15 @@
         canvas#canvas {
             display: block;
             background-color: #000;
+            /* Let the engine's SDL touch handling receive raw touch events:
+               without touch-action:none mobile browsers consume touches for
+               scrolling/zooming (and synthesize a 300ms delayed click) instead
+               of forwarding them as SDL finger events (see sdl_input.c). */
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
         }
 
         #loading-overlay {
@@ -196,6 +205,59 @@
             z-index: 50;
             border-top: 1px solid #333;
         }
+
+        /* Connect / relay panel */
+        #connect-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 420px;
+            max-width: 90%;
+            background-color: #2a2a4a;
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 24px;
+            z-index: 150;
+            display: none;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+
+        #connect-panel h2 {
+            color: #c4a000;
+            font-size: 1.3em;
+            margin-bottom: 16px;
+        }
+
+        #connect-panel label {
+            display: block;
+            font-size: 0.85em;
+            color: #aaa;
+            margin-bottom: 4px;
+        }
+
+        #connect-panel input {
+            width: 100%;
+            padding: 8px 10px;
+            margin-bottom: 14px;
+            background-color: #1a1a2e;
+            color: #e0e0e0;
+            border: 1px solid #444;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        #connect-panel .hint {
+            font-size: 0.75em;
+            color: #777;
+            margin: -10px 0 14px 0;
+        }
+
+        #connect-panel .panel-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
     </style>
 </head>
 <body>
@@ -208,7 +270,7 @@
         </div>
         <div id="progress-text">Loading...</div>
         <div id="status-text"></div>
-        <div id="build-marker" style="margin-top:24px;font-size:12px;color:#6c6c8a;">shell build: 2026-07-02-D</div>
+        <div id="build-marker" style="margin-top:24px;font-size:12px;color:#6c6c8a;">shell build: 2026-07-03-B</div>
     </div>
 
     <!-- Error overlay -->
@@ -229,10 +291,26 @@
         <div>
             <button class="control-btn" onclick="requestFullscreen()">Fullscreen</button>
             <button class="control-btn" onclick="requestPointerLock()">Capture Mouse</button>
+            <button class="control-btn" onclick="openConnectPanel()">Connect...</button>
             <button class="control-btn" onclick="toggleConsole()">Console</button>
         </div>
         <div id="controls-info">
             Click the game to capture mouse | ESC to release | Move mouse to show controls
+        </div>
+    </div>
+
+    <!-- Connect / relay panel -->
+    <div id="connect-panel">
+        <h2>Connect to a server</h2>
+        <label for="connect-relay">WebSocket relay URL</label>
+        <input id="connect-relay" type="text" placeholder="wss://relay.example.com:8443" autocomplete="off">
+        <div class="hint">The ws-relay bridge (tools/ws-relay). HTTPS pages need wss://.</div>
+        <label for="connect-server">Game server (host:port)</label>
+        <input id="connect-server" type="text" placeholder="203.0.113.10:27960" autocomplete="off">
+        <div class="hint">The native dedicated server to join through the relay.</div>
+        <div class="panel-actions">
+            <button class="control-btn" onclick="closeConnectPanel()">Cancel</button>
+            <button class="control-btn" onclick="applyConnect()">Connect &amp; Reload</button>
         </div>
     </div>
 
@@ -251,7 +329,10 @@
         // the first filesystem syscall (mkdirat -> getStr -> UTF8ToString)
         // aborts startup. Copy such inputs into a plain, fixed-size buffer
         // before decoding so the string helpers work on every browser. This
-        // must run before etl.js (injected via {{{ SCRIPT }}} below) loads.
+        // must run before etl.js (injected via the emcc SCRIPT placeholder
+        // near the end of this file) loads. NOTE: never spell out that
+        // placeholder in comments - emcc substitutes every occurrence with a
+        // script tag whose closing tag would truncate this script block.
         (function () {
             if (typeof TextDecoder === 'undefined') return;
             var proto = TextDecoder.prototype;
@@ -274,6 +355,84 @@
                 }
                 return originalDecode.call(this, input, options);
             };
+        })();
+
+        // --- Web Audio background suspend / autoplay unlock -----------------
+        // The engine's audio backend (SDL2 / OpenAL on Emscripten) drives a Web
+        // Audio AudioContext. Two browser behaviours need handling from the page
+        // that hosts the canvas:
+        //   1. Autoplay policy: an AudioContext starts 'suspended' until a user
+        //      gesture resumes it, so sound is silent until the first click/key.
+        //   2. Background tabs: a hidden tab keeps its AudioContext running, so
+        //      the game would keep playing sound while not visible.
+        // Patch the AudioContext constructor (before etl.js creates any context)
+        // to track every instance, resume them on the first user gesture, and
+        // suspend/resume them together with page visibility. All of this is
+        // additive and guarded, so it is a no-op when no context ever exists.
+        (function () {
+            var Ctx = window.AudioContext || window.webkitAudioContext;
+            if (typeof Ctx !== 'function') return;
+
+            var contexts = [];
+            function track(ctx) {
+                if (ctx && contexts.indexOf(ctx) === -1) {
+                    contexts.push(ctx);
+                }
+                return ctx;
+            }
+            function resumeAll() {
+                for (var i = 0; i < contexts.length; i++) {
+                    var c = contexts[i];
+                    if (c && c.state === 'suspended' && c.resume) {
+                        // resume() may reject before the first gesture; ignore.
+                        try { c.resume().catch(function () {}); } catch (e) {}
+                    }
+                }
+            }
+            function suspendAll() {
+                for (var i = 0; i < contexts.length; i++) {
+                    var c = contexts[i];
+                    if (c && c.state === 'running' && c.suspend) {
+                        try { c.suspend().catch(function () {}); } catch (e) {}
+                    }
+                }
+            }
+
+            // Wrap the constructor so every context the engine creates is
+            // tracked. Preserve prototype/statics so nothing else breaks.
+            function TrackedAudioContext() {
+                var ctx = new (Function.prototype.bind.apply(
+                    Ctx, [null].concat([].slice.call(arguments))))();
+                return track(ctx);
+            }
+            TrackedAudioContext.prototype = Ctx.prototype;
+            window.AudioContext = TrackedAudioContext;
+            if (window.webkitAudioContext) {
+                window.webkitAudioContext = TrackedAudioContext;
+            }
+
+            // Resume on the first user gesture (autoplay unlock). Emscripten
+            // also does this for its own contexts, but tracking here covers any
+            // context and is harmless if already running.
+            var unlockEvents = ['pointerdown', 'keydown', 'touchstart'];
+            function unlock() {
+                resumeAll();
+                for (var i = 0; i < unlockEvents.length; i++) {
+                    window.removeEventListener(unlockEvents[i], unlock, true);
+                }
+            }
+            for (var i = 0; i < unlockEvents.length; i++) {
+                window.addEventListener(unlockEvents[i], unlock, true);
+            }
+
+            // Mute while the tab is hidden; restore when visible again.
+            document.addEventListener('visibilitychange', function () {
+                if (document.hidden) {
+                    suspendAll();
+                } else {
+                    resumeAll();
+                }
+            });
         })();
 
         // Keep the most recent engine log/error lines so a fatal error can be
@@ -397,11 +556,13 @@
                     '(stuck at: ' + where + ').\n\n' +
                     'Open the browser console (F12) for the exact error. ' +
                     'Common causes:\n' +
-                    '\u2022 etl.wasm or etl.data failed to download (check the ' +
-                    'Network tab \u2013 both must load with HTTP 200 and .wasm ' +
-                    'must be served as application/wasm).\n' +
+                    '\u2022 etl.wasm failed to download (check the ' +
+                    'Network tab \u2013 it must load with HTTP 200 and be ' +
+                    'served as application/wasm).\n' +
                     '\u2022 The retail paks (pak0-2.pk3) could not be fetched ' +
                     'from the etmain/ folder next to etl.html.\n' +
+                    '\u2022 The mod pk3 could not be fetched from the legacy/ ' +
+                    'folder next to etl.html.\n' +
                     '\u2022 WebGL is unavailable or disabled in this browser.');
             }
         }, 25000);
@@ -419,9 +580,22 @@
             text.textContent = full;
         }
 
-        // Fullscreen support
+        // Fullscreen support (toggle: enter if windowed, exit if already full).
         function requestFullscreen() {
             var canvas = document.getElementById('canvas');
+            var fsElement = document.fullscreenElement ||
+                            document.webkitFullscreenElement ||
+                            document.mozFullScreenElement;
+            if (fsElement) {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                } else if (document.mozCancelFullScreen) {
+                    document.mozCancelFullScreen();
+                }
+                return;
+            }
             if (canvas.requestFullscreen) {
                 canvas.requestFullscreen();
             } else if (canvas.webkitRequestFullscreen) {
@@ -453,6 +627,56 @@
             consoleVisible = !consoleVisible;
             document.getElementById('console-panel').style.display = consoleVisible ? 'block' : 'none';
         }
+
+        // In-page relay/server connect form. The engine reads the relay and
+        // server from URL query parameters at startup (?relay=/?connect=, see
+        // the bootstrap script below), so the simplest and most robust way to
+        // (re)connect from the page is to write those parameters and reload -
+        // this reuses the exact same code path as opening a shared link and
+        // needs no engine-internal command hooks.
+        function openConnectPanel() {
+            var params = new URLSearchParams(window.location.search);
+            document.getElementById('connect-relay').value = params.get('relay') || '';
+            document.getElementById('connect-server').value = params.get('connect') || '';
+            document.getElementById('connect-panel').style.display = 'block';
+            document.getElementById('connect-relay').focus();
+        }
+
+        function closeConnectPanel() {
+            document.getElementById('connect-panel').style.display = 'none';
+        }
+
+        function applyConnect() {
+            var relay = document.getElementById('connect-relay').value.trim();
+            var server = document.getElementById('connect-server').value.trim();
+
+            // Preserve any other configuration already on the URL (assets,
+            // legacy, mod) and only update the relay/connect parameters.
+            var params = new URLSearchParams(window.location.search);
+            if (relay) {
+                params.set('relay', relay);
+            } else {
+                params.delete('relay');
+            }
+            if (server) {
+                params.set('connect', server);
+            } else {
+                params.delete('connect');
+            }
+
+            var query = params.toString();
+            window.location.search = query ? ('?' + query) : '';
+        }
+
+        // Close the connect panel with Escape.
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                var panel = document.getElementById('connect-panel');
+                if (panel && panel.style.display === 'block') {
+                    closeConnectPanel();
+                }
+            }
+        });
 
         function appendConsole(text) {
             var panel = document.getElementById('console-panel');
@@ -496,11 +720,16 @@
              filesystem (cached in IndexedDB so they are fetched once). By
              default they are loaded same-origin (from an "etmain/" folder next
              to this page) so no CORS configuration is required.
-          2. Optionally point the client at a WebSocket->UDP relay and auto-join
+          2. Download the ET: Legacy mod pk3 (game logic cgame/ui + ui menus)
+             into the in-browser filesystem from a "legacy/" folder next to this
+             page. The engine mounts it and extracts + loads cgame/ui from it.
+          3. Optionally point the client at a WebSocket->UDP relay and auto-join
              a server, driven by URL query parameters:
                ?assets=<base-url>   override where the paks are downloaded from.
                                     A cross-origin URL requires the web space to
                                     allow CORS downloads of the paks.
+               ?legacy=<base-url>   override where the mod pk3 is downloaded from.
+               ?mod=<a.pk3,b.pk3>   override which mod pk3(s) to download.
                ?relay=<ws-url>      WebSocket relay (see tools/ws-relay)
                ?connect=<host:port> game server to join through the relay
         Example:
@@ -544,15 +773,52 @@
             var ETMAIN_DIR = INSTALL_DIR + '/etmain';
             var LEGACY_DIR = INSTALL_DIR + '/legacy';
 
-            // Game logic side-modules (built by cmake/ETLBuildMod.cmake). They
-            // are baked into the engine filesystem image (etl.data) at build
-            // time and mounted before main() runs, so normally they are already
-            // present in LEGACY_DIR and need no download. As a fallback (e.g. an
-            // older build without the embedded modules) they can also be served
-            // same-origin next to etl.html; a missing module here is therefore
-            // non-fatal - the engine reports a clear error later if one is truly
-            // absent.
-            var MOD_FILES = ['cgame.mp.wasm32.wasm', 'ui.mp.wasm32.wasm'];
+            // Where to download the ET: Legacy mod data from. This is the mod's
+            // "legacy/" folder (analogous to etmain/ for the retail paks) served
+            // next to this page by default, so it is fetched same-origin (no CORS
+            // needed). Override with ?legacy=<url>.
+            var LEGACY_BASE = params.get('legacy');
+            if (LEGACY_BASE) {
+                if (LEGACY_BASE.charAt(LEGACY_BASE.length - 1) !== '/') {
+                    LEGACY_BASE += '/';
+                }
+            } else {
+                LEGACY_BASE = 'legacy/';
+            }
+
+            // The ET: Legacy mod pk3. It bundles the game logic side-modules
+            // (cgame.mp.wasm32.so / ui.mp.wasm32.so) together with the mod's ui
+            // menu files, exactly like the desktop legacy_<version>.pk3. It is
+            // downloaded into LEGACY_DIR before main() runs; the engine then
+            // mounts it and extracts + dlopen()s cgame/ui from it, just like the
+            // native client (see FS_CL_ExtractFromPakFile / Sys_LoadGameDll).
+            // The default filename is injected at build time from the project
+            // version (cmake/ETLBuildMod.cmake). Override the list with
+            // ?mod=<a.pk3,b.pk3>.
+            var MOD_PK3 = (function () {
+                var m = params.get('mod');
+                if (m) {
+                    return m.split(',').map(function (s) { return s.trim(); })
+                        .filter(function (s) { return s.length; });
+                }
+                // '@ETL_MOD_PK3_NAME@' is substituted by CMake at build time
+                // (configure_file) with the versioned pk3 name, e.g. legacy_2.84.0.pk3.
+                return ['@ETL_MOD_PK3_NAME@'];
+            })();
+
+            // The game-logic side modules (cgame/ui). On wasm these are loaded
+            // through dlopen(), which on Emscripten can only load a module that
+            // was run through the wasm *preload plugin* (it compiles the module
+            // and caches it in preloadedWasm; the engine's dlopen() then reuses
+            // that cached module). A module merely written to the virtual
+            // filesystem - fetched with fetch()/FS.writeFile, or extracted from
+            // the mod pk3 at runtime by the engine - is inert data the browser
+            // refuses to compile synchronously on the main thread, so dlopen()
+            // would fail with "VM_Create on ui failed". They are therefore
+            // preloaded (fetched + precompiled) below via FS.createPreloadedFile,
+            // in addition to the pk3 (which carries the ui .menu files). The raw
+            // .so files are served in the same legacy/ folder as the pk3.
+            var MOD_FILES = ['cgame.mp.wasm32.so', 'ui.mp.wasm32.so'];
 
             // Build the engine command line from URL parameters.
             var args = [];
@@ -629,9 +895,80 @@
                 return downloadInto(ASSET_BASE + name, ETMAIN_DIR + '/' + name, name);
             }
 
-            function downloadMod(name) {
-                // Relative URL: served from the same directory as etl.html.
-                return downloadInto(name, LEGACY_DIR + '/' + name, name);
+            // Download one file from the legacy/ folder into LEGACY_DIR.
+            function downloadLegacyFile(name) {
+                return downloadInto(LEGACY_BASE + name, LEGACY_DIR + '/' + name, name);
+            }
+
+            // Preload a game-logic side module (cgame/ui) so the engine's
+            // dlopen() can load it. FS.createPreloadedFile fetches the .so and
+            // runs it through Emscripten's wasm preload plugin, which compiles
+            // the module and caches it in preloadedWasm keyed by its virtual-FS
+            // path. The engine looks the module up under fs_basepath
+            // (LEGACY_DIR, i.e. /etlegacy/legacy) so dlopen() becomes a cache
+            // hit there (see Sys_LoadGameDll / Sys_TryLibraryLoad). Without this
+            // precompilation dlopen() cannot instantiate the module at all and
+            // startup aborts with "VM_Create on ui failed".
+            //
+            // The compiled module lives in preloadedWasm (in memory), so it must
+            // be re-preloaded on every load; drop any copy persisted in IndexedDB
+            // from a previous session first, otherwise createPreloadedFile throws
+            // trying to recreate an existing file.
+            function preloadSideModule(name) {
+                var target = LEGACY_DIR + '/' + name;
+                try {
+                    if (Module.FS.analyzePath(target).exists) {
+                        Module.FS.unlink(target);
+                    }
+                } catch (e) { /* nothing to remove */ }
+
+                return new Promise(function (resolve, reject) {
+                    Module.setStatus('Loading ' + name);
+                    try {
+                        Module.FS.createPreloadedFile(
+                            LEGACY_DIR, name, LEGACY_BASE + name, true, false,
+                            function () { resolve(); },
+                            function () {
+                                reject(new Error('Failed to preload ' + name +
+                                    ' from ' + LEGACY_BASE));
+                            });
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+            }
+
+            // Fetch the mod data. Two things are needed:
+            //   1. The legacy pk3 - it carries the ui .menu files and other mod
+            //      media. (It also contains the cgame/ui .so, but a side module
+            //      cannot be dlopen()ed straight out of the pk3 on wasm, see
+            //      preloadSideModule.)
+            //   2. The cgame/ui side modules, preloaded (fetched + precompiled)
+            //      so the engine's dlopen() succeeds.
+            // The pk3 is optional (missing .menu files degrade the UI but do not
+            // abort); the side modules are mandatory - if they cannot be
+            // preloaded the engine aborts later with "VM_Create on ui failed".
+            function downloadModAssets() {
+                // 1) mod pk3(s) - non-fatal if absent.
+                var pk3Chain = MOD_PK3.reduce(function (chain, name) {
+                    return chain.then(function () {
+                        return downloadLegacyFile(name).catch(function (err) {
+                            if (console && console.warn) {
+                                console.warn('Mod pk3 ' + name + ' not fetched from ' +
+                                    LEGACY_BASE + ': ' + err.message);
+                            }
+                        });
+                    });
+                }, Promise.resolve());
+
+                // 2) cgame/ui side modules - precompiled so dlopen() works.
+                return pk3Chain.then(function () {
+                    return MOD_FILES.reduce(function (chain, name) {
+                        return chain.then(function () {
+                            return preloadSideModule(name);
+                        });
+                    }, Promise.resolve());
+                });
             }
 
             // Persist the etmain data to IndexedDB so subsequent loads are fast.
@@ -645,14 +982,16 @@
                 });
             }
 
-            // Mount an IndexedDB-backed filesystem for the etmain directory and
-            // load anything cached from a previous session.
+            // Mount IndexedDB-backed filesystems for the etmain and legacy
+            // directories and load anything cached from a previous session, so
+            // the (large) retail paks and mod pk3 are downloaded only once.
             function mountCache() {
                 return new Promise(function (resolve) {
                     try {
                         Module.FS.mkdirTree(ETMAIN_DIR);
                         Module.FS.mkdirTree(LEGACY_DIR);
                         Module.FS.mount(Module.FS.filesystems.IDBFS, {}, ETMAIN_DIR);
+                        Module.FS.mount(Module.FS.filesystems.IDBFS, {}, LEGACY_DIR);
                         Module.FS.syncfs(true, function () { resolve(); });
                     } catch (e) {
                         // IDBFS unavailable - fall back to a plain in-memory FS.
@@ -679,24 +1018,12 @@
                         }, Promise.resolve());
                     })
                     .then(function () {
-                        // legacy mod side-modules. These are normally already
-                        // present in LEGACY_DIR (embedded in etl.data), so
-                        // downloadMod() skips them. When they are not embedded we
-                        // try to fetch them same-origin, but a failure here is
-                        // non-fatal: swallow it so a missing/served-elsewhere
-                        // module does not abort startup. The engine still emits a
-                        // clear error later if a required module is truly absent.
-                        return MOD_FILES.reduce(function (chain, name) {
-                            return chain.then(function () {
-                                return downloadMod(name).catch(function (err) {
-                                    if (console && console.warn) {
-                                        console.warn('Optional module ' + name +
-                                            ' not fetched: ' + err.message +
-                                            ' (expected when embedded in etl.data)');
-                                    }
-                                });
-                            });
-                        }, Promise.resolve());
+                        // ET: Legacy mod data: the legacy pk3 (ui .menu files and
+                        // other mod media, cached in IndexedDB) plus the cgame/ui
+                        // side modules, which are fetched and precompiled here so
+                        // the engine's dlopen() can load them. A side module that
+                        // cannot be preloaded rejects and is reported below.
+                        return downloadModAssets();
                     })
                     .then(persist)
                     .then(function () {
@@ -704,8 +1031,23 @@
                         Module.removeRunDependency('etl-assets');
                     })
                     .catch(function (err) {
-                        // Only the retail paks reach here as fatal errors.
-                        var msg = 'Could not load game data from ' + ASSET_BASE +
+                        var msg;
+                        if (err && /preload/i.test(err.message || '')) {
+                            // A mandatory cgame/ui side module could not be
+                            // fetched/compiled from the legacy/ folder.
+                            msg = 'Could not load the ET: Legacy game modules ' +
+                                'from ' + LEGACY_BASE + '.\n' + err.message +
+                                '\n\nMake sure ' + MOD_FILES.join(', ') +
+                                ' are present in the "' +
+                                LEGACY_BASE.replace(/\/$/, '') +
+                                '" folder next to this page (served with HTTP 200 ' +
+                                'and the application/wasm MIME type).';
+                            showError(msg);
+                            Module.removeRunDependency('etl-assets');
+                            return;
+                        }
+                        // Otherwise a retail pak download failed.
+                        msg = 'Could not load game data from ' + ASSET_BASE +
                             '.\n' + err.message;
                         if (assetsAreCrossOrigin()) {
                             msg += '\n\nThe web space must allow cross-origin ' +

@@ -6,9 +6,16 @@
  *
  * Usage:
  *   node relay.js [--port 8080] [--host 0.0.0.0]
+ *                 [--tls-cert cert.pem --tls-key key.pem]
  *
  * The relay accepts WebSocket connections at:
- *   ws://host:port/<server-ip>:<server-port>
+ *   ws://host:port/<server-ip>:<server-port>    (plain)
+ *   wss://host:port/<server-ip>:<server-port>   (with --tls-cert/--tls-key)
+ *
+ * Browsers served over HTTPS may only open secure (wss://) WebSockets, so a
+ * page hosted on GitHub Pages / any HTTPS host needs the relay behind TLS -
+ * either terminate TLS here with --tls-cert/--tls-key or in front of it with a
+ * reverse proxy (nginx). See README.md.
  *
  * For each WebSocket connection, it opens a UDP socket and forwards
  * packets bidirectionally between the WebSocket client and the UDP
@@ -20,6 +27,8 @@
 'use strict';
 
 const dgram = require('dgram');
+const fs = require('fs');
+const https = require('https');
 const { WebSocketServer } = require('ws');
 const url = require('url');
 
@@ -33,6 +42,8 @@ const MAX_CONNECTIONS = 128;
 const args = process.argv.slice(2);
 let port = DEFAULT_PORT;
 let host = DEFAULT_HOST;
+let tlsCert = null;
+let tlsKey = null;
 
 for (let i = 0; i < args.length; i++) {
     if (args[i] === '--port' && args[i + 1]) {
@@ -41,18 +52,37 @@ for (let i = 0; i < args.length; i++) {
     } else if (args[i] === '--host' && args[i + 1]) {
         host = args[i + 1];
         i++;
+    } else if (args[i] === '--tls-cert' && args[i + 1]) {
+        tlsCert = args[i + 1];
+        i++;
+    } else if (args[i] === '--tls-key' && args[i + 1]) {
+        tlsKey = args[i + 1];
+        i++;
     } else if (args[i] === '--help') {
         console.log('ET: Legacy WebSocket-to-UDP Relay Server');
         console.log('');
         console.log('Usage: node relay.js [options]');
         console.log('');
         console.log('Options:');
-        console.log('  --port <port>   Listen port (default: 8080)');
-        console.log('  --host <host>   Listen host (default: 0.0.0.0)');
-        console.log('  --help          Show this help');
+        console.log('  --port <port>       Listen port (default: 8080)');
+        console.log('  --host <host>       Listen host (default: 0.0.0.0)');
+        console.log('  --tls-cert <file>   TLS certificate (PEM) to serve wss://');
+        console.log('  --tls-key <file>    TLS private key (PEM) to serve wss://');
+        console.log('  --help              Show this help');
+        console.log('');
+        console.log('Provide both --tls-cert and --tls-key to accept secure');
+        console.log('wss:// connections (required from HTTPS pages). Otherwise');
+        console.log('the relay serves plain ws://.');
         process.exit(0);
     }
 }
+
+// TLS is enabled only when both a certificate and a key are supplied.
+if ((tlsCert && !tlsKey) || (!tlsCert && tlsKey)) {
+    console.error('Error: --tls-cert and --tls-key must be provided together.');
+    process.exit(1);
+}
+const useTls = Boolean(tlsCert && tlsKey);
 
 // Active connections
 const connections = new Map();
@@ -99,17 +129,42 @@ function parseTargetAddress(pathname) {
 }
 
 /**
- * Create the WebSocket server
+ * Create the WebSocket server. When TLS is configured, attach the WebSocket
+ * server to an HTTPS server so it accepts secure wss:// connections; otherwise
+ * listen directly for plain ws://.
  */
-const wss = new WebSocketServer({
-    host: host,
-    port: port,
-    maxPayload: 65536, // Max packet size
-    perMessageDeflate: false // Disable compression for game packets
-});
+let wss;
+let httpsServer = null;
+
+if (useTls) {
+    let creds;
+    try {
+        creds = { cert: fs.readFileSync(tlsCert), key: fs.readFileSync(tlsKey) };
+    } catch (err) {
+        console.error(`Error: could not read TLS cert/key: ${err.message}`);
+        process.exit(1);
+    }
+
+    httpsServer = https.createServer(creds);
+    wss = new WebSocketServer({
+        server: httpsServer,
+        maxPayload: 65536, // Max packet size
+        perMessageDeflate: false // Disable compression for game packets
+    });
+    httpsServer.listen(port, host);
+} else {
+    wss = new WebSocketServer({
+        host: host,
+        port: port,
+        maxPayload: 65536, // Max packet size
+        perMessageDeflate: false // Disable compression for game packets
+    });
+}
+
+const scheme = useTls ? 'wss' : 'ws';
 
 console.log(`ET: Legacy WebSocket-to-UDP Relay Server`);
-console.log(`Listening on ws://${host}:${port}`);
+console.log(`Listening on ${scheme}://${host}:${port}`);
 console.log(`Max connections: ${MAX_CONNECTIONS}`);
 console.log(`Connection timeout: ${CONNECTION_TIMEOUT_MS / 1000}s`);
 console.log('');
@@ -237,8 +292,15 @@ process.on('SIGINT', () => {
     }
 
     wss.close(() => {
-        console.log('Relay server stopped.');
-        process.exit(0);
+        if (httpsServer) {
+            httpsServer.close(() => {
+                console.log('Relay server stopped.');
+                process.exit(0);
+            });
+        } else {
+            console.log('Relay server stopped.');
+            process.exit(0);
+        }
     });
 });
 
