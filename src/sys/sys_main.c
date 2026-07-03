@@ -852,7 +852,7 @@ static void *Sys_TryLibraryLoad(const char *base, const char *gamedir, const cha
 	// let the search continue to the next path.
 	if (access(fn, F_OK) != 0)
 	{
-		Com_Printf("skipped (not present in virtual filesystem)\n");
+		Com_Printf("skipped (%s not present in virtual filesystem)\n", fn);
 		return NULL;
 	}
 #endif
