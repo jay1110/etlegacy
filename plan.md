@@ -59,8 +59,10 @@ Legend: `[ ]` = TODO, `[x]` = done.
 - [x] Add `MAIN_MODULE` (engine) and `EXPORTED_RUNTIME_METHODS`/`FORCE_FILESYSTEM`
       to `cmake/ETLEmscripten.cmake`.
 - [x] Enable `BUILD_MOD`/`BUILD_CLIENT_MOD` for the wasm build and build
-      `cgame` + `ui` as `SIDE_MODULE` `.wasm` files with loader-matching names
-      (`cgame.mp.wasm32.wasm`, `ui.mp.wasm32.wasm`) — see `cmake/ETLBuildMod.cmake`.
+      `cgame` + `ui` as `SIDE_MODULE`s with loader-matching names. They use a
+      `.so` suffix (`cgame.mp.wasm32.so`, `ui.mp.wasm32.so`) so Emscripten
+      precompiles the preloaded modules and the engine's `dlopen` succeeds as a
+      cache hit — see `cmake/ETLBuildMod.cmake`.
 - [ ] **Verify with a real emcc build** that the `MAIN_MODULE`/`SIDE_MODULE`
       link succeeds and that `Sys_LoadGameDll` resolves `dllEntry`/`vmMain` from
       the side modules at runtime. (Not verifiable in this environment — no emcc.)

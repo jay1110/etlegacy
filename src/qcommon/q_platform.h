@@ -359,7 +359,16 @@
 
 #define Q3_LITTLE_ENDIAN
 
-#define DLL_EXT ".wasm"
+// The game logic modules (cgame/ui) are Emscripten SIDE_MODULEs loaded at
+// runtime through dlopen. Emscripten only precompiles a *preloaded* side module
+// (baked into etl.data) when its filename ends in ".so" (see the wasm preload
+// plugin in Emscripten's libdylink.js, whose canHandle() tests name.endsWith(
+// '.so')). A precompiled module is cached so the engine's synchronous dlopen()
+// becomes a cache hit; a ".wasm"-named module is instead stored as inert data
+// and would have to be compiled at dlopen() time, which the browser forbids
+// synchronously on the main thread for multi-MB modules. Hence ".so" here (the
+// main engine binary is still emitted as etl.wasm, unaffected by DLL_EXT).
+#define DLL_EXT ".so"
 
 #endif
 

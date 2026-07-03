@@ -24,16 +24,19 @@ endfunction()
 # requires them to be built as SIDE_MODULEs (the engine is the MAIN_MODULE, see
 # cmake/ETLEmscripten.cmake). The output filename must match what the engine
 # asks for via Sys_GetDLLName(): "<name>.mp." ARCH_STRING DLL_EXT, i.e.
-# "cgame.mp.wasm32.wasm". The modules are emitted next to etl.html (so they are
-# uploaded as build artifacts) and are additionally embedded into the engine
-# filesystem image (etl.data) below, so a deployment does not have to serve them
-# separately.
+# "cgame.mp.wasm32.so". The ".so" suffix (DLL_EXT in q_platform.h) is required:
+# Emscripten only precompiles a preloaded side module - and thus lets the
+# engine's synchronous dlopen() succeed as a cache hit - when the filename ends
+# in ".so" (its wasm preload plugin's canHandle() tests name.endsWith('.so')).
+# The modules are emitted next to etl.html (so they are uploaded as build
+# artifacts) and are additionally embedded into the engine filesystem image
+# (etl.data) below, so a deployment does not have to serve them separately.
 function(etl_configure_wasm_side_module target_name base_name)
 	if(EMSCRIPTEN)
 		target_link_options(${target_name} PRIVATE "-sSIDE_MODULE=1")
 		set_target_properties(${target_name} PROPERTIES
 			PREFIX ""
-			SUFFIX ".wasm"
+			SUFFIX ".so"
 			OUTPUT_NAME "${base_name}.mp.${ARCH}"
 			LIBRARY_OUTPUT_DIRECTORY ""
 			LIBRARY_OUTPUT_DIRECTORY_DEBUG ""
