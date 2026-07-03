@@ -139,11 +139,12 @@ target_compile_definitions(shared_libraries INTERFACE __EMSCRIPTEN__=1)
 set(CMAKE_EXECUTABLE_SUFFIX ".html")
 
 #-----------------------------------------------------------------
-# Use Emscripten's HTML shell template if available
+# HTML shell template
 #-----------------------------------------------------------------
-if(EXISTS "${CMAKE_SOURCE_DIR}/src/web/shell.html")
-	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --shell-file ${CMAKE_SOURCE_DIR}/src/web/shell.html")
-endif()
+# The custom shell (src/web/shell.html) needs the legacy mod pk3 filename, which
+# embeds the project version and is only known after ETLVersion.cmake runs (that
+# happens later than this file). The shell is therefore configured and wired up
+# as --shell-file in cmake/ETLBuildMod.cmake, not here.
 
 message(STATUS "Emscripten configuration complete")
 message(STATUS "  Architecture: ${ARCH}")

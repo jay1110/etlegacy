@@ -400,11 +400,13 @@
                     '(stuck at: ' + where + ').\n\n' +
                     'Open the browser console (F12) for the exact error. ' +
                     'Common causes:\n' +
-                    '\u2022 etl.wasm or etl.data failed to download (check the ' +
-                    'Network tab \u2013 both must load with HTTP 200 and .wasm ' +
-                    'must be served as application/wasm).\n' +
+                    '\u2022 etl.wasm failed to download (check the ' +
+                    'Network tab \u2013 it must load with HTTP 200 and be ' +
+                    'served as application/wasm).\n' +
                     '\u2022 The retail paks (pak0-2.pk3) could not be fetched ' +
                     'from the etmain/ folder next to etl.html.\n' +
+                    '\u2022 The mod pk3 could not be fetched from the legacy/ ' +
+                    'folder next to etl.html.\n' +
                     '\u2022 WebGL is unavailable or disabled in this browser.');
             }
         }, 25000);
@@ -499,11 +501,16 @@
              filesystem (cached in IndexedDB so they are fetched once). By
              default they are loaded same-origin (from an "etmain/" folder next
              to this page) so no CORS configuration is required.
-          2. Optionally point the client at a WebSocket->UDP relay and auto-join
+          2. Download the ET: Legacy mod pk3 (game logic cgame/ui + ui menus)
+             into the in-browser filesystem from a "legacy/" folder next to this
+             page. The engine mounts it and extracts + loads cgame/ui from it.
+          3. Optionally point the client at a WebSocket->UDP relay and auto-join
              a server, driven by URL query parameters:
                ?assets=<base-url>   override where the paks are downloaded from.
                                     A cross-origin URL requires the web space to
                                     allow CORS downloads of the paks.
+               ?legacy=<base-url>   override where the mod pk3 is downloaded from.
+               ?mod=<a.pk3,b.pk3>   override which mod pk3(s) to download.
                ?relay=<ws-url>      WebSocket relay (see tools/ws-relay)
                ?connect=<host:port> game server to join through the relay
         Example:
@@ -547,14 +554,42 @@
             var ETMAIN_DIR = INSTALL_DIR + '/etmain';
             var LEGACY_DIR = INSTALL_DIR + '/legacy';
 
-            // Game logic side-modules (built by cmake/ETLBuildMod.cmake). They
-            // are baked into the engine filesystem image (etl.data) at build
-            // time and mounted before main() runs, so normally they are already
-            // present in LEGACY_DIR and need no download. As a fallback (e.g. an
-            // older build without the embedded modules) they can also be served
-            // same-origin next to etl.html; a missing module here is therefore
-            // non-fatal - the engine reports a clear error later if one is truly
-            // absent.
+            // Where to download the ET: Legacy mod data from. This is the mod's
+            // "legacy/" folder (analogous to etmain/ for the retail paks) served
+            // next to this page by default, so it is fetched same-origin (no CORS
+            // needed). Override with ?legacy=<url>.
+            var LEGACY_BASE = params.get('legacy');
+            if (LEGACY_BASE) {
+                if (LEGACY_BASE.charAt(LEGACY_BASE.length - 1) !== '/') {
+                    LEGACY_BASE += '/';
+                }
+            } else {
+                LEGACY_BASE = 'legacy/';
+            }
+
+            // The ET: Legacy mod pk3. It bundles the game logic side-modules
+            // (cgame.mp.wasm32.so / ui.mp.wasm32.so) together with the mod's ui
+            // menu files, exactly like the desktop legacy_<version>.pk3. It is
+            // downloaded into LEGACY_DIR before main() runs; the engine then
+            // mounts it and extracts + dlopen()s cgame/ui from it, just like the
+            // native client (see FS_CL_ExtractFromPakFile / Sys_LoadGameDll).
+            // The default filename is injected at build time from the project
+            // version (cmake/ETLBuildMod.cmake). Override the list with
+            // ?mod=<a.pk3,b.pk3>.
+            var MOD_PK3 = (function () {
+                var m = params.get('mod');
+                if (m) {
+                    return m.split(',').map(function (s) { return s.trim(); })
+                        .filter(function (s) { return s.length; });
+                }
+                return ['@ETL_MOD_PK3_NAME@'];
+            })();
+
+            // Raw side-module fallback: if the mod pk3 cannot be fetched, try the
+            // bare .so files served in the same legacy/ folder. A deployment only
+            // needs one of the two (the pk3 is preferred because it also carries
+            // the ui menus). Missing here is non-fatal - the engine emits a clear
+            // error later if the modules are truly absent.
             var MOD_FILES = ['cgame.mp.wasm32.so', 'ui.mp.wasm32.so'];
 
             // Build the engine command line from URL parameters.
@@ -632,9 +667,45 @@
                 return downloadInto(ASSET_BASE + name, ETMAIN_DIR + '/' + name, name);
             }
 
-            function downloadMod(name) {
-                // Relative URL: served from the same directory as etl.html.
-                return downloadInto(name, LEGACY_DIR + '/' + name, name);
+            // Download one file from the legacy/ folder into LEGACY_DIR.
+            function downloadLegacyFile(name) {
+                return downloadInto(LEGACY_BASE + name, LEGACY_DIR + '/' + name, name);
+            }
+
+            // Fetch the mod data. Prefer the legacy pk3 (it also carries the ui
+            // menus); if none of the configured pk3s can be fetched, fall back to
+            // the bare cgame/ui side-modules. Only if BOTH strategies fail do we
+            // surface a clear error - otherwise the engine would abort later with
+            // the terse "VM_Create on ui failed" message.
+            function downloadModAssets() {
+                var gotPk3 = false;
+                return MOD_PK3.reduce(function (chain, name) {
+                    return chain.then(function () {
+                        return downloadLegacyFile(name).then(function () {
+                            gotPk3 = true;
+                        }).catch(function (err) {
+                            if (console && console.warn) {
+                                console.warn('Mod pk3 ' + name + ' not fetched from ' +
+                                    LEGACY_BASE + ': ' + err.message);
+                            }
+                        });
+                    });
+                }, Promise.resolve()).then(function () {
+                    if (gotPk3) {
+                        return;
+                    }
+                    // No pk3 - try the raw side-modules as a fallback.
+                    return MOD_FILES.reduce(function (chain, name) {
+                        return chain.then(function () {
+                            return downloadLegacyFile(name).catch(function (err) {
+                                if (console && console.warn) {
+                                    console.warn('Fallback module ' + name +
+                                        ' not fetched: ' + err.message);
+                                }
+                            });
+                        });
+                    }, Promise.resolve());
+                });
             }
 
             // Persist the etmain data to IndexedDB so subsequent loads are fast.
@@ -648,14 +719,16 @@
                 });
             }
 
-            // Mount an IndexedDB-backed filesystem for the etmain directory and
-            // load anything cached from a previous session.
+            // Mount IndexedDB-backed filesystems for the etmain and legacy
+            // directories and load anything cached from a previous session, so
+            // the (large) retail paks and mod pk3 are downloaded only once.
             function mountCache() {
                 return new Promise(function (resolve) {
                     try {
                         Module.FS.mkdirTree(ETMAIN_DIR);
                         Module.FS.mkdirTree(LEGACY_DIR);
                         Module.FS.mount(Module.FS.filesystems.IDBFS, {}, ETMAIN_DIR);
+                        Module.FS.mount(Module.FS.filesystems.IDBFS, {}, LEGACY_DIR);
                         Module.FS.syncfs(true, function () { resolve(); });
                     } catch (e) {
                         // IDBFS unavailable - fall back to a plain in-memory FS.
@@ -682,24 +755,13 @@
                         }, Promise.resolve());
                     })
                     .then(function () {
-                        // legacy mod side-modules. These are normally already
-                        // present in LEGACY_DIR (embedded in etl.data), so
-                        // downloadMod() skips them. When they are not embedded we
-                        // try to fetch them same-origin, but a failure here is
-                        // non-fatal: swallow it so a missing/served-elsewhere
-                        // module does not abort startup. The engine still emits a
-                        // clear error later if a required module is truly absent.
-                        return MOD_FILES.reduce(function (chain, name) {
-                            return chain.then(function () {
-                                return downloadMod(name).catch(function (err) {
-                                    if (console && console.warn) {
-                                        console.warn('Optional module ' + name +
-                                            ' not fetched: ' + err.message +
-                                            ' (expected when embedded in etl.data)');
-                                    }
-                                });
-                            });
-                        }, Promise.resolve());
+                        // ET: Legacy mod data (the legacy pk3 with cgame/ui and
+                        // the ui menus, or bare side-modules as a fallback),
+                        // downloaded from the legacy/ folder and cached in
+                        // IndexedDB. Failures here are handled inside
+                        // downloadModAssets(); a truly missing module still
+                        // produces a clear engine error later.
+                        return downloadModAssets();
                     })
                     .then(persist)
                     .then(function () {

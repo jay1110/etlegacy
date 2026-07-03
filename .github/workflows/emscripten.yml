@@ -94,12 +94,34 @@ jobs:
       - name: Package web release
         run: |
           mkdir -p dist/etlegacy-web
-          cp build-wasm/etl.html build-wasm/etl.js build-wasm/etl.wasm build-wasm/etl.data dist/etlegacy-web/
+          # etl.data is no longer produced: the mod is shipped as a downloadable
+          # legacy pk3 (below) instead of being embedded in the engine image.
+          cp build-wasm/etl.html build-wasm/etl.js build-wasm/etl.wasm dist/etlegacy-web/
           # Serve the game at the site root as well
           cp build-wasm/etl.html dist/etlegacy-web/index.html
-          # Standalone copies of the game logic side modules. They are already
-          # embedded in etl.data, this is only the same-origin fallback location.
+          # The ET: Legacy mod data the client downloads at startup: the legacy
+          # pk3 (game logic side modules cgame/ui + the ui menu files), served
+          # from a legacy/ folder next to etl.html. Its name embeds the project
+          # version and is chosen by CMake (single source of truth), so read it
+          # back here to build a matching pk3.
           mkdir -p dist/etlegacy-web/legacy
+          PK3_NAME="$(cat build-wasm/etl_web_pk3_name.txt)"
+          echo "Building mod pk3: ${PK3_NAME}"
+          rm -rf legacy-stage
+          mkdir -p legacy-stage
+          # Mod content (includes ui/*.menu). Same set CMake packs into the
+          # desktop legacy pk3.
+          cp -a etmain/. legacy-stage/
+          # WebAssembly game logic side modules.
+          cp build-wasm/cgame.mp.wasm32.so build-wasm/ui.mp.wasm32.so legacy-stage/
+          # Build-generated version header staged into ui/ for the menu includes.
+          if [ -f build-wasm/etmain/ui/version_generated.h ]; then
+            mkdir -p legacy-stage/ui
+            cp build-wasm/etmain/ui/version_generated.h legacy-stage/ui/version_generated.h
+          fi
+          (cd legacy-stage && zip -9 -r -X "../dist/etlegacy-web/legacy/${PK3_NAME}" . >/dev/null)
+          # Standalone copies of the game logic side modules: the same-origin
+          # fallback the shell uses when the pk3 cannot be fetched.
           cp build-wasm/cgame.mp.wasm32.so build-wasm/ui.mp.wasm32.so dist/etlegacy-web/legacy/ 2>/dev/null || true
           # Placeholder for the retail assets the user must supply
           mkdir -p dist/etlegacy-web/etmain
@@ -117,8 +139,8 @@ jobs:
             index.html / etl.html  - game page (same file)
             etl.js                 - engine JavaScript loader
             etl.wasm               - engine WebAssembly binary
-            etl.data               - engine data image (incl. cgame/ui modules)
-            legacy/                - cgame/ui side modules (fallback copies)
+            legacy/                - ET: Legacy mod pk3 (cgame/ui + ui menus)
+                                     plus fallback copies of the cgame/ui modules
             etmain/                - put pak0.pk3, pak1.pk3, pak2.pk3 here
 
           How to run:
@@ -132,6 +154,8 @@ jobs:
             3. Optional URL parameters:
                  ?assets=<base-url>    download the paks from another host
                                        (that host must allow CORS)
+                 ?legacy=<base-url>    download the mod pk3 from another host
+                 ?mod=<a.pk3,b.pk3>    override which mod pk3(s) to download
                  ?relay=<ws-url>       WebSocket->UDP relay (tools/ws-relay)
                  ?connect=<host:port>  game server to join through the relay
           EOF

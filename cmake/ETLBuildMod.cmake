@@ -25,12 +25,11 @@ endfunction()
 # cmake/ETLEmscripten.cmake). The output filename must match what the engine
 # asks for via Sys_GetDLLName(): "<name>.mp." ARCH_STRING DLL_EXT, i.e.
 # "cgame.mp.wasm32.so". The ".so" suffix (DLL_EXT in q_platform.h) is required:
-# Emscripten only precompiles a preloaded side module - and thus lets the
-# engine's synchronous dlopen() succeed as a cache hit - when the filename ends
-# in ".so" (its wasm preload plugin's canHandle() tests name.endsWith('.so')).
-# The modules are emitted next to etl.html (so they are uploaded as build
-# artifacts) and are additionally embedded into the engine filesystem image
-# (etl.data) below, so a deployment does not have to serve them separately.
+# Emscripten's wasm preload plugin only handles side modules whose filename ends
+# in ".so" (its canHandle() tests name.endsWith('.so')). The modules are emitted
+# next to etl.html so they can be packaged into the downloadable legacy mod pk3
+# (and served same-origin as a raw fallback); they are NOT baked into the engine
+# filesystem image any more (see the removed --preload-file block below).
 function(etl_configure_wasm_side_module target_name base_name)
 	if(EMSCRIPTEN)
 		target_link_options(${target_name} PRIVATE "-sSIDE_MODULE=1")
@@ -91,21 +90,33 @@ if(BUILD_CLIENT_MOD)
 endif()
 
 # On Emscripten the client loads the game logic (cgame/ui) at runtime through
-# dlopen (see Sys_LoadGameDll). Rather than requiring those SIDE_MODULE .wasm
-# files to be served next to etl.html and fetched at startup - which fails with
-# a 404 whenever a deployment forgets to copy them - bake them straight into the
-# engine's virtual filesystem image (etl.data) at the exact path the engine
-# dlopen()s them from (fs_basepath "/etlegacy" + fs_game "legacy"). This way the
-# modules always ship with the page and never need separate hosting. The
-# add_dependencies() call guarantees the modules are built before etl links so
-# the file packager can embed them.
-if(EMSCRIPTEN AND BUILD_CLIENT_MOD AND TARGET etl AND TARGET cgame AND TARGET ui)
-	add_dependencies(etl cgame ui)
-	# SHELL: keeps each "--preload-file src@dst" pair as one argument (CMake
-	# otherwise de-duplicates/space-splits it), which emcc's file packager needs.
+# dlopen (see Sys_LoadGameDll). Rather than baking the SIDE_MODULE .so files
+# into the engine's virtual filesystem image (etl.data) - which forced every
+# byte of the modules through the .data package loader and made etl.data a
+# mandatory, separately-hosted artifact - the browser now downloads the regular
+# legacy mod pk3 (which already contains cgame/ui plus the ui menu files) into
+# fs_homepath/legacy at startup, exactly like the retail etmain paks. The engine
+# then extracts and dlopen()s the modules from that pk3 (FS_CL_ExtractFromPakFile
+# -> Sys_LoadGameDll), just as the native client does. The shell template is
+# configured here (after ETLVersion.cmake ran, so ETL_CMAKE_VERSION_SHORT is
+# known) with the exact pk3 filename it must fetch, and the resulting shell is
+# used for the engine link. The pk3 name is also written to a file so the CI
+# packaging step ships a matching legacy_<version>.pk3.
+if(EMSCRIPTEN AND BUILD_CLIENT_MOD AND TARGET etl)
+	set(ETL_MOD_PK3_NAME "${MODNAME}_${ETL_CMAKE_VERSION_SHORT}.pk3")
+	configure_file(
+		"${PROJECT_SOURCE_DIR}/src/web/shell.html"
+		"${CMAKE_CURRENT_BINARY_DIR}/shell.html"
+		@ONLY
+	)
 	target_link_options(etl PRIVATE
-		"SHELL:--preload-file $<TARGET_FILE:cgame>@/etlegacy/${MODNAME}/$<TARGET_FILE_NAME:cgame>"
-		"SHELL:--preload-file $<TARGET_FILE:ui>@/etlegacy/${MODNAME}/$<TARGET_FILE_NAME:ui>"
+		"SHELL:--shell-file ${CMAKE_CURRENT_BINARY_DIR}/shell.html"
+	)
+	# Single source of truth for the mod pk3 filename so external packaging
+	# (e.g. .github/workflows/emscripten.yml) can ship a matching pk3.
+	file(GENERATE
+		OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/etl_web_pk3_name.txt"
+		CONTENT "${ETL_MOD_PK3_NAME}\n"
 	)
 endif()
 
