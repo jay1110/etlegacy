@@ -111,6 +111,35 @@
             color: #666;
         }
 
+        #local-assets {
+            margin-top: 22px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #local-assets .local-assets-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        #local-assets-hint {
+            display: block;
+            max-width: 420px;
+            font-size: 0.78em;
+            color: #888;
+            line-height: 1.5;
+            text-align: center;
+        }
+
+        #error-actions {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
         #controls-bar {
             position: fixed;
             bottom: 0;
@@ -270,7 +299,22 @@
         </div>
         <div id="progress-text">Loading...</div>
         <div id="status-text"></div>
-        <div id="build-marker" style="margin-top:24px;font-size:12px;color:#6c6c8a;">shell build: 2026-07-04-A</div>
+        <!-- Let users supply the retail paks from their own ET installation
+             (or retry the network download) without leaving the loader. -->
+        <div id="local-assets">
+            <div class="local-assets-buttons">
+                <button class="control-btn" type="button" onclick="pickLocalPaks()">Load local game files (pak0-2.pk3)</button>
+                <button class="control-btn" type="button" onclick="retryDownload()">Download game files</button>
+            </div>
+            <div id="local-assets-hint">
+                Slow or failing download? Select <b>pak0.pk3</b>, <b>pak1.pk3</b>
+                and <b>pak2.pk3</b> from your Wolfenstein: Enemy Territory
+                installation, or retry the download.
+            </div>
+        </div>
+        <input type="file" id="pak-file-input" accept=".pk3" multiple style="display:none"
+               onchange="onLocalPaksChosen(this)">
+        <div id="build-marker" style="margin-top:24px;font-size:12px;color:#6c6c8a;">shell build: 2026-07-04-B</div>
     </div>
 
     <!-- Error overlay -->
@@ -278,6 +322,10 @@
         <div id="error-message">
             <h2>Error</h2>
             <p id="error-text">An error occurred while loading the game.</p>
+            <div id="error-actions">
+                <button class="control-btn" type="button" onclick="pickLocalPaks()">Load local game files (pak0-2.pk3)</button>
+                <button class="control-btn" type="button" onclick="retryDownload()">Retry download</button>
+            </div>
         </div>
     </div>
 
@@ -374,6 +422,12 @@
             if (typeof Ctx !== 'function') return;
 
             var contexts = [];
+            // Browsers refuse to start an AudioContext until the user has
+            // interacted with the page. Calling resume() before that logs a
+            // noisy "The AudioContext was not allowed to start" warning to the
+            // console on every attempt (e.g. from the visibility handler below),
+            // so only actually resume once a real user gesture has happened.
+            var userGestured = false;
             function track(ctx) {
                 if (ctx && contexts.indexOf(ctx) === -1) {
                     contexts.push(ctx);
@@ -381,6 +435,7 @@
                 return ctx;
             }
             function resumeAll() {
+                if (!userGestured) return;   // avoid pre-gesture autoplay warnings
                 for (var i = 0; i < contexts.length; i++) {
                     var c = contexts[i];
                     if (c && c.state === 'suspended' && c.resume) {
@@ -416,6 +471,7 @@
             // context and is harmless if already running.
             var unlockEvents = ['pointerdown', 'keydown', 'touchstart'];
             function unlock() {
+                userGestured = true;
                 resumeAll();
                 for (var i = 0; i < unlockEvents.length; i++) {
                     window.removeEventListener(unlockEvents[i], unlock, true);
@@ -479,6 +535,10 @@
 
                 if (text === Module.setStatus.last.text) return;
                 Module.setStatus.last.text = text;
+                // Record when the status last changed so the startup watchdog
+                // can tell an actively-progressing download (status keeps
+                // updating) apart from a genuine stall (status frozen).
+                Module.setStatus.last.time = Date.now();
 
                 var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
                 if (m) {
@@ -545,15 +605,42 @@
         // Watchdog: if the engine has not started (overlay still visible) after
         // a generous delay and nothing has errored, tell the user where it is
         // stuck instead of leaving them staring at a frozen "Loading..." screen.
-        var startupWatchdog = setTimeout(function () {
-            var overlay = document.getElementById('loading-overlay');
-            var errorOverlay = document.getElementById('error-overlay');
-            if (overlay && !overlay.classList.contains('hidden') &&
-                errorOverlay && errorOverlay.style.display !== 'flex') {
+        //
+        // A large retail pak (pak0.pk3 is ~228 MB) can legitimately take minutes
+        // to download on a slow connection, and Module.setStatus keeps ticking
+        // with fresh progress the whole time. Firing a fixed timer would wrongly
+        // accuse an in-progress download of being "stuck", so instead the
+        // watchdog only complains after a period of *inactivity*: it reschedules
+        // itself as long as the status text keeps changing (download progressing)
+        // and only shows the message once nothing has advanced for STALL_MS.
+        var STARTUP_STALL_MS = 60000; // no progress for this long => report stall
+        var startupWatchdog = null;
+        function scheduleStartupWatchdog(delay) {
+            startupWatchdog = setTimeout(function () {
+                var overlay = document.getElementById('loading-overlay');
+                var errorOverlay = document.getElementById('error-overlay');
+                // Already finished or already showing an error - nothing to do.
+                if (!overlay || overlay.classList.contains('hidden') ||
+                    (errorOverlay && errorOverlay.style.display === 'flex')) {
+                    return;
+                }
+                // If the status changed recently the download/startup is still
+                // making progress; wait until it has actually been idle for the
+                // full STALL window before giving up.
+                var lastChange = (Module.setStatus.last && Module.setStatus.last.time) ||
+                    Date.now();
+                var idle = Date.now() - lastChange;
+                if (idle < STARTUP_STALL_MS) {
+                    scheduleStartupWatchdog(STARTUP_STALL_MS - idle);
+                    return;
+                }
                 var where = (Module.setStatus.last && Module.setStatus.last.text) ||
                     'initializing';
-                showError('The game is taking unusually long to start ' +
-                    '(stuck at: ' + where + ').\n\n' +
+                showError('The game appears to be stuck at: ' + where + '.\n\n' +
+                    'Nothing has progressed for a while. If you are on a slow ' +
+                    'connection a large pak may still be downloading - you can ' +
+                    'wait, or use "Load local game files" below to pick ' +
+                    'pak0.pk3, pak1.pk3 and pak2.pk3 from your computer.\n\n' +
                     'Open the browser console (F12) for the exact error. ' +
                     'Common causes:\n' +
                     '\u2022 etl.wasm failed to download (check the ' +
@@ -564,8 +651,11 @@
                     '\u2022 The mod pk3 could not be fetched from the legacy/ ' +
                     'folder next to etl.html.\n' +
                     '\u2022 WebGL is unavailable or disabled in this browser.');
-            }
-        }, 25000);
+            }, delay);
+        }
+        // First check only after the full stall window, so a normal (even slow)
+        // download is never wrongly flagged.
+        scheduleStartupWatchdog(STARTUP_STALL_MS);
 
         function showError(message) {
             var overlay = document.getElementById('error-overlay');
@@ -626,6 +716,39 @@
         function toggleConsole() {
             consoleVisible = !consoleVisible;
             document.getElementById('console-panel').style.display = consoleVisible ? 'block' : 'none';
+        }
+
+        // --- Local game files (retail paks) --------------------------------
+        // A browser build ships no game data. By default the paks are fetched
+        // over the network, but that can be slow (pak0.pk3 is ~228 MB) or fail
+        // entirely, so let the user hand the engine the paks straight from their
+        // own Wolfenstein: Enemy Territory installation instead. The heavy
+        // lifting (writing into the cached virtual filesystem) is done by
+        // window.etlProvideLocalPaks, exposed by the asset bootstrap below.
+        function pickLocalPaks() {
+            var input = document.getElementById('pak-file-input');
+            if (input) {
+                input.value = '';   // allow re-selecting the same file
+                input.click();
+            }
+        }
+
+        function onLocalPaksChosen(input) {
+            if (!input || !input.files || !input.files.length) return;
+            if (typeof window.etlProvideLocalPaks === 'function') {
+                window.etlProvideLocalPaks(input.files);
+            }
+        }
+
+        // Retry / start the network download of the paks. Reusing a full reload
+        // is the simplest robust path: anything already cached in IndexedDB is
+        // reused and only the missing paks are re-fetched.
+        function retryDownload() {
+            if (typeof window.etlRetryDownload === 'function') {
+                window.etlRetryDownload();
+            } else {
+                window.location.reload();
+            }
         }
 
         // In-page relay/server connect form. The engine reads the relay and
@@ -1285,6 +1408,83 @@
                     }
                 });
             }
+
+            // Read a browser File object into a Uint8Array (arrayBuffer() is not
+            // available on older browsers, so fall back to FileReader).
+            function readFileBytes(file) {
+                if (file.arrayBuffer) {
+                    return file.arrayBuffer().then(function (buf) {
+                        return new Uint8Array(buf);
+                    });
+                }
+                return new Promise(function (resolve, reject) {
+                    var reader = new FileReader();
+                    reader.onload = function () {
+                        resolve(new Uint8Array(reader.result));
+                    };
+                    reader.onerror = function () {
+                        reject(reader.error || new Error('could not read ' + file.name));
+                    };
+                    reader.readAsArrayBuffer(file);
+                });
+            }
+
+            // Store retail paks the user picked from their own installation into
+            // the (IndexedDB-cached) etmain directory, then reload. On reload the
+            // asset bootstrap sees the paks already present (downloadInto skips
+            // any file that exists) and starts without a network download - the
+            // same code path used for paks cached from a previous session, which
+            // keeps this robust and avoids re-implementing the startup flow.
+            window.etlProvideLocalPaks = function (fileList) {
+                var files = Array.prototype.slice.call(fileList || []);
+                if (!files.length) { return Promise.resolve(0); }
+                if (!Module.FS || !Module.FS.writeFile) {
+                    showError('The game engine has not finished initialising yet, ' +
+                        'so local files cannot be stored. Please wait a moment ' +
+                        'and try again.');
+                    return Promise.resolve(0);
+                }
+                Module.setStatus('Loading local game files...');
+                try { Module.FS.mkdirTree(ETMAIN_DIR); } catch (e) { /* exists */ }
+
+                return files.reduce(function (chain, file) {
+                    return chain.then(function (count) {
+                        // Use only the base name, lower-cased so it matches the
+                        // engine's expected pak names (pak0.pk3, ...) on the
+                        // case-sensitive virtual FS regardless of how the user's
+                        // OS cased the file. Accept any .pk3; ignore anything else.
+                        var name = (file.name || '').split(/[\\/]/).pop().toLowerCase();
+                        if (!/\.pk3$/.test(name)) { return count; }
+                        return readFileBytes(file).then(function (bytes) {
+                            Module.FS.writeFile(ETMAIN_DIR + '/' + name, bytes);
+                            return count + 1;
+                        });
+                    });
+                }, Promise.resolve(0)).then(function (count) {
+                    if (!count) {
+                        showError('None of the selected files are .pk3 game files.' +
+                            '\n\nPlease select pak0.pk3, pak1.pk3 and pak2.pk3 from ' +
+                            'your Wolfenstein: Enemy Territory installation.');
+                        return count;
+                    }
+                    // Persist to IndexedDB so the reload below (and future loads)
+                    // find them, then restart cleanly through the normal flow.
+                    return persist().then(function () {
+                        window.location.reload();
+                        return count;
+                    });
+                }).catch(function (err) {
+                    showError('Could not store the selected game files: ' +
+                        (err && err.message || err));
+                    return 0;
+                });
+            };
+
+            // Retry / start the network download. A full reload reuses anything
+            // already cached in IndexedDB and only re-fetches what is missing.
+            window.etlRetryDownload = function () {
+                window.location.reload();
+            };
 
             // Run before the engine's main(): block startup until assets exist.
             Module.preRun = Module.preRun || [];

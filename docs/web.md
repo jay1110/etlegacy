@@ -78,6 +78,13 @@ Copy `pak0.pk3`, `pak1.pk3`, `pak2.pk3` from a retail Wolfenstein: Enemy
 Territory install into `etmain/`. **These are not included and may not be
 redistributed.**
 
+Alternatively, you do not have to host the retail paks at all: the loading
+screen has a **"Load local game files (pak0-2.pk3)"** button that lets each
+player pick `pak0.pk3`, `pak1.pk3` and `pak2.pk3` from their own installation
+directly in the browser. The picked paks are written into the in-browser cache
+(IndexedDB), so they are only chosen once. This is also offered on the error
+screen if a network download fails, alongside a **"Retry download"** button.
+
 ## 3. Serve the page
 
 Any static web server works, as long as `.wasm` is served with the
@@ -185,3 +192,28 @@ node tools/web-smoke/boot-smoke.mjs dist/etlegacy-web
 - Latency is higher than native UDP (the relay uses TCP/WebSocket).
 - The retail paks must be supplied by the user; they are never redistributed.
 - WebRTC data channels (lower latency than WebSocket) are possible future work.
+- The browser console logs `The ScriptProcessorNode is deprecated. Use
+  AudioWorkletNode instead.` once at startup. This comes from Emscripten's
+  bundled SDL2 audio backend, not from ET: Legacy, and is a harmless
+  deprecation notice — sound still works.
+
+## Troubleshooting
+
+- **"The game appears to be stuck at: Downloading pakX.pk3 …"** — a large pak
+  (`pak0.pk3` is ~228 MB) can take a while on a slow link. The loader only shows
+  this once the download has made **no progress for a full minute**; while the
+  byte counter keeps moving it will keep waiting. You can also click **"Load
+  local game files"** to pick the paks from your own installation instead of
+  waiting for the download.
+- **WebGL `no ARRAY_BUFFER is bound and offset is non-zero` errors / a black
+  screen** — the renderer draws from client-side vertex arrays, which WebGL does
+  not allow directly. The web build links with `-s FULL_ES2=1` (see
+  `cmake/ETLEmscripten.cmake`) so Emscripten uploads those arrays into buffer
+  objects automatically. If you build without it you will see a flood of these
+  `INVALID_OPERATION` messages and nothing renders.
+- **`memory access out of bounds` (at `doRewind` / `__synccall` /
+  `silence_callback`)** — this is an Asyncify stack overflow. The web build sets
+  a generous `-s ASYNCIFY_STACK_SIZE` and native `-s STACK_SIZE` in
+  `cmake/ETLEmscripten.cmake`; the engine's deep call stacks overflow the
+  Emscripten defaults.
+

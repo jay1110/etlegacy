@@ -95,11 +95,30 @@ set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS TRUE)
 # LEGACY_GL_EMULATION=1: Emulate fixed-function/immediate-mode desktop GL
 #   (glBegin/glEnd, glPushMatrix, glMatrixMode, ...) on top of WebGL. The
 #   OpenGL 1.x renderer relies on these, so this is required at link time.
+# FULL_ES2=1: Emulate OpenGL ES 2 client-side vertex arrays on top of WebGL.
+#   WebGL forbids drawing from CPU-side memory (glVertexAttribPointer /
+#   glDrawElements / glDrawArrays with a non-zero offset and no VBO bound),
+#   which the renderer's vertex arrays use. Without this the browser logs a
+#   flood of "no ARRAY_BUFFER is bound and offset is non-zero" /
+#   "no buffer is bound to enabled attribute" INVALID_OPERATION errors and
+#   nothing is drawn. FULL_ES2 makes Emscripten upload those client-side
+#   arrays into temporary buffer objects automatically. Both the reference
+#   web ports (jdarpinian/ioq3 and GMH-Code/Wwasm) enable it for the same
+#   reason.
 # ALLOW_MEMORY_GROWTH=1: Allow the WASM heap to grow dynamically
 # WASM=1: Output WebAssembly (not asm.js)
 # ASYNCIFY: Enable async/await support for the main loop
 # FETCH=1: Provide the emscripten_fetch API used by src/qcommon/dl_main_web.c
 # INITIAL_MEMORY: Set initial memory allocation
+# STACK_SIZE: The engine has deep call stacks (renderer -> backend ->
+#   SDL_GL_SwapWindow, deeply nested game/ui code); the Emscripten default
+#   (64 KiB) overflows into "memory access out of bounds" traps, so give it a
+#   generous native stack, matching the reference web ports (4-5 MiB).
+# ASYNCIFY_STACK_SIZE: Asyncify unwinds/rewinds the whole call stack through
+#   the blocking main loop (SDL_GL_SwapWindow -> emscripten_sleep). If this
+#   buffer is too small the rewind overruns it and traps with "memory access
+#   out of bounds" (seen at doRewind / __synccall / silence_callback). 64 KiB
+#   is not enough for this engine's stack depth; use 1 MiB.
 #-----------------------------------------------------------------
 set(EMSCRIPTEN_COMMON_FLAGS "-s USE_SDL=2")
 set(EMSCRIPTEN_LINK_FLAGS
@@ -108,7 +127,9 @@ set(EMSCRIPTEN_LINK_FLAGS
 	"-s ASYNCIFY"
 	"-s FETCH=1"
 	"-s INITIAL_MEMORY=536870912" # 512 MiB
-	"-s ASYNCIFY_STACK_SIZE=65536"
+	"-s STACK_SIZE=5242880" # 5 MiB native stack (Emscripten default 64 KiB is too small)
+	"-s ASYNCIFY_STACK_SIZE=1048576" # 1 MiB Asyncify rewind buffer
+	"-s FULL_ES2=1"
 	"-s GL_UNSAFE_OPTS=0"
 	"-s FORCE_FILESYSTEM=1"
 	# The client loads the game logic (cgame/ui) at runtime via dlopen. On wasm
