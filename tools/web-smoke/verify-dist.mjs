@@ -67,8 +67,8 @@ if (exists('etl.html')) {
 //    WebAssembly magic number", so validate the magic here, not just presence.
 const WASM_MAGIC = Buffer.from([0x00, 0x61, 0x73, 0x6d]);
 
-function firstBytes(buf, n = 4) {
-    return Array.from(buf.subarray(0, n))
+function firstBytes(buf, count = 4) {
+    return Array.from(buf.subarray(0, count))
         .map((b) => b.toString(16).padStart(2, '0'))
         .join(' ');
 }
