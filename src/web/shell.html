@@ -773,6 +773,27 @@
             var ETMAIN_DIR = INSTALL_DIR + '/etmain';
             var LEGACY_DIR = INSTALL_DIR + '/legacy';
 
+            // fs_homepath (Sys_DefaultHomePath) is $HOME/.etlegacy, and $HOME on
+            // Emscripten is /home/web_user, so the mod's home game directory is
+            // /home/web_user/.etlegacy/legacy. The engine's Sys_LoadGameDll first
+            // *extracts* the cgame/ui side modules from the mod pk3 into this
+            // directory and then dlopen()s them from here *before* it falls back
+            // to fs_basepath/legacy (LEGACY_DIR). That extracted copy is written
+            // straight to the virtual filesystem, so it is NOT run through
+            // Emscripten's wasm preload plugin and cannot be dlopen()ed - the
+            // first load attempt fails with "failed: (null)". To make that first
+            // attempt succeed we precompile the side modules into this home game
+            // directory as well (see preloadSideModule); Emscripten's dlopen()
+            // then finds the compiled module in preloadedWasm (keyed by path)
+            // regardless of what the engine's own extraction later writes there.
+            var HOME_LEGACY_DIR = '/home/web_user/.etlegacy/legacy'; // must match Sys_DefaultHomePath()
+
+            // Every directory the engine may dlopen() a side module from, in the
+            // order it searches them. Precompiling the modules into all of them
+            // makes the first dlopen() a preloadedWasm cache hit instead of
+            // depending on the engine falling through to fs_basepath.
+            var SIDE_MODULE_DIRS = [HOME_LEGACY_DIR, LEGACY_DIR];
+
             // Where to download the ET: Legacy mod data from. This is the mod's
             // "legacy/" folder (analogous to etmain/ for the retail paks) served
             // next to this page by default, so it is fetched same-origin (no CORS
@@ -1053,28 +1074,25 @@
                 }, Promise.resolve(null));
             }
 
-            // Preload a game-logic side module (cgame/ui) so the engine's
-            // dlopen() can load it. FS.createPreloadedFile runs the module through
-            // Emscripten's wasm preload plugin, which compiles it and caches it in
-            // preloadedWasm keyed by its virtual-FS path. The engine looks the
-            // module up under fs_basepath (LEGACY_DIR, i.e. /etlegacy/legacy) so
-            // dlopen() becomes a cache hit there (see Sys_LoadGameDll /
-            // Sys_TryLibraryLoad). Without this precompilation dlopen() cannot
-            // instantiate the module and startup aborts with "VM_Create on ui
-            // failed".
-            //
-            // The bytes come from the mod pk3 the shell just downloaded (the
-            // reliable, always-present source); if the module is not in the pk3
-            // the standalone .so served next to the pk3 is used as a fallback.
-            // createPreloadedFile accepts the bytes directly (no second fetch),
-            // and a string URL for the fallback.
+            // Precompile a game-logic side module (cgame/ui) into one directory so
+            // the engine's dlopen() can load it. FS.createPreloadedFile runs the
+            // module through Emscripten's wasm preload plugin, which compiles it
+            // and caches it in preloadedWasm keyed by its virtual-FS path. The
+            // engine's dlopen() then becomes a cache hit for exactly that path
+            // (see Sys_LoadGameDll / Sys_TryLibraryLoad). Without this
+            // precompilation dlopen() cannot instantiate the module and startup
+            // aborts with "VM_Create on ui failed".
             //
             // The compiled module lives in preloadedWasm (in memory), so it must
             // be re-preloaded on every load; drop any copy persisted in IndexedDB
             // from a previous session first, otherwise createPreloadedFile throws
             // trying to recreate an existing file.
-            function createPreloadedSideModule(name, source) {
-                var target = LEGACY_DIR + '/' + name;
+            function createPreloadedSideModule(dir, name, source) {
+                try {
+                    Module.FS.mkdirTree(dir);
+                } catch (e) { /* already exists */ }
+
+                var target = dir + '/' + name;
                 try {
                     if (Module.FS.analyzePath(target).exists) {
                         Module.FS.unlink(target);
@@ -1084,7 +1102,7 @@
                 return new Promise(function (resolve, reject) {
                     try {
                         Module.FS.createPreloadedFile(
-                            LEGACY_DIR, name, source, true, false,
+                            dir, name, source, true, false,
                             function () { resolve(); },
                             function (err) {
                                 // Preserve the real reason (a network error for the
@@ -1100,21 +1118,42 @@
                 });
             }
 
+            // Fetch the raw bytes of a standalone side module served in legacy/.
+            // Used only as a fallback when the module is not inside the mod pk3.
+            function fetchStandaloneSideModule(name) {
+                return fetch(LEGACY_BASE + name).then(function (response) {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status + ' for ' +
+                            LEGACY_BASE + name);
+                    }
+                    return response.arrayBuffer();
+                }).then(function (buf) { return new Uint8Array(buf); });
+            }
+
             function preloadSideModule(name) {
                 Module.setStatus('Loading ' + name);
+                // Obtain the module bytes once - preferably straight from the mod
+                // pk3 the shell downloaded (the reliable, always-present source),
+                // otherwise from the standalone .so served next to the pk3.
                 return extractSideModuleFromPk3(name).then(function (bytes) {
-                    if (bytes) {
-                        // Preferred: compile the module straight from the mod pk3.
-                        return createPreloadedSideModule(name, bytes);
-                    }
-                    // Fallback: fetch the standalone .so served in legacy/.
-                    return createPreloadedSideModule(name, LEGACY_BASE + name)
-                        .catch(function (err) {
-                            throw new Error('it is not in the mod pk3 and the ' +
-                                'standalone copy at ' + LEGACY_BASE + name +
-                                ' could not be loaded (' +
-                                (err && err.message || err) + ')');
+                    if (bytes) { return bytes; }
+                    return fetchStandaloneSideModule(name).catch(function (err) {
+                        throw new Error('it is not in the mod pk3 and the ' +
+                            'standalone copy at ' + LEGACY_BASE + name +
+                            ' could not be loaded (' +
+                            (err && err.message || err) + ')');
+                    });
+                }).then(function (bytes) {
+                    // Precompile the module into every directory the engine may
+                    // dlopen() it from (fs_homepath/legacy is searched first in a
+                    // release build, then fs_basepath/legacy) so the very first
+                    // load attempt is a preloadedWasm cache hit instead of failing
+                    // on the engine's freshly-extracted, un-preloaded copy.
+                    return SIDE_MODULE_DIRS.reduce(function (chain, dir) {
+                        return chain.then(function () {
+                            return createPreloadedSideModule(dir, name, bytes);
                         });
+                    }, Promise.resolve());
                 }).catch(function (err) {
                     // Tag the failure so the top-level handler can reliably tell a
                     // side-module problem apart from a retail-pak download failure,
