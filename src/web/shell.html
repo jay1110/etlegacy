@@ -36,6 +36,13 @@
         canvas#canvas {
             display: block;
             background-color: #000;
+            /* SDL owns the canvas *pixel* size (it sets canvas.width/height
+               from r_customwidth x r_customheight at window creation). Only
+               constrain the CSS display size so a canvas larger than the
+               viewport scales down; SDL's Emscripten mouse handling maps
+               CSS coordinates back to canvas pixels via getBoundingClientRect. */
+            max-width: 100%;
+            max-height: 100%;
             /* Let the engine's SDL touch handling receive raw touch events:
                without touch-action:none mobile browsers consume touches for
                scrolling/zooming (and synthesize a 300ms delayed click) instead
@@ -1019,15 +1026,13 @@
             panel.scrollTop = panel.scrollHeight;
         }
 
-        // Resize canvas to fill window
-        function resizeCanvas() {
-            var canvas = document.getElementById('canvas');
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        }
-
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
+        // Do NOT resize the canvas from JS. Setting canvas.width/height here
+        // resets the WebGL drawing buffer (black canvas) and fights SDL,
+        // which owns the canvas pixel size (set from r_customwidth/height at
+        // SDL_CreateWindow time). The reference Wwasm web port has no JS
+        // resize handler either; the canvas stays at its fixed pixel size and
+        // is only scaled visually via CSS (max-width/max-height above) or the
+        // browser Fullscreen API (the Fullscreen button).
 
         // Show controls bar when mouse moves to bottom of screen
         document.addEventListener('mousemove', function(e) {

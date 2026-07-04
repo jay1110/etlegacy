@@ -417,6 +417,23 @@ static void GLimp_InitCvars(void)
 	r_allowResize     = Cvar_Get("r_allowResize", "0", CVAR_ARCHIVE);
 
 	// Window cvars
+#ifdef __EMSCRIPTEN__
+	// Browser build: never let SDL go fullscreen - Emscripten's SDL maps
+	// SDL_WINDOW_FULLSCREEN onto the browser Fullscreen API, which needs a
+	// user gesture and leaves a black canvas when the request is deferred
+	// or rejected. Fullscreen is the page's job (the shell's Fullscreen
+	// button). The reference Wwasm web port registers r_fullscreen "0"
+	// CVAR_ROM and runs at a fixed windowed resolution (r_mode -1 with
+	// r_customwidth 1366 x r_customheight 768) for the same reason.
+	// CVAR_ROM force-resets any archived/user value back to "0".
+	r_fullscreen     = Cvar_Get("r_fullscreen", "0", CVAR_ROM);
+	r_noBorder       = Cvar_Get("r_noborder", "0", CVAR_ARCHIVE_ND | CVAR_LATCH);
+	r_centerWindow   = Cvar_Get("r_centerWindow", "0", CVAR_ARCHIVE | CVAR_LATCH);
+	r_customwidth    = Cvar_Get("r_customwidth", "1366", CVAR_ARCHIVE | CVAR_LATCH);
+	r_customheight   = Cvar_Get("r_customheight", "768", CVAR_ARCHIVE | CVAR_LATCH);
+	r_swapInterval   = Cvar_Get("r_swapInterval", "0", CVAR_ARCHIVE_ND | CVAR_LATCH);
+	r_mode           = Cvar_Get("r_mode", "-1", CVAR_ARCHIVE | CVAR_LATCH | CVAR_UNSAFE);
+#else
 	r_fullscreen     = Cvar_Get("r_fullscreen", "1", CVAR_ARCHIVE | CVAR_LATCH);
 	r_noBorder       = Cvar_Get("r_noborder", "0", CVAR_ARCHIVE_ND | CVAR_LATCH);
 	r_centerWindow   = Cvar_Get("r_centerWindow", "0", CVAR_ARCHIVE | CVAR_LATCH);
@@ -424,6 +441,7 @@ static void GLimp_InitCvars(void)
 	r_customheight   = Cvar_Get("r_customheight", "720", CVAR_ARCHIVE | CVAR_LATCH);
 	r_swapInterval   = Cvar_Get("r_swapInterval", "0", CVAR_ARCHIVE_ND | CVAR_LATCH);
 	r_mode           = Cvar_Get("r_mode", "-2", CVAR_ARCHIVE | CVAR_LATCH | CVAR_UNSAFE);
+#endif
 	r_customaspect   = Cvar_Get("r_customaspect", "1", CVAR_ARCHIVE_ND | CVAR_LATCH);
 	r_displayRefresh = Cvar_Get("r_displayRefresh", "0", CVAR_LATCH);
 	Cvar_CheckRange(r_displayRefresh, 0, 480, qtrue);
@@ -1302,6 +1320,16 @@ void GLimp_EndFrame(void)
 
 	if (r_fullscreen->modified)
 	{
+#ifdef __EMSCRIPTEN__
+		// Browser build: SDL fullscreen is never toggled (see GLimp_InitCvars,
+		// r_fullscreen is "0" CVAR_ROM). Use the page's Fullscreen button
+		// (browser Fullscreen API) instead. Mirrors Wwasm's GLimp_EndFrame.
+		if (r_fullscreen->integer)
+		{
+			Com_Printf("Fullscreen not allowed in the browser build - use the page's Fullscreen button\n");
+			Cvar_Set("r_fullscreen", "0");
+		}
+#else
 		qboolean fullscreen;
 		qboolean needToToggle;
 
@@ -1337,6 +1365,7 @@ void GLimp_EndFrame(void)
 		// Radar 15961845
 		gammaResetTime = CL_ScaledMilliseconds() + 3000;
 #endif
+#endif // __EMSCRIPTEN__
 		r_fullscreen->modified = qfalse;
 	}
 
