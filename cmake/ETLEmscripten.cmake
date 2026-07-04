@@ -66,6 +66,29 @@ set(BUILD_SERVER_MOD OFF CACHE BOOL "Server modules run natively, not in the bro
 set(BUILD_MOD_PK3 OFF CACHE BOOL "Do not pack a mod pk3 for Emscripten" FORCE)
 
 #-----------------------------------------------------------------
+# Allow the cgame/ui SIDE_MODULEs to actually be linked as wasm
+#-----------------------------------------------------------------
+# Emscripten's CMake platform module (Platform/Emscripten.cmake) sets
+#   set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS FALSE)
+# which makes CMake silently downgrade every SHARED/MODULE library to a static
+# archive: it runs `emar` instead of `emcc`, so no link step happens and the
+# `-sSIDE_MODULE=1` flag set in cmake/ETLBuildMod.cmake is never applied. The
+# resulting cgame.mp.wasm32.so / ui.mp.wasm32.so are then Unix `ar` archives
+# (they start with "!<arch>" / 0x21 0x3C 0x61 0x72) rather than WebAssembly
+# side modules (which must start with the "\0asm" magic 0x00 0x61 0x73 0x6D).
+# The engine's dlopen()/Emscripten's wasm preload plugin reject those archives
+# with "does not start with the WebAssembly magic number", making the browser
+# build fail to load its game logic.
+#
+# emcc does support building wasm side modules, so re-enable shared-library
+# support here (before any target is created in cmake/ETLBuildMod.cmake). With
+# this, `add_library(cgame MODULE ...)` is linked by emcc as a shared module and
+# `-sSIDE_MODULE=1` produces a proper dynamic-link wasm module. On this build
+# only cgame/ui are MODULE libraries (renderers are static-linked into the
+# engine, qagame/tvgame are server-only and disabled), so this is safe.
+set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS TRUE)
+
+#-----------------------------------------------------------------
 # Emscripten compiler and linker flags
 #-----------------------------------------------------------------
 # USE_SDL=2: Use Emscripten's built-in SDL2 port
