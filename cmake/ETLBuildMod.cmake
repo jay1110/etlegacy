@@ -43,8 +43,22 @@ endfunction()
 # corrupted Asyncify state makes every later entry into wasm (e.g. the SDL2
 # scriptProcessorNode.onaudioprocess audio callback) trap the same way. The
 # side modules therefore MUST be linked with -sASYNCIFY as well.
+#
+# -fvisibility=hidden is REQUIRED: cgame and ui define hundreds of identically
+# named symbols (trap_*, dllEntry helpers, String_Init, ...). Emscripten's
+# dynamic linker resolves side-module GOT entries through a single GLOBAL
+# symbol table keyed by name, so with default visibility the module loaded
+# first (cgame) wins every shared name. ui's UI_Init -> String_Init ->
+# trap_Key_KeysForBinding then executes CGAME's trap_Key_KeysForBinding, whose
+# static syscall pointer is still the (-1) sentinel because cgame's dllEntry
+# was never called - trapping with "RuntimeError: table index is out of
+# bounds" (call_indirect to table slot -1) during UI init and leaving a black
+# screen. Hidden visibility keeps intra-module calls direct (non-interposable)
+# and off the GOT; only the symbols the engine dlsym()s - vmMain and dllEntry,
+# which are explicitly marked Q_EXPORT/visibility("default") - stay exported.
 function(etl_configure_wasm_side_module target_name base_name)
 	if(EMSCRIPTEN)
+		target_compile_options(${target_name} PRIVATE "-fvisibility=hidden")
 		target_link_options(${target_name} PRIVATE "-sSIDE_MODULE=1" "-sASYNCIFY")
 		set_target_properties(${target_name} PROPERTIES
 			PREFIX ""
