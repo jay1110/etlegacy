@@ -107,7 +107,11 @@ set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS TRUE)
 #   reason.
 # ALLOW_MEMORY_GROWTH=1: Allow the WASM heap to grow dynamically
 # WASM=1: Output WebAssembly (not asm.js)
-# ASYNCIFY: Enable async/await support for the main loop
+# ASYNCIFY: Enable async/await support for the main loop. NOTE: Asyncify is a
+#   link-time whole-program instrumentation; the dlopen()ed cgame/ui SIDE_MODULEs
+#   must also be linked with -sASYNCIFY (see cmake/ETLBuildMod.cmake) or any
+#   unwind that crosses a mod frame corrupts the rewind and traps with
+#   "memory access out of bounds" at doRewind.
 # FETCH=1: Provide the emscripten_fetch API used by src/qcommon/dl_main_web.c
 # INITIAL_MEMORY: Set initial memory allocation
 # STACK_SIZE: The engine has deep call stacks (renderer -> backend ->
@@ -133,7 +137,7 @@ set(EMSCRIPTEN_LINK_FLAGS
 	"-s WASM=1"
 	"-s ASYNCIFY"
 	"-s FETCH=1"
-	"-s INITIAL_MEMORY=1073741824" # 1 GiB up front; grows on demand up to MAXIMUM_MEMORY
+	"-s INITIAL_MEMORY=2147483648" # 2 GiB up front; grows on demand up to MAXIMUM_MEMORY
 	"-s MAXIMUM_MEMORY=4294967296" # 4 GiB heap cap (wasm32 maximum; Emscripten default 2 GiB is too small)
 	"-s STACK_SIZE=8388608" # 8 MiB native stack (Emscripten default 64 KiB is too small)
 	"-s ASYNCIFY_STACK_SIZE=16777216" # 16 MiB Asyncify rewind buffer (1 MiB still overflowed at doRewind)
@@ -200,7 +204,7 @@ set(CMAKE_EXECUTABLE_SUFFIX ".html")
 
 message(STATUS "Emscripten configuration complete")
 message(STATUS "  Architecture: ${ARCH}")
-message(STATUS "  Memory: 512MB initial, growable")
+message(STATUS "  Memory: 2GB initial, growable to 4GB")
 if(FEATURE_GL4ES)
 	message(STATUS "  Renderer: OpenGL 1.x (via gl4es -> GLES2/WebGL)")
 else()

@@ -222,10 +222,24 @@ node tools/web-smoke/boot-smoke.mjs dist/etlegacy-web
   objects automatically. If you build without it you will see a flood of these
   `INVALID_OPERATION` messages and nothing renders.
 - **`memory access out of bounds` (at `doRewind` / `__synccall` /
-  `silence_callback`)** — this is an Asyncify/native stack overflow or the heap
-  hitting its growth cap. The web build sets a generous `-s
-  ASYNCIFY_STACK_SIZE` (16 MiB), native `-s STACK_SIZE` (8 MiB) and raises the
-  heap cap to the wasm32 maximum (`-s MAXIMUM_MEMORY=4gb`, growing on demand
-  from 1 GiB) in `cmake/ETLEmscripten.cmake`; the engine's deep call stacks and
-  large maps overflow the Emscripten defaults.
+  `silence_callback`, often followed by an endless stream of the same error
+  from `SDL2.audio.scriptProcessorNode.onaudioprocess`)** — three causes, all
+  handled by the build:
+  1. The cgame/ui SIDE_MODULEs must be linked with `-sASYNCIFY` (see
+     `cmake/ETLBuildMod.cmake`). Asyncify unwinds/rewinds the whole call stack
+     through the blocking main loop, and that stack passes through the mods
+     (engine → vmMain → cgame/ui → engine syscall → sleep). A side module
+     built without Asyncify instrumentation corrupts the rewind, trapping at
+     `doRewind`; the corrupted Asyncify state then makes every later entry
+     into wasm (e.g. the SDL2 audio callback) trap too. Make sure any locally
+     built or cached `cgame.mp.wasm32.so` / `ui.mp.wasm32.so` (including the
+     copies inside the legacy mod pk3) come from a build with this flag.
+  2. Asyncify/native stack overflow — the web build sets a generous `-s
+     ASYNCIFY_STACK_SIZE` (16 MiB) and native `-s STACK_SIZE` (8 MiB) in
+     `cmake/ETLEmscripten.cmake`; the engine's deep call stacks overflow the
+     Emscripten defaults.
+  3. The heap hitting its growth cap — the build starts at 2 GiB (`-s
+     INITIAL_MEMORY`) and raises the cap to the wasm32 maximum (`-s
+     MAXIMUM_MEMORY=4gb`, growing on demand); large maps plus downloaded pk3s
+     overflow the 2 GiB Emscripten default cap.
 
