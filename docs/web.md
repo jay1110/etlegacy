@@ -151,7 +151,8 @@ relay (above) or behind an nginx reverse proxy (see the relay README).
 On first load the page asks how to provide the game data: **download
 pak0.pk3** (fetched together with pak1/pak2 and cached in the browser) or
 **use a local pak0.pk3** picked from your own installation. Once the data is
-set, a **Run game** menu offers: joining the preconfigured ETc server (a
+set, a **Run game** menu offers: starting the game to the main menu without
+connecting anywhere, joining the preconfigured ETc server (a
 different `fs_game`, xmod — missing pk3s are downloaded from the server),
 a quick single game (`+map oasis`), a manually maintained server list
 (`SERVER_LIST` in `src/web/shell.html`), and hosting a listen server in the
@@ -232,7 +233,21 @@ node tools/web-smoke/boot-smoke.mjs dist/etlegacy-web
   projection applied to its NDC coordinates, collapsing it off-screen and
   leaving only the black clear color on the canvas. `GL_FullscreenQuad()`
   (`src/renderer/tr_backend.c`) now issues an explicit `glFlush()` while the
-  program is still bound when built with `FEATURE_GL4ES`.
+  program is still bound when built with `FEATURE_GL4ES`. Additionally, the
+  browser build now forces `r_ignorehwgamma 1` (ROM, `src/sdl/sdl_glimp.c`) so
+  the FBO/gamma present pass is skipped entirely and the scene is rendered
+  straight to the canvas; gamma is baked into texture uploads instead
+  (`r_gamma` defaults to `2.2` on the web, like the Wwasm reference port).
+- **Connecting to a server does nothing — no `Awaiting challenge` /
+  `connectResponse` in the console** — two historical bugs in
+  `src/qcommon/net_web.c`, both fixed: `NET_Sleep()`/`NET_Event()` were no-ops,
+  so packets received from the WebSocket relay were queued but *never
+  dispatched* to the client (the handshake replies were silently discarded);
+  and packets sent while the WebSocket was still `CONNECTING` (the very first
+  `getchallenge`) were dropped instead of being buffered until `onopen`. Also
+  note the browser cannot resolve hostnames for game servers — use a numeric
+  IP (`203.0.113.10:27960`), and make sure the relay
+  (`tools/ws-relay`) is running and reachable (`net_wsRelayServer`, `?relay=`).
 - **No sound until (or even after) clicking** — browsers keep an
   `AudioContext` suspended until a user gesture. SDL2's emscripten backend
   resumes it once `navigator.userActivation.hasBeenActive` is true, and the

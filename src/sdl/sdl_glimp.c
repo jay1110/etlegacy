@@ -428,7 +428,16 @@ static void GLimp_InitCvars(void)
 	r_depthbits   = Cvar_Get("r_depthbits", "0", CVAR_ARCHIVE_ND | CVAR_LATCH | CVAR_UNSAFE);
 	Cvar_CheckRange(r_depthbits, 0, 24, qtrue);
 	r_colorbits     = Cvar_Get("r_colorbits", "0", CVAR_ARCHIVE_ND | CVAR_LATCH | CVAR_UNSAFE);
+#ifdef __EMSCRIPTEN__
+	// Browser build: hardware gamma ramps don't exist and the shader-based
+	// gamma post-process (tr_gamma.c fullscreen quad through an FBO) is a
+	// known black-screen source under gl4es. Skip both and apply gamma in
+	// software at texture upload time instead, exactly like the reference
+	// Wwasm web port (r_ignorehwgamma "1" CVAR_ROM there).
+	r_ignorehwgamma = Cvar_Get("r_ignorehwgamma", "1", CVAR_ROM);
+#else
 	r_ignorehwgamma = Cvar_Get("r_ignorehwgamma", "0", CVAR_ARCHIVE_ND | CVAR_LATCH | CVAR_UNSAFE);
+#endif
 
 	// Old modes (these are used by the UI code)
 	Cvar_Get("r_oldFullscreen", "", CVAR_ARCHIVE);
@@ -1076,10 +1085,16 @@ static int GLimp_SetMode(glconfig_t *glConfig, int mode, qboolean fullscreen, qb
 		initialize_gl4es();
 #endif
 
+#ifndef __EMSCRIPTEN__
+		// Never change the swap interval in the browser: frames are paced by
+		// requestAnimationFrame and Emscripten's SDL emulates a swap interval
+		// by busy-waiting extra rAF callbacks (the reference web ports skip
+		// this call for the same reason).
 		if (SDL_GL_SetSwapInterval(r_swapInterval->integer) == -1)
 		{
 			Com_Printf("SDL_GL_SetSwapInterval failed: %s\n", SDL_GetError());
 		}
+#endif
 
 		glConfig->colorBits   = testColorBits;
 		glConfig->depthBits   = testDepthBits;

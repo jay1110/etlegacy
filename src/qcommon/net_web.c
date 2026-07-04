@@ -48,12 +48,28 @@
 // Default WebSocket relay server URL (must match tools/ws-relay default port)
 #define WS_DEFAULT_RELAY_URL "ws://localhost:8080"
 
+// Outgoing packets queued while the WebSocket is still CONNECTING. The very
+// first packets of a connection handshake (getchallenge / getinfo) are sent
+// immediately after the socket is created, before the browser has finished
+// opening it; emscripten_websocket_send_binary() fails on a CONNECTING socket,
+// so buffer them and flush from the onopen callback instead of dropping them.
+#define WS_MAX_PENDING_SENDS 16
+
+typedef struct
+{
+	byte data[MAX_MSGLEN];
+	int length;
+} wsPendingSend_t;
+
 typedef struct
 {
 	EMSCRIPTEN_WEBSOCKET_T socket;
 	qboolean active;
+	qboolean open;
 	netadr_t remoteAddr;
 	char url[MAX_STRING_CHARS];
+	wsPendingSend_t pending[WS_MAX_PENDING_SENDS];
+	int pendingCount;
 } wsConnection_t;
 
 typedef struct
@@ -128,7 +144,17 @@ static EM_BOOL WS_OnOpen(int eventType, const EmscriptenWebSocketOpenEvent *wsEv
 
 	if (conn)
 	{
+		int i;
+
 		Com_Printf("WebSocket connected to %s\n", conn->url);
+		conn->open = qtrue;
+
+		// Flush packets queued while the socket was still connecting
+		for (i = 0; i < conn->pendingCount; i++)
+		{
+			emscripten_websocket_send_binary(conn->socket, conn->pending[i].data, conn->pending[i].length);
+		}
+		conn->pendingCount = 0;
 	}
 
 	return EM_TRUE;
@@ -159,7 +185,9 @@ static EM_BOOL WS_OnClose(int eventType, const EmscriptenWebSocketCloseEvent *ws
 	if (conn)
 	{
 		Com_Printf("WebSocket closed: %s (code: %d)\n", conn->url, wsEvent->code);
-		conn->active = qfalse;
+		conn->active       = qfalse;
+		conn->open         = qfalse;
+		conn->pendingCount = 0;
 	}
 
 	return EM_TRUE;
@@ -228,8 +256,10 @@ static wsConnection_t *WS_GetConnection(const netadr_t *to)
 		return NULL;
 	}
 
-	wsConnections[i].socket = ws;
-	wsConnections[i].active = qtrue;
+	wsConnections[i].socket       = ws;
+	wsConnections[i].active       = qtrue;
+	wsConnections[i].open         = qfalse;
+	wsConnections[i].pendingCount = 0;
 	Com_Memcpy(&wsConnections[i].remoteAddr, to, sizeof(netadr_t));
 	Q_strncpyz(wsConnections[i].url, url, sizeof(wsConnections[i].url));
 
@@ -409,6 +439,10 @@ qboolean Sys_StringToAdr(const char *s, netadr_t *a, netadrtype_t family)
 
 	if (sscanf(base, "%hhu.%hhu.%hhu.%hhu", &a->ip[0], &a->ip[1], &a->ip[2], &a->ip[3]) != 4)
 	{
+		// The browser has no DNS resolver for raw sockets; the relay is
+		// addressed by URL but game servers must be given as numeric IPs.
+		Com_Printf("Sys_StringToAdr: cannot resolve '%s' - the browser build "
+		           "cannot resolve hostnames, use a numeric IP (e.g. 203.0.113.10:27960)\n", base);
 		a->type = NA_BAD;
 		return qfalse;
 	}
@@ -524,13 +558,8 @@ NET_GetPacket
 */
 qboolean NET_GetPacket(netadr_t *net_from, msg_t *net_message, fd_set *fdr)
 {
-	// First check the loopback queue
-	if (NET_GetLoopPacket(NS_CLIENT, net_from, net_message))
-	{
-		return qtrue;
-	}
-
-	// Then check the WebSocket packet queue
+	// Check the WebSocket packet queue (loopback packets are drained by
+	// Com_EventLoop via NET_GetLoopPacket, exactly like the net_ip.c build)
 	if (packetQueueHead != packetQueueTail)
 	{
 		wsPacket_t *pkt = &packetQueue[packetQueueTail];
@@ -564,6 +593,22 @@ void Sys_SendPacket(int length, const void *data, const netadr_t *to)
 	conn = WS_GetConnection(to);
 	if (!conn)
 	{
+		return;
+	}
+
+	if (!conn->open)
+	{
+		// Socket still CONNECTING: sends would fail, so queue until onopen
+		if (conn->pendingCount < WS_MAX_PENDING_SENDS && length <= MAX_MSGLEN)
+		{
+			Com_Memcpy(conn->pending[conn->pendingCount].data, data, length);
+			conn->pending[conn->pendingCount].length = length;
+			conn->pendingCount++;
+		}
+		else
+		{
+			Com_DPrintf("Sys_SendPacket: pending queue full, packet dropped\n");
+		}
 		return;
 	}
 
@@ -620,12 +665,41 @@ void NET_Shutdown(void)
 /*
 ====================
 NET_Event
+
+Dispatch all packets received via the WebSocket callbacks to the client or
+the (listen) server, mirroring net_ip.c's NET_Event. This is the ONLY place
+incoming server traffic enters the engine on the web build: without it the
+connection handshake replies (challengeResponse/connectResponse) and every
+gamestate packet would sit in the queue forever and connecting to a server
+silently does nothing.
 ====================
 */
 void NET_Event(fd_set *fdr)
 {
-	// WebSocket events are handled asynchronously via callbacks
-	// Nothing to do here
+	byte     bufData[MAX_MSGLEN + 1];
+	netadr_t from;
+	msg_t    netmsg;
+
+	while (1)
+	{
+		MSG_Init(&netmsg, bufData, sizeof(bufData));
+
+		if (NET_GetPacket(&from, &netmsg, fdr))
+		{
+			if (com_sv_running->integer)
+			{
+				Com_RunAndTimeServerPacket(&from, &netmsg);
+			}
+			else
+			{
+				CL_PacketEvent(&from, &netmsg);
+			}
+		}
+		else
+		{
+			break;
+		}
+	}
 }
 
 /*
@@ -635,7 +709,9 @@ NET_Sleep
 */
 void NET_Sleep(int64_t usec)
 {
-	// In browser, we can't block. Just return.
+	// In the browser we cannot block; WebSocket receive callbacks have already
+	// queued any pending packets, so just dispatch them.
+	NET_Event(NULL);
 }
 
 /*
