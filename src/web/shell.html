@@ -1203,16 +1203,18 @@
             // into a new engine and crashes at runtime (e.g. Asyncify's
             // "RuntimeError: memory access out of bounds at ... doRewind").
             function downloadInto(sourceUrl, target, label, opts) {
+                var refresh = !!(opts && opts.refresh);
+                var fetchOpts = refresh ? { cache: 'no-cache' } : undefined;
                 var cached = false;
                 try {
                     cached = Module.FS.analyzePath(target).exists;
                 } catch (e) { /* FS not ready yet - fall through and download */ }
 
-                if (cached && !(opts && opts.refresh)) {
+                if (cached && !refresh) {
                     return Promise.resolve();
                 }
 
-                return fetch(sourceUrl, (opts && opts.refresh) ? { cache: 'no-cache' } : undefined).then(function (response) {
+                return fetch(sourceUrl, fetchOpts).then(function (response) {
                     if (!response.ok) {
                         throw new Error('Failed to download ' + label + ': HTTP ' + response.status);
                     }
@@ -1559,6 +1561,9 @@
                     function leb() {
                         var result = 0, shift = 0, b;
                         do {
+                            if (pos >= bytes.length) {
+                                throw new Error('truncated wasm binary');
+                            }
                             b = bytes[pos++];
                             result |= (b & 0x7f) << shift;
                             shift += 7;
@@ -1569,6 +1574,9 @@
                         var id = bytes[pos++];
                         var size = leb();
                         var end = pos + size;
+                        if (end > bytes.length) {
+                            throw new Error('malformed wasm binary (section overruns file)');
+                        }
                         if (id === 7) { // export section
                             var names = [];
                             var count = leb();
