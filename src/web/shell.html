@@ -439,8 +439,8 @@
     <!-- Controls bar -->
     <div id="controls-bar">
         <div>
-            <button class="control-btn" onclick="requestFullscreen()">Fullscreen</button>
-            <button class="control-btn" onclick="requestPointerLock()">Capture Mouse</button>
+            <button class="control-btn" onclick="etlRequestFullscreen()">Fullscreen</button>
+            <button class="control-btn" onclick="etlRequestPointerLock()">Capture Mouse</button>
             <button class="control-btn" onclick="openConnectPanel()">Connect...</button>
             <button class="control-btn" onclick="toggleConsole()">Console</button>
         </div>
@@ -857,7 +857,16 @@
         }
 
         // Fullscreen support (toggle: enter if windowed, exit if already full).
-        function requestFullscreen() {
+        // NOTE: etl.js is not modularized, so all of Emscripten's internal
+        // top-level vars land in the page's global scope. It defines both
+        // `requestPointerLock` (libhtml5.js $requestPointerLock, which needs a
+        // target element argument) and `requestFullscreen` (an alias of
+        // Browser.requestFullscreen). Helpers here must NOT reuse those names,
+        // or the later etl.js assignments silently replace them and e.g. the
+        // canvas click handler ends up calling Emscripten's version without a
+        // target: "TypeError: Cannot read properties of undefined (reading
+        // 'requestPointerLock')". Hence the etl* prefix.
+        function etlRequestFullscreen() {
             var canvas = document.getElementById('canvas');
             var fsElement = document.fullscreenElement ||
                             document.webkitFullscreenElement ||
@@ -882,7 +891,7 @@
         }
 
         // Pointer lock support
-        function requestPointerLock() {
+        function etlRequestPointerLock() {
             var canvas = document.getElementById('canvas');
             canvas.requestPointerLock = canvas.requestPointerLock ||
                                         canvas.mozRequestPointerLock ||
@@ -894,7 +903,7 @@
 
         // Click on canvas to capture mouse
         document.getElementById('canvas').addEventListener('click', function() {
-            requestPointerLock();
+            etlRequestPointerLock();
         });
 
         // Console panel
