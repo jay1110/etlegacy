@@ -1025,7 +1025,11 @@ void *Sys_LoadGameDll(const char *name, qboolean extract,
 		return NULL;
 	}
 
+#ifdef __EMSCRIPTEN__
+	dllEntry    = (void(QDECL *)(intptr_t(QDECL *)(intptr_t *)))Sys_LoadFunction(libHandle, "dllEntry");
+#else
 	dllEntry    = (void(QDECL *)(intptr_t(QDECL *)(intptr_t, ...)))Sys_LoadFunction(libHandle, "dllEntry");
+#endif
 	*entryPoint = (VM_EntryPoint_t)Sys_LoadFunction(libHandle, "vmMain");
 
 	if (!*entryPoint || !dllEntry)
