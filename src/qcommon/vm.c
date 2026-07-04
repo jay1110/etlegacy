@@ -336,6 +336,17 @@ void VM_LoadSymbols(vm_t *vm)
  * @param[in] arg
  * @return
  */
+#ifdef __EMSCRIPTEN__
+/**
+ * On Emscripten (wasm), variadic function pointers don't work correctly across
+ * MAIN_MODULE/SIDE_MODULE boundaries because wasm's call_indirect requires exact
+ * signature matching. This non-variadic version receives an array directly.
+ */
+intptr_t QDECL VM_DllSyscall(intptr_t *args)
+{
+	return currentVM->systemCall(args);
+}
+#else
 intptr_t QDECL VM_DllSyscall(intptr_t arg, ...)
 {
 #if defined(__loongarch64) || defined(__x86_64__) || defined (_WIN64) || defined (__llvm__) || defined(__ANDROID__) || defined(__aarch64__) || ((defined __linux__) && (defined __powerpc__))
@@ -364,6 +375,7 @@ intptr_t QDECL VM_DllSyscall(intptr_t arg, ...)
 	return currentVM->systemCall(&arg);
 #endif
 }
+#endif
 
 /**
  * @brief Reload the data, but leave everything else in place

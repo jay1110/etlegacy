@@ -90,7 +90,12 @@ void *Sys_LoadDll(const char *name, qboolean useSystemLib);
 // NOTE: arm64 mac has a different calling convention for fixed parameters vs. variadic parameters.
 //       As the module entryPoints (vmMain) in jk2 use fixed arg0 to arg11 we can't use "..." around here or we end up with undefined behavior.
 //       See: https://developer.apple.com/documentation/apple-silicon/addressing-architectural-differences-in-your-macos-code
+// On Emscripten (wasm), variadic function pointers don't work correctly across MAIN_MODULE/SIDE_MODULE boundaries.
+#ifdef __EMSCRIPTEN__
+void *Sys_LoadGameDll(const char *name, qboolean extract, VM_EntryPoint_t *entryPoint, intptr_t (*systemcalls)(intptr_t *));
+#else
 void *Sys_LoadGameDll(const char *name, qboolean extract, VM_EntryPoint_t *entryPoint, intptr_t (*systemcalls)(intptr_t, ...));
+#endif
 void Sys_UnloadDll(void *dllHandle);
 void Sys_ParseArgs(int argc, char **argv);
 void Sys_BuildCommandLine(int argc, char **argv, char *buffer, size_t bufferSize);

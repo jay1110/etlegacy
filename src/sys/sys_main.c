@@ -904,12 +904,23 @@ static void *Sys_TryLibraryLoad(const char *base, const char *gamedir, const cha
  *
  * @return libHandle or NULL
  */
+#ifdef __EMSCRIPTEN__
+// On Emscripten (wasm), variadic function pointers don't work correctly across
+// MAIN_MODULE/SIDE_MODULE boundaries. Use array-based syscall instead.
+void *Sys_LoadGameDll(const char *name, qboolean extract,
+                      VM_EntryPoint_t *entryPoint,
+                      intptr_t (*systemcalls)(intptr_t *))
+{
+	void *libHandle;
+	void (*dllEntry)(intptr_t (*syscallptr)(intptr_t *));
+#else
 void *Sys_LoadGameDll(const char *name, qboolean extract,
                       VM_EntryPoint_t *entryPoint,
                       intptr_t (*systemcalls)(intptr_t, ...))
 {
 	void *libHandle;
 	void (*dllEntry)(intptr_t (*syscallptr)(intptr_t, ...));
+#endif
 	char fname[MAX_OSPATH];
 	char *basepath;
 	char *homepath;

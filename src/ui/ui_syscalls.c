@@ -34,6 +34,19 @@
 
 #include "ui_local.h"
 
+// On Emscripten (wasm), variadic function pointers don't work correctly across
+// MAIN_MODULE/SIDE_MODULE boundaries. Use array-based syscall instead.
+#ifdef __EMSCRIPTEN__
+static intptr_t(QDECL * syscall)(intptr_t *args) = (intptr_t(QDECL *)(intptr_t *)) - 1;
+
+/**
+ * @brief dllEntry
+ */
+Q_EXPORT void dllEntry(intptr_t(QDECL *syscallptr)(intptr_t *args))
+{
+	syscall = syscallptr;
+}
+#else
 static intptr_t(QDECL * syscall)(intptr_t arg, ...) = (intptr_t(QDECL *)(intptr_t, ...)) - 1;
 
 /**
@@ -43,6 +56,7 @@ Q_EXPORT void dllEntry(intptr_t(QDECL *syscallptr)(intptr_t arg, ...))
 {
 	syscall = syscallptr;
 }
+#endif
 
 /**
  * @brief trap_Print
