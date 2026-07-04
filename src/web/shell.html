@@ -611,6 +611,11 @@
             function track(ctx) {
                 if (ctx && contexts.indexOf(ctx) === -1) {
                     contexts.push(ctx);
+                    // SDL2 opens its AudioContext long after the user's first
+                    // gesture (the setup menu click), so a context created now
+                    // starts 'suspended' and would stay silent. The sticky
+                    // user activation lets resume() succeed outside a gesture.
+                    if (userGestured) resumeAll();
                 }
                 return ctx;
             }
@@ -646,16 +651,16 @@
                 window.webkitAudioContext = TrackedAudioContext;
             }
 
-            // Resume on the first user gesture (autoplay unlock). Emscripten
-            // also does this for its own contexts, but tracking here covers any
-            // context and is harmless if already running.
+            // Resume on user gestures (autoplay unlock). Emscripten also does
+            // this for its own contexts, but tracking here covers any context
+            // and is harmless if already running. The listeners are kept for
+            // the lifetime of the page (not one-shot): browsers such as
+            // Firefox/Safari may reject a resume() issued outside a gesture
+            // handler, so a later in-game click/keypress must retry it.
             var unlockEvents = ['pointerdown', 'keydown', 'touchstart'];
             function unlock() {
                 userGestured = true;
                 resumeAll();
-                for (var i = 0; i < unlockEvents.length; i++) {
-                    window.removeEventListener(unlockEvents[i], unlock, true);
-                }
             }
             for (var i = 0; i < unlockEvents.length; i++) {
                 window.addEventListener(unlockEvents[i], unlock, true);

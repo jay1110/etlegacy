@@ -221,6 +221,27 @@ node tools/web-smoke/boot-smoke.mjs dist/etlegacy-web
   `cmake/ETLEmscripten.cmake`) so Emscripten uploads those arrays into buffer
   objects automatically. If you build without it you will see a flood of these
   `INVALID_OPERATION` messages and nothing renders.
+- **Black screen with no GL errors while the engine log looks healthy (gl4es
+  build)** — the renderer draws the whole frame into its own FBO and presents
+  it by drawing a fullscreen quad (gamma/blit shader) to the canvas. gl4es
+  defers `glBegin`/`glEnd` geometry into a pending render list
+  (`LIBGL_BEGINEND=1` default) and draws it on the *next* flush with the GL
+  state current at flush time — and `gl4es_glUseProgram()` does not flush. The
+  engine unbinds the present shader right after the quad, so the quad used to
+  be drawn later by the fixed-function emulator with the 2D pixel-space ortho
+  projection applied to its NDC coordinates, collapsing it off-screen and
+  leaving only the black clear color on the canvas. `GL_FullscreenQuad()`
+  (`src/renderer/tr_backend.c`) now issues an explicit `glFlush()` while the
+  program is still bound when built with `FEATURE_GL4ES`.
+- **No sound until (or even after) clicking** — browsers keep an
+  `AudioContext` suspended until a user gesture. SDL2's emscripten backend
+  resumes it once `navigator.userActivation.hasBeenActive` is true, and the
+  shell (`src/web/shell.html`) additionally tracks every context created and
+  resumes it on `pointerdown`/`keydown`/`touchstart` — including contexts
+  created *after* the first gesture (SDL opens the audio device long after the
+  setup-menu click). If sound is still missing, check the console for
+  `memory access out of bounds` first: once the wasm traps, the audio callback
+  dies with it (see below).
 - **`memory access out of bounds` (at `doRewind` / `__synccall` /
   `silence_callback`, often followed by an endless stream of the same error
   from `SDL2.audio.scriptProcessorNode.onaudioprocess`)** — an Asyncify state

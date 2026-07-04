@@ -409,6 +409,18 @@ void GL_FullscreenQuad(void)
 		glVertex3f(-1.0f, 1.0f, 0.0f);
 	}
 	glEnd();
+
+#ifdef FEATURE_GL4ES
+	// gl4es defers glBegin/glEnd geometry into a pending render list
+	// (LIBGL_BEGINEND=1 default) and only draws it on the next flush, using
+	// the GL state current AT FLUSH TIME. Both callers unbind the shader
+	// program right after this quad, so without an explicit flush the quad
+	// would be drawn later by the fixed-function emulator with the 2D
+	// pixel-space projection applied to these NDC coordinates - collapsing
+	// it off-screen and leaving the canvas black. Flush now, while the
+	// blit/gamma program is still bound (gl4es_glUseProgram does not flush).
+	glFlush();
+#endif
 }
 
 /**
