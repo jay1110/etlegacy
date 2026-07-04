@@ -1409,6 +1409,16 @@ int main(int argc, char **argv)
 	// Emscripten: set paths to virtual filesystem locations
 	Sys_SetBinaryPath("/etlegacy");
 	Sys_SetDefaultInstallPath("/etlegacy");
+
+	// dlopen() the cgame/ui side modules NOW, while the call stack is only one
+	// frame deep. Under -sASYNCIFY every first dlopen() of a path unwinds and
+	// rewinds the whole wasm stack; doing that later from deep inside
+	// Com_Frame (client init -> VM_Create -> Sys_LoadGameDll) corrupts the
+	// rewind and traps with "memory access out of bounds" at doRewind.
+	// Emscripten caches loaded DSOs by path and never unloads them (dlclose is
+	// a no-op), so the engine's own Sys_LoadLibrary() of these paths becomes a
+	// synchronous cache hit. See Sys_PreloadGameDlls in sys_web.c.
+	Sys_PreloadGameDlls();
 #else
 
 #ifdef __APPLE__

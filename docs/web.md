@@ -228,14 +228,29 @@ node tools/web-smoke/boot-smoke.mjs dist/etlegacy-web
   poisons the Asyncify state, after which *every* re-entry into the wasm (e.g.
   the SDL2 audio callback) traps with the same error, forever — only the first
   error matters for diagnosis. Causes, all handled by the build:
-  1. **Stale cgame/ui side modules from an old build (the most common cause in
-     the field).** The engine is linked with `-sASYNCIFY`; every dlopen()ed
+  1. **dlopen() of a side module from deep inside the running engine (the
+     root cause of the field crash at `__dlopen_js` → `doRewind`).** Under
+     `-sASYNCIFY`, Emscripten's `_dlopen_js` is *always* asynchronous: it
+     unwinds and rewinds the entire wasm call stack, even when the module is
+     already precompiled in the `preloadedWasm` cache (the cache only skips
+     the fetch/compile, not the unwind). The engine used to first dlopen
+     cgame/ui deep inside `Com_Frame` (client init → `VM_Create` →
+     `Sys_LoadGameDll`); the dlopen mutated the dynamic-linking state while
+     dozens of frames were unwound and the rewind trapped. None of the
+     working browser ports (Qwasm2, jdarpinian/ioq3) ever dlopen from inside
+     the running engine. The engine now dlopen()s both side modules at the
+     very top of `main()` (`Sys_PreloadGameDlls` in `src/sys/sys_web.c`),
+     the officially supported Asyncify+dlopen pattern; Emscripten caches
+     loaded DSOs by path and its `dlclose()` is a no-op, so every later
+     `Sys_LoadLibrary()` of the same path is a synchronous cache hit and no
+     mid-frame unwind ever happens.
+  2. **Stale cgame/ui side modules from an old build.** The engine is linked
+     with `-sASYNCIFY`; every dlopen()ed
      side module must be Asyncify-instrumented too (`-sASYNCIFY` in
      `cmake/ETLBuildMod.cmake`, requires Emscripten ≥ 3.1.17 for shared
      Asyncify globals across dynamic linking; CI uses 4.0.23). A module built
      without it cannot save/restore its frames when Asyncify unwinds through
-     them (the engine's dlopen itself unwinds the whole stack on every module
-     load), which corrupts the rewind. Because the mod pk3 and the standalone
+     them, which corrupts the rewind. Because the mod pk3 and the standalone
      `.so` files are cached in IndexedDB and the browser HTTP cache, a site
      update used to leave old modules paired with a new engine. The shell now
      (a) revalidates the mod pk3/`.so` against the server on every load,
@@ -244,11 +259,11 @@ node tools/web-smoke/boot-smoke.mjs dist/etlegacy-web
      reporting a clear error instead of crashing later. If you see that error,
      redeploy matching `etl.wasm`/`etl.js`/pk3/`.so` artifacts from one build,
      and clear the site data if it persists.
-  2. Asyncify/native stack overflow — the web build sets a generous `-s
+  3. Asyncify/native stack overflow — the web build sets a generous `-s
      ASYNCIFY_STACK_SIZE` (16 MiB) and native `-s STACK_SIZE` (8 MiB) in
      `cmake/ETLEmscripten.cmake`; the engine's deep call stacks overflow the
      Emscripten defaults.
-  3. The heap hitting its growth cap — the build starts at 2 GiB (`-s
+  4. The heap hitting its growth cap — the build starts at 2 GiB (`-s
      INITIAL_MEMORY`) and raises the cap to the wasm32 maximum (`-s
      MAXIMUM_MEMORY=4gb`, growing on demand); large maps plus downloaded pk3s
      overflow the 2 GiB Emscripten default cap.
