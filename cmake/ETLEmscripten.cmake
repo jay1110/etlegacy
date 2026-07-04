@@ -113,12 +113,19 @@ set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS TRUE)
 # STACK_SIZE: The engine has deep call stacks (renderer -> backend ->
 #   SDL_GL_SwapWindow, deeply nested game/ui code); the Emscripten default
 #   (64 KiB) overflows into "memory access out of bounds" traps, so give it a
-#   generous native stack, matching the reference web ports (4-5 MiB).
+#   generous native stack (8 MiB; the reference web ports use 4-5 MiB).
 # ASYNCIFY_STACK_SIZE: Asyncify unwinds/rewinds the whole call stack through
 #   the blocking main loop (SDL_GL_SwapWindow -> emscripten_sleep). If this
 #   buffer is too small the rewind overruns it and traps with "memory access
 #   out of bounds" (seen at doRewind / __synccall / silence_callback). 64 KiB
-#   is not enough for this engine's stack depth; use 1 MiB.
+#   is not enough for this engine's stack depth; 1 MiB still trapped at
+#   doRewind in the field, so use a deliberately generous 16 MiB.
+# MAXIMUM_MEMORY: With ALLOW_MEMORY_GROWTH the wasm heap grows on demand, but
+#   only up to this cap (the Emscripten default is 2 GiB). Loading large maps
+#   plus server-downloaded pk3s can exceed that and traps with "memory access
+#   out of bounds" instead of growing further. Set the cap to the wasm32
+#   architectural maximum of 4 GiB so the engine can use as much memory as it
+#   needs.
 #-----------------------------------------------------------------
 set(EMSCRIPTEN_COMMON_FLAGS "-s USE_SDL=2")
 set(EMSCRIPTEN_LINK_FLAGS
@@ -126,9 +133,10 @@ set(EMSCRIPTEN_LINK_FLAGS
 	"-s WASM=1"
 	"-s ASYNCIFY"
 	"-s FETCH=1"
-	"-s INITIAL_MEMORY=536870912" # 512 MiB
-	"-s STACK_SIZE=5242880" # 5 MiB native stack (Emscripten default 64 KiB is too small)
-	"-s ASYNCIFY_STACK_SIZE=1048576" # 1 MiB Asyncify rewind buffer
+	"-s INITIAL_MEMORY=1073741824" # 1 GiB up front; grows on demand up to MAXIMUM_MEMORY
+	"-s MAXIMUM_MEMORY=4294967296" # 4 GiB heap cap (wasm32 maximum; Emscripten default 2 GiB is too small)
+	"-s STACK_SIZE=8388608" # 8 MiB native stack (Emscripten default 64 KiB is too small)
+	"-s ASYNCIFY_STACK_SIZE=16777216" # 16 MiB Asyncify rewind buffer (1 MiB still overflowed at doRewind)
 	"-s FULL_ES2=1"
 	"-s GL_UNSAFE_OPTS=0"
 	"-s FORCE_FILESYSTEM=1"

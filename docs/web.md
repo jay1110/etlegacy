@@ -148,8 +148,17 @@ relay (above) or behind an nginx reverse proxy (see the relay README).
 
 ## 6. Open the game and connect
 
-Configure the relay and server from the page URL, or from the in-page
-**Connect…** panel (bottom controls bar):
+On first load the page asks how to provide the game data: **download
+pak0.pk3** (fetched together with pak1/pak2 and cached in the browser) or
+**use a local pak0.pk3** picked from your own installation. Once the data is
+set, a **Run game** menu offers: joining the preconfigured ETc server (a
+different `fs_game`, xmod — missing pk3s are downloaded from the server),
+a quick single game (`+map oasis`), a manually maintained server list
+(`SERVER_LIST` in `src/web/shell.html`), and hosting a listen server in the
+browser (other players join through the relay).
+
+Alternatively, configure everything from the page URL (which skips the menu)
+or from the in-page **Connect…** panel (bottom controls bar):
 
 | Parameter | Purpose | Example |
 |-----------|---------|---------|
@@ -158,6 +167,7 @@ Configure the relay and server from the page URL, or from the in-page
 | `mod`     | Override which mod pk3(s) to fetch | `?mod=legacy_2.84.0.pk3` |
 | `relay`   | WebSocket relay URL (`net_wsRelayServer`) | `?relay=wss://relay.example.com:8443` |
 | `connect` | Game server `host:port` to auto-join | `?connect=203.0.113.10:27960` |
+| `map`     | Start a local game on this map | `?map=oasis` |
 
 Full example:
 
@@ -212,8 +222,10 @@ node tools/web-smoke/boot-smoke.mjs dist/etlegacy-web
   objects automatically. If you build without it you will see a flood of these
   `INVALID_OPERATION` messages and nothing renders.
 - **`memory access out of bounds` (at `doRewind` / `__synccall` /
-  `silence_callback`)** — this is an Asyncify stack overflow. The web build sets
-  a generous `-s ASYNCIFY_STACK_SIZE` and native `-s STACK_SIZE` in
-  `cmake/ETLEmscripten.cmake`; the engine's deep call stacks overflow the
-  Emscripten defaults.
+  `silence_callback`)** — this is an Asyncify/native stack overflow or the heap
+  hitting its growth cap. The web build sets a generous `-s
+  ASYNCIFY_STACK_SIZE` (16 MiB), native `-s STACK_SIZE` (8 MiB) and raises the
+  heap cap to the wasm32 maximum (`-s MAXIMUM_MEMORY=4gb`, growing on demand
+  from 1 GiB) in `cmake/ETLEmscripten.cmake`; the engine's deep call stacks and
+  large maps overflow the Emscripten defaults.
 

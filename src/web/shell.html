@@ -195,7 +195,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            z-index: 200;
+            z-index: 400; /* above the launcher overlay (300) so errors are never hidden */
         }
 
         #error-message {
@@ -287,6 +287,108 @@
             gap: 10px;
             justify-content: flex-end;
         }
+
+        /* Launcher (game data setup + run-game menu) */
+        #launcher-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #1a1a2e;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 300;
+        }
+
+        .launcher-panel {
+            width: 480px;
+            max-width: 92%;
+            background-color: #2a2a4a;
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 28px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            display: none;
+        }
+
+        .launcher-panel h2 {
+            color: #c4a000;
+            font-size: 1.4em;
+            margin-bottom: 14px;
+        }
+
+        .launcher-panel p {
+            font-size: 0.9em;
+            color: #ccc;
+            line-height: 1.5;
+            margin-bottom: 18px;
+        }
+
+        .launcher-btn {
+            display: block;
+            width: 100%;
+            margin-bottom: 10px;
+            padding: 12px 16px;
+            background-color: #1a1a2e;
+            color: #e0e0e0;
+            border: 1px solid #555;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.95em;
+            text-align: left;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+
+        .launcher-btn:hover {
+            background-color: #3a3a5a;
+            border-color: #c4a000;
+        }
+
+        .launcher-btn:active {
+            background-color: #4a4a6a;
+        }
+
+        .launcher-btn .launcher-btn-sub {
+            display: block;
+            font-size: 0.8em;
+            color: #888;
+            margin-top: 3px;
+        }
+
+        .launcher-hint {
+            font-size: 0.78em;
+            color: #888;
+            line-height: 1.5;
+            margin-top: 8px;
+        }
+
+        .launcher-panel label {
+            display: block;
+            font-size: 0.85em;
+            color: #aaa;
+            margin-bottom: 4px;
+        }
+
+        .launcher-panel input {
+            width: 100%;
+            padding: 8px 10px;
+            margin-bottom: 14px;
+            background-color: #1a1a2e;
+            color: #e0e0e0;
+            border: 1px solid #444;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        .launcher-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 6px;
+        }
     </style>
 </head>
 <body>
@@ -314,7 +416,7 @@
         </div>
         <input type="file" id="pak-file-input" accept=".pk3" multiple style="display:none"
                onchange="onLocalPaksChosen(this)">
-        <div id="build-marker" style="margin-top:24px;font-size:12px;color:#6c6c8a;">shell build: 2026-07-04-B</div>
+        <div id="build-marker" style="margin-top:24px;font-size:12px;color:#6c6c8a;">shell build: 2026-07-04-C</div>
     </div>
 
     <!-- Error overlay -->
@@ -364,6 +466,84 @@
 
     <!-- Console panel -->
     <div id="console-panel"></div>
+
+    <!-- Launcher: game data setup + run-game menu -->
+    <div id="launcher-overlay">
+        <!-- Step 1: how to provide pak0.pk3 (asked before anything downloads) -->
+        <div class="launcher-panel" id="launcher-setup">
+            <h2>Game data setup</h2>
+            <p>
+                ET: Legacy needs the game data (<b>pak0.pk3</b>) before it can
+                start. How do you want to provide it?
+            </p>
+            <button class="launcher-btn" type="button" id="setup-download-btn">
+                Download pak0.pk3 (included with the game)
+                <span class="launcher-btn-sub">Fetches pak0.pk3 (and pak1/pak2) automatically. ~250 MB, cached in the browser.</span>
+            </button>
+            <button class="launcher-btn" type="button" id="setup-local-btn">
+                Use my local pak0.pk3 (choose file)
+                <span class="launcher-btn-sub">Select pak0.pk3 (optionally pak1.pk3 and pak2.pk3) from your own Wolfenstein: Enemy Territory installation.</span>
+            </button>
+            <div class="launcher-hint">
+                The files are stored in the browser (IndexedDB), so this only has
+                to be done once.
+            </div>
+        </div>
+
+        <!-- Step 2: pak0.pk3 is set - run game -->
+        <div class="launcher-panel" id="launcher-menu">
+            <h2>Run game</h2>
+            <p>pak0.pk3 is set. Choose how you want to play:</p>
+            <button class="launcher-btn" type="button" id="menu-join-etc">
+                Join ETc server
+                <span class="launcher-btn-sub">84.200.135.3:27965 (xmod) &ndash; missing pk3 files are downloaded from the server.</span>
+            </button>
+            <button class="launcher-btn" type="button" id="menu-quick">
+                Quick single game
+                <span class="launcher-btn-sub">Starts a local game on map oasis.</span>
+            </button>
+            <button class="launcher-btn" type="button" id="menu-servers">
+                Server list
+                <span class="launcher-btn-sub">Pick from the list of compatible servers.</span>
+            </button>
+            <button class="launcher-btn" type="button" id="menu-host">
+                Host game
+                <span class="launcher-btn-sub">Host a game in your browser that others can join.</span>
+            </button>
+        </div>
+
+        <!-- Server list (entries are maintained manually in SERVER_LIST below) -->
+        <div class="launcher-panel" id="launcher-servers">
+            <h2>Compatible servers</h2>
+            <div id="server-list"></div>
+            <div class="launcher-hint">
+                Missing pk3 files are downloaded from the server when joining.
+            </div>
+            <div class="launcher-actions">
+                <button class="control-btn" type="button" id="servers-back">Back</button>
+            </div>
+        </div>
+
+        <!-- Host game -->
+        <div class="launcher-panel" id="launcher-host">
+            <h2>Host game</h2>
+            <label for="host-name">Server name</label>
+            <input id="host-name" type="text" value="ET:Legacy Web Host" autocomplete="off">
+            <label for="host-map">Map</label>
+            <input id="host-map" type="text" value="oasis" autocomplete="off">
+            <label for="host-maxclients">Max players</label>
+            <input id="host-maxclients" type="number" value="8" min="2" max="32">
+            <div class="launcher-hint">
+                Starts a listen server inside your browser. Other players join it
+                through the WebSocket relay (see tools/ws-relay); a browser cannot
+                accept direct UDP connections.
+            </div>
+            <div class="launcher-actions">
+                <button class="control-btn" type="button" id="host-back">Back</button>
+                <button class="control-btn" type="button" id="host-start">Start hosting</button>
+            </div>
+        </div>
+    </div>
 
     <script>
         // --- Firefox resizable-ArrayBuffer / TextDecoder workaround ----------
@@ -622,6 +802,12 @@
                 // Already finished or already showing an error - nothing to do.
                 if (!overlay || overlay.classList.contains('hidden') ||
                     (errorOverlay && errorOverlay.style.display === 'flex')) {
+                    return;
+                }
+                // The launcher is waiting for the user to make a choice - that
+                // is not a stall, so keep waiting.
+                if (window.etlLauncherWaiting) {
+                    scheduleStartupWatchdog(STARTUP_STALL_MS);
                     return;
                 }
                 // If the status changed recently the download/startup is still
@@ -975,9 +1161,29 @@
             }
             var connect = params.get('connect');
             if (connect) {
+                args.push('+set', 'cl_allowDownload', '1');
+                args.push('+set', 'cl_wwwDownload', '1');
                 args.push('+connect', connect);
             }
+            var mapParam = params.get('map');
+            if (mapParam) {
+                args.push('+map', mapParam);
+            }
             Module.arguments = args;
+
+            // --- Launcher server list -------------------------------------
+            // Compatible servers shown by the launcher's "Server list" button.
+            // Maintain this list manually: add one { name, address } entry per
+            // server. Missing pk3s (e.g. a different fs_game such as xmod) are
+            // downloaded from the server on connect (cl_allowDownload 1).
+            var SERVER_LIST = [
+                { name: 'ETc | XMOD', address: '84.200.135.3:27965' }
+                // Add more compatible servers here, e.g.:
+                // { name: 'My server', address: '203.0.113.10:27960' }
+            ];
+
+            // Address + parameters of the dedicated "Join ETc server" button.
+            var ETC_SERVER = '84.200.135.3:27965';
 
             function statusFor(name, received, total) {
                 if (total) {
@@ -1444,6 +1650,14 @@
                         'and try again.');
                     return Promise.resolve(0);
                 }
+                // If the launcher's file picker triggered this, swap the launcher
+                // for the loading overlay so the progress is visible.
+                if (typeof window.etlHideLauncher === 'function') {
+                    window.etlHideLauncher();
+                }
+                var loadingOverlay = document.getElementById('loading-overlay');
+                loadingOverlay.classList.remove('hidden');
+                loadingOverlay.style.display = 'flex';
                 Module.setStatus('Loading local game files...');
                 try { Module.FS.mkdirTree(ETMAIN_DIR); } catch (e) { /* exists */ }
 
@@ -1486,6 +1700,173 @@
                 window.location.reload();
             };
 
+            // --- Launcher -------------------------------------------------
+            // Before anything downloads, the launcher asks how to provide
+            // pak0.pk3 (download the included one, or pick a local copy). Once
+            // the game data is set it shows the "Run game" menu with the play
+            // modes. While a launcher panel is open the page waits for the
+            // user, so the startup watchdog is told not to treat that as a
+            // stall via window.etlLauncherWaiting.
+            var LAUNCHER_PANELS = ['launcher-setup', 'launcher-menu',
+                'launcher-servers', 'launcher-host'];
+
+            function showLauncherPanel(id) {
+                LAUNCHER_PANELS.forEach(function (p) {
+                    var el = document.getElementById(p);
+                    if (el) { el.style.display = (p === id) ? 'block' : 'none'; }
+                });
+                document.getElementById('launcher-overlay').style.display = 'flex';
+                document.getElementById('loading-overlay').style.display = 'none';
+                window.etlLauncherWaiting = true;
+            }
+
+            function hideLauncher() {
+                document.getElementById('launcher-overlay').style.display = 'none';
+                window.etlLauncherWaiting = false;
+            }
+            window.etlHideLauncher = hideLauncher;
+
+            // Bring the loading overlay back (it is hidden while a launcher
+            // panel is open) so download/start progress is visible again.
+            function showLoading(text) {
+                var overlay = document.getElementById('loading-overlay');
+                overlay.classList.remove('hidden');
+                overlay.style.display = 'flex';
+                if (text) { Module.setStatus(text); }
+            }
+
+            // Step 1: make sure the game data (pak0.pk3) is available. If it is
+            // already present (cached from a previous session or provided
+            // locally), just top up any missing paks. Otherwise ask the user
+            // whether to download the included pak0.pk3 or use a local copy.
+            function downloadAllPaks() {
+                return PAK_FILES.reduce(function (chain, name) {
+                    return chain.then(function () { return downloadPak(name); });
+                }, Promise.resolve());
+            }
+
+            function ensureGameData() {
+                var pak0Exists = false;
+                try {
+                    pak0Exists = Module.FS.analyzePath(ETMAIN_DIR + '/pak0.pk3').exists;
+                } catch (e) { /* FS problem - fall through to the question */ }
+
+                if (pak0Exists) {
+                    // pak0 is set; fetch any still-missing paks (pak1/pak2) but
+                    // do not fail startup if they cannot be downloaded - the
+                    // user's local pak0 is the mandatory part.
+                    return PAK_FILES.reduce(function (chain, name) {
+                        return chain.then(function () {
+                            return downloadPak(name).catch(function (err) {
+                                if (console && console.warn) {
+                                    console.warn('Optional pak ' + name +
+                                        ' not fetched: ' + err.message);
+                                }
+                            });
+                        });
+                    }, Promise.resolve());
+                }
+
+                return new Promise(function (resolve, reject) {
+                    document.getElementById('setup-download-btn').onclick = function () {
+                        hideLauncher();
+                        showLoading('Downloading game data...');
+                        downloadAllPaks().then(resolve, reject);
+                    };
+                    document.getElementById('setup-local-btn').onclick = function () {
+                        // Reuses the existing local-pak flow: the picked files
+                        // are written to the cached etmain dir, persisted to
+                        // IndexedDB and the page reloads - after which pak0
+                        // exists and this question is skipped.
+                        pickLocalPaks();
+                    };
+                    showLauncherPanel('launcher-setup');
+                });
+            }
+
+            // Step 2: pak0.pk3 is set - show the "Run game" menu and resolve
+            // with the extra engine arguments for the chosen mode. Skipped when
+            // the URL already dictates what to do (?connect= or ?map=).
+            function connectArgs(address) {
+                return ['+set', 'cl_allowDownload', '1',
+                        '+set', 'cl_wwwDownload', '1',
+                        '+connect', address];
+            }
+
+            function chooseGameMode() {
+                if (connect || mapParam) {
+                    return Promise.resolve([]);
+                }
+
+                return new Promise(function (resolve) {
+                    function pick(extra) {
+                        hideLauncher();
+                        showLoading('Starting ET: Legacy...');
+                        resolve(extra);
+                    }
+
+                    // Button 1: join the ETc xmod server. The server runs a
+                    // different fs_game (xmod); the client switches to it
+                    // automatically and downloads the missing pk3 files from
+                    // the server (cl_allowDownload 1).
+                    document.getElementById('menu-join-etc').onclick = function () {
+                        pick(connectArgs(ETC_SERVER));
+                    };
+
+                    // Button 2: quick single game on map oasis.
+                    document.getElementById('menu-quick').onclick = function () {
+                        pick(['+map', 'oasis']);
+                    };
+
+                    // Button 3: manually maintained list of compatible servers.
+                    document.getElementById('menu-servers').onclick = function () {
+                        var box = document.getElementById('server-list');
+                        box.innerHTML = '';
+                        SERVER_LIST.forEach(function (srv) {
+                            var b = document.createElement('button');
+                            b.className = 'launcher-btn';
+                            b.type = 'button';
+                            b.textContent = srv.name + ' \u2014 ' + srv.address;
+                            b.onclick = function () { pick(connectArgs(srv.address)); };
+                            box.appendChild(b);
+                        });
+                        if (!SERVER_LIST.length) {
+                            var empty = document.createElement('p');
+                            empty.textContent = 'No servers configured. Add entries ' +
+                                'to SERVER_LIST in this page.';
+                            box.appendChild(empty);
+                        }
+                        showLauncherPanel('launcher-servers');
+                    };
+                    document.getElementById('servers-back').onclick = function () {
+                        showLauncherPanel('launcher-menu');
+                    };
+
+                    // Button 4: host a game (listen server in the browser).
+                    document.getElementById('menu-host').onclick = function () {
+                        showLauncherPanel('launcher-host');
+                    };
+                    document.getElementById('host-back').onclick = function () {
+                        showLauncherPanel('launcher-menu');
+                    };
+                    document.getElementById('host-start').onclick = function () {
+                        var name = document.getElementById('host-name').value.trim() ||
+                            'ET:Legacy Web Host';
+                        var map = document.getElementById('host-map').value.trim() ||
+                            'oasis';
+                        var maxClients = parseInt(
+                            document.getElementById('host-maxclients').value, 10);
+                        if (!(maxClients >= 2 && maxClients <= 32)) { maxClients = 8; }
+                        pick(['+set', 'sv_hostname', name,
+                              '+set', 'sv_maxclients', String(maxClients),
+                              '+set', 'dedicated', '0',
+                              '+map', map]);
+                    };
+
+                    showLauncherPanel('launcher-menu');
+                });
+            }
+
             // Run before the engine's main(): block startup until assets exist.
             Module.preRun = Module.preRun || [];
             Module.preRun.push(function () {
@@ -1493,11 +1874,9 @@
 
                 mountCache()
                     .then(function () {
-                        // etmain retail paks (same-origin by default, cached in
-                        // IndexedDB; may be cross-origin via ?assets=).
-                        return PAK_FILES.reduce(function (chain, name) {
-                            return chain.then(function () { return downloadPak(name); });
-                        }, Promise.resolve());
+                        // Step 1: ask for / download the retail game data
+                        // (pak0.pk3 first and foremost; cached in IndexedDB).
+                        return ensureGameData();
                     })
                     .then(function () {
                         // ET: Legacy mod data: the legacy pk3 (cgame/ui game
@@ -1511,10 +1890,21 @@
                     })
                     .then(persist)
                     .then(function () {
-                        Module.setStatus('Starting ET: Legacy...');
+                        // Step 2: everything is in place - show the "Run game"
+                        // menu (unless the URL already says what to do) and
+                        // append the chosen mode's arguments.
+                        return chooseGameMode();
+                    })
+                    .then(function (extraArgs) {
+                        if (extraArgs && extraArgs.length) {
+                            Module.arguments = args.concat(extraArgs);
+                        }
+                        showLoading('Starting ET: Legacy...');
                         Module.removeRunDependency('etl-assets');
                     })
                     .catch(function (err) {
+                        hideLauncher();
+                        showLoading();
                         var msg;
                         if (err && (err.sideModule || /preload/i.test(err.message || ''))) {
                             // A mandatory cgame/ui side module could not be loaded
