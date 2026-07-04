@@ -776,8 +776,13 @@ intptr_t QDECL VM_CallFunc(vm_t *vm, int callNum, ...)
 		}
 		va_end(ap);
 
+		// Pass exactly the 12 arguments the mod's vmMain(command, arg0 .. arg11)
+		// accepts. Passing more (args[12..15]) is a no-op on native - vmMain has
+		// no parameters for them - but on WebAssembly the call goes through a
+		// type-checked call_indirect, so a mismatched argument count traps at
+		// runtime. args[] beyond the caller's VM_CALL_END sentinel are zero.
 		r = vm->entryPoint(callNum, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7],
-		                   args[8], args[9], args[10], args[11], args[12], args[13], args[14], args[15]);
+		                   args[8], args[9], args[10], args[11]);
 	}
 #if 0
 	else if (vm->compiled)
