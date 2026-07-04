@@ -223,17 +223,27 @@ node tools/web-smoke/boot-smoke.mjs dist/etlegacy-web
   `INVALID_OPERATION` messages and nothing renders.
 - **`memory access out of bounds` (at `doRewind` / `__synccall` /
   `silence_callback`, often followed by an endless stream of the same error
-  from `SDL2.audio.scriptProcessorNode.onaudioprocess`)** — three causes, all
-  handled by the build:
-  1. The cgame/ui SIDE_MODULEs must be linked with `-sASYNCIFY` (see
-     `cmake/ETLBuildMod.cmake`). Asyncify unwinds/rewinds the whole call stack
-     through the blocking main loop, and that stack passes through the mods
-     (engine → vmMain → cgame/ui → engine syscall → sleep). A side module
-     built without Asyncify instrumentation corrupts the rewind, trapping at
-     `doRewind`; the corrupted Asyncify state then makes every later entry
-     into wasm (e.g. the SDL2 audio callback) trap too. Make sure any locally
-     built or cached `cgame.mp.wasm32.so` / `ui.mp.wasm32.so` (including the
-     copies inside the legacy mod pk3) come from a build with this flag.
+  from `SDL2.audio.scriptProcessorNode.onaudioprocess`)** — an Asyncify state
+  corruption or resource-limit problem. The first trap (usually at `doRewind`)
+  poisons the Asyncify state, after which *every* re-entry into the wasm (e.g.
+  the SDL2 audio callback) traps with the same error, forever — only the first
+  error matters for diagnosis. Causes, all handled by the build:
+  1. **Stale cgame/ui side modules from an old build (the most common cause in
+     the field).** The engine is linked with `-sASYNCIFY`; every dlopen()ed
+     side module must be Asyncify-instrumented too (`-sASYNCIFY` in
+     `cmake/ETLBuildMod.cmake`, requires Emscripten ≥ 3.1.17 for shared
+     Asyncify globals across dynamic linking; CI uses 4.0.23). A module built
+     without it cannot save/restore its frames when Asyncify unwinds through
+     them (the engine's dlopen itself unwinds the whole stack on every module
+     load), which corrupts the rewind. Because the mod pk3 and the standalone
+     `.so` files are cached in IndexedDB and the browser HTTP cache, a site
+     update used to leave old modules paired with a new engine. The shell now
+     (a) revalidates the mod pk3/`.so` against the server on every load,
+     (b) deletes cached `legacy_*.pk3` from other builds, and (c) refuses to
+     preload any side module that lacks the `asyncify_start_rewind` export,
+     reporting a clear error instead of crashing later. If you see that error,
+     redeploy matching `etl.wasm`/`etl.js`/pk3/`.so` artifacts from one build,
+     and clear the site data if it persists.
   2. Asyncify/native stack overflow — the web build sets a generous `-s
      ASYNCIFY_STACK_SIZE` (16 MiB) and native `-s STACK_SIZE` (8 MiB) in
      `cmake/ETLEmscripten.cmake`; the engine's deep call stacks overflow the

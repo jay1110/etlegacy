@@ -1194,15 +1194,25 @@
             }
 
             // Fetch a file with progress reporting and write it to the FS.
-            function downloadInto(sourceUrl, target, label) {
-                // Skip if it is already present (e.g. restored from IndexedDB).
+            // opts.refresh: re-download even when a copy is already cached in
+            // the virtual filesystem (using HTTP revalidation, so an unchanged
+            // file is a cheap 304), keeping the cached copy only as an offline
+            // fallback. Used for the mod pk3, which carries the cgame/ui game
+            // logic that MUST match the engine build: silently reusing a stale
+            // IndexedDB copy after the site was updated loads old game modules
+            // into a new engine and crashes at runtime (e.g. Asyncify's
+            // "RuntimeError: memory access out of bounds at ... doRewind").
+            function downloadInto(sourceUrl, target, label, opts) {
+                var cached = false;
                 try {
-                    if (Module.FS.analyzePath(target).exists) {
-                        return Promise.resolve();
-                    }
+                    cached = Module.FS.analyzePath(target).exists;
                 } catch (e) { /* FS not ready yet - fall through and download */ }
 
-                return fetch(sourceUrl).then(function (response) {
+                if (cached && !(opts && opts.refresh)) {
+                    return Promise.resolve();
+                }
+
+                return fetch(sourceUrl, (opts && opts.refresh) ? { cache: 'no-cache' } : undefined).then(function (response) {
                     if (!response.ok) {
                         throw new Error('Failed to download ' + label + ': HTTP ' + response.status);
                     }
@@ -1241,6 +1251,18 @@
                     }
 
                     return pump();
+                }).catch(function (err) {
+                    if (cached) {
+                        // Offline / server unreachable: keep using the cached
+                        // copy rather than failing the whole bootstrap.
+                        if (console && console.warn) {
+                            console.warn('Could not refresh ' + label + ' (' +
+                                (err && err.message || err) +
+                                '); using the cached copy.');
+                        }
+                        return;
+                    }
+                    throw err;
                 });
             }
 
@@ -1248,9 +1270,15 @@
                 return downloadInto(ASSET_BASE + name, ETMAIN_DIR + '/' + name, name);
             }
 
-            // Download one file from the legacy/ folder into LEGACY_DIR.
+            // Download one file from the legacy/ folder into LEGACY_DIR. Unlike
+            // the huge retail paks, the mod files are always revalidated against
+            // the server: they contain the cgame/ui game-logic side modules,
+            // which must exactly match the engine build being served. Reusing a
+            // stale IndexedDB copy after a site update pairs old modules with a
+            // new engine, which crashes at runtime (see downloadInto).
             function downloadLegacyFile(name) {
-                return downloadInto(LEGACY_BASE + name, LEGACY_DIR + '/' + name, name);
+                return downloadInto(LEGACY_BASE + name, LEGACY_DIR + '/' + name, name,
+                    { refresh: true });
             }
 
             // --- Minimal ZIP reader -------------------------------------------
@@ -1355,6 +1383,35 @@
                 return pk3s;
             }
 
+            // Drop versioned legacy mod pk3s cached from a *previous* deployment.
+            // The mod pk3 name embeds the build version (legacy_<version>.pk3),
+            // so after a site update the old pk3 lingers in IndexedDB under a
+            // different name. listModPk3s()/the engine's pk3 scan would still
+            // find it and its stale cgame/ui side modules, which no longer match
+            // the engine build - pairing them crashes at runtime (Asyncify
+            // "memory access out of bounds" at doRewind, cascading into the SDL2
+            // audio callback). Only auto-named legacy_*.pk3 files that are not
+            // the configured MOD_PK3 are removed; user-hosted custom pk3s with
+            // other names are left alone.
+            function removeStaleModPk3s() {
+                var keep = {};
+                MOD_PK3.forEach(function (name) { keep[name] = true; });
+                try {
+                    Module.FS.readdir(LEGACY_DIR).forEach(function (entry) {
+                        if (entry === '.' || entry === '..') { return; }
+                        if (!/^legacy_.*\.pk3$/i.test(entry)) { return; }
+                        if (keep[entry]) { return; }
+                        try {
+                            Module.FS.unlink(LEGACY_DIR + '/' + entry);
+                            if (console && console.warn) {
+                                console.warn('Removed stale cached mod pk3 ' + entry +
+                                    ' (does not match this build: ' + MOD_PK3.join(', ') + ')');
+                            }
+                        } catch (e) { /* leave it; the configured pk3 is tried first */ }
+                    });
+                } catch (e) { /* dir missing/unreadable - nothing to clean */ }
+            }
+
             // Extract a side module (cgame/ui) from one of the already-downloaded
             // mod pk3s in LEGACY_DIR. Returns the module bytes, or null if none of
             // the pk3s contains it. The pk3 is the primary, always-present source
@@ -1449,8 +1506,10 @@
 
             // Fetch the raw bytes of a standalone side module served in legacy/.
             // Used only as a fallback when the module is not inside the mod pk3.
+            // 'no-cache' forces HTTP revalidation so a stale browser-cached copy
+            // from a previous deployment is not silently reused.
             function fetchStandaloneSideModule(name) {
-                return fetch(LEGACY_BASE + name).then(function (response) {
+                return fetch(LEGACY_BASE + name, { cache: 'no-cache' }).then(function (response) {
                     if (!response.ok) {
                         throw new Error('HTTP ' + response.status + ' for ' +
                             LEGACY_BASE + name);
@@ -1475,6 +1534,65 @@
                 return !!bytes && bytes.length >= 4 &&
                     bytes[0] === 0x00 && bytes[1] === 0x61 &&
                     bytes[2] === 0x73 && bytes[3] === 0x6d;
+            }
+
+            // The engine is linked with -sASYNCIFY, which requires every
+            // dlopen()ed side module to be Asyncify-instrumented as well (built
+            // with -sASYNCIFY, see cmake/ETLBuildMod.cmake). An uninstrumented
+            // module cannot save/restore its stack frames when Asyncify unwinds
+            // through them (e.g. around the engine's dlopen), which corrupts the
+            // rewind and traps with "RuntimeError: memory access out of bounds"
+            // at doRewind - after which every re-entry into the wasm (like the
+            // SDL2 audio callback) traps the same way, forever. The instrumented
+            // module always exports the Asyncify control functions, so their
+            // presence in the wasm export section is a reliable marker. Checking
+            // it up front rejects the classic real-world cause - a stale module
+            // from an old build (browser cache or an old pk3 still on the
+            // server) - with a clear message instead of the cryptic crash.
+            //
+            // Minimal wasm export-section walk. Returns the export names, or
+            // null if the binary cannot be parsed (in which case the check is
+            // skipped rather than producing a false rejection).
+            function wasmExportNames(bytes) {
+                try {
+                    var pos = 8; // skip \0asm magic + version
+                    function leb() {
+                        var result = 0, shift = 0, b;
+                        do {
+                            b = bytes[pos++];
+                            result |= (b & 0x7f) << shift;
+                            shift += 7;
+                        } while (b & 0x80);
+                        return result >>> 0;
+                    }
+                    while (pos < bytes.length) {
+                        var id = bytes[pos++];
+                        var size = leb();
+                        var end = pos + size;
+                        if (id === 7) { // export section
+                            var names = [];
+                            var count = leb();
+                            for (var i = 0; i < count; i++) {
+                                var len = leb();
+                                names.push(utf8Decode(bytes.subarray(pos, pos + len)));
+                                pos += len;
+                                pos++; // export kind
+                                leb(); // export index
+                            }
+                            return names;
+                        }
+                        pos = end;
+                    }
+                    return [];
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function lacksAsyncifyInstrumentation(bytes) {
+                var names = wasmExportNames(bytes);
+                if (!names) { return false; } // unparseable - don't false-reject
+                return names.indexOf('asyncify_start_rewind') === -1;
             }
 
             function describeNonWasm(bytes) {
@@ -1504,27 +1622,39 @@
                 // Obtain the module bytes once - preferably straight from the mod
                 // pk3 the shell downloaded (the reliable, always-present source),
                 // otherwise from the standalone .so served next to the pk3. Bytes
-                // that are not a valid wasm module (a corrupt/mis-served file) are
-                // rejected so the other source still gets a chance.
+                // that are not a valid wasm module (a corrupt/mis-served file) or
+                // that lack the Asyncify instrumentation the engine requires (a
+                // stale module from an old build) are rejected so the other
+                // source still gets a chance.
+                function describeProblem(bytes) {
+                    if (!hasWasmMagic(bytes)) { return describeNonWasm(bytes); }
+                    return 'it was built without Asyncify instrumentation (no ' +
+                        'asyncify_start_rewind export). It is a stale module from an ' +
+                        'old build - clear the site data / update the hosted files so ' +
+                        'the pk3 and .so match this engine build';
+                }
+                function usable(bytes) {
+                    return hasWasmMagic(bytes) && !lacksAsyncifyInstrumentation(bytes);
+                }
                 return extractSideModuleFromPk3(name).then(function (bytes) {
-                    if (bytes && hasWasmMagic(bytes)) { return bytes; }
+                    if (bytes && usable(bytes)) { return bytes; }
                     if (bytes && console && console.warn) {
                         console.warn('Ignoring ' + name + ' from the mod pk3: ' +
-                            describeNonWasm(bytes) + '. Trying the standalone copy.');
+                            describeProblem(bytes) + '. Trying the standalone copy.');
                     }
                     var pk3Problem = bytes ?
-                        ' (its copy inside the mod pk3 is not a valid wasm module: ' +
-                        describeNonWasm(bytes) + ')' : '';
+                        ' (its copy inside the mod pk3 is not usable: ' +
+                        describeProblem(bytes) + ')' : '';
                     return fetchStandaloneSideModule(name).catch(function (err) {
                         throw new Error('it is not usable from the mod pk3 and the ' +
                             'standalone copy at ' + LEGACY_BASE + name +
                             ' could not be loaded (' +
                             (err && err.message || err) + ')' + pk3Problem);
                     }).then(function (bytes) {
-                        if (hasWasmMagic(bytes)) { return bytes; }
+                        if (usable(bytes)) { return bytes; }
                         throw new Error('the standalone copy at ' + LEGACY_BASE +
-                            name + ' is not a valid WebAssembly module: ' +
-                            describeNonWasm(bytes) + pk3Problem);
+                            name + ' is not usable: ' +
+                            describeProblem(bytes) + pk3Problem);
                     });
                 }).then(function (bytes) {
                     // Precompile the module into every directory the engine may
@@ -1572,8 +1702,11 @@
                 }, Promise.resolve());
 
                 // 2) cgame/ui side modules - precompiled so dlopen() works. Taken
-                //    from the pk3 above, falling back to the standalone .so.
+                //    from the pk3 above, falling back to the standalone .so. Old
+                //    versioned pk3s cached from a previous deployment are removed
+                //    first so their stale side modules can never be picked up.
                 return pk3Chain.then(function () {
+                    removeStaleModPk3s();
                     return MOD_FILES.reduce(function (chain, name) {
                         return chain.then(function () {
                             return preloadSideModule(name);
