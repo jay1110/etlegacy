@@ -95,6 +95,16 @@ pthreads, the page must then be served with
 `Cross-Origin-Opener-Policy: same-origin` and
 `Cross-Origin-Embedder-Policy: require-corp`.)
 
+> **Upload the `.pk3` and `.so` files in binary mode.** They are binary
+> WebAssembly data. If they are transferred over FTP/SFTP in *ASCII*/*text*
+> mode (or rewritten by a server content filter), their bytes get mangled and
+> the browser aborts at startup with **`need to see wasm magic number`** /
+> `VM_Create on ui failed`. The shell now detects this and reports the real
+> cause (e.g. *"most likely corrupted in upload (FTP/SFTP in ASCII/text mode)"*
+> or *"the server returned an HTML page (HTTP 200), not the binary"*). If you
+> see it: re-upload `legacy/*.pk3` and `legacy/*.so` (and `etmain/*.pk3`) in
+> **binary** mode and confirm each URL returns the raw file with HTTP 200.
+
 ### Hosting on GitHub Pages
 
 The `emscripten.yml` workflow publishes the web client to GitHub Pages on pushes

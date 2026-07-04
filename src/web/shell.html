@@ -270,7 +270,7 @@
         </div>
         <div id="progress-text">Loading...</div>
         <div id="status-text"></div>
-        <div id="build-marker" style="margin-top:24px;font-size:12px;color:#6c6c8a;">shell build: 2026-07-03-C</div>
+        <div id="build-marker" style="margin-top:24px;font-size:12px;color:#6c6c8a;">shell build: 2026-07-04-A</div>
     </div>
 
     <!-- Error overlay -->
@@ -1130,18 +1130,72 @@
                 }).then(function (buf) { return new Uint8Array(buf); });
             }
 
+            // Every side module is a WebAssembly binary, which always begins with
+            // the four magic bytes "\0asm" (0x00 0x61 0x73 0x6d). Checking for it up
+            // front lets the shell reject a file that is not actually a wasm module
+            // - the single most common real-world cause of a startup failure once
+            // the loader itself works - and report exactly what is wrong instead of
+            // leaving Emscripten to abort later with the cryptic "need to see wasm
+            // magic number". A file failing this check is virtually always a binary
+            // that got mangled somewhere between the build and the browser: uploaded
+            // over FTP/SFTP in "ASCII"/"text" mode (which rewrites bytes and destroys
+            // the binary), served as an HTML error/redirect page under an HTTP 200,
+            // or run through a content transform (e.g. gzip that the browser did not
+            // transparently decode).
+            function hasWasmMagic(bytes) {
+                return !!bytes && bytes.length >= 4 &&
+                    bytes[0] === 0x00 && bytes[1] === 0x61 &&
+                    bytes[2] === 0x73 && bytes[3] === 0x6d;
+            }
+
+            function describeNonWasm(bytes) {
+                if (!bytes || !bytes.length) { return 'the file is empty'; }
+                // A mis-served HTML error/redirect page is the usual "HTTP 200 but
+                // not the file" case; surface it explicitly.
+                var head = '';
+                for (var i = 0; i < Math.min(bytes.length, 64); i++) {
+                    head += String.fromCharCode(bytes[i]);
+                }
+                if (/^\s*(<!doctype|<html|<\?xml)/i.test(head)) {
+                    return 'the server returned an HTML/XML page (HTTP 200), not the ' +
+                        'binary - check the URL is served correctly';
+                }
+                var hex = [];
+                for (var j = 0; j < Math.min(bytes.length, 4); j++) {
+                    hex.push(('0' + bytes[j].toString(16)).slice(-2));
+                }
+                return 'it does not start with the WebAssembly magic number ' +
+                    '(got ' + hex.join(' ') + ', expected 00 61 73 6d) - the file ' +
+                    'was most likely corrupted in upload (e.g. FTP/SFTP in ASCII/text ' +
+                    'mode instead of binary) or altered by the web server';
+            }
+
             function preloadSideModule(name) {
                 Module.setStatus('Loading ' + name);
                 // Obtain the module bytes once - preferably straight from the mod
                 // pk3 the shell downloaded (the reliable, always-present source),
-                // otherwise from the standalone .so served next to the pk3.
+                // otherwise from the standalone .so served next to the pk3. Bytes
+                // that are not a valid wasm module (a corrupt/mis-served file) are
+                // rejected so the other source still gets a chance.
                 return extractSideModuleFromPk3(name).then(function (bytes) {
-                    if (bytes) { return bytes; }
+                    if (bytes && hasWasmMagic(bytes)) { return bytes; }
+                    if (bytes && console && console.warn) {
+                        console.warn('Ignoring ' + name + ' from the mod pk3: ' +
+                            describeNonWasm(bytes) + '. Trying the standalone copy.');
+                    }
+                    var pk3Problem = bytes ?
+                        ' (its copy inside the mod pk3 is not a valid wasm module: ' +
+                        describeNonWasm(bytes) + ')' : '';
                     return fetchStandaloneSideModule(name).catch(function (err) {
-                        throw new Error('it is not in the mod pk3 and the ' +
+                        throw new Error('it is not usable from the mod pk3 and the ' +
                             'standalone copy at ' + LEGACY_BASE + name +
                             ' could not be loaded (' +
-                            (err && err.message || err) + ')');
+                            (err && err.message || err) + ')' + pk3Problem);
+                    }).then(function (bytes) {
+                        if (hasWasmMagic(bytes)) { return bytes; }
+                        throw new Error('the standalone copy at ' + LEGACY_BASE +
+                            name + ' is not a valid WebAssembly module: ' +
+                            describeNonWasm(bytes) + pk3Problem);
                     });
                 }).then(function (bytes) {
                     // Precompile the module into every directory the engine may
