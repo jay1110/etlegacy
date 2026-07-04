@@ -56,6 +56,7 @@ etlegacy-web/
 ├── index.html          # copy of etl.html
 ├── etl.js
 ├── etl.wasm
+├── etl.data            # preloaded virtual-filesystem image (browser default config)
 ├── etmain/             # put pak0.pk3, pak1.pk3, pak2.pk3 here
 └── legacy/
     ├── legacy_<ver>.pk3        # mod pk3 (cgame/ui game logic + ui menus + media)
@@ -203,6 +204,12 @@ node tools/web-smoke/boot-smoke.mjs dist/etlegacy-web
 - Latency is higher than native UDP (the relay uses TCP/WebSocket).
 - The retail paks must be supplied by the user; they are never redistributed.
 - WebRTC data channels (lower latency than WebSocket) are possible future work.
+- `vid_restart` (and the settings menu's "apply" that issues it) is disabled in
+  the browser: a canvas WebGL context and gl4es cannot be torn down and
+  re-created within the same page (the Wwasm reference port suppresses it the
+  same way). Latched video cvar changes take effect on the next page reload.
+  `etl.data` preloads `com_recommendedSet 1` so the first-run "apply
+  recommended settings + vid_restart" path is never taken.
 - The browser console logs `The ScriptProcessorNode is deprecated. Use
   AudioWorkletNode instead.` once at startup. This comes from Emscripten's
   bundled SDL2 audio backend, not from ET: Legacy, and is a harmless
@@ -238,6 +245,16 @@ node tools/web-smoke/boot-smoke.mjs dist/etlegacy-web
   the FBO/gamma present pass is skipped entirely and the scene is rendered
   straight to the canvas; gamma is baked into texture uploads instead
   (`r_gamma` defaults to `2.2` on the web, like the Wwasm reference port).
+- **Black screen right after the menu should appear (first visit only, or after
+  clearing site data)** — on a first run (`com_recommendedSet 0`) `Com_Init`
+  used to queue `exec preset_high.cfg` + `vid_restart`; the restart tore down
+  and re-created the WebGL context and re-initialised gl4es, neither of which
+  the browser supports, leaving only the clear color. Fixed three ways: the
+  browser build no longer queues that first-run `vid_restart`
+  (`src/qcommon/common.c`), `vid_restart` itself is suppressed on the web
+  (`src/client/cl_main.c`, like the Wwasm reference port), and `etl.data`
+  preloads an `autoexec.cfg` with `com_recommendedSet 1`
+  (`src/web/fs/legacy/autoexec.cfg`).
 - **Connecting to a server does nothing — no `Awaiting challenge` /
   `connectResponse` in the console** — two historical bugs in
   `src/qcommon/net_web.c`, both fixed: `NET_Sleep()`/`NET_Event()` were no-ops,

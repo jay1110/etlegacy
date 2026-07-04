@@ -34,8 +34,10 @@ function exists(rel) {
     return fs.existsSync(path.join(dir, rel));
 }
 
-// 1. Core engine files must be present.
-for (const f of ['etl.html', 'index.html', 'etl.js', 'etl.wasm']) {
+// 1. Core engine files must be present. etl.data is the preloaded
+//    virtual-filesystem image (browser default config) produced by the
+//    --preload-file link option in cmake/ETLBuildClient.cmake.
+for (const f of ['etl.html', 'index.html', 'etl.js', 'etl.wasm', 'etl.data']) {
     check(exists(f), `engine file present: ${f}`);
 }
 

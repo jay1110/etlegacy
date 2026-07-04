@@ -3242,7 +3242,13 @@ void Com_Init(char *commandLine)
 	if (!com_recommendedSet->integer && !safeMode)
 	{
 		Com_SetRecommended();
+#ifndef __EMSCRIPTEN__
+		// The browser build cannot restart video (the WebGL context and gl4es
+		// cannot be torn down and recreated within a page - vid_restart is
+		// suppressed in CL_Vid_Restart_f), so don't queue one on first run.
+		// The web defaults are already applied before the renderer starts.
 		Cbuf_ExecuteText(EXEC_APPEND, "vid_restart\n");
+#endif
 	}
 	Cvar_Set("com_recommendedSet", "1");
 

@@ -64,6 +64,12 @@ static int gammaResetTime = 0;
 extern void set_getprocaddress(void *(*new_proc_address)(const char *));
 extern void initialize_gl4es(void);
 
+// gl4es can only be initialised once per process: it has no shutdown path and
+// re-running its hardware probe against a (re)created context corrupts its
+// state (the reference Wwasm web port guards initialize_gl4es with the same
+// one-shot flag, see its tr_init.c gl4esIdle).
+static qboolean gl4es_initialized = qfalse;
+
 static void *GLimp_GL4ES_GetProcAddress(const char *name)
 {
 	return SDL_GL_GetProcAddress(name);
@@ -1080,9 +1086,14 @@ static int GLimp_SetMode(glconfig_t *glConfig, int mode, qboolean fullscreen, qb
 		// Initialise gl4es against the freshly created (WebGL) context so its
 		// hardware probe sees the real GLES2 capabilities. Without this the
 		// wrapper stays unconfigured (empty GL_VERSION, zeroed limits) and the
-		// renderer crashes on the first translated GL call.
-		set_getprocaddress(GLimp_GL4ES_GetProcAddress);
-		initialize_gl4es();
+		// renderer crashes on the first translated GL call. Only ever do this
+		// once: gl4es cannot be re-initialised (no shutdown path).
+		if (!gl4es_initialized)
+		{
+			set_getprocaddress(GLimp_GL4ES_GetProcAddress);
+			initialize_gl4es();
+			gl4es_initialized = qtrue;
+		}
 #endif
 
 #ifndef __EMSCRIPTEN__
