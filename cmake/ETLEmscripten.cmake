@@ -55,14 +55,22 @@ set(BUILD_SERVER OFF CACHE BOOL "Disable dedicated server for Emscripten" FORCE)
 # The browser build is a *client*. It cannot host a game server itself (no raw
 # UDP sockets / no listen sockets), so it joins a native dedicated server
 # through the WebSocket->UDP relay in tools/ws-relay (see src/qcommon/net_web.c).
-# It does however need the client-side game logic modules (cgame + ui); these
-# are built as Emscripten SIDE_MODULEs and loaded at runtime via dlopen (see
-# cmake/ETLBuildMod.cmake and the MAIN_MODULE flag below). The server-side
-# modules (qagame/tvgame) run on the native dedicated server, not in the
-# browser, so only the client mod is built here.
+# It needs the client-side game logic modules (cgame + ui); these are built as
+# Emscripten SIDE_MODULEs and loaded at runtime via dlopen (see
+# cmake/ETLBuildMod.cmake and the MAIN_MODULE flag below).
+#
+# The server game module (qagame) is also built here as a wasm SIDE_MODULE so it
+# can be shipped alongside cgame/ui (packaged into the legacy mod pk3 and as a
+# standalone .so). tvgame is NOT built for the browser (see the NOT EMSCRIPTEN
+# guard in cmake/ETLBuildMod.cmake). Building the server mod would normally pull
+# in Lua (FEATURE_LUA is ON when BUILD_SERVER_MOD is ON); we force it off here so
+# the wasm qagame stays a minimal, dependency-light side module like cgame/ui.
 set(BUILD_MOD ON CACHE BOOL "Build client mod libraries (cgame/ui) for Emscripten" FORCE)
 set(BUILD_CLIENT_MOD ON CACHE BOOL "Build cgame/ui for Emscripten" FORCE)
-set(BUILD_SERVER_MOD OFF CACHE BOOL "Server modules run natively, not in the browser" FORCE)
+set(BUILD_SERVER_MOD ON CACHE BOOL "Build qagame as a wasm side module for Emscripten" FORCE)
+set(FEATURE_LUA OFF CACHE BOOL "Disable Lua for the Emscripten server mod" FORCE)
+set(FEATURE_LUASQL OFF CACHE BOOL "Disable LuaSQL for the Emscripten server mod" FORCE)
+set(BUNDLED_LUA OFF CACHE BOOL "Do not build bundled Lua for Emscripten" FORCE)
 set(BUILD_MOD_PK3 OFF CACHE BOOL "Do not pack a mod pk3 for Emscripten" FORCE)
 
 #-----------------------------------------------------------------
@@ -84,8 +92,8 @@ set(BUILD_MOD_PK3 OFF CACHE BOOL "Do not pack a mod pk3 for Emscripten" FORCE)
 # support here (before any target is created in cmake/ETLBuildMod.cmake). With
 # this, `add_library(cgame MODULE ...)` is linked by emcc as a shared module and
 # `-sSIDE_MODULE=1` produces a proper dynamic-link wasm module. On this build
-# only cgame/ui are MODULE libraries (renderers are static-linked into the
-# engine, qagame/tvgame are server-only and disabled), so this is safe.
+# cgame/ui and qagame are MODULE libraries (renderers are static-linked into the
+# engine, tvgame is not built for the browser), so this is safe.
 set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS TRUE)
 
 #-----------------------------------------------------------------
@@ -149,6 +157,21 @@ set(EMSCRIPTEN_LINK_FLAGS
 	# are SIDE_MODULEs (see cmake/ETLBuildMod.cmake). MAIN_MODULE=1 keeps all
 	# symbols so the side modules can resolve engine functions at load time.
 	"-s MAIN_MODULE=1"
+	# EXPORT_ALL=1 is REQUIRED for input (and any other emscripten_set_*_callback
+	# based event) to work at all in this configuration. With MAIN_MODULE=1 and
+	# EXPORT_ALL=0, emcc links twice ("LINKABLE and not EXPORT_ALL" in
+	# tools/link.py) and generates the JS glue from the *first* link's metadata,
+	# which predates the dynCall_<sig> exports that wasm-emscripten-finalize adds
+	# for -sASYNCIFY (ASYNCIFY forces DYNCALLS). makeDynCall() then sees no
+	# dynCall_* exports and compiles EVERY JS-library callback dispatch - all of
+	# SDL's mouse/keyboard/pointerlock/focus handlers registered via
+	# emscripten_set_*_callback - into a silent no-op stub ("no exported function
+	# pointers with that signature"), so DOM events never reach SDL and the mouse
+	# cursor/keyboard are completely dead in game. EXPORT_ALL=1 skips the
+	# double-link so the JS glue is generated from the final metadata and calls
+	# the real dynCall_* exports. Costs etl.js size (one export var per symbol),
+	# which is acceptable; the wasm already exports everything via MAIN_MODULE=1.
+	"-s EXPORT_ALL=1"
 	# Runtime helpers used by the asset bootstrap in src/web/shell.html to fetch
 	# the etmain paks into the virtual filesystem before main() runs.
 	"-s EXPORTED_RUNTIME_METHODS=['FS','callMain','addRunDependency','removeRunDependency','ccall','cwrap']"
