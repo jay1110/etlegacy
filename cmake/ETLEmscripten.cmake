@@ -149,6 +149,21 @@ set(EMSCRIPTEN_LINK_FLAGS
 	# are SIDE_MODULEs (see cmake/ETLBuildMod.cmake). MAIN_MODULE=1 keeps all
 	# symbols so the side modules can resolve engine functions at load time.
 	"-s MAIN_MODULE=1"
+	# EXPORT_ALL=1 is REQUIRED for input (and any other emscripten_set_*_callback
+	# based event) to work at all in this configuration. With MAIN_MODULE=1 and
+	# EXPORT_ALL=0, emcc links twice ("LINKABLE and not EXPORT_ALL" in
+	# tools/link.py) and generates the JS glue from the *first* link's metadata,
+	# which predates the dynCall_<sig> exports that wasm-emscripten-finalize adds
+	# for -sASYNCIFY (ASYNCIFY forces DYNCALLS). makeDynCall() then sees no
+	# dynCall_* exports and compiles EVERY JS-library callback dispatch - all of
+	# SDL's mouse/keyboard/pointerlock/focus handlers registered via
+	# emscripten_set_*_callback - into a silent no-op stub ("no exported function
+	# pointers with that signature"), so DOM events never reach SDL and the mouse
+	# cursor/keyboard are completely dead in game. EXPORT_ALL=1 skips the
+	# double-link so the JS glue is generated from the final metadata and calls
+	# the real dynCall_* exports. Costs etl.js size (one export var per symbol),
+	# which is acceptable; the wasm already exports everything via MAIN_MODULE=1.
+	"-s EXPORT_ALL=1"
 	# Runtime helpers used by the asset bootstrap in src/web/shell.html to fetch
 	# the etmain paks into the virtual filesystem before main() runs.
 	"-s EXPORTED_RUNTIME_METHODS=['FS','callMain','addRunDependency','removeRunDependency','ccall','cwrap']"
