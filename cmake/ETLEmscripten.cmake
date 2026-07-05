@@ -55,14 +55,22 @@ set(BUILD_SERVER OFF CACHE BOOL "Disable dedicated server for Emscripten" FORCE)
 # The browser build is a *client*. It cannot host a game server itself (no raw
 # UDP sockets / no listen sockets), so it joins a native dedicated server
 # through the WebSocket->UDP relay in tools/ws-relay (see src/qcommon/net_web.c).
-# It does however need the client-side game logic modules (cgame + ui); these
-# are built as Emscripten SIDE_MODULEs and loaded at runtime via dlopen (see
-# cmake/ETLBuildMod.cmake and the MAIN_MODULE flag below). The server-side
-# modules (qagame/tvgame) run on the native dedicated server, not in the
-# browser, so only the client mod is built here.
+# It needs the client-side game logic modules (cgame + ui); these are built as
+# Emscripten SIDE_MODULEs and loaded at runtime via dlopen (see
+# cmake/ETLBuildMod.cmake and the MAIN_MODULE flag below).
+#
+# The server game module (qagame) is also built here as a wasm SIDE_MODULE so it
+# can be shipped alongside cgame/ui (packaged into the legacy mod pk3 and as a
+# standalone .so). tvgame is NOT built for the browser (see the NOT EMSCRIPTEN
+# guard in cmake/ETLBuildMod.cmake). Building the server mod would normally pull
+# in Lua (FEATURE_LUA is ON when BUILD_SERVER_MOD is ON); we force it off here so
+# the wasm qagame stays a minimal, dependency-light side module like cgame/ui.
 set(BUILD_MOD ON CACHE BOOL "Build client mod libraries (cgame/ui) for Emscripten" FORCE)
 set(BUILD_CLIENT_MOD ON CACHE BOOL "Build cgame/ui for Emscripten" FORCE)
-set(BUILD_SERVER_MOD OFF CACHE BOOL "Server modules run natively, not in the browser" FORCE)
+set(BUILD_SERVER_MOD ON CACHE BOOL "Build qagame as a wasm side module for Emscripten" FORCE)
+set(FEATURE_LUA OFF CACHE BOOL "Disable Lua for the Emscripten server mod" FORCE)
+set(FEATURE_LUASQL OFF CACHE BOOL "Disable LuaSQL for the Emscripten server mod" FORCE)
+set(BUNDLED_LUA OFF CACHE BOOL "Do not build bundled Lua for Emscripten" FORCE)
 set(BUILD_MOD_PK3 OFF CACHE BOOL "Do not pack a mod pk3 for Emscripten" FORCE)
 
 #-----------------------------------------------------------------
@@ -84,8 +92,8 @@ set(BUILD_MOD_PK3 OFF CACHE BOOL "Do not pack a mod pk3 for Emscripten" FORCE)
 # support here (before any target is created in cmake/ETLBuildMod.cmake). With
 # this, `add_library(cgame MODULE ...)` is linked by emcc as a shared module and
 # `-sSIDE_MODULE=1` produces a proper dynamic-link wasm module. On this build
-# only cgame/ui are MODULE libraries (renderers are static-linked into the
-# engine, qagame/tvgame are server-only and disabled), so this is safe.
+# cgame/ui and qagame are MODULE libraries (renderers are static-linked into the
+# engine, tvgame is not built for the browser), so this is safe.
 set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS TRUE)
 
 #-----------------------------------------------------------------
