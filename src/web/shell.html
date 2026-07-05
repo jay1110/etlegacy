@@ -36,6 +36,13 @@
         canvas#canvas {
             display: block;
             background-color: #000;
+            /* SDL owns the canvas *pixel* size (it sets canvas.width/height
+               from r_customwidth x r_customheight at window creation). Only
+               constrain the CSS display size so a canvas larger than the
+               viewport scales down; SDL's Emscripten mouse handling maps
+               CSS coordinates back to canvas pixels via getBoundingClientRect. */
+            max-width: 100%;
+            max-height: 100%;
             /* Let the engine's SDL touch handling receive raw touch events:
                without touch-action:none mobile browsers consume touches for
                scrolling/zooming (and synthesize a 300ms delayed click) instead
@@ -111,6 +118,35 @@
             color: #666;
         }
 
+        #local-assets {
+            margin-top: 22px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #local-assets .local-assets-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        #local-assets-hint {
+            display: block;
+            max-width: 420px;
+            font-size: 0.78em;
+            color: #888;
+            line-height: 1.5;
+            text-align: center;
+        }
+
+        #error-actions {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
         #controls-bar {
             position: fixed;
             bottom: 0;
@@ -166,7 +202,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            z-index: 200;
+            z-index: 400; /* above the launcher overlay (300) so errors are never hidden */
         }
 
         #error-message {
@@ -258,6 +294,108 @@
             gap: 10px;
             justify-content: flex-end;
         }
+
+        /* Launcher (game data setup + run-game menu) */
+        #launcher-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #1a1a2e;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 300;
+        }
+
+        .launcher-panel {
+            width: 480px;
+            max-width: 92%;
+            background-color: #2a2a4a;
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 28px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            display: none;
+        }
+
+        .launcher-panel h2 {
+            color: #c4a000;
+            font-size: 1.4em;
+            margin-bottom: 14px;
+        }
+
+        .launcher-panel p {
+            font-size: 0.9em;
+            color: #ccc;
+            line-height: 1.5;
+            margin-bottom: 18px;
+        }
+
+        .launcher-btn {
+            display: block;
+            width: 100%;
+            margin-bottom: 10px;
+            padding: 12px 16px;
+            background-color: #1a1a2e;
+            color: #e0e0e0;
+            border: 1px solid #555;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.95em;
+            text-align: left;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+
+        .launcher-btn:hover {
+            background-color: #3a3a5a;
+            border-color: #c4a000;
+        }
+
+        .launcher-btn:active {
+            background-color: #4a4a6a;
+        }
+
+        .launcher-btn .launcher-btn-sub {
+            display: block;
+            font-size: 0.8em;
+            color: #888;
+            margin-top: 3px;
+        }
+
+        .launcher-hint {
+            font-size: 0.78em;
+            color: #888;
+            line-height: 1.5;
+            margin-top: 8px;
+        }
+
+        .launcher-panel label {
+            display: block;
+            font-size: 0.85em;
+            color: #aaa;
+            margin-bottom: 4px;
+        }
+
+        .launcher-panel input {
+            width: 100%;
+            padding: 8px 10px;
+            margin-bottom: 14px;
+            background-color: #1a1a2e;
+            color: #e0e0e0;
+            border: 1px solid #444;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        .launcher-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 6px;
+        }
     </style>
 </head>
 <body>
@@ -270,7 +408,22 @@
         </div>
         <div id="progress-text">Loading...</div>
         <div id="status-text"></div>
-        <div id="build-marker" style="margin-top:24px;font-size:12px;color:#6c6c8a;">shell build: 2026-07-03-B</div>
+        <!-- Let users supply the retail paks from their own ET installation
+             (or retry the network download) without leaving the loader. -->
+        <div id="local-assets">
+            <div class="local-assets-buttons">
+                <button class="control-btn" type="button" onclick="pickLocalPaks()">Load local game files (pak0-2.pk3)</button>
+                <button class="control-btn" type="button" onclick="retryDownload()">Download game files</button>
+            </div>
+            <div id="local-assets-hint">
+                Slow or failing download? Select <b>pak0.pk3</b>, <b>pak1.pk3</b>
+                and <b>pak2.pk3</b> from your Wolfenstein: Enemy Territory
+                installation, or retry the download.
+            </div>
+        </div>
+        <input type="file" id="pak-file-input" accept=".pk3" multiple style="display:none"
+               onchange="onLocalPaksChosen(this)">
+        <div id="build-marker" style="margin-top:24px;font-size:12px;color:#6c6c8a;">shell build: 2026-07-05-A</div>
     </div>
 
     <!-- Error overlay -->
@@ -278,6 +431,10 @@
         <div id="error-message">
             <h2>Error</h2>
             <p id="error-text">An error occurred while loading the game.</p>
+            <div id="error-actions">
+                <button class="control-btn" type="button" onclick="pickLocalPaks()">Load local game files (pak0-2.pk3)</button>
+                <button class="control-btn" type="button" onclick="retryDownload()">Retry download</button>
+            </div>
         </div>
     </div>
 
@@ -289,8 +446,8 @@
     <!-- Controls bar -->
     <div id="controls-bar">
         <div>
-            <button class="control-btn" onclick="requestFullscreen()">Fullscreen</button>
-            <button class="control-btn" onclick="requestPointerLock()">Capture Mouse</button>
+            <button class="control-btn" onclick="etlRequestFullscreen()">Fullscreen</button>
+            <button class="control-btn" onclick="etlRequestPointerLock()">Capture Mouse</button>
             <button class="control-btn" onclick="openConnectPanel()">Connect...</button>
             <button class="control-btn" onclick="toggleConsole()">Console</button>
         </div>
@@ -316,6 +473,88 @@
 
     <!-- Console panel -->
     <div id="console-panel"></div>
+
+    <!-- Launcher: game data setup + run-game menu -->
+    <div id="launcher-overlay">
+        <!-- Step 1: how to provide pak0.pk3 (asked before anything downloads) -->
+        <div class="launcher-panel" id="launcher-setup">
+            <h2>Game data setup</h2>
+            <p>
+                ET: Legacy needs the game data (<b>pak0.pk3</b>) before it can
+                start. How do you want to provide it?
+            </p>
+            <button class="launcher-btn" type="button" id="setup-download-btn">
+                Download pak0.pk3 (included with the game)
+                <span class="launcher-btn-sub">Fetches pak0.pk3 (and pak1/pak2) automatically. ~250 MB, cached in the browser.</span>
+            </button>
+            <button class="launcher-btn" type="button" id="setup-local-btn">
+                Use my local pak0.pk3 (choose file)
+                <span class="launcher-btn-sub">Select pak0.pk3 (optionally pak1.pk3 and pak2.pk3) from your own Wolfenstein: Enemy Territory installation.</span>
+            </button>
+            <div class="launcher-hint">
+                The files are stored in the browser (IndexedDB), so this only has
+                to be done once.
+            </div>
+        </div>
+
+        <!-- Step 2: pak0.pk3 is set - run game -->
+        <div class="launcher-panel" id="launcher-menu">
+            <h2>Run game</h2>
+            <p>pak0.pk3 is set. Choose how you want to play:</p>
+            <button class="launcher-btn" type="button" id="menu-start">
+                Start game
+                <span class="launcher-btn-sub">Starts the game to the main menu without connecting anywhere.</span>
+            </button>
+            <button class="launcher-btn" type="button" id="menu-join-etc">
+                Join ETc server
+                <span class="launcher-btn-sub">84.200.135.3:27965 (xmod) &ndash; missing pk3 files are downloaded from the server.</span>
+            </button>
+            <button class="launcher-btn" type="button" id="menu-quick">
+                Quick single game
+                <span class="launcher-btn-sub">Starts a local game on map oasis.</span>
+            </button>
+            <button class="launcher-btn" type="button" id="menu-servers">
+                Server list
+                <span class="launcher-btn-sub">Pick from the list of compatible servers.</span>
+            </button>
+            <button class="launcher-btn" type="button" id="menu-host">
+                Host game
+                <span class="launcher-btn-sub">Host a game in your browser that others can join.</span>
+            </button>
+        </div>
+
+        <!-- Server list (entries are maintained manually in SERVER_LIST below) -->
+        <div class="launcher-panel" id="launcher-servers">
+            <h2>Compatible servers</h2>
+            <div id="server-list"></div>
+            <div class="launcher-hint">
+                Missing pk3 files are downloaded from the server when joining.
+            </div>
+            <div class="launcher-actions">
+                <button class="control-btn" type="button" id="servers-back">Back</button>
+            </div>
+        </div>
+
+        <!-- Host game -->
+        <div class="launcher-panel" id="launcher-host">
+            <h2>Host game</h2>
+            <label for="host-name">Server name</label>
+            <input id="host-name" type="text" value="ET:Legacy Web Host" autocomplete="off">
+            <label for="host-map">Map</label>
+            <input id="host-map" type="text" value="oasis" autocomplete="off">
+            <label for="host-maxclients">Max players</label>
+            <input id="host-maxclients" type="number" value="8" min="2" max="32">
+            <div class="launcher-hint">
+                Starts a listen server inside your browser. Other players join it
+                through the WebSocket relay (see tools/ws-relay); a browser cannot
+                accept direct UDP connections.
+            </div>
+            <div class="launcher-actions">
+                <button class="control-btn" type="button" id="host-back">Back</button>
+                <button class="control-btn" type="button" id="host-start">Start hosting</button>
+            </div>
+        </div>
+    </div>
 
     <script>
         // --- Firefox resizable-ArrayBuffer / TextDecoder workaround ----------
@@ -374,13 +613,25 @@
             if (typeof Ctx !== 'function') return;
 
             var contexts = [];
+            // Browsers refuse to start an AudioContext until the user has
+            // interacted with the page. Calling resume() before that logs a
+            // noisy "The AudioContext was not allowed to start" warning to the
+            // console on every attempt (e.g. from the visibility handler below),
+            // so only actually resume once a real user gesture has happened.
+            var userGestured = false;
             function track(ctx) {
                 if (ctx && contexts.indexOf(ctx) === -1) {
                     contexts.push(ctx);
+                    // SDL2 opens its AudioContext long after the user's first
+                    // gesture (the setup menu click), so a context created now
+                    // starts 'suspended' and would stay silent. The sticky
+                    // user activation lets resume() succeed outside a gesture.
+                    if (userGestured) resumeAll();
                 }
                 return ctx;
             }
             function resumeAll() {
+                if (!userGestured) return;   // avoid pre-gesture autoplay warnings
                 for (var i = 0; i < contexts.length; i++) {
                     var c = contexts[i];
                     if (c && c.state === 'suspended' && c.resume) {
@@ -411,15 +662,16 @@
                 window.webkitAudioContext = TrackedAudioContext;
             }
 
-            // Resume on the first user gesture (autoplay unlock). Emscripten
-            // also does this for its own contexts, but tracking here covers any
-            // context and is harmless if already running.
+            // Resume on user gestures (autoplay unlock). Emscripten also does
+            // this for its own contexts, but tracking here covers any context
+            // and is harmless if already running. The listeners are kept for
+            // the lifetime of the page (not one-shot): browsers such as
+            // Firefox/Safari may reject a resume() issued outside a gesture
+            // handler, so a later in-game click/keypress must retry it.
             var unlockEvents = ['pointerdown', 'keydown', 'touchstart'];
             function unlock() {
+                userGestured = true;
                 resumeAll();
-                for (var i = 0; i < unlockEvents.length; i++) {
-                    window.removeEventListener(unlockEvents[i], unlock, true);
-                }
             }
             for (var i = 0; i < unlockEvents.length; i++) {
                 window.addEventListener(unlockEvents[i], unlock, true);
@@ -468,7 +720,14 @@
             },
 
             setStatus: function(text) {
-                if (!text) return;
+                // NOTE: do NOT early-return on empty text. Emscripten signals
+                // "loading complete / engine started" by calling setStatus('')
+                // (from run() right before doRun, and from
+                // monitorRunDependencies when the dependency count reaches 0).
+                // That empty status is what hides the loading overlay below -
+                // dropping it leaves the opaque overlay covering the running
+                // game forever ("Running..." but no game visible).
+                text = text || '';
 
                 var progressBar = document.getElementById('progress-bar');
                 var progressText = document.getElementById('progress-text');
@@ -479,6 +738,10 @@
 
                 if (text === Module.setStatus.last.text) return;
                 Module.setStatus.last.text = text;
+                // Record when the status last changed so the startup watchdog
+                // can tell an actively-progressing download (status keeps
+                // updating) apart from a genuine stall (status frozen).
+                Module.setStatus.last.time = Date.now();
 
                 var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
                 if (m) {
@@ -515,6 +778,7 @@
             },
 
             monitorRunDependencies: function(left) {
+                Module.totalDependencies = Math.max(Module.totalDependencies, left);
                 Module.setStatus(left ? 'Preparing... (' + (Module.totalDependencies - left) + '/' + Module.totalDependencies + ')' : '');
             },
 
@@ -545,15 +809,48 @@
         // Watchdog: if the engine has not started (overlay still visible) after
         // a generous delay and nothing has errored, tell the user where it is
         // stuck instead of leaving them staring at a frozen "Loading..." screen.
-        var startupWatchdog = setTimeout(function () {
-            var overlay = document.getElementById('loading-overlay');
-            var errorOverlay = document.getElementById('error-overlay');
-            if (overlay && !overlay.classList.contains('hidden') &&
-                errorOverlay && errorOverlay.style.display !== 'flex') {
+        //
+        // A large retail pak (pak0.pk3 is ~228 MB) can legitimately take minutes
+        // to download on a slow connection, and Module.setStatus keeps ticking
+        // with fresh progress the whole time. Firing a fixed timer would wrongly
+        // accuse an in-progress download of being "stuck", so instead the
+        // watchdog only complains after a period of *inactivity*: it reschedules
+        // itself as long as the status text keeps changing (download progressing)
+        // and only shows the message once nothing has advanced for STALL_MS.
+        var STARTUP_STALL_MS = 60000; // no progress for this long => report stall
+        var startupWatchdog = null;
+        function scheduleStartupWatchdog(delay) {
+            startupWatchdog = setTimeout(function () {
+                var overlay = document.getElementById('loading-overlay');
+                var errorOverlay = document.getElementById('error-overlay');
+                // Already finished or already showing an error - nothing to do.
+                if (!overlay || overlay.classList.contains('hidden') ||
+                    (errorOverlay && errorOverlay.style.display === 'flex')) {
+                    return;
+                }
+                // The launcher is waiting for the user to make a choice - that
+                // is not a stall, so keep waiting.
+                if (window.etlLauncherWaiting) {
+                    scheduleStartupWatchdog(STARTUP_STALL_MS);
+                    return;
+                }
+                // If the status changed recently the download/startup is still
+                // making progress; wait until it has actually been idle for the
+                // full STALL window before giving up.
+                var lastChange = (Module.setStatus.last && Module.setStatus.last.time) ||
+                    Date.now();
+                var idle = Date.now() - lastChange;
+                if (idle < STARTUP_STALL_MS) {
+                    scheduleStartupWatchdog(STARTUP_STALL_MS - idle);
+                    return;
+                }
                 var where = (Module.setStatus.last && Module.setStatus.last.text) ||
                     'initializing';
-                showError('The game is taking unusually long to start ' +
-                    '(stuck at: ' + where + ').\n\n' +
+                showError('The game appears to be stuck at: ' + where + '.\n\n' +
+                    'Nothing has progressed for a while. If you are on a slow ' +
+                    'connection a large pak may still be downloading - you can ' +
+                    'wait, or use "Load local game files" below to pick ' +
+                    'pak0.pk3, pak1.pk3 and pak2.pk3 from your computer.\n\n' +
                     'Open the browser console (F12) for the exact error. ' +
                     'Common causes:\n' +
                     '\u2022 etl.wasm failed to download (check the ' +
@@ -564,8 +861,11 @@
                     '\u2022 The mod pk3 could not be fetched from the legacy/ ' +
                     'folder next to etl.html.\n' +
                     '\u2022 WebGL is unavailable or disabled in this browser.');
-            }
-        }, 25000);
+            }, delay);
+        }
+        // First check only after the full stall window, so a normal (even slow)
+        // download is never wrongly flagged.
+        scheduleStartupWatchdog(STARTUP_STALL_MS);
 
         function showError(message) {
             var overlay = document.getElementById('error-overlay');
@@ -581,7 +881,16 @@
         }
 
         // Fullscreen support (toggle: enter if windowed, exit if already full).
-        function requestFullscreen() {
+        // NOTE: etl.js is not modularized, so all of Emscripten's internal
+        // top-level vars land in the page's global scope. It defines both
+        // `requestPointerLock` (libhtml5.js $requestPointerLock, which needs a
+        // target element argument) and `requestFullscreen` (an alias of
+        // Browser.requestFullscreen). Helpers here must NOT reuse those names,
+        // or the later etl.js assignments silently replace them and e.g. the
+        // canvas click handler ends up calling Emscripten's version without a
+        // target: "TypeError: Cannot read properties of undefined (reading
+        // 'requestPointerLock')". Hence the etl* prefix.
+        function etlRequestFullscreen() {
             var canvas = document.getElementById('canvas');
             var fsElement = document.fullscreenElement ||
                             document.webkitFullscreenElement ||
@@ -606,7 +915,7 @@
         }
 
         // Pointer lock support
-        function requestPointerLock() {
+        function etlRequestPointerLock() {
             var canvas = document.getElementById('canvas');
             canvas.requestPointerLock = canvas.requestPointerLock ||
                                         canvas.mozRequestPointerLock ||
@@ -618,7 +927,7 @@
 
         // Click on canvas to capture mouse
         document.getElementById('canvas').addEventListener('click', function() {
-            requestPointerLock();
+            etlRequestPointerLock();
         });
 
         // Console panel
@@ -626,6 +935,39 @@
         function toggleConsole() {
             consoleVisible = !consoleVisible;
             document.getElementById('console-panel').style.display = consoleVisible ? 'block' : 'none';
+        }
+
+        // --- Local game files (retail paks) --------------------------------
+        // A browser build ships no game data. By default the paks are fetched
+        // over the network, but that can be slow (pak0.pk3 is ~228 MB) or fail
+        // entirely, so let the user hand the engine the paks straight from their
+        // own Wolfenstein: Enemy Territory installation instead. The heavy
+        // lifting (writing into the cached virtual filesystem) is done by
+        // window.etlProvideLocalPaks, exposed by the asset bootstrap below.
+        function pickLocalPaks() {
+            var input = document.getElementById('pak-file-input');
+            if (input) {
+                input.value = '';   // allow re-selecting the same file
+                input.click();
+            }
+        }
+
+        function onLocalPaksChosen(input) {
+            if (!input || !input.files || !input.files.length) return;
+            if (typeof window.etlProvideLocalPaks === 'function') {
+                window.etlProvideLocalPaks(input.files);
+            }
+        }
+
+        // Retry / start the network download of the paks. Reusing a full reload
+        // is the simplest robust path: anything already cached in IndexedDB is
+        // reused and only the missing paks are re-fetched.
+        function retryDownload() {
+            if (typeof window.etlRetryDownload === 'function') {
+                window.etlRetryDownload();
+            } else {
+                window.location.reload();
+            }
         }
 
         // In-page relay/server connect form. The engine reads the relay and
@@ -692,15 +1034,13 @@
             panel.scrollTop = panel.scrollHeight;
         }
 
-        // Resize canvas to fill window
-        function resizeCanvas() {
-            var canvas = document.getElementById('canvas');
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        }
-
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
+        // Do NOT resize the canvas from JS. Setting canvas.width/height here
+        // resets the WebGL drawing buffer (black canvas) and fights SDL,
+        // which owns the canvas pixel size (set from r_customwidth/height at
+        // SDL_CreateWindow time). The reference Wwasm web port has no JS
+        // resize handler either; the canvas stays at its fixed pixel size and
+        // is only scaled visually via CSS (max-width/max-height above) or the
+        // browser Fullscreen API (the Fullscreen button).
 
         // Show controls bar when mouse moves to bottom of screen
         document.addEventListener('mousemove', function(e) {
@@ -773,6 +1113,27 @@
             var ETMAIN_DIR = INSTALL_DIR + '/etmain';
             var LEGACY_DIR = INSTALL_DIR + '/legacy';
 
+            // fs_homepath (Sys_DefaultHomePath) is $HOME/.etlegacy, and $HOME on
+            // Emscripten is /home/web_user, so the mod's home game directory is
+            // /home/web_user/.etlegacy/legacy. The engine's Sys_LoadGameDll first
+            // *extracts* the cgame/ui side modules from the mod pk3 into this
+            // directory and then dlopen()s them from here *before* it falls back
+            // to fs_basepath/legacy (LEGACY_DIR). That extracted copy is written
+            // straight to the virtual filesystem, so it is NOT run through
+            // Emscripten's wasm preload plugin and cannot be dlopen()ed - the
+            // first load attempt fails with "failed: (null)". To make that first
+            // attempt succeed we precompile the side modules into this home game
+            // directory as well (see preloadSideModule); Emscripten's dlopen()
+            // then finds the compiled module in preloadedWasm (keyed by path)
+            // regardless of what the engine's own extraction later writes there.
+            var HOME_LEGACY_DIR = '/home/web_user/.etlegacy/legacy'; // must match Sys_DefaultHomePath()
+
+            // Every directory the engine may dlopen() a side module from, in the
+            // order it searches them. Precompiling the modules into all of them
+            // makes the first dlopen() a preloadedWasm cache hit instead of
+            // depending on the engine falling through to fs_basepath.
+            var SIDE_MODULE_DIRS = [HOME_LEGACY_DIR, LEGACY_DIR];
+
             // Where to download the ET: Legacy mod data from. This is the mod's
             // "legacy/" folder (analogous to etmain/ for the retail paks) served
             // next to this page by default, so it is fetched same-origin (no CORS
@@ -815,9 +1176,12 @@
             // the mod pk3 at runtime by the engine - is inert data the browser
             // refuses to compile synchronously on the main thread, so dlopen()
             // would fail with "VM_Create on ui failed". They are therefore
-            // preloaded (fetched + precompiled) below via FS.createPreloadedFile,
-            // in addition to the pk3 (which carries the ui .menu files). The raw
-            // .so files are served in the same legacy/ folder as the pk3.
+            // preloaded (compiled up front) below via FS.createPreloadedFile.
+            //
+            // The bytes are taken directly out of the mod pk3 the shell downloads
+            // (its always-present game-logic package, see preloadSideModule); a
+            // standalone .so served in the same legacy/ folder is used only as a
+            // fallback when a module is missing from the pk3.
             var MOD_FILES = ['cgame.mp.wasm32.so', 'ui.mp.wasm32.so'];
 
             // Build the engine command line from URL parameters.
@@ -828,9 +1192,29 @@
             }
             var connect = params.get('connect');
             if (connect) {
+                args.push('+set', 'cl_allowDownload', '1');
+                args.push('+set', 'cl_wwwDownload', '1');
                 args.push('+connect', connect);
             }
+            var mapParam = params.get('map');
+            if (mapParam) {
+                args.push('+map', mapParam);
+            }
             Module.arguments = args;
+
+            // --- Launcher server list -------------------------------------
+            // Compatible servers shown by the launcher's "Server list" button.
+            // Maintain this list manually: add one { name, address } entry per
+            // server. Missing pk3s (e.g. a different fs_game such as xmod) are
+            // downloaded from the server on connect (cl_allowDownload 1).
+            var SERVER_LIST = [
+                { name: 'ETc | XMOD', address: '84.200.135.3:27965' }
+                // Add more compatible servers here, e.g.:
+                // { name: 'My server', address: '203.0.113.10:27960' }
+            ];
+
+            // Address + parameters of the dedicated "Join ETc server" button.
+            var ETC_SERVER = '84.200.135.3:27965';
 
             function statusFor(name, received, total) {
                 if (total) {
@@ -841,15 +1225,27 @@
             }
 
             // Fetch a file with progress reporting and write it to the FS.
-            function downloadInto(sourceUrl, target, label) {
-                // Skip if it is already present (e.g. restored from IndexedDB).
+            // opts.refresh: re-download even when a copy is already cached in
+            // the virtual filesystem (using HTTP revalidation, so an unchanged
+            // file is a cheap 304), keeping the cached copy only as an offline
+            // fallback. Used for the mod pk3, which carries the cgame/ui game
+            // logic that MUST match the engine build: silently reusing a stale
+            // IndexedDB copy after the site was updated loads old game modules
+            // into a new engine and crashes at runtime (e.g. Asyncify's
+            // "RuntimeError: memory access out of bounds at ... doRewind").
+            function downloadInto(sourceUrl, target, label, opts) {
+                var refresh = !!(opts && opts.refresh);
+                var fetchOpts = refresh ? { cache: 'no-cache' } : undefined;
+                var cached = false;
                 try {
-                    if (Module.FS.analyzePath(target).exists) {
-                        return Promise.resolve();
-                    }
+                    cached = Module.FS.analyzePath(target).exists;
                 } catch (e) { /* FS not ready yet - fall through and download */ }
 
-                return fetch(sourceUrl).then(function (response) {
+                if (cached && !refresh) {
+                    return Promise.resolve();
+                }
+
+                return fetch(sourceUrl, fetchOpts).then(function (response) {
                     if (!response.ok) {
                         throw new Error('Failed to download ' + label + ': HTTP ' + response.status);
                     }
@@ -888,6 +1284,18 @@
                     }
 
                     return pump();
+                }).catch(function (err) {
+                    if (cached) {
+                        // Offline / server unreachable: keep using the cached
+                        // copy rather than failing the whole bootstrap.
+                        if (console && console.warn) {
+                            console.warn('Could not refresh ' + label + ' (' +
+                                (err && err.message || err) +
+                                '); using the cached copy.');
+                        }
+                        return;
+                    }
+                    throw err;
                 });
             }
 
@@ -895,27 +1303,215 @@
                 return downloadInto(ASSET_BASE + name, ETMAIN_DIR + '/' + name, name);
             }
 
-            // Download one file from the legacy/ folder into LEGACY_DIR.
+            // Download one file from the legacy/ folder into LEGACY_DIR. Unlike
+            // the huge retail paks, the mod files are always revalidated against
+            // the server: they contain the cgame/ui game-logic side modules,
+            // which must exactly match the engine build being served. Reusing a
+            // stale IndexedDB copy after a site update pairs old modules with a
+            // new engine, which crashes at runtime (see downloadInto).
             function downloadLegacyFile(name) {
-                return downloadInto(LEGACY_BASE + name, LEGACY_DIR + '/' + name, name);
+                return downloadInto(LEGACY_BASE + name, LEGACY_DIR + '/' + name, name,
+                    { refresh: true });
             }
 
-            // Preload a game-logic side module (cgame/ui) so the engine's
-            // dlopen() can load it. FS.createPreloadedFile fetches the .so and
-            // runs it through Emscripten's wasm preload plugin, which compiles
-            // the module and caches it in preloadedWasm keyed by its virtual-FS
-            // path. The engine looks the module up under fs_basepath
-            // (LEGACY_DIR, i.e. /etlegacy/legacy) so dlopen() becomes a cache
-            // hit there (see Sys_LoadGameDll / Sys_TryLibraryLoad). Without this
-            // precompilation dlopen() cannot instantiate the module at all and
-            // startup aborts with "VM_Create on ui failed".
+            // --- Minimal ZIP reader -------------------------------------------
+            // The mod pk3 is a plain ZIP archive. To load the cgame/ui side
+            // modules straight out of it (see preloadSideModule below) the shell
+            // needs to pull a single entry's bytes from the archive. Locate the
+            // entry through the End-Of-Central-Directory record + central
+            // directory (so it works regardless of how the archive was produced)
+            // and return its raw, still-compressed bytes plus the compression
+            // method. Only "stored" (0) and "deflate" (8) are used by pk3s.
+            function findZipEntry(u8, wantName) {
+                var dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+                // Scan backwards for the EOCD signature (0x06054b50). The record
+                // is at most 22 bytes + a 64 KiB comment from the end.
+                var maxBack = Math.min(u8.length, 65557);
+                var eocd = -1;
+                for (var i = u8.length - 22; i >= u8.length - maxBack && i >= 0; i--) {
+                    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+                }
+                if (eocd < 0) {
+                    throw new Error('not a valid pk3 (no zip end-of-central-directory record)');
+                }
+                var count = dv.getUint16(eocd + 10, true);
+                var off = dv.getUint32(eocd + 16, true);
+                for (var n = 0; n < count; n++) {
+                    if (dv.getUint32(off, true) !== 0x02014b50) {
+                        throw new Error('corrupt pk3 (bad central directory header)');
+                    }
+                    var method = dv.getUint16(off + 10, true);
+                    var compSize = dv.getUint32(off + 20, true);
+                    var nameLen = dv.getUint16(off + 28, true);
+                    var extraLen = dv.getUint16(off + 30, true);
+                    var commentLen = dv.getUint16(off + 32, true);
+                    var localOff = dv.getUint32(off + 42, true);
+                    var name = utf8Decode(u8.subarray(off + 46, off + 46 + nameLen));
+                    if (name === wantName) {
+                        // The central-directory record does not point at the file
+                        // data directly; re-read the local header to skip its
+                        // (possibly differently sized) name/extra fields.
+                        if (dv.getUint32(localOff, true) !== 0x04034b50) {
+                            throw new Error('corrupt pk3 (bad local file header for ' + wantName + ')');
+                        }
+                        var lNameLen = dv.getUint16(localOff + 26, true);
+                        var lExtraLen = dv.getUint16(localOff + 28, true);
+                        var dataStart = localOff + 30 + lNameLen + lExtraLen;
+                        return { method: method, raw: u8.subarray(dataStart, dataStart + compSize) };
+                    }
+                    off += 46 + nameLen + extraLen + commentLen;
+                }
+                return null;
+            }
+
+            function utf8Decode(bytes) {
+                if (typeof TextDecoder !== 'undefined') {
+                    return new TextDecoder('utf-8').decode(bytes);
+                }
+                var s = '';
+                for (var i = 0; i < bytes.length; i++) { s += String.fromCharCode(bytes[i]); }
+                return decodeURIComponent(escape(s));
+            }
+
+            // Inflate a raw DEFLATE stream (ZIP compression method 8) using the
+            // browser's built-in DecompressionStream, returning a Uint8Array.
+            function inflateRaw(bytes) {
+                if (typeof DecompressionStream === 'undefined') {
+                    return Promise.reject(new Error(
+                        'this browser lacks DecompressionStream; cannot inflate the ' +
+                        'mod pk3 (try a newer browser)'));
+                }
+                var stream = new Response(bytes).body
+                    .pipeThrough(new DecompressionStream('deflate-raw'));
+                return new Response(stream).arrayBuffer().then(function (buf) {
+                    return new Uint8Array(buf);
+                });
+            }
+
+            // Every pk3 present in LEGACY_DIR, in the order they should be tried
+            // for the cgame/ui side modules. The configured MOD_PK3 name(s) come
+            // first (so the intended mod pk3 wins), followed by any other *.pk3
+            // the user hosts in legacy/ or that was cached from a previous
+            // session. This mirrors the engine, which scans the whole fs_game
+            // folder for *.pk3 (FS_CL_ExtractFromPakFile) rather than relying on
+            // one exact filename: a legacy pk3 served under a name that does not
+            // match @ETL_MOD_PK3_NAME@ (e.g. a different version) is still found,
+            // instead of failing to preload and falling back to a standalone .so
+            // that may not be hosted.
+            function listModPk3s() {
+                var seen = {};
+                var pk3s = [];
+                MOD_PK3.forEach(function (name) {
+                    if (name && !seen[name]) { seen[name] = true; pk3s.push(name); }
+                });
+                try {
+                    Module.FS.readdir(LEGACY_DIR).forEach(function (entry) {
+                        if (entry === '.' || entry === '..') { return; }
+                        if (!/\.pk3$/i.test(entry)) { return; }
+                        if (seen[entry]) { return; }
+                        seen[entry] = true;
+                        pk3s.push(entry);
+                    });
+                } catch (e) { /* dir missing/unreadable - use configured names */ }
+                return pk3s;
+            }
+
+            // Drop versioned legacy mod pk3s cached from a *previous* deployment.
+            // The mod pk3 name embeds the build version (legacy_<version>.pk3),
+            // so after a site update the old pk3 lingers in IndexedDB under a
+            // different name. listModPk3s()/the engine's pk3 scan would still
+            // find it and its stale cgame/ui side modules, which no longer match
+            // the engine build - pairing them crashes at runtime (Asyncify
+            // "memory access out of bounds" at doRewind, cascading into the SDL2
+            // audio callback). Only auto-named legacy_*.pk3 files that are not
+            // the configured MOD_PK3 are removed; user-hosted custom pk3s with
+            // other names are left alone.
+            function removeStaleModPk3s() {
+                var keep = {};
+                MOD_PK3.forEach(function (name) { keep[name] = true; });
+                try {
+                    Module.FS.readdir(LEGACY_DIR).forEach(function (entry) {
+                        if (entry === '.' || entry === '..') { return; }
+                        if (!/^legacy_.*\.pk3$/i.test(entry)) { return; }
+                        if (keep[entry]) { return; }
+                        try {
+                            Module.FS.unlink(LEGACY_DIR + '/' + entry);
+                            if (console && console.warn) {
+                                console.warn('Removed stale cached mod pk3 ' + entry +
+                                    ' (does not match this build: ' + MOD_PK3.join(', ') + ')');
+                            }
+                        } catch (e) { /* leave it; the configured pk3 is tried first */ }
+                    });
+                } catch (e) { /* dir missing/unreadable - nothing to clean */ }
+            }
+
+            // Extract a side module (cgame/ui) from one of the already-downloaded
+            // mod pk3s in LEGACY_DIR. Returns the module bytes, or null if none of
+            // the pk3s contains it. The pk3 is the primary, always-present source
+            // for the game logic (it is the mod's data package), so loading the
+            // modules from it removes any dependency on separate standalone .so
+            // files being hosted and served correctly.
+            function extractSideModuleFromPk3(name) {
+                return listModPk3s().reduce(function (chain, pk3) {
+                    return chain.then(function (found) {
+                        if (found) { return found; }
+                        var pk3Path = LEGACY_DIR + '/' + pk3;
+                        var bytes;
+                        try {
+                            if (!Module.FS.analyzePath(pk3Path).exists) { return null; }
+                            bytes = Module.FS.readFile(pk3Path);
+                        } catch (e) { return null; }
+                        var entry;
+                        try {
+                            entry = findZipEntry(bytes, name);
+                        } catch (e) {
+                            if (console && console.warn) {
+                                console.warn('Could not read ' + pk3 + ': ' + e.message);
+                            }
+                            return null;
+                        }
+                        if (!entry) { return null; }
+                        if (entry.method === 0) { return entry.raw; }   // stored
+                        if (entry.method === 8) {                        // deflate
+                            return inflateRaw(entry.raw).catch(function (e) {
+                                // Inflate failed (e.g. no DecompressionStream on an
+                                // old browser). Treat as "not in pk3" so the
+                                // standalone .so fallback is still tried.
+                                if (console && console.warn) {
+                                    console.warn('Could not inflate ' + name +
+                                        ' from ' + pk3 + ': ' + e.message);
+                                }
+                                return null;
+                            });
+                        }
+                        if (console && console.warn) {
+                            console.warn(name + ' uses unsupported pk3 compression ' +
+                                'method ' + entry.method + ' in ' + pk3);
+                        }
+                        return null;
+                    });
+                }, Promise.resolve(null));
+            }
+
+            // Precompile a game-logic side module (cgame/ui) into one directory so
+            // the engine's dlopen() can load it. FS.createPreloadedFile runs the
+            // module through Emscripten's wasm preload plugin, which compiles it
+            // and caches it in preloadedWasm keyed by its virtual-FS path. The
+            // engine's dlopen() then becomes a cache hit for exactly that path
+            // (see Sys_LoadGameDll / Sys_TryLibraryLoad). Without this
+            // precompilation dlopen() cannot instantiate the module and startup
+            // aborts with "VM_Create on ui failed".
             //
             // The compiled module lives in preloadedWasm (in memory), so it must
             // be re-preloaded on every load; drop any copy persisted in IndexedDB
             // from a previous session first, otherwise createPreloadedFile throws
             // trying to recreate an existing file.
-            function preloadSideModule(name) {
-                var target = LEGACY_DIR + '/' + name;
+            function createPreloadedSideModule(dir, name, source) {
+                try {
+                    Module.FS.mkdirTree(dir);
+                } catch (e) { /* already exists */ }
+
+                var target = dir + '/' + name;
                 try {
                     if (Module.FS.analyzePath(target).exists) {
                         Module.FS.unlink(target);
@@ -923,14 +1519,17 @@
                 } catch (e) { /* nothing to remove */ }
 
                 return new Promise(function (resolve, reject) {
-                    Module.setStatus('Loading ' + name);
                     try {
                         Module.FS.createPreloadedFile(
-                            LEGACY_DIR, name, LEGACY_BASE + name, true, false,
+                            dir, name, source, true, false,
                             function () { resolve(); },
-                            function () {
-                                reject(new Error('Failed to preload ' + name +
-                                    ' from ' + LEGACY_BASE));
+                            function (err) {
+                                // Preserve the real reason (a network error for the
+                                // standalone .so, or a WebAssembly compile/link error
+                                // for a broken/incompatible module) instead of
+                                // discarding it behind a generic message.
+                                reject(err instanceof Error ? err :
+                                    new Error(String(err || 'unknown error')));
                             });
                     } catch (e) {
                         reject(e);
@@ -938,18 +1537,198 @@
                 });
             }
 
+            // Fetch the raw bytes of a standalone side module served in legacy/.
+            // Used only as a fallback when the module is not inside the mod pk3.
+            // 'no-cache' forces HTTP revalidation so a stale browser-cached copy
+            // from a previous deployment is not silently reused.
+            function fetchStandaloneSideModule(name) {
+                return fetch(LEGACY_BASE + name, { cache: 'no-cache' }).then(function (response) {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status + ' for ' +
+                            LEGACY_BASE + name);
+                    }
+                    return response.arrayBuffer();
+                }).then(function (buf) { return new Uint8Array(buf); });
+            }
+
+            // Every side module is a WebAssembly binary, which always begins with
+            // the four magic bytes "\0asm" (0x00 0x61 0x73 0x6d). Checking for it up
+            // front lets the shell reject a file that is not actually a wasm module
+            // - the single most common real-world cause of a startup failure once
+            // the loader itself works - and report exactly what is wrong instead of
+            // leaving Emscripten to abort later with the cryptic "need to see wasm
+            // magic number". A file failing this check is virtually always a binary
+            // that got mangled somewhere between the build and the browser: uploaded
+            // over FTP/SFTP in "ASCII"/"text" mode (which rewrites bytes and destroys
+            // the binary), served as an HTML error/redirect page under an HTTP 200,
+            // or run through a content transform (e.g. gzip that the browser did not
+            // transparently decode).
+            function hasWasmMagic(bytes) {
+                return !!bytes && bytes.length >= 4 &&
+                    bytes[0] === 0x00 && bytes[1] === 0x61 &&
+                    bytes[2] === 0x73 && bytes[3] === 0x6d;
+            }
+
+            // The engine is linked with -sASYNCIFY, which requires every
+            // dlopen()ed side module to be Asyncify-instrumented as well (built
+            // with -sASYNCIFY, see cmake/ETLBuildMod.cmake). An uninstrumented
+            // module cannot save/restore its stack frames when Asyncify unwinds
+            // through them (e.g. around the engine's dlopen), which corrupts the
+            // rewind and traps with "RuntimeError: memory access out of bounds"
+            // at doRewind - after which every re-entry into the wasm (like the
+            // SDL2 audio callback) traps the same way, forever. The instrumented
+            // module always exports the Asyncify control functions, so their
+            // presence in the wasm export section is a reliable marker. Checking
+            // it up front rejects the classic real-world cause - a stale module
+            // from an old build (browser cache or an old pk3 still on the
+            // server) - with a clear message instead of the cryptic crash.
+            //
+            // Minimal wasm export-section walk. Returns the export names, or
+            // null if the binary cannot be parsed (in which case the check is
+            // skipped rather than producing a false rejection).
+            function wasmExportNames(bytes) {
+                try {
+                    var pos = 8; // skip \0asm magic + version
+                    function leb() {
+                        var result = 0, shift = 0, b;
+                        do {
+                            if (pos >= bytes.length) {
+                                throw new Error('truncated wasm binary');
+                            }
+                            b = bytes[pos++];
+                            result |= (b & 0x7f) << shift;
+                            shift += 7;
+                        } while (b & 0x80);
+                        return result >>> 0;
+                    }
+                    while (pos < bytes.length) {
+                        var id = bytes[pos++];
+                        var size = leb();
+                        var end = pos + size;
+                        if (end > bytes.length) {
+                            throw new Error('malformed wasm binary (section overruns file)');
+                        }
+                        if (id === 7) { // export section
+                            var names = [];
+                            var count = leb();
+                            for (var i = 0; i < count; i++) {
+                                var len = leb();
+                                names.push(utf8Decode(bytes.subarray(pos, pos + len)));
+                                pos += len;
+                                pos++; // export kind
+                                leb(); // export index
+                            }
+                            return names;
+                        }
+                        pos = end;
+                    }
+                    return [];
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function lacksAsyncifyInstrumentation(bytes) {
+                var names = wasmExportNames(bytes);
+                if (!names) { return false; } // unparseable - don't false-reject
+                return names.indexOf('asyncify_start_rewind') === -1;
+            }
+
+            function describeNonWasm(bytes) {
+                if (!bytes || !bytes.length) { return 'the file is empty'; }
+                // A mis-served HTML error/redirect page is the usual "HTTP 200 but
+                // not the file" case; surface it explicitly.
+                var head = '';
+                for (var i = 0; i < Math.min(bytes.length, 64); i++) {
+                    head += String.fromCharCode(bytes[i]);
+                }
+                if (/^\s*(<!doctype|<html|<\?xml)/i.test(head)) {
+                    return 'the server returned an HTML/XML page (HTTP 200), not the ' +
+                        'binary - check the URL is served correctly';
+                }
+                var hex = [];
+                for (var j = 0; j < Math.min(bytes.length, 4); j++) {
+                    hex.push(('0' + bytes[j].toString(16)).slice(-2));
+                }
+                return 'it does not start with the WebAssembly magic number ' +
+                    '(got ' + hex.join(' ') + ', expected 00 61 73 6d) - the file ' +
+                    'was most likely corrupted in upload (e.g. FTP/SFTP in ASCII/text ' +
+                    'mode instead of binary) or altered by the web server';
+            }
+
+            function preloadSideModule(name) {
+                Module.setStatus('Loading ' + name);
+                // Obtain the module bytes once - preferably straight from the mod
+                // pk3 the shell downloaded (the reliable, always-present source),
+                // otherwise from the standalone .so served next to the pk3. Bytes
+                // that are not a valid wasm module (a corrupt/mis-served file) or
+                // that lack the Asyncify instrumentation the engine requires (a
+                // stale module from an old build) are rejected so the other
+                // source still gets a chance.
+                function describeProblem(bytes) {
+                    if (!hasWasmMagic(bytes)) { return describeNonWasm(bytes); }
+                    return 'it was built without Asyncify instrumentation (no ' +
+                        'asyncify_start_rewind export). It is a stale module from an ' +
+                        'old build - clear the site data / update the hosted files so ' +
+                        'the pk3 and .so match this engine build';
+                }
+                function usable(bytes) {
+                    return hasWasmMagic(bytes) && !lacksAsyncifyInstrumentation(bytes);
+                }
+                return extractSideModuleFromPk3(name).then(function (bytes) {
+                    if (bytes && usable(bytes)) { return bytes; }
+                    if (bytes && console && console.warn) {
+                        console.warn('Ignoring ' + name + ' from the mod pk3: ' +
+                            describeProblem(bytes) + '. Trying the standalone copy.');
+                    }
+                    var pk3Problem = bytes ?
+                        ' (its copy inside the mod pk3 is not usable: ' +
+                        describeProblem(bytes) + ')' : '';
+                    return fetchStandaloneSideModule(name).catch(function (err) {
+                        throw new Error('it is not usable from the mod pk3 and the ' +
+                            'standalone copy at ' + LEGACY_BASE + name +
+                            ' could not be loaded (' +
+                            (err && err.message || err) + ')' + pk3Problem);
+                    }).then(function (bytes) {
+                        if (usable(bytes)) { return bytes; }
+                        throw new Error('the standalone copy at ' + LEGACY_BASE +
+                            name + ' is not usable: ' +
+                            describeProblem(bytes) + pk3Problem);
+                    });
+                }).then(function (bytes) {
+                    // Precompile the module into every directory the engine may
+                    // dlopen() it from (fs_homepath/legacy is searched first in a
+                    // release build, then fs_basepath/legacy) so the very first
+                    // load attempt is a preloadedWasm cache hit instead of failing
+                    // on the engine's freshly-extracted, un-preloaded copy.
+                    return SIDE_MODULE_DIRS.reduce(function (chain, dir) {
+                        return chain.then(function () {
+                            return createPreloadedSideModule(dir, name, bytes);
+                        });
+                    }, Promise.resolve());
+                }).catch(function (err) {
+                    // Tag the failure so the top-level handler can reliably tell a
+                    // side-module problem apart from a retail-pak download failure,
+                    // regardless of the underlying error text.
+                    var wrapped = (err instanceof Error) ? err :
+                        new Error(String(err || 'unknown error'));
+                    wrapped.sideModule = name;
+                    throw wrapped;
+                });
+            }
+
             // Fetch the mod data. Two things are needed:
-            //   1. The legacy pk3 - it carries the ui .menu files and other mod
-            //      media. (It also contains the cgame/ui .so, but a side module
-            //      cannot be dlopen()ed straight out of the pk3 on wasm, see
-            //      preloadSideModule.)
-            //   2. The cgame/ui side modules, preloaded (fetched + precompiled)
-            //      so the engine's dlopen() succeeds.
-            // The pk3 is optional (missing .menu files degrade the UI but do not
-            // abort); the side modules are mandatory - if they cannot be
-            // preloaded the engine aborts later with "VM_Create on ui failed".
+            //   1. The legacy pk3 - it carries the cgame/ui game logic side
+            //      modules plus the ui .menu files and other mod media.
+            //   2. The cgame/ui side modules, preloaded (compiled up front) so
+            //      the engine's dlopen() succeeds. Their bytes are taken from the
+            //      pk3 downloaded in step 1 (or a standalone .so fallback).
+            // The side modules are mandatory - if they cannot be preloaded the
+            // engine aborts later with "VM_Create on ui failed". The pk3 download
+            // itself is only "optional" in that a network blip is retried via the
+            // standalone fallback; without either source the side modules fail.
             function downloadModAssets() {
-                // 1) mod pk3(s) - non-fatal if absent.
+                // 1) mod pk3(s) - the source of the game logic + ui media.
                 var pk3Chain = MOD_PK3.reduce(function (chain, name) {
                     return chain.then(function () {
                         return downloadLegacyFile(name).catch(function (err) {
@@ -961,8 +1740,12 @@
                     });
                 }, Promise.resolve());
 
-                // 2) cgame/ui side modules - precompiled so dlopen() works.
+                // 2) cgame/ui side modules - precompiled so dlopen() works. Taken
+                //    from the pk3 above, falling back to the standalone .so. Old
+                //    versioned pk3s cached from a previous deployment are removed
+                //    first so their stale side modules can never be picked up.
                 return pk3Chain.then(function () {
+                    removeStaleModPk3s();
                     return MOD_FILES.reduce(function (chain, name) {
                         return chain.then(function () {
                             return preloadSideModule(name);
@@ -1004,6 +1787,264 @@
                 });
             }
 
+            // Read a browser File object into a Uint8Array (arrayBuffer() is not
+            // available on older browsers, so fall back to FileReader).
+            function readFileBytes(file) {
+                if (file.arrayBuffer) {
+                    return file.arrayBuffer().then(function (buf) {
+                        return new Uint8Array(buf);
+                    });
+                }
+                return new Promise(function (resolve, reject) {
+                    var reader = new FileReader();
+                    reader.onload = function () {
+                        resolve(new Uint8Array(reader.result));
+                    };
+                    reader.onerror = function () {
+                        reject(reader.error || new Error('could not read ' + file.name));
+                    };
+                    reader.readAsArrayBuffer(file);
+                });
+            }
+
+            // Store retail paks the user picked from their own installation into
+            // the (IndexedDB-cached) etmain directory, then reload. On reload the
+            // asset bootstrap sees the paks already present (downloadInto skips
+            // any file that exists) and starts without a network download - the
+            // same code path used for paks cached from a previous session, which
+            // keeps this robust and avoids re-implementing the startup flow.
+            window.etlProvideLocalPaks = function (fileList) {
+                var files = Array.prototype.slice.call(fileList || []);
+                if (!files.length) { return Promise.resolve(0); }
+                if (!Module.FS || !Module.FS.writeFile) {
+                    showError('The game engine has not finished initialising yet, ' +
+                        'so local files cannot be stored. Please wait a moment ' +
+                        'and try again.');
+                    return Promise.resolve(0);
+                }
+                // If the launcher's file picker triggered this, swap the launcher
+                // for the loading overlay so the progress is visible.
+                if (typeof window.etlHideLauncher === 'function') {
+                    window.etlHideLauncher();
+                }
+                var loadingOverlay = document.getElementById('loading-overlay');
+                loadingOverlay.classList.remove('hidden');
+                loadingOverlay.style.display = 'flex';
+                Module.setStatus('Loading local game files...');
+                try { Module.FS.mkdirTree(ETMAIN_DIR); } catch (e) { /* exists */ }
+
+                return files.reduce(function (chain, file) {
+                    return chain.then(function (count) {
+                        // Use only the base name, lower-cased so it matches the
+                        // engine's expected pak names (pak0.pk3, ...) on the
+                        // case-sensitive virtual FS regardless of how the user's
+                        // OS cased the file. Accept any .pk3; ignore anything else.
+                        var name = (file.name || '').split(/[\\/]/).pop().toLowerCase();
+                        if (!/\.pk3$/.test(name)) { return count; }
+                        return readFileBytes(file).then(function (bytes) {
+                            Module.FS.writeFile(ETMAIN_DIR + '/' + name, bytes);
+                            return count + 1;
+                        });
+                    });
+                }, Promise.resolve(0)).then(function (count) {
+                    if (!count) {
+                        showError('None of the selected files are .pk3 game files.' +
+                            '\n\nPlease select pak0.pk3, pak1.pk3 and pak2.pk3 from ' +
+                            'your Wolfenstein: Enemy Territory installation.');
+                        return count;
+                    }
+                    // Persist to IndexedDB so the reload below (and future loads)
+                    // find them, then restart cleanly through the normal flow.
+                    return persist().then(function () {
+                        window.location.reload();
+                        return count;
+                    });
+                }).catch(function (err) {
+                    showError('Could not store the selected game files: ' +
+                        (err && err.message || err));
+                    return 0;
+                });
+            };
+
+            // Retry / start the network download. A full reload reuses anything
+            // already cached in IndexedDB and only re-fetches what is missing.
+            window.etlRetryDownload = function () {
+                window.location.reload();
+            };
+
+            // --- Launcher -------------------------------------------------
+            // Before anything downloads, the launcher asks how to provide
+            // pak0.pk3 (download the included one, or pick a local copy). Once
+            // the game data is set it shows the "Run game" menu with the play
+            // modes. While a launcher panel is open the page waits for the
+            // user, so the startup watchdog is told not to treat that as a
+            // stall via window.etlLauncherWaiting.
+            var LAUNCHER_PANELS = ['launcher-setup', 'launcher-menu',
+                'launcher-servers', 'launcher-host'];
+
+            function showLauncherPanel(id) {
+                LAUNCHER_PANELS.forEach(function (p) {
+                    var el = document.getElementById(p);
+                    if (el) { el.style.display = (p === id) ? 'block' : 'none'; }
+                });
+                document.getElementById('launcher-overlay').style.display = 'flex';
+                document.getElementById('loading-overlay').style.display = 'none';
+                window.etlLauncherWaiting = true;
+            }
+
+            function hideLauncher() {
+                document.getElementById('launcher-overlay').style.display = 'none';
+                window.etlLauncherWaiting = false;
+            }
+            window.etlHideLauncher = hideLauncher;
+
+            // Bring the loading overlay back (it is hidden while a launcher
+            // panel is open) so download/start progress is visible again.
+            function showLoading(text) {
+                var overlay = document.getElementById('loading-overlay');
+                overlay.classList.remove('hidden');
+                overlay.style.display = 'flex';
+                if (text) { Module.setStatus(text); }
+            }
+
+            // Step 1: make sure the game data (pak0.pk3) is available. If it is
+            // already present (cached from a previous session or provided
+            // locally), just top up any missing paks. Otherwise ask the user
+            // whether to download the included pak0.pk3 or use a local copy.
+            function downloadAllPaks() {
+                return PAK_FILES.reduce(function (chain, name) {
+                    return chain.then(function () { return downloadPak(name); });
+                }, Promise.resolve());
+            }
+
+            function ensureGameData() {
+                var pak0Exists = false;
+                try {
+                    pak0Exists = Module.FS.analyzePath(ETMAIN_DIR + '/pak0.pk3').exists;
+                } catch (e) { /* FS problem - fall through to the question */ }
+
+                if (pak0Exists) {
+                    // pak0 is set; fetch any still-missing paks (pak1/pak2) but
+                    // do not fail startup if they cannot be downloaded - the
+                    // user's local pak0 is the mandatory part.
+                    return PAK_FILES.reduce(function (chain, name) {
+                        return chain.then(function () {
+                            return downloadPak(name).catch(function (err) {
+                                if (console && console.warn) {
+                                    console.warn('Optional pak ' + name +
+                                        ' not fetched: ' + err.message);
+                                }
+                            });
+                        });
+                    }, Promise.resolve());
+                }
+
+                return new Promise(function (resolve, reject) {
+                    document.getElementById('setup-download-btn').onclick = function () {
+                        hideLauncher();
+                        showLoading('Downloading game data...');
+                        downloadAllPaks().then(resolve, reject);
+                    };
+                    document.getElementById('setup-local-btn').onclick = function () {
+                        // Reuses the existing local-pak flow: the picked files
+                        // are written to the cached etmain dir, persisted to
+                        // IndexedDB and the page reloads - after which pak0
+                        // exists and this question is skipped.
+                        pickLocalPaks();
+                    };
+                    showLauncherPanel('launcher-setup');
+                });
+            }
+
+            // Step 2: pak0.pk3 is set - show the "Run game" menu and resolve
+            // with the extra engine arguments for the chosen mode. Skipped when
+            // the URL already dictates what to do (?connect= or ?map=).
+            function connectArgs(address) {
+                return ['+set', 'cl_allowDownload', '1',
+                        '+set', 'cl_wwwDownload', '1',
+                        '+connect', address];
+            }
+
+            function chooseGameMode() {
+                if (connect || mapParam) {
+                    return Promise.resolve([]);
+                }
+
+                return new Promise(function (resolve) {
+                    function pick(extra) {
+                        hideLauncher();
+                        showLoading('Starting ET: Legacy...');
+                        resolve(extra);
+                    }
+
+                    // Button 0: just start the game - boots to the main menu
+                    // without connecting anywhere.
+                    document.getElementById('menu-start').onclick = function () {
+                        pick([]);
+                    };
+
+                    // Button 1: join the ETc xmod server. The server runs a
+                    // different fs_game (xmod); the client switches to it
+                    // automatically and downloads the missing pk3 files from
+                    // the server (cl_allowDownload 1).
+                    document.getElementById('menu-join-etc').onclick = function () {
+                        pick(connectArgs(ETC_SERVER));
+                    };
+
+                    // Button 2: quick single game on map oasis.
+                    document.getElementById('menu-quick').onclick = function () {
+                        pick(['+map', 'oasis']);
+                    };
+
+                    // Button 3: manually maintained list of compatible servers.
+                    document.getElementById('menu-servers').onclick = function () {
+                        var box = document.getElementById('server-list');
+                        box.innerHTML = '';
+                        SERVER_LIST.forEach(function (srv) {
+                            var b = document.createElement('button');
+                            b.className = 'launcher-btn';
+                            b.type = 'button';
+                            b.textContent = srv.name + ' \u2014 ' + srv.address;
+                            b.onclick = function () { pick(connectArgs(srv.address)); };
+                            box.appendChild(b);
+                        });
+                        if (!SERVER_LIST.length) {
+                            var empty = document.createElement('p');
+                            empty.textContent = 'No servers configured. Add entries ' +
+                                'to SERVER_LIST in this page.';
+                            box.appendChild(empty);
+                        }
+                        showLauncherPanel('launcher-servers');
+                    };
+                    document.getElementById('servers-back').onclick = function () {
+                        showLauncherPanel('launcher-menu');
+                    };
+
+                    // Button 4: host a game (listen server in the browser).
+                    document.getElementById('menu-host').onclick = function () {
+                        showLauncherPanel('launcher-host');
+                    };
+                    document.getElementById('host-back').onclick = function () {
+                        showLauncherPanel('launcher-menu');
+                    };
+                    document.getElementById('host-start').onclick = function () {
+                        var name = document.getElementById('host-name').value.trim() ||
+                            'ET:Legacy Web Host';
+                        var map = document.getElementById('host-map').value.trim() ||
+                            'oasis';
+                        var maxClients = parseInt(
+                            document.getElementById('host-maxclients').value, 10);
+                        if (!(maxClients >= 2 && maxClients <= 32)) { maxClients = 8; }
+                        pick(['+set', 'sv_hostname', name,
+                              '+set', 'sv_maxclients', String(maxClients),
+                              '+set', 'dedicated', '0',
+                              '+map', map]);
+                    };
+
+                    showLauncherPanel('launcher-menu');
+                });
+            }
+
             // Run before the engine's main(): block startup until assets exist.
             Module.preRun = Module.preRun || [];
             Module.preRun.push(function () {
@@ -1011,37 +2052,53 @@
 
                 mountCache()
                     .then(function () {
-                        // etmain retail paks (same-origin by default, cached in
-                        // IndexedDB; may be cross-origin via ?assets=).
-                        return PAK_FILES.reduce(function (chain, name) {
-                            return chain.then(function () { return downloadPak(name); });
-                        }, Promise.resolve());
+                        // Step 1: ask for / download the retail game data
+                        // (pak0.pk3 first and foremost; cached in IndexedDB).
+                        return ensureGameData();
                     })
                     .then(function () {
-                        // ET: Legacy mod data: the legacy pk3 (ui .menu files and
-                        // other mod media, cached in IndexedDB) plus the cgame/ui
-                        // side modules, which are fetched and precompiled here so
-                        // the engine's dlopen() can load them. A side module that
-                        // cannot be preloaded rejects and is reported below.
+                        // ET: Legacy mod data: the legacy pk3 (cgame/ui game
+                        // logic + ui .menu files and other mod media, cached in
+                        // IndexedDB). The cgame/ui side modules are then compiled
+                        // up front - straight from that pk3, or from a standalone
+                        // .so fallback - so the engine's dlopen() can load them. A
+                        // side module that cannot be preloaded rejects and is
+                        // reported below.
                         return downloadModAssets();
                     })
                     .then(persist)
                     .then(function () {
-                        Module.setStatus('Starting ET: Legacy...');
+                        // Step 2: everything is in place - show the "Run game"
+                        // menu (unless the URL already says what to do) and
+                        // append the chosen mode's arguments.
+                        return chooseGameMode();
+                    })
+                    .then(function (extraArgs) {
+                        if (extraArgs && extraArgs.length) {
+                            Module.arguments = args.concat(extraArgs);
+                        }
+                        showLoading('Starting ET: Legacy...');
                         Module.removeRunDependency('etl-assets');
                     })
                     .catch(function (err) {
+                        hideLauncher();
+                        showLoading();
                         var msg;
-                        if (err && /preload/i.test(err.message || '')) {
-                            // A mandatory cgame/ui side module could not be
-                            // fetched/compiled from the legacy/ folder.
-                            msg = 'Could not load the ET: Legacy game modules ' +
-                                'from ' + LEGACY_BASE + '.\n' + err.message +
-                                '\n\nMake sure ' + MOD_FILES.join(', ') +
-                                ' are present in the "' +
-                                LEGACY_BASE.replace(/\/$/, '') +
-                                '" folder next to this page (served with HTTP 200 ' +
-                                'and the application/wasm MIME type).';
+                        if (err && (err.sideModule || /preload/i.test(err.message || ''))) {
+                            // A mandatory cgame/ui side module could not be loaded
+                            // from the mod pk3 or the standalone .so fallback. Show
+                            // the real underlying reason (a network error, a broken
+                            // pk3, or a WebAssembly compile/link error) so the true
+                            // cause is diagnosable.
+                            var which = (err && err.sideModule) || 'a game module';
+                            msg = 'Could not load the ET: Legacy game module ' +
+                                which + '.\n' + (err.message || err) +
+                                '\n\nThe game logic is loaded from the mod pk3 (' +
+                                MOD_PK3.join(', ') + ', or any other .pk3) in the "' +
+                                LEGACY_BASE.replace(/\/$/, '') + '" folder next to ' +
+                                'this page, or from the standalone ' +
+                                MOD_FILES.join(', ') + ' there. Make sure at least ' +
+                                'one of these is present and served with HTTP 200.';
                             showError(msg);
                             Module.removeRunDependency('etl-assets');
                             return;

@@ -568,7 +568,16 @@ static ID_INLINE uint64_t _vmu64(void *value)
 
 #define VMU64(x) _vmu64(VMA(x))
 
-typedef intptr_t (QDECL *VM_EntryPoint_t)(int, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t);
+// The mod entry point vmMain(command, arg0 .. arg11): a fixed 13-parameter
+// function (see e.g. src/cgame/cg_main.c, src/ui/ui_main.c). This type MUST
+// match that definition exactly. On WebAssembly the engine (MAIN_MODULE) calls
+// the side module's vmMain through this pointer with a call_indirect that is
+// type-checked against the callee: any extra parameters here make the call a
+// signature mismatch and trap at runtime ("index out of bounds" / "function
+// signature mismatch"). VM_Call never passes more than 12 args (VM_Call_12),
+// and every vmMain ignores anything past arg11, so 12 args is also the correct
+// count on native platforms.
+typedef intptr_t (QDECL *VM_EntryPoint_t)(int, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t, intptr_t);
 
 /*
 ==============================================================

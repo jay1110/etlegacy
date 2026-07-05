@@ -37,6 +37,8 @@
 #include <time.h>
 #include <math.h>
 #include <libgen.h>
+#include <dlfcn.h>
+#include <unistd.h>
 
 #ifndef DEDICATED
 #include "../sdl/sdl_defs.h"
@@ -162,6 +164,77 @@ void Sys_PlatformInit(void)
 
 	// Initialize the home path directory
 	Sys_DefaultHomePath();
+}
+
+/**
+ * @brief Sys_PreloadGameDlls - dlopen() the cgame/ui side modules while the
+ * wasm call stack is still trivially shallow (called from the top of main()).
+ *
+ * Under -sASYNCIFY, Emscripten's _dlopen_js is ALWAYS asynchronous: it wraps
+ * the load in Asyncify.handleSleep(), unwinding and rewinding the entire wasm
+ * call stack - even when the module is already precompiled in the
+ * preloadedWasm cache (the cache only skips the fetch/compile, not the
+ * unwind). When the engine's Sys_LoadGameDll runs deep inside Com_Frame
+ * (client init -> VM_Create -> dlopen), that unwind spans dozens of frames
+ * and the dlopen mutates the dynamic-linking state (table entries, merged
+ * symbols, Asyncify-instrumented exports) while the stack is unwound; the
+ * subsequent rewind then traps with "RuntimeError: memory access out of
+ * bounds at ... doRewind". None of the working browser ports (Qwasm2,
+ * jdarpinian/ioq3, ...) ever dlopen() from deep inside the running engine -
+ * side modules are always linked up front.
+ *
+ * Emscripten's C-side dlopen (system/lib/libc/dynlink.c) keeps every loaded
+ * DSO in a global list and short-circuits via find_existing(name) WITHOUT
+ * calling the asynchronous _dlopen_js when the same path is opened again
+ * (dlclose() is a no-op on Emscripten, so entries are never removed). By
+ * dlopen()ing the modules here - the officially supported Asyncify+dlopen
+ * pattern, exercised by Emscripten's own test_dlfcn_asyncify - every later
+ * Sys_LoadLibrary() of the same path becomes a synchronous cache hit and no
+ * mid-frame unwind ever happens.
+ *
+ * The paths probed here must match FS_BuildOSPath(base, gamedir, fname)
+ * exactly (find_existing compares the raw path string): the engine searches
+ * fs_homepath then fs_basepath for "<gamedir>/<name>.mp." ARCH_STRING DLL_EXT.
+ * The web shell (src/web/shell.html) preloads the modules into both
+ * directories before main() runs. Only the default 'legacy' mod is preloaded;
+ * that is the only mod the web build ships.
+ */
+void Sys_PreloadGameDlls(void)
+{
+	static const char *mods[]  = { "cgame", "ui" };
+	static const char *bases[] = { "/home/web_user/.etlegacy", "/etlegacy" }; // fs_homepath, fs_basepath
+	size_t             i, j;
+
+	for (i = 0; i < ARRAY_LEN(mods); i++)
+	{
+		for (j = 0; j < ARRAY_LEN(bases); j++)
+		{
+			char fname[MAX_OSPATH];
+			char fn[MAX_OSPATH];
+
+			Com_sprintf(fname, sizeof(fname), Sys_GetDLLName("%s"), mods[i]);
+			Com_sprintf(fn, sizeof(fn), "%s/%s/%s", bases[j], DEFAULT_MODGAME, fname);
+
+			if (access(fn, F_OK) != 0)
+			{
+				continue;
+			}
+
+			// Deliberately never dlclose()d: the DSO must stay registered so
+			// the engine's later dlopen() of the same path stays synchronous.
+			// Both the homepath and basepath copies are preloaded (the search
+			// order in Sys_LoadGameDll differs between release and debug
+			// builds, and either copy may be probed first).
+			if (dlopen(fn, RTLD_NOW))
+			{
+				Com_Printf("Sys_PreloadGameDlls: preloaded %s\n", fn);
+			}
+			else
+			{
+				Com_Printf(S_COLOR_YELLOW "Sys_PreloadGameDlls: failed to preload %s: %s\n", fn, dlerror());
+			}
+		}
+	}
 }
 
 /**

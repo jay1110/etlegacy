@@ -904,12 +904,23 @@ static void *Sys_TryLibraryLoad(const char *base, const char *gamedir, const cha
  *
  * @return libHandle or NULL
  */
+#ifdef __EMSCRIPTEN__
+// On Emscripten (wasm), variadic function pointers don't work correctly across
+// MAIN_MODULE/SIDE_MODULE boundaries. Use array-based syscall instead.
+void *Sys_LoadGameDll(const char *name, qboolean extract,
+                      VM_EntryPoint_t *entryPoint,
+                      intptr_t (*systemcalls)(intptr_t *))
+{
+	void *libHandle;
+	void (*dllEntry)(intptr_t (*syscallptr)(intptr_t *));
+#else
 void *Sys_LoadGameDll(const char *name, qboolean extract,
                       VM_EntryPoint_t *entryPoint,
                       intptr_t (*systemcalls)(intptr_t, ...))
 {
 	void *libHandle;
 	void (*dllEntry)(intptr_t (*syscallptr)(intptr_t, ...));
+#endif
 	char fname[MAX_OSPATH];
 	char *basepath;
 	char *homepath;
@@ -1014,7 +1025,11 @@ void *Sys_LoadGameDll(const char *name, qboolean extract,
 		return NULL;
 	}
 
+#ifdef __EMSCRIPTEN__
+	dllEntry    = (void(QDECL *)(intptr_t(QDECL *)(intptr_t *)))Sys_LoadFunction(libHandle, "dllEntry");
+#else
 	dllEntry    = (void(QDECL *)(intptr_t(QDECL *)(intptr_t, ...)))Sys_LoadFunction(libHandle, "dllEntry");
+#endif
 	*entryPoint = (VM_EntryPoint_t)Sys_LoadFunction(libHandle, "vmMain");
 
 	if (!*entryPoint || !dllEntry)
@@ -1307,18 +1322,48 @@ void Sys_SetUpConsoleAndSignals(void)
  */
 #ifdef __EMSCRIPTEN__
 /**
- * @brief Single frame callback for Emscripten main loop
+ * @brief Single frame callback for Emscripten main loop.
+ *
+ * EMSCRIPTEN_KEEPALIVE: the function is registered as the browser main loop
+ * through its wasm *export* (see Sys_GameLoop below), not through the C
+ * function pointer, so it must survive linking and be visible in wasmExports.
  */
-static void Sys_EmscriptenFrame(void)
+EMSCRIPTEN_KEEPALIVE void Sys_EmscriptenFrame(void)
 {
 	Com_Frame();
 }
 
 static int Sys_GameLoop(void)
 {
-	// Use emscripten_set_main_loop to yield control back to the browser each frame.
-	// Parameters: callback, fps (0 = use requestAnimationFrame), simulate_infinite_loop
-	emscripten_set_main_loop(Sys_EmscriptenFrame, 0, 1);
+	// Yield control back to the browser each frame via emscripten's main loop
+	// machinery (fps=0 -> requestAnimationFrame scheduling).
+	//
+	// emscripten_set_main_loop() itself cannot be used to register the
+	// callback in this build configuration: with MAIN_MODULE + ASYNCIFY the
+	// dynCall_v wasm export that its JS library code needs only materializes
+	// after the JS glue has been generated, so emscripten silently compiles
+	// the C-function-pointer dispatch into an empty stub ("a dynamic function
+	// call to signature v, but there are no exported function pointers with
+	// that signature") - the browser then runs an empty main loop and the
+	// game never advances past Com_Init() (observed as a black canvas).
+	//
+	// Instead, register the loop through the internal $setMainLoop JS helper
+	// with the real (asyncify-wrapped) wasm export of Sys_EmscriptenFrame.
+	// The emscripten_set_main_loop() call below only exists to pull that
+	// helper into the build and initialize the MainLoop machinery; its no-op
+	// callback registration is cancelled before it can ever run.
+	emscripten_set_main_loop(Sys_EmscriptenFrame, 0, 0);
+	emscripten_cancel_main_loop();
+	EM_ASM({
+		if (typeof setMainLoop !== 'function' || typeof wasmExports['Sys_EmscriptenFrame'] !== 'function')
+		{
+			throw new Error('Sys_GameLoop: cannot hook up the browser main loop');
+		}
+		setMainLoop(wasmExports['Sys_EmscriptenFrame'], 0, false);
+	});
+	// Keep the wasm runtime alive after main() returns (the registered main
+	// loop keeps running); equivalent to set_main_loop's simulate_infinite_loop.
+	emscripten_exit_with_live_runtime();
 	return EXIT_SUCCESS;
 }
 #else
@@ -1409,6 +1454,16 @@ int main(int argc, char **argv)
 	// Emscripten: set paths to virtual filesystem locations
 	Sys_SetBinaryPath("/etlegacy");
 	Sys_SetDefaultInstallPath("/etlegacy");
+
+	// dlopen() the cgame/ui side modules NOW, while the call stack is only one
+	// frame deep. Under -sASYNCIFY every first dlopen() of a path unwinds and
+	// rewinds the whole wasm stack; doing that later from deep inside
+	// Com_Frame (client init -> VM_Create -> Sys_LoadGameDll) corrupts the
+	// rewind and traps with "memory access out of bounds" at doRewind.
+	// Emscripten caches loaded DSOs by path and never unloads them (dlclose is
+	// a no-op), so the engine's own Sys_LoadLibrary() of these paths becomes a
+	// synchronous cache hit. See Sys_PreloadGameDlls in sys_web.c.
+	Sys_PreloadGameDlls();
 #else
 
 #ifdef __APPLE__

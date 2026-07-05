@@ -66,17 +66,70 @@ set(BUILD_SERVER_MOD OFF CACHE BOOL "Server modules run natively, not in the bro
 set(BUILD_MOD_PK3 OFF CACHE BOOL "Do not pack a mod pk3 for Emscripten" FORCE)
 
 #-----------------------------------------------------------------
+# Allow the cgame/ui SIDE_MODULEs to actually be linked as wasm
+#-----------------------------------------------------------------
+# Emscripten's CMake platform module (Platform/Emscripten.cmake) sets
+#   set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS FALSE)
+# which makes CMake silently downgrade every SHARED/MODULE library to a static
+# archive: it runs `emar` instead of `emcc`, so no link step happens and the
+# `-sSIDE_MODULE=1` flag set in cmake/ETLBuildMod.cmake is never applied. The
+# resulting cgame.mp.wasm32.so / ui.mp.wasm32.so are then Unix `ar` archives
+# (they start with "!<arch>" / 0x21 0x3C 0x61 0x72) rather than WebAssembly
+# side modules (which must start with the "\0asm" magic 0x00 0x61 0x73 0x6D).
+# The engine's dlopen()/Emscripten's wasm preload plugin reject those archives
+# with "does not start with the WebAssembly magic number", making the browser
+# build fail to load its game logic.
+#
+# emcc does support building wasm side modules, so re-enable shared-library
+# support here (before any target is created in cmake/ETLBuildMod.cmake). With
+# this, `add_library(cgame MODULE ...)` is linked by emcc as a shared module and
+# `-sSIDE_MODULE=1` produces a proper dynamic-link wasm module. On this build
+# only cgame/ui are MODULE libraries (renderers are static-linked into the
+# engine, qagame/tvgame are server-only and disabled), so this is safe.
+set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS TRUE)
+
+#-----------------------------------------------------------------
 # Emscripten compiler and linker flags
 #-----------------------------------------------------------------
 # USE_SDL=2: Use Emscripten's built-in SDL2 port
 # LEGACY_GL_EMULATION=1: Emulate fixed-function/immediate-mode desktop GL
 #   (glBegin/glEnd, glPushMatrix, glMatrixMode, ...) on top of WebGL. The
 #   OpenGL 1.x renderer relies on these, so this is required at link time.
+# FULL_ES2=1: Emulate OpenGL ES 2 client-side vertex arrays on top of WebGL.
+#   WebGL forbids drawing from CPU-side memory (glVertexAttribPointer /
+#   glDrawElements / glDrawArrays with a non-zero offset and no VBO bound),
+#   which the renderer's vertex arrays use. Without this the browser logs a
+#   flood of "no ARRAY_BUFFER is bound and offset is non-zero" /
+#   "no buffer is bound to enabled attribute" INVALID_OPERATION errors and
+#   nothing is drawn. FULL_ES2 makes Emscripten upload those client-side
+#   arrays into temporary buffer objects automatically. Both the reference
+#   web ports (jdarpinian/ioq3 and GMH-Code/Wwasm) enable it for the same
+#   reason.
 # ALLOW_MEMORY_GROWTH=1: Allow the WASM heap to grow dynamically
 # WASM=1: Output WebAssembly (not asm.js)
-# ASYNCIFY: Enable async/await support for the main loop
+# ASYNCIFY: Enable async/await support for the main loop. NOTE: Asyncify is a
+#   link-time whole-program instrumentation; the dlopen()ed cgame/ui SIDE_MODULEs
+#   must also be linked with -sASYNCIFY (see cmake/ETLBuildMod.cmake) or any
+#   unwind that crosses a mod frame corrupts the rewind and traps with
+#   "memory access out of bounds" at doRewind.
 # FETCH=1: Provide the emscripten_fetch API used by src/qcommon/dl_main_web.c
 # INITIAL_MEMORY: Set initial memory allocation
+# STACK_SIZE: The engine has deep call stacks (renderer -> backend ->
+#   SDL_GL_SwapWindow, deeply nested game/ui code); the Emscripten default
+#   (64 KiB) overflows into "memory access out of bounds" traps, so give it a
+#   generous native stack (8 MiB; the reference web ports use 4-5 MiB).
+# ASYNCIFY_STACK_SIZE: Asyncify unwinds/rewinds the whole call stack through
+#   the blocking main loop (SDL_GL_SwapWindow -> emscripten_sleep). If this
+#   buffer is too small the rewind overruns it and traps with "memory access
+#   out of bounds" (seen at doRewind / __synccall / silence_callback). 64 KiB
+#   is not enough for this engine's stack depth; 1 MiB still trapped at
+#   doRewind in the field, so use a deliberately generous 16 MiB.
+# MAXIMUM_MEMORY: With ALLOW_MEMORY_GROWTH the wasm heap grows on demand, but
+#   only up to this cap (the Emscripten default is 2 GiB). Loading large maps
+#   plus server-downloaded pk3s can exceed that and traps with "memory access
+#   out of bounds" instead of growing further. Set the cap to the wasm32
+#   architectural maximum of 4 GiB so the engine can use as much memory as it
+#   needs.
 #-----------------------------------------------------------------
 set(EMSCRIPTEN_COMMON_FLAGS "-s USE_SDL=2")
 set(EMSCRIPTEN_LINK_FLAGS
@@ -84,8 +137,11 @@ set(EMSCRIPTEN_LINK_FLAGS
 	"-s WASM=1"
 	"-s ASYNCIFY"
 	"-s FETCH=1"
-	"-s INITIAL_MEMORY=536870912" # 512 MiB
-	"-s ASYNCIFY_STACK_SIZE=65536"
+	"-s INITIAL_MEMORY=2147483648" # 2 GiB up front; grows on demand up to MAXIMUM_MEMORY
+	"-s MAXIMUM_MEMORY=4294967296" # 4 GiB heap cap (wasm32 maximum; Emscripten default 2 GiB is too small)
+	"-s STACK_SIZE=8388608" # 8 MiB native stack (Emscripten default 64 KiB is too small)
+	"-s ASYNCIFY_STACK_SIZE=16777216" # 16 MiB Asyncify rewind buffer (1 MiB still overflowed at doRewind)
+	"-s FULL_ES2=1"
 	"-s GL_UNSAFE_OPTS=0"
 	"-s FORCE_FILESYSTEM=1"
 	# The client loads the game logic (cgame/ui) at runtime via dlopen. On wasm
@@ -148,7 +204,7 @@ set(CMAKE_EXECUTABLE_SUFFIX ".html")
 
 message(STATUS "Emscripten configuration complete")
 message(STATUS "  Architecture: ${ARCH}")
-message(STATUS "  Memory: 512MB initial, growable")
+message(STATUS "  Memory: 2GB initial, growable to 4GB")
 if(FEATURE_GL4ES)
 	message(STATUS "  Renderer: OpenGL 1.x (via gl4es -> GLES2/WebGL)")
 else()

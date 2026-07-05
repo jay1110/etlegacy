@@ -39,12 +39,13 @@ jobs:
       # contents: write is needed to attach the packaged web build to releases
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
       - name: Setup Emscripten
-        uses: mymindstorm/setup-emsdk@v14
+        # v16 runs on Node 24 (v14 targeted the deprecated Node 20 runtime)
+        uses: mymindstorm/setup-emsdk@v16
         with:
           # Pinned: "latest" has broken web builds before (changed defaults in
           # newer SDKs). 4.0.23 is verified to produce a working browser build.
@@ -94,9 +95,10 @@ jobs:
       - name: Package web release
         run: |
           mkdir -p dist/etlegacy-web
-          # etl.data is no longer produced: the mod is shipped as a downloadable
-          # legacy pk3 (below) instead of being embedded in the engine image.
-          cp build-wasm/etl.html build-wasm/etl.js build-wasm/etl.wasm dist/etlegacy-web/
+          # etl.data carries the preloaded browser defaults (see
+          # cmake/ETLBuildClient.cmake); the mod itself is shipped as a
+          # downloadable legacy pk3 (below), not embedded in the engine image.
+          cp build-wasm/etl.html build-wasm/etl.js build-wasm/etl.wasm build-wasm/etl.data dist/etlegacy-web/
           # Serve the game at the site root as well
           cp build-wasm/etl.html dist/etlegacy-web/index.html
           # The ET: Legacy mod data the client downloads at startup: the legacy
@@ -149,6 +151,8 @@ jobs:
             index.html / etl.html  - game page (same file)
             etl.js                 - engine JavaScript loader
             etl.wasm               - engine WebAssembly binary
+            etl.data               - preloaded virtual-filesystem image
+                                     (browser default config)
             legacy/                - ET: Legacy mod pk3 (cgame/ui + ui menus)
                                      plus the standalone cgame/ui side modules
                                      (required; the engine loads its game logic
@@ -186,7 +190,7 @@ jobs:
           node tools/web-smoke/boot-smoke.mjs dist/etlegacy-web 90000
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: etlegacy-web-${{ github.sha }}
           path: dist/etlegacy-web.zip

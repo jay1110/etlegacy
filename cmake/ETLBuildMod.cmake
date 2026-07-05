@@ -30,9 +30,36 @@ endfunction()
 # next to etl.html so they can be packaged into the downloadable legacy mod pk3
 # (and served same-origin as a raw fallback); they are NOT baked into the engine
 # filesystem image any more (see the removed --preload-file block below).
+#
+# The engine is linked with -sASYNCIFY (see cmake/ETLEmscripten.cmake): the
+# blocking main loop (SDL_GL_SwapWindow -> emscripten_sleep) unwinds and
+# rewinds the *entire* wasm call stack. That stack routinely passes through the
+# mod side modules (engine -> vmMain -> cgame/ui -> engine syscall -> sleep).
+# Asyncify is a whole-program instrumentation applied at link time; a side
+# module linked without -sASYNCIFY has no unwind/rewind support, so as soon as
+# an unwind crosses one of its frames the saved stack is incomplete and the
+# subsequent rewind jumps through garbage - trapping with
+# "RuntimeError: memory access out of bounds at ... doRewind", after which the
+# corrupted Asyncify state makes every later entry into wasm (e.g. the SDL2
+# scriptProcessorNode.onaudioprocess audio callback) trap the same way. The
+# side modules therefore MUST be linked with -sASYNCIFY as well.
+#
+# -fvisibility=hidden is REQUIRED: cgame and ui define hundreds of identically
+# named symbols (trap_*, dllEntry helpers, String_Init, ...). Emscripten's
+# dynamic linker resolves side-module GOT entries through a single GLOBAL
+# symbol table keyed by name, so with default visibility the module loaded
+# first (cgame) wins every shared name. ui's UI_Init -> String_Init ->
+# trap_Key_KeysForBinding then executes CGAME's trap_Key_KeysForBinding, whose
+# static syscall pointer is still the (-1) sentinel because cgame's dllEntry
+# was never called - trapping with "RuntimeError: table index is out of
+# bounds" (call_indirect to table slot -1) during UI init and leaving a black
+# screen. Hidden visibility keeps intra-module calls direct (non-interposable)
+# and off the GOT; only the symbols the engine dlsym()s - vmMain and dllEntry,
+# which are explicitly marked Q_EXPORT/visibility("default") - stay exported.
 function(etl_configure_wasm_side_module target_name base_name)
 	if(EMSCRIPTEN)
-		target_link_options(${target_name} PRIVATE "-sSIDE_MODULE=1")
+		target_compile_options(${target_name} PRIVATE "-fvisibility=hidden")
+		target_link_options(${target_name} PRIVATE "-sSIDE_MODULE=1" "-sASYNCIFY")
 		set_target_properties(${target_name} PROPERTIES
 			PREFIX ""
 			SUFFIX ".so"

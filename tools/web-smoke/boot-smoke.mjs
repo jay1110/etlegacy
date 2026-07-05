@@ -124,6 +124,16 @@ async function main() {
             if (/downloading (pak|etl)|starting et: legacy/i.test(status)) {
                 return { ok: true, reason: 'engine reached asset/start stage: ' + status };
             }
+            // The launcher asking how to provide pak0.pk3 (no paks in CI) or
+            // showing the run-game menu proves the asset bootstrap is alive.
+            const setup = document.getElementById('launcher-setup');
+            if (setup && getComputedStyle(setup).display !== 'none') {
+                return { ok: true, reason: 'launcher game-data setup shown: reached asset bootstrap' };
+            }
+            const menu = document.getElementById('launcher-menu');
+            if (menu && getComputedStyle(menu).display !== 'none') {
+                return { ok: true, reason: 'launcher run-game menu shown: assets ready' };
+            }
             if (overlay && overlay.classList.contains('hidden')) {
                 return { ok: true, reason: 'loading overlay dismissed: engine started' };
             }

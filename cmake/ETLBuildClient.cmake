@@ -41,6 +41,19 @@ elseif(ANDROID)
 	set(ETL_OUTPUT_DIR "legacy")
 elseif(EMSCRIPTEN)
 	add_executable(etl ${COMMON_SRC} ${CLIENT_SRC} ${PLATFORM_SRC} ${PLATFORM_CLIENT_SRC})
+	# Preload the browser default config into the engine's virtual filesystem.
+	# This produces etl.data next to etl.js (loaded automatically by the
+	# Emscripten runtime before main() runs) and places the file at
+	# fs_homepath/legacy/autoexec.cfg, where Com_Init's "exec autoexec.cfg"
+	# picks it up on every page load - the same mechanism the reference Wwasm
+	# web port uses (its .data file preloads wolfconfig.cfg/wasmvid.cfg).
+	# The file is mapped explicitly (src@dst) rather than via a directory walk
+	# so the dotted ".etlegacy" destination directory is created verbatim.
+	set(ETL_WEB_PRELOAD_CFG "${PROJECT_SOURCE_DIR}/src/web/fs/legacy/autoexec.cfg")
+	target_link_options(etl PRIVATE
+		"SHELL:--preload-file ${ETL_WEB_PRELOAD_CFG}@/home/web_user/.etlegacy/legacy/autoexec.cfg"
+	)
+	set_property(TARGET etl APPEND PROPERTY LINK_DEPENDS "${ETL_WEB_PRELOAD_CFG}")
 else()
 	add_executable(etl ${COMMON_SRC} ${CLIENT_SRC} ${PLATFORM_SRC} ${PLATFORM_CLIENT_SRC})
 endif()

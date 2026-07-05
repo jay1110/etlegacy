@@ -1059,6 +1059,20 @@ extern void Sys_In_Restart_f(void);
  */
 void CL_Vid_Restart_f(void)
 {
+#ifdef __EMSCRIPTEN__
+	// The browser build cannot restart the video subsystem: a canvas WebGL
+	// context cannot be destroyed and recreated within the same page, and
+	// gl4es does not survive re-initialisation. The reference Wwasm web port
+	// suppresses vid_restart for exactly the same reason (its
+	// CL_Vid_Restart_f returns immediately with a "restart the game" notice).
+	// Keep the filesystem side effect (picks up a changed fs_game) but leave
+	// renderer, sound, UI and cgame untouched; latched video cvar changes
+	// take effect on the next page reload.
+	FS_ConditionalRestart(clc.checksumFeed);
+	Com_Printf(S_COLOR_YELLOW "vid_restart is not supported in the browser - reload the page to apply video changes.\n");
+	return;
+#endif
+
 	// don't show percent bar, since the memory usage will just sit at the same level anyway
 	// - so keep the value - feels like a bug for users
 	//com_expectedhunkusage = -1;
@@ -1190,9 +1204,19 @@ void CL_Snd_Shutdown(void)
 void CL_Snd_Restart_f(void)
 {
 	CL_Snd_Shutdown();
+#ifdef __EMSCRIPTEN__
+	// CL_Vid_Restart_f is a no-op in the browser (see above), so it would
+	// never reach CL_StartHunkUsers and sound would stay shut down. Restart
+	// the sound system in place instead.
+	cls.soundStarted    = qtrue;
+	cls.soundRegistered = qtrue;
+	S_Init();
+	S_BeginRegistration();
+#else
 	// sound will be init in CL_StartHunkUsers of CL_Vid_Restart_f again
 
 	CL_Vid_Restart_f();
+#endif
 }
 
 /**

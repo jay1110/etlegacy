@@ -302,7 +302,14 @@ qboolean SNDDMA_Init(void)
 	}
 	else
 	{
+#ifdef __EMSCRIPTEN__
+		// Browser: SDL's Emscripten audio backend has much higher latency and
+		// jitter than a native device; a large buffer is needed to avoid
+		// crackling/silence (the reference Wwasm web port hardcodes 4096 too).
+		desired.samples = 4096;
+#else
 		desired.samples = SND_SamplesForFreq(desired.freq, s_sdlLevelSamps->integer);
+#endif
 	}
 
 	desired.channels = (int) s_sdlChannels->value;

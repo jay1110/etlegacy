@@ -173,7 +173,13 @@ void R_Register(void)
 
 	// latched and archived variables
 	r_allowExtensions       = ri.Cvar_Get("r_allowExtensions", "1", CVAR_ARCHIVE_ND | CVAR_LATCH | CVAR_UNSAFE);
+#ifdef __EMSCRIPTEN__
+	// Browser/WebGL: S3TC compressed texture support is not reliably exposed
+	// through gl4es, and the reference Wwasm web port disables it too.
+	r_extCompressedTextures = ri.Cvar_Get("r_ext_compressed_textures", "0", CVAR_ARCHIVE_ND | CVAR_LATCH | CVAR_UNSAFE);
+#else
 	r_extCompressedTextures = ri.Cvar_Get("r_ext_compressed_textures", "1", CVAR_ARCHIVE_ND | CVAR_LATCH | CVAR_UNSAFE);
+#endif
 	r_extMultitexture       = ri.Cvar_Get("r_ext_multitexture", "1", CVAR_ARCHIVE_ND | CVAR_LATCH | CVAR_UNSAFE);
 	r_extTextureEnvAdd      = ri.Cvar_Get("r_ext_texture_env_add", "1", CVAR_ARCHIVE_ND | CVAR_LATCH);
 
@@ -220,7 +226,14 @@ void R_Register(void)
 	r_dynamicLight = ri.Cvar_Get("r_dynamiclight", "1", CVAR_ARCHIVE);
 	r_finish       = ri.Cvar_Get("r_finish", "0", CVAR_ARCHIVE_ND);
 	r_textureMode  = ri.Cvar_Get("r_textureMode", "GL_LINEAR_MIPMAP_NEAREST", CVAR_ARCHIVE);
-	r_gamma        = ri.Cvar_Get("r_gamma", "1.3", CVAR_ARCHIVE_ND);
+#ifdef __EMSCRIPTEN__
+	// r_ignorehwgamma is forced on for the browser build (see sdl_glimp.c), so
+	// gamma is baked into texture uploads; default it higher like Wwasm does
+	// (r_gamma 2.2 there), otherwise the software-gamma picture is too dark.
+	r_gamma = ri.Cvar_Get("r_gamma", "2.2", CVAR_ARCHIVE_ND);
+#else
+	r_gamma = ri.Cvar_Get("r_gamma", "1.3", CVAR_ARCHIVE_ND);
+#endif
 
 	r_facePlaneCull = ri.Cvar_Get("r_facePlaneCull", "1", CVAR_ARCHIVE_ND);
 
@@ -245,7 +258,18 @@ void R_Register(void)
 	r_cacheGathering = ri.Cvar_Get("cl_cacheGathering", "0", 0);
 	r_bonesDebug     = ri.Cvar_Get("r_bonesDebug", "0", CVAR_CHEAT);
 
+#ifdef __EMSCRIPTEN__
+	// Browser build: render directly to the WebGL default framebuffer.
+	// With r_fbo 1 every frame is drawn into an offscreen FBO (mainFbo) and
+	// only reaches the canvas through a glBlitFramebuffer present at swap
+	// (R_FboBlit(mainFbo, NULL) in RB_SwapBuffers/R_ScreenGamma) - a gl4es
+	// blit-emulation path that leaves the canvas black. Neither reference web
+	// port (Wwasm, jdarpinian/ioq3) uses FBOs; both draw straight to the
+	// default framebuffer. CVAR_ROM force-resets any archived/user value.
+	r_fbo = ri.Cvar_Get("r_fbo", "0", CVAR_ROM);
+#else
 	r_fbo = ri.Cvar_Get("r_fbo", "1", CVAR_LATCH);
+#endif
 
 	r_wolfFog = ri.Cvar_Get("r_wolffog", "1", CVAR_ARCHIVE);
 
