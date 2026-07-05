@@ -50,7 +50,26 @@
  */
 static void R_DrawElements(int numIndexes, const glIndex_t *indexes)
 {
+#ifdef __EMSCRIPTEN__
+	// Emscripten's client-side-arrays emulation (-sFULL_ES2, which the
+	// gl4es-translated fixed-function path relies on) silently drops any
+	// glDrawElements call that combines GL_UNSIGNED_INT indices with a
+	// client-side vertex attribute: its temp-index-buffer path only handles
+	// 8/16-bit index types (GL.recordError + return, no draw call reaches
+	// WebGL - observed as a black canvas). Tess index values are always
+	// < SHADER_MAX_VERTEXES (10000), so draw with 16-bit indices instead.
+	static GLushort shortIndexes[SHADER_MAX_INDEXES];
+	int             i;
+
+	for (i = 0; i < numIndexes; i++)
+	{
+		shortIndexes[i] = (GLushort)indexes[i];
+	}
+
+	glDrawElements(GL_TRIANGLES, numIndexes, GL_UNSIGNED_SHORT, shortIndexes);
+#else
 	glDrawElements(GL_TRIANGLES, numIndexes, GL_INDEX_TYPE, indexes);
+#endif
 }
 
 /*
