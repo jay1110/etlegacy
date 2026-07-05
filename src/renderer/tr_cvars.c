@@ -258,7 +258,18 @@ void R_Register(void)
 	r_cacheGathering = ri.Cvar_Get("cl_cacheGathering", "0", 0);
 	r_bonesDebug     = ri.Cvar_Get("r_bonesDebug", "0", CVAR_CHEAT);
 
+#ifdef __EMSCRIPTEN__
+	// Browser build: render directly to the WebGL default framebuffer.
+	// With r_fbo 1 every frame is drawn into an offscreen FBO (mainFbo) and
+	// only reaches the canvas through a glBlitFramebuffer present at swap
+	// (R_FboBlit(mainFbo, NULL) in RB_SwapBuffers/R_ScreenGamma) - a gl4es
+	// blit-emulation path that leaves the canvas black. Neither reference web
+	// port (Wwasm, jdarpinian/ioq3) uses FBOs; both draw straight to the
+	// default framebuffer. CVAR_ROM force-resets any archived/user value.
+	r_fbo = ri.Cvar_Get("r_fbo", "0", CVAR_ROM);
+#else
 	r_fbo = ri.Cvar_Get("r_fbo", "1", CVAR_LATCH);
+#endif
 
 	r_wolfFog = ri.Cvar_Get("r_wolffog", "1", CVAR_ARCHIVE);
 
