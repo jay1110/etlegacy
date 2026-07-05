@@ -1330,6 +1330,8 @@ void Sys_SetUpConsoleAndSignals(void)
  */
 EMSCRIPTEN_KEEPALIVE void Sys_EmscriptenFrame(void)
 {
+	// Commands typed into the web page's console input (see src/web/shell.html)
+	Sys_WebPumpConsoleCommands();
 	Com_Frame();
 }
 

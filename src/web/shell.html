@@ -230,16 +230,32 @@
             bottom: 40px;
             left: 0;
             right: 0;
-            height: 200px;
+            height: 240px;
             background-color: rgba(0, 0, 0, 0.85);
-            color: #0f0;
             font-family: 'Courier New', monospace;
             font-size: 12px;
-            padding: 8px;
-            overflow-y: auto;
             display: none;
+            flex-direction: column;
             z-index: 50;
             border-top: 1px solid #333;
+        }
+
+        #console-output {
+            flex: 1;
+            color: #0f0;
+            padding: 8px;
+            overflow-y: auto;
+        }
+
+        #console-input {
+            border: none;
+            border-top: 1px solid #333;
+            background-color: rgba(0, 0, 0, 0.9);
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            padding: 6px 8px;
+            outline: none;
         }
 
         /* Connect / relay panel */
@@ -471,8 +487,13 @@
         </div>
     </div>
 
-    <!-- Console panel -->
-    <div id="console-panel"></div>
+    <!-- Console panel: engine output + command input line -->
+    <div id="console-panel">
+        <div id="console-output"></div>
+        <input id="console-input" type="text"
+               placeholder="Enter game command (e.g. name NewPlayer, connect host:port) and press Enter"
+               autocomplete="off" spellcheck="false">
+    </div>
 
     <!-- Launcher: game data setup + run-game menu -->
     <div id="launcher-overlay">
@@ -521,6 +542,10 @@
                 Host game
                 <span class="launcher-btn-sub">Host a game in your browser that others can join.</span>
             </button>
+            <button class="launcher-btn" type="button" id="menu-profile">
+                Player profile
+                <span class="launcher-btn-sub">Create or change your in-game profile (player name) before starting.</span>
+            </button>
         </div>
 
         <!-- Server list (entries are maintained manually in SERVER_LIST below) -->
@@ -552,6 +577,26 @@
             <div class="launcher-actions">
                 <button class="control-btn" type="button" id="host-back">Back</button>
                 <button class="control-btn" type="button" id="host-start">Start hosting</button>
+            </div>
+        </div>
+
+        <!-- Player profile: create an in-game profile outside of the game -->
+        <div class="launcher-panel" id="launcher-profile">
+            <h2>Player profile</h2>
+            <label for="profile-name">Profile name</label>
+            <input id="profile-name" type="text" placeholder="MyProfile" maxlength="64" autocomplete="off">
+            <label for="profile-player">Player name (shown in game)</label>
+            <input id="profile-player" type="text" placeholder="defaults to the profile name" maxlength="36" autocomplete="off">
+            <div class="launcher-hint" id="profile-current"></div>
+            <div class="launcher-hint">
+                The profile is written to the browser filesystem (IndexedDB) and
+                the game starts with it as the default profile - exactly as if it
+                had been created in the in-game menu. In-game settings are saved
+                into the profile and persist across sessions.
+            </div>
+            <div class="launcher-actions">
+                <button class="control-btn" type="button" id="profile-back">Back</button>
+                <button class="control-btn" type="button" id="profile-save">Save profile</button>
             </div>
         </div>
     </div>
@@ -934,8 +979,76 @@
         var consoleVisible = false;
         function toggleConsole() {
             consoleVisible = !consoleVisible;
-            document.getElementById('console-panel').style.display = consoleVisible ? 'block' : 'none';
+            var panel = document.getElementById('console-panel');
+            panel.style.display = consoleVisible ? 'flex' : 'none';
+            if (consoleVisible) {
+                document.getElementById('console-input').focus();
+            }
         }
+
+        // Queue a console command for the engine. The engine drains
+        // window.etlPendingCommands once per frame (Sys_WebPumpConsoleCommands
+        // in src/sys/sys_web.c) - the page must never call an
+        // asyncify-instrumented wasm export directly, so a plain JS queue is
+        // the safe hand-off.
+        window.etlPendingCommands = window.etlPendingCommands || [];
+        function etlSendCommand(text) {
+            text = String(text || '').trim();
+            if (!text) { return; }
+            // Console-style leading slashes are accepted but unnecessary.
+            text = text.replace(/^[\/\\]+/, '');
+            window.etlPendingCommands.push(text);
+        }
+
+        // The command input line: Enter sends the command to the engine.
+        (function () {
+            var input = document.getElementById('console-input');
+            var history = [];
+            var historyPos = -1;
+            input.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    var cmd = input.value.trim();
+                    if (cmd) {
+                        etlSendCommand(cmd);
+                        history.push(cmd);
+                        historyPos = history.length;
+                    }
+                    input.value = '';
+                } else if (e.key === 'ArrowUp') {
+                    if (history.length && historyPos > 0) {
+                        historyPos--;
+                        input.value = history[historyPos];
+                    }
+                    e.preventDefault();
+                } else if (e.key === 'ArrowDown') {
+                    if (historyPos < history.length - 1) {
+                        historyPos++;
+                        input.value = history[historyPos];
+                    } else {
+                        historyPos = history.length;
+                        input.value = '';
+                    }
+                    e.preventDefault();
+                }
+            });
+        })();
+
+        // Keep keystrokes typed into page inputs away from the game. SDL's
+        // Emscripten backend listens for key events on *window* (bubble
+        // phase) and preventDefault()s most keys, which would both leak the
+        // keystrokes into the game and block normal typing. Events bubble
+        // target -> ... -> document -> window, so stopping propagation in a
+        // document-level bubble listener runs after the input's own handlers
+        // but before SDL's window handlers, isolating every text input on
+        // the page.
+        ['keydown', 'keyup', 'keypress'].forEach(function (type) {
+            document.addEventListener(type, function (e) {
+                var t = e.target;
+                if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) {
+                    e.stopPropagation();
+                }
+            }, false);
+        });
 
         // --- Local game files (retail paks) --------------------------------
         // A browser build ships no game data. By default the paks are fetched
@@ -1021,7 +1134,7 @@
         });
 
         function appendConsole(text) {
-            var panel = document.getElementById('console-panel');
+            var panel = document.getElementById('console-output');
             var line = document.createElement('div');
             line.textContent = text;
             panel.appendChild(line);
@@ -1127,6 +1240,13 @@
             // then finds the compiled module in preloadedWasm (keyed by path)
             // regardless of what the engine's own extraction later writes there.
             var HOME_LEGACY_DIR = '/home/web_user/.etlegacy/legacy'; // must match Sys_DefaultHomePath()
+
+            // The engine's home directory (fs_homepath). Player profiles and
+            // in-game settings (profiles/<name>/etconfig.cfg) are written here,
+            // so it is IDBFS-mounted (see mountCache) to persist them across
+            // sessions, and the "Player profile" launcher tab writes new
+            // profiles into it before the engine starts.
+            var HOME_ETL_DIR = '/home/web_user/.etlegacy';
 
             // Every directory the engine may dlopen() a side module from, in the
             // order it searches them. Precompiling the modules into all of them
@@ -1773,19 +1893,46 @@
                     try {
                         Module.FS.mkdirTree(ETMAIN_DIR);
                         Module.FS.mkdirTree(LEGACY_DIR);
+                        Module.FS.mkdirTree(HOME_ETL_DIR);
                         Module.FS.mount(Module.FS.filesystems.IDBFS, {}, ETMAIN_DIR);
                         Module.FS.mount(Module.FS.filesystems.IDBFS, {}, LEGACY_DIR);
+                        // Home dir: player profiles + in-game settings
+                        // (profiles/<name>/etconfig.cfg) persist across sessions.
+                        Module.FS.mount(Module.FS.filesystems.IDBFS, {}, HOME_ETL_DIR);
                         Module.FS.syncfs(true, function () { resolve(); });
                     } catch (e) {
                         // IDBFS unavailable - fall back to a plain in-memory FS.
                         try {
                             Module.FS.mkdirTree(ETMAIN_DIR);
                             Module.FS.mkdirTree(LEGACY_DIR);
+                            Module.FS.mkdirTree(HOME_ETL_DIR);
                         } catch (e2) { /* ignore */ }
                         resolve();
                     }
                 });
             }
+
+            // Persist engine-written files (etconfig.cfg, profile data, ...)
+            // to IndexedDB while the game runs: the engine has no syncfs hook
+            // of its own, so sync periodically and when the tab is hidden or
+            // closed. A guard prevents overlapping syncfs calls.
+            (function () {
+                var syncing = false;
+                function syncHome() {
+                    if (syncing || !Module.FS || !Module.FS.syncfs) { return; }
+                    syncing = true;
+                    try {
+                        Module.FS.syncfs(false, function () { syncing = false; });
+                    } catch (e) {
+                        syncing = false;
+                    }
+                }
+                setInterval(syncHome, 30000);
+                document.addEventListener('visibilitychange', function () {
+                    if (document.hidden) { syncHome(); }
+                });
+                window.addEventListener('pagehide', syncHome);
+            })();
 
             // Read a browser File object into a Uint8Array (arrayBuffer() is not
             // available on older browsers, so fall back to FileReader).
@@ -1880,7 +2027,7 @@
             // user, so the startup watchdog is told not to treat that as a
             // stall via window.etlLauncherWaiting.
             var LAUNCHER_PANELS = ['launcher-setup', 'launcher-menu',
-                'launcher-servers', 'launcher-host'];
+                'launcher-servers', 'launcher-host', 'launcher-profile'];
 
             function showLauncherPanel(id) {
                 LAUNCHER_PANELS.forEach(function (p) {
@@ -1956,6 +2103,77 @@
                 });
             }
 
+            // --- Player profile (created outside of the game) ---------------
+            // Writes the same files the in-game profile menu creates (see
+            // "createProfile" / "setDefaultProfile" in src/ui/ui_main.c), into
+            // fs_homepath/legacy before main() runs. Com_Init then reads
+            // profiles/defaultprofile.dat, sets cl_profile and execs
+            // profiles/<name>/etconfig.cfg - the game boots straight into the
+            // profile without the first-start profile wizard.
+            var PROFILES_DIR = HOME_LEGACY_DIR + '/profiles';
+
+            // Mirror of the engine's Q_CleanStr (strip ^-color codes and
+            // non-printables) + Q_CleanDirName (strip leading dots and
+            // characters that are invalid in directory names).
+            function etlCleanProfileDir(name) {
+                var s = String(name || '');
+                s = s.replace(/\^./g, '');                     // color codes
+                s = s.replace(/[^\x20-\x7e]/g, '');            // non-printables
+                s = s.replace(/^\.+/, '');                     // leading dots
+                s = s.replace(/[;:&()|<>*?\[\]~+@!\\\/ '"]/g, ''); // bad dir chars
+                return s;
+            }
+
+            function etlDefaultProfile() {
+                try {
+                    var raw = Module.FS.readFile(PROFILES_DIR + '/defaultprofile.dat',
+                        { encoding: 'utf8' });
+                    var m = raw.match(/"([^"]*)"/);
+                    return m ? m[1] : raw.trim();
+                } catch (e) {
+                    return '';
+                }
+            }
+
+            function etlSaveProfile(profileName, playerName) {
+                var clean = etlCleanProfileDir(profileName);
+                if (!clean) {
+                    throw new Error('The profile name must contain at least one ' +
+                        'valid character (letters or digits).');
+                }
+                var dir = PROFILES_DIR + '/' + clean;
+                Module.FS.mkdirTree(dir);
+
+                // Same contents the in-game menu writes: profile.dat holds the
+                // (quoted, raw) display name, defaultprofile.dat the cleaned
+                // directory name of the default profile.
+                Module.FS.writeFile(dir + '/profile.dat', '"' + profileName + '"');
+                Module.FS.writeFile(PROFILES_DIR + '/defaultprofile.dat', '"' + clean + '"');
+
+                // Seed the profile config with the player name; the engine execs
+                // profiles/<name>/etconfig.cfg at startup and rewrites the file
+                // with the complete settings whenever they change in game.
+                var name = String(playerName || profileName).replace(/["\r\n;]/g, '');
+                var cfgPath = dir + '/etconfig.cfg';
+                var line = 'seta name "' + name + '"\n';
+                var cfg = '';
+                try {
+                    cfg = Module.FS.readFile(cfgPath, { encoding: 'utf8' });
+                } catch (e) { /* new profile */ }
+                if (cfg) {
+                    // existing profile: replace (or append) the name setting
+                    if (/^seta\s+name\s+/m.test(cfg)) {
+                        cfg = cfg.replace(/^seta\s+name\s+.*$/m, line.trim());
+                    } else {
+                        cfg += (cfg.endsWith('\n') ? '' : '\n') + line;
+                    }
+                } else {
+                    cfg = line;
+                }
+                Module.FS.writeFile(cfgPath, cfg);
+                return persist().then(function () { return clean; });
+            }
+
             // Step 2: pak0.pk3 is set - show the "Run game" menu and resolve
             // with the extra engine arguments for the chosen mode. Skipped when
             // the URL already dictates what to do (?connect= or ?map=).
@@ -2026,6 +2244,33 @@
                     };
                     document.getElementById('host-back').onclick = function () {
                         showLauncherPanel('launcher-menu');
+                    };
+
+                    // Button 5: create/change the player profile before starting.
+                    document.getElementById('menu-profile').onclick = function () {
+                        var current = etlDefaultProfile();
+                        document.getElementById('profile-current').textContent =
+                            current ? ('Current default profile: ' + current)
+                                    : 'No profile exists yet - the game would show the first-start profile wizard.';
+                        document.getElementById('profile-name').value = current;
+                        document.getElementById('profile-player').value = '';
+                        showLauncherPanel('launcher-profile');
+                        document.getElementById('profile-name').focus();
+                    };
+                    document.getElementById('profile-back').onclick = function () {
+                        showLauncherPanel('launcher-menu');
+                    };
+                    document.getElementById('profile-save').onclick = function () {
+                        var profileName = document.getElementById('profile-name').value.trim();
+                        var playerName = document.getElementById('profile-player').value.trim();
+                        try {
+                            etlSaveProfile(profileName, playerName).then(function () {
+                                showLauncherPanel('launcher-menu');
+                            });
+                        } catch (e) {
+                            document.getElementById('profile-current').textContent =
+                                'Could not save the profile: ' + (e.message || e);
+                        }
                     };
                     document.getElementById('host-start').onclick = function () {
                         var name = document.getElementById('host-name').value.trim() ||

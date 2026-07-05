@@ -691,4 +691,46 @@ void Sys_OpenURL(const char *url, qboolean doexit)
 	}, url);
 }
 
+/**
+ * @brief Sys_WebPumpConsoleCommands - Feed page-entered console commands to the engine.
+ *
+ * The web shell (src/web/shell.html) lets the user type console commands into
+ * an input line on the page; they are queued in window.etlPendingCommands.
+ * The queue is drained here, once per frame from Sys_EmscriptenFrame, on the
+ * engine side of the JS boundary: with MAIN_MODULE + ASYNCIFY the page must
+ * NOT call an asyncify-instrumented wasm export directly (the engine spends
+ * most of its time unwound inside emscripten_sleep, and re-entering wasm in
+ * that state corrupts the asyncify rewind). Copying the text from inside the
+ * frame callback via EM_ASM is always safe.
+ */
+void Sys_WebPumpConsoleCommands(void)
+{
+	char cmd[1024];
+
+	for (;;)
+	{
+		int pending = EM_ASM_INT({
+			var q = window.etlPendingCommands;
+			if (!q || !q.length)
+			{
+				return 0;
+			}
+			stringToUTF8(String(q.shift()), $0, $1);
+			return 1;
+		}, cmd, (int)sizeof(cmd));
+
+		if (!pending)
+		{
+			break;
+		}
+
+		if (cmd[0])
+		{
+			Com_Printf("]%s\n", cmd);
+			Cbuf_AddText(cmd);
+			Cbuf_AddText("\n");
+		}
+	}
+}
+
 #endif /* __EMSCRIPTEN__ */
