@@ -216,15 +216,18 @@ unsigned int DL_BeginDownload(const char *localName, const char *remoteName,
 	// Open the local file for writing
 	if (localName && *localName)
 	{
-		char ospath[MAX_OSPATH];
-		char *homepath = Cvar_VariableString("fs_homepath");
+		if (FS_CreatePath(localName))
+		{
+			Com_Printf("DL_BeginDownload: failed to create path for %s\n", localName);
+			req->active = qfalse;
+			return 0;
+		}
 
-		Com_sprintf(ospath, sizeof(ospath), "%s/%s", homepath, localName);
-		req->request.data.fileHandle = fopen(ospath, "wb");
+		req->request.data.fileHandle = Sys_FOpen(localName, "wb");
 
 		if (!req->request.data.fileHandle)
 		{
-			Com_Printf("DL_BeginDownload: failed to open %s for writing\n", ospath);
+			Com_Printf("DL_BeginDownload: failed to open %s for writing\n", localName);
 			req->active = qfalse;
 			return 0;
 		}
