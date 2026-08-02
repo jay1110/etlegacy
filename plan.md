@@ -251,7 +251,12 @@ Status of "build it as wasm":
 - [x] Verified natively for all four combinations of {GCC 13, clang 18} x
       {Boost, `OMNIBOT_STD_FILESYSTEM`}. The `std` builds link no Boost shared
       library and contain no `boost::filesystem` symbols. clang is emcc's
-      frontend, so this covers the compiler side of the port.
+      frontend, so this covers the compiler side of the port. Compiling is not
+      enough though: `REGEX_OPTIONS` was `basic|icase|grep`, which is one valid
+      grammar for Boost (its `grep` contains `basic`) but two conflicting
+      grammar bits for `std::regex`, so every `FindAllFiles()` filter would have
+      thrown and - because `Utils::RegexMatch` swallowed the exception - matched
+      nothing, silently. Fixed and the swallowed error is now logged.
 - [ ] **Not verified with `emcc`.** The emsdk downloads are unreachable from the
       environment this was prepared in (`storage.googleapis.com` returns 403), so
       the wasm build has never actually been run. It is expected to work, not

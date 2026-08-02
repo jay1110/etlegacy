@@ -84,6 +84,9 @@ namespace Utils
 		{
 			_UNUSED(e);
 			OBASSERT(0, e.what());
+			// A rejected expression makes every FindAllFiles() filter match
+			// nothing, so never let it fail silently in a release build.
+			LOGERR("Regex '" << exp << "' failed: " << e.what());
 		}
 		return false;
 	}

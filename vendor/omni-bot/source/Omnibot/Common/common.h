@@ -143,8 +143,8 @@ namespace stdext
 //		The filesystem library in use, see OMNIBOT_USE_STD_FILESYSTEM.
 // namespace: obre
 //		The regular expression library in use: obre::regex, obre::regex_match
-//		and obre::regex_replace. std and Boost agree on all three, including
-//		the syntax_option_type constants used by REGEX_OPTIONS.
+//		and obre::regex_replace have the same signatures in std and Boost. The
+//		syntax_option_type constants do NOT agree though - see REGEX_OPTIONS.
 #ifdef OMNIBOT_USE_STD_FILESYSTEM
 namespace fs = std::filesystem;
 namespace obre = std;
@@ -242,7 +242,17 @@ typedef std::vector<Destination> DestinationVector;
 typedef boost::dynamic_bitset<obuint32> DynBitSet32;
 //typedef boost::dynamic_bitset<obuint64> DynBitSet64;
 
+// Boost's grep is a superset of basic (basic|grep == grep), so the historic
+// spelling below is a single valid grammar there. The standard allows at most
+// one grammar bit and both libstdc++ and libc++ throw regex_error
+// ("conflicting grammar options") for basic|grep - which Utils::RegexMatch
+// swallows, so every FindAllFiles() filter would silently match nothing.
+// grep|icase is what the Boost expression actually evaluates to.
+#ifdef OMNIBOT_USE_STD_FILESYSTEM
+#define REGEX_OPTIONS obre::regex::grep|obre::regex::icase
+#else
 #define REGEX_OPTIONS obre::regex::basic|obre::regex::icase|obre::regex::grep
+#endif
 
 #define OB_DELETE(p)   { if(p) { delete (p); (p)=NULL; } }
 #define OB_ARRAY_DELETE(p)   { if(p) { delete [] (p); (p)=NULL; } }

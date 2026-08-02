@@ -89,6 +89,14 @@ at them directly is needed because Emscripten's toolchain file limits
    cross-compiled): `filesystem`, `regex`, `system` and `date_time`. What is
    left - `dynamic_bitset`, `multi_array`, `pool`, `lexical_cast`,
    `algorithm/string`, `bind`, the smart pointers - is header only.
+   Note that `REGEX_OPTIONS` needed a separate spelling for the two libraries:
+   Boost's `grep` is a superset of `basic`, so `basic|icase|grep` is one valid
+   grammar there, while the standard allows at most one grammar bit and both
+   libstdc++ and libc++ throw `regex_error("conflicting grammar options")` for
+   it. `grep|icase` is what the Boost expression evaluates to and matches
+   identically. `Utils::RegexMatch` swallowed that exception, so this would have
+   made every `FindAllFiles()` filter match nothing without a single message; it
+   now logs the failure.
 2. **Shared memory, threads and sockets.** These turned out to be compiled out
    already: `ENABLE_FILE_DOWNLOADER`, `ENABLE_REMOTE_DEBUGGER`,
    `ENABLE_DEBUG_WINDOW` and `ENABLE_REMOTE_DEBUGGING` are commented out even
