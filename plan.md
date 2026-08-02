@@ -257,34 +257,93 @@ Status of "build it as wasm":
       grammar bits for `std::regex`, so every `FindAllFiles()` filter would have
       thrown and - because `Utils::RegexMatch` swallowed the exception - matched
       nothing, silently. Fixed and the swallowed error is now logged.
-- [ ] **Not verified with `emcc`.** The emsdk downloads are unreachable from the
-      environment this was prepared in (`storage.googleapis.com` returns 403), so
-      the wasm build has never actually been run. It is expected to work, not
-      known to.
+- [x] **Verified with `emcc`.** The emsdk downloads are still unreachable from
+      the environment this was prepared in (`storage.googleapis.com` returns
+      403), so the distribution's own `emscripten` package (3.1.6) was used
+      instead. It was enough to configure, compile and link the bot library, and
+      running the build for the first time turned up six real bugs - the port
+      was "expected to work", and did not:
+  1. **`add_library(omnibot-et MODULE ...)` silently became a static archive.**
+     Emscripten's toolchain file sets `TARGET_SUPPORTS_SHARED_LIBS FALSE`, so
+     CMake downgraded the module, archived it with `emar` and never applied
+     `-sSIDE_MODULE=1`. The output was an `ar` archive that no `dlopen()` could
+     ever load. Same trap `cmake/ETLEmscripten.cmake` already works around for
+     cgame/ui/qagame.
+  2. **`-DOMNIBOT_BOOST_INCLUDEDIR=/usr/include` (as documented below) could
+     never have worked.** It ended up as `-isystem /usr/include`, putting the
+     host glibc headers ahead of the Emscripten sysroot, and every translation
+     unit died on `bits/libc-header-start.h`. The option now stages a directory
+     containing only a `boost` symlink and puts that on the include path, so
+     pointing it at a system include directory is safe.
+  3. **Emscripten defines `__unix__` but not `__linux__`.** Seven files fell
+     through their `#elif defined(__linux__) || (__MACH__ && __APPLE__)` arm
+     into an `#error`, or lost `_stricmp`, `PATHDELIMITER` and
+     `GM_DEFAULT_ALLOC_ALIGNMENT`.
+  4. **`std::random_shuffle` was removed in C++17**, which
+     `OMNIBOT_STD_FILESYSTEM` (the Emscripten default) requires - three call
+     sites, replaced with a local Fisher-Yates helper.
+  5. **The physfs LZMA glob pulled in duplicate symbols.** It matched both
+     `LzmaDecode.c` and the alternative `LzmaDecodeSize.c` (both define
+     `LzmaDecode`/`LzmaDecodeProperties`) plus `LzmaTest.c`, which defines
+     `main`. A native static link only pulls the members it needs, so nobody
+     ever noticed; a wasm side module links the archive with `--whole-archive`
+     and fails outright.
+  6. **The engine-side `vendor/Omnibot/Common/BotLoadLibrary.cpp` had the same
+     `#error` platform guard**, so `FEATURE_OMNIBOT` could not have compiled for
+     Emscripten at all - the `wasm32` case noted above only covered the library
+     *suffix*, 300 lines further down.
+
+      Native builds were re-checked afterwards with both `OMNIBOT_STD_FILESYSTEM`
+      and compiled Boost: unchanged.
 
 Remaining work, in order:
 
-1. Run the wasm build and fix whatever it turns up:
+- [x] 1. Run the wasm build and fix whatever it turns up:
 
-   ```sh
-   emcmake cmake -S vendor/omni-bot/source/Omnibot -B build-omnibot-wasm \
-       -DOMNIBOT_RTCW=OFF -DCMAKE_BUILD_TYPE=Release \
-       -DOMNIBOT_BOOST_INCLUDEDIR=/usr/include
-   cmake --build build-omnibot-wasm
-   ```
+     ```sh
+     emcmake cmake -S vendor/omni-bot/source/Omnibot -B build-omnibot-wasm \
+         -DOMNIBOT_RTCW=OFF -DCMAKE_BUILD_TYPE=Release \
+         -DOMNIBOT_BOOST_INCLUDEDIR=/usr/include
+     cmake --build build-omnibot-wasm
+     ```
 
-2. Preload `omnibot_et.wasm32.so` in `src/web/shell.html` with
-   `FS.createPreloadedFile`, like `cgame`/`ui`/`qagame`: the browser will not
-   compile a wasm module synchronously on the main thread, so a module that is
-   only written to the virtual filesystem is inert data and `dlopen()` fails.
-3. Ship `vendor/omni-bot/data/` (~5 MB of `global_scripts/`, `et/scripts/`,
-   `et/nav/`) into the browser filesystem where `Common/FileSystem.cpp` mounts
-   it.
-4. Build `qagame` with `FEATURE_OMNIBOT` for wasm (force-disabled in
-   `cmake/ETLEmscripten.cmake`), which also requires a side module to be able to
-   `dlopen()` another side module.
-5. Drop the `+set omnibot_enable 0` that the web launcher passes for "Host game"
-   and "Quick single game" in `src/web/shell.html`.
+     Produces `build-omnibot-wasm/ET/omnibot_et.wasm32.so`: a valid wasm binary
+     with a `dylink.0` section that exports `ExportBotFunctionsFromDLL`, the
+     symbol `BotLoadLibrary.cpp` resolves through `dlsym`.
+
+- [x] 2. Preload `omnibot_et.wasm32.so` in `src/web/shell.html` with
+     `FS.createPreloadedFile`, like `cgame`/`ui`/`qagame`: the browser will not
+     compile a wasm module synchronously on the main thread, so a module that is
+     only written to the virtual filesystem is inert data and `dlopen()` fails.
+- [x] 3. Ship `vendor/omni-bot/data/` (~5 MB of `global_scripts/`, `et/scripts/`,
+     `et/nav/`) into the browser filesystem where `Common/FileSystem.cpp` mounts
+     it. Packed into `omni-bot-data.zip` (1.4 MB) by `cmake/ETLOmniBotWasm.cmake`
+     and unpacked by the shell next to the library - `Utils::GetBaseFolder()`
+     derives the data directory from the path of the loaded library, so the two
+     must share a directory. It is fetched only when a game is actually hosted in
+     the browser, so a player joining a dedicated server never pays for it.
+- [x] 4. Build `qagame` with `FEATURE_OMNIBOT` for wasm (was force-disabled in
+     `cmake/ETLEmscripten.cmake`). `cmake/ETLOmniBotWasm.cmake` builds the
+     vendored tree as an `ExternalProject` with the same toolchain and publishes
+     the library and data pack next to the other side modules.
+- [x] 5. Drop the `+set omnibot_enable 0` that the web launcher passes for "Host
+     game" and "Quick single game" in `src/web/shell.html`. It now passes
+     `omnibot_enable 1` and an absolute `omnibot_path` (the cvar default,
+     `legacy/omni-bot`, is relative to the working directory, which is `/` in a
+     browser), and seeds a bot count into `omni-bot.cfg` in `fs_homepath` so a
+     hosted game is actually populated.
+
+Still open:
+
+- [ ] The **full engine** wasm build with `FEATURE_OMNIBOT=ON` has not been run
+      here: the distribution's emcc 3.1.6 fails `cmake/ETLPlatform.cmake`'s
+      `SUPPORT_ERROR_IMPLICIT_FUNCTION_DECLARATION` probe, which the pinned emsdk
+      4.0.23 passes. The two `FEATURE_OMNIBOT` sources were compiled with `em++`
+      individually instead; CI is the first place the whole thing is linked.
+- [ ] That a wasm side module (`qagame`) can `dlopen()` another side module
+      (`omnibot_et`) is expected to work - `dlopen` is JS glue in the main
+      module, and preloading makes it a synchronous cache hit - but has not been
+      observed at runtime.
 
 ---
 

@@ -30,20 +30,25 @@ open the page.
 ## 1. Build the web client
 
 Requires the [Emscripten SDK](https://emscripten.org/) (pinned to a version
-verified to work; see `.github/workflows/emscripten.yml`, currently `4.0.23`).
+verified to work; see `.github/workflows/emscripten.yml`, currently `4.0.23`)
+and the Boost headers (`libboost-dev`) for Omni-bot — header-only, so no
+cross-compiled Boost is needed.
 
 ```bash
 emcmake cmake -B build-wasm \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_CLIENT=ON -DBUILD_SERVER=OFF \
-  -DBUILD_MOD=ON -DBUILD_CLIENT_MOD=ON -DBUILD_SERVER_MOD=OFF \
-  -DFEATURE_RENDERER1=ON -DFEATURE_RENDERER2=OFF -DFEATURE_GL4ES=ON
+  -DBUILD_MOD=ON -DBUILD_CLIENT_MOD=ON -DBUILD_SERVER_MOD=ON \
+  -DFEATURE_RENDERER1=ON -DFEATURE_RENDERER2=OFF -DFEATURE_GL4ES=ON \
+  -DFEATURE_OMNIBOT=ON
 cmake --build build-wasm --parallel "$(nproc)"
 ```
 
-This produces `etl.html`, `etl.js`, `etl.wasm` and the side modules
-`cgame.mp.wasm32.so` / `ui.mp.wasm32.so` in `build-wasm/`. The exact CMake flags
-CI uses are in `.github/workflows/emscripten.yml` — copy them for an exact match.
+This produces `etl.html`, `etl.js`, `etl.wasm`, the side modules
+`cgame.mp.wasm32.so` / `ui.mp.wasm32.so` / `qagame.mp.wasm32.so`, and — with
+`FEATURE_OMNIBOT` — `omnibot_et.wasm32.so` plus `omni-bot-data.zip`, all in
+`build-wasm/`. The exact CMake flags CI uses are in
+`.github/workflows/emscripten.yml` — copy them for an exact match.
 
 ## 2. Lay out the web directory
 
@@ -61,7 +66,11 @@ etlegacy-web/
 └── legacy/
     ├── legacy_<ver>.pk3        # mod pk3 (cgame/ui game logic + ui menus + media)
     ├── cgame.mp.wasm32.so      # standalone side module (fallback)
-    └── ui.mp.wasm32.so         # standalone side module (fallback)
+    ├── ui.mp.wasm32.so         # standalone side module (fallback)
+    ├── qagame.mp.wasm32.so     # standalone side module (fallback)
+    └── omni-bot/
+        ├── omnibot_et.wasm32.so   # bot library (loaded on demand)
+        └── omni-bot-data.zip      # bot scripts + navigation meshes
 ```
 
 The game logic (`cgame`/`ui`) is loaded from the mod pk3: the page reads the
@@ -74,6 +83,14 @@ paks), so a pk3 served under a name other than `legacy_<ver>.pk3` still works.
 The standalone `cgame.mp.wasm32.so` / `ui.mp.wasm32.so` next to it are only a
 fallback used when a module is missing from every pk3, so at least one pk3 that
 contains the modules must be present.
+
+`legacy/omni-bot/` holds the bot library and its data. Unlike the game logic it
+is fetched **on demand**, the first time a game is hosted in the browser
+("Quick single game" / "Host game"), so a player who only joins a dedicated
+server never downloads it. The library is compiled up front like the other side
+modules; the data pack is cached in IndexedDB and unpacked next to it, because
+Omni-bot resolves its data directory from the location of the loaded library.
+If either cannot be fetched the game still starts, just without bots.
 
 Copy `pak0.pk3`, `pak1.pk3`, `pak2.pk3` from a retail Wolfenstein: Enemy
 Territory install into `etmain/`. **These are not included and may not be
@@ -171,6 +188,12 @@ a quick single game (`+map oasis`), a manually maintained server list
 (`SERVER_LIST` in `src/web/shell.html`), and hosting a listen server in the
 browser (other players join through the relay).
 
+The two locally hosted modes fill the server with Omni-bot bots — nobody else
+can be there otherwise. The bot count is seeded once into
+`omni-bot.cfg` in `fs_homepath` (persisted in the browser like the rest of the
+home directory) and can be changed in-game with `/bot minbots <n>` and
+`/bot maxbots <n>`.
+
 Alternatively, configure everything from the page URL (which skips the menu)
 or from the in-page **Connect…** panel (bottom controls bar):
 
@@ -197,8 +220,8 @@ gets its own UDP socket on the relay side.
 `tools/web-smoke/` contains two smoke tests (run in CI after the build):
 
 - `verify-dist.mjs <dir>` — structural check of the packaged build (engine files
-  present, valid wasm header, mod pk3 contains the side modules). No browser
-  needed.
+  present, valid wasm header, mod pk3 contains the side modules, Omni-bot module
+  and data pack shipped). No browser needed.
 - `boot-smoke.mjs <dir>` — boots the build in headless Chromium (Playwright) and
   confirms the wasm engine initializes and reaches its asset-bootstrap stage
   without a fatal error. Because the retail paks are not redistributable, it
