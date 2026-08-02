@@ -1984,6 +1984,32 @@
             }
             Module.arguments = args;
 
+            // Append arguments to the engine command line *after* Module was
+            // created.
+            //
+            // This MUST modify the very array assigned to Module.arguments
+            // above and must not replace it: Emscripten copies
+            // Module.arguments into its internal "arguments_" variable while
+            // etl.js is being loaded (makeModuleReceive('arguments_',
+            // 'arguments') in emscripten's src/postlibrary.js, emitted before
+            // the wasm module is even created), and run()/callMain() then read
+            // that local, never Module.arguments again. Assigning
+            // Module.arguments later - which is what the launcher used to do
+            // once the player had picked a game mode in Module.preRun - is
+            // silently ignored, so the engine booted with the URL-derived
+            // command line only and every launcher button ("Join ETc server",
+            // "Quick single game", a server-list entry, "Host game") ended up
+            // in the main menu with no +connect/+map ever executed.
+            // "arguments_" holds a reference to this array, so extending it in
+            // place is seen by callMain().
+            function addEngineArgs(extra) {
+                if (!extra || !extra.length) {
+                    return;
+                }
+                Array.prototype.push.apply(args, extra);
+                Module.arguments = args;
+            }
+
             // --- Launcher server list -------------------------------------
             // Compatible servers shown by the launcher's "Server list" button.
             // Maintain this list manually: add one { name, address } entry per
@@ -2973,9 +2999,10 @@
                         return chooseGameMode();
                     })
                     .then(function (extraArgs) {
-                        if (extraArgs && extraArgs.length) {
-                            Module.arguments = args.concat(extraArgs);
-                        }
+                        // Extends the array Emscripten already captured - see
+                        // addEngineArgs; replacing Module.arguments here would
+                        // be a no-op.
+                        addEngineArgs(extraArgs);
                         showLoading('Starting ET: Legacy...');
                         Module.removeRunDependency('etl-assets');
                     })

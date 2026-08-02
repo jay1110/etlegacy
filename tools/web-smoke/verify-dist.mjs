@@ -127,6 +127,28 @@ if (pk3) {
     }
 }
 
+// 6. The launcher must APPEND the arguments of the chosen game mode to the
+//    array that was assigned to Module.arguments before etl.js was loaded, not
+//    replace Module.arguments. Emscripten copies Module.arguments into its
+//    internal `arguments_` variable while etl.js is loaded (see
+//    makeModuleReceive('arguments_', 'arguments') in emscripten's
+//    src/postlibrary.js) and run()/callMain() only ever read that local, so a
+//    later assignment is silently ignored. When that happened, every launcher
+//    button ("Join ETc server", "Quick single game", a server-list entry,
+//    "Host game") started the engine without its +connect/+map and the player
+//    was dropped in the main menu. This is invisible in a build, so guard it.
+if (exists('etl.html')) {
+    const html = fs.readFileSync(path.join(dir, 'etl.html'), 'utf8');
+    check(
+        /Array\.prototype\.push\.apply\(args, extra\)/.test(html),
+        'launcher appends the chosen game mode arguments in place (addEngineArgs)'
+    );
+    check(
+        !/Module\.arguments\s*=\s*args\.concat\(/.test(html),
+        'launcher does not replace Module.arguments after startup'
+    );
+}
+
 if (failures) {
     console.error(`\n${failures} check(s) failed.`);
     process.exit(1);

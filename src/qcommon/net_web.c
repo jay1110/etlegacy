@@ -53,6 +53,16 @@
 // WS_GetConnection).
 #define MAX_WS_CONNECTIONS 64
 
+// A connection that has carried nothing but out-of-band traffic (server
+// browser pings, master server queries, getchallenge, ...) for this long is
+// closed again. One browser WebSocket - and one UDP socket on the relay - is
+// held per remote address, so without this every server-list refresh leaks the
+// sockets of every server it touched until the slots run out. Only never-
+// sequenced connections are reaped (see wsConnection_t::sequenced), so a game
+// connection is never dropped, not even while a long map load keeps the engine
+// from sending anything for a while.
+#define WS_IDLE_TIMEOUT 30000
+
 // Packet buffer for received data
 #define WS_RECV_BUFFER_SIZE (MAX_MSGLEN * 4)
 
@@ -95,7 +105,8 @@ typedef struct
 	char url[MAX_STRING_CHARS];
 	wsPendingSend_t pending[WS_MAX_PENDING_SENDS];
 	int pendingCount;
-	int lastUsed;   ///< Sys_Milliseconds() of the last send/receive, for LRU reuse
+	int lastUsed;       ///< Sys_Milliseconds() of the last send/receive, for LRU reuse
+	qboolean sequenced; ///< a netchan (non out-of-band) packet passed through: this is a real game connection
 } wsConnection_t;
 
 typedef struct
@@ -369,6 +380,40 @@ static void WS_CloseConnection(wsConnection_t *conn)
 }
 
 /**
+ * @brief Close connections that only ever carried out-of-band traffic and have
+ *        been idle for WS_IDLE_TIMEOUT
+ *
+ * The engine opens one WebSocket per remote address, so a server-list refresh
+ * leaves one socket per pinged server (and one UDP socket per client on the
+ * relay) behind. Releasing them again keeps slots available for the address the
+ * player actually wants to reach. Connections that carried a sequenced netchan
+ * packet are never touched here: a long map load can keep the engine from
+ * sending anything for far longer than the timeout without the game connection
+ * being dead.
+ */
+static void WS_ReapIdleConnections(void)
+{
+	int now = Sys_Milliseconds();
+	int i;
+
+	for (i = 0; i < MAX_WS_CONNECTIONS; i++)
+	{
+		wsConnection_t *conn = &wsConnections[i];
+
+		if (!conn->active || conn->sequenced)
+		{
+			continue;
+		}
+
+		if (now - conn->lastUsed >= WS_IDLE_TIMEOUT)
+		{
+			Com_DPrintf("WS_ReapIdleConnections: closing idle %s\n", conn->url);
+			WS_CloseConnection(conn);
+		}
+	}
+}
+
+/**
  * @brief Find or create a WebSocket connection for a given address
  */
 static wsConnection_t *WS_GetConnection(const netadr_t *to)
@@ -399,19 +444,39 @@ static wsConnection_t *WS_GetConnection(const netadr_t *to)
 	{
 		// All slots are in use. Rather than refusing the new address - which
 		// used to make every connect after a server-list refresh fail - drop
-		// the least recently used connection and take its slot. The client
-		// only ever needs the connection it is actively talking to; the
-		// browser's server list re-pings anything it still cares about.
-		int oldest    = 0;
-		int oldestAge = wsConnections[0].lastUsed;
+		// the least recently used connection and take its slot. Prefer a slot
+		// that only ever carried out-of-band traffic (a server-list ping, a
+		// master query): the browser's server list re-pings anything it still
+		// cares about, while dropping the game connection would disconnect the
+		// player mid-match. Only when every slot belongs to a real game
+		// connection is the global LRU used.
+		int oldest    = -1;
+		int oldestAge = 0;
+		int pass;
 
-		for (i = 1; i < MAX_WS_CONNECTIONS; i++)
+		// pass 0: only slots that never carried netchan traffic
+		// pass 1: any slot (every slot is a game connection)
+		for (pass = 0; pass < 2 && oldest < 0; pass++)
 		{
-			if (wsConnections[i].lastUsed < oldestAge)
+			for (i = 0; i < MAX_WS_CONNECTIONS; i++)
 			{
-				oldestAge = wsConnections[i].lastUsed;
-				oldest    = i;
+				if (pass == 0 && wsConnections[i].sequenced)
+				{
+					continue;
+				}
+
+				if (oldest < 0 || wsConnections[i].lastUsed < oldestAge)
+				{
+					oldestAge = wsConnections[i].lastUsed;
+					oldest    = i;
+				}
 			}
+		}
+
+		if (oldest < 0)
+		{
+			Com_Printf("WS_GetConnection: no WebSocket slot available\n");
+			return NULL;
 		}
 
 		i = oldest;
@@ -462,6 +527,7 @@ static wsConnection_t *WS_GetConnection(const netadr_t *to)
 	wsConnections[i].open         = qfalse;
 	wsConnections[i].pendingCount = 0;
 	wsConnections[i].lastUsed     = Sys_Milliseconds();
+	wsConnections[i].sequenced    = qfalse;
 	Com_Memcpy(&wsConnections[i].remoteAddr, to, sizeof(netadr_t));
 	Q_strncpyz(wsConnections[i].url, url, sizeof(wsConnections[i].url));
 
@@ -821,6 +887,24 @@ void Sys_SendPacket(int length, const void *data, const netadr_t *to)
 		return;
 	}
 
+	// Connectionless packets start with the -1 sequence marker (server browser
+	// pings, master queries, getchallenge/connect). Anything else is netchan
+	// traffic, i.e. this address is a game connection that must survive both
+	// the idle reaper and slot recycling - see WS_ReapIdleConnections and
+	// WS_GetConnection.
+	if (length >= 4)
+	{
+		int sequence;
+
+		Com_Memcpy(&sequence, data, sizeof(sequence));
+		if (sequence != -1)
+		{
+			conn->sequenced = qtrue;
+		}
+	}
+
+	conn->lastUsed = Sys_Milliseconds();
+
 	if (!conn->open)
 	{
 		// Socket still CONNECTING: sends would fail, so queue until onopen
@@ -836,8 +920,6 @@ void Sys_SendPacket(int length, const void *data, const netadr_t *to)
 		}
 		return;
 	}
-
-	conn->lastUsed = Sys_Milliseconds();
 
 	EMSCRIPTEN_RESULT result = emscripten_websocket_send_binary(conn->socket, (void *)data, length);
 
@@ -925,6 +1007,8 @@ void NET_Event(fd_set *fdr)
 			break;
 		}
 	}
+
+	WS_ReapIdleConnections();
 }
 
 /*
