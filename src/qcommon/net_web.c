@@ -39,8 +39,19 @@
 #include <string.h>
 #include <sys/select.h>
 
-// Maximum number of simultaneous WebSocket connections
-#define MAX_WS_CONNECTIONS 4
+// Maximum number of simultaneous WebSocket connections.
+//
+// One relay WebSocket is opened per remote address. The in-game server browser
+// alone talks to the master server plus every server it pings, so a handful of
+// slots is far too few: once they were all taken, WS_GetConnection() returned
+// NULL and *every* later address - including the game server the player
+// actually clicked "Join" on - could no longer be reached. The symptom was a
+// client that logged "WebSocket connected to ws://.../motd.etlegacy.com:27951"
+// and then sat in the main menu forever, because its getchallenge was never
+// sent. Give the browser enough slots for a full server-list refresh, and
+// recycle the least recently used one when they do run out (see
+// WS_GetConnection).
+#define MAX_WS_CONNECTIONS 64
 
 // Packet buffer for received data
 #define WS_RECV_BUFFER_SIZE (MAX_MSGLEN * 4)
@@ -60,14 +71,14 @@
 // IPs, so a server that changes its IP (or is only published as a name) is
 // unreachable.
 #define WS_HOSTADDR_PREFIX 240
-#define WS_MAX_HOSTNAMES   32
+#define WS_MAX_HOSTNAMES   128
 
 // Outgoing packets queued while the WebSocket is still CONNECTING. The very
 // first packets of a connection handshake (getchallenge / getinfo) are sent
 // immediately after the socket is created, before the browser has finished
 // opening it; emscripten_websocket_send_binary() fails on a CONNECTING socket,
 // so buffer them and flush from the onopen callback instead of dropping them.
-#define WS_MAX_PENDING_SENDS 16
+#define WS_MAX_PENDING_SENDS 8
 
 typedef struct
 {
@@ -84,6 +95,7 @@ typedef struct
 	char url[MAX_STRING_CHARS];
 	wsPendingSend_t pending[WS_MAX_PENDING_SENDS];
 	int pendingCount;
+	int lastUsed;   ///< Sys_Milliseconds() of the last send/receive, for LRU reuse
 } wsConnection_t;
 
 typedef struct
@@ -93,7 +105,7 @@ typedef struct
 	netadr_t from;
 } wsPacket_t;
 
-#define WS_PACKET_QUEUE_SIZE 64
+#define WS_PACKET_QUEUE_SIZE 256
 
 static wsConnection_t wsConnections[MAX_WS_CONNECTIONS];
 static wsPacket_t     packetQueue[WS_PACKET_QUEUE_SIZE];
@@ -258,6 +270,7 @@ static EM_BOOL WS_OnMessage(int eventType, const EmscriptenWebSocketMessageEvent
 
 	if (!wsEvent->isText && wsEvent->numBytes > 0)
 	{
+		conn->lastUsed = Sys_Milliseconds();
 		WS_QueuePacket(wsEvent->data, wsEvent->numBytes, &conn->remoteAddr);
 	}
 
@@ -317,9 +330,42 @@ static EM_BOOL WS_OnClose(int eventType, const EmscriptenWebSocketCloseEvent *ws
 		conn->active       = qfalse;
 		conn->open         = qfalse;
 		conn->pendingCount = 0;
+		// Release the browser-side socket object as well; without this the
+		// handle (and its buffers) leaked for every closed connection.
+		if (conn->socket > 0)
+		{
+			emscripten_websocket_delete(conn->socket);
+			conn->socket = 0;
+		}
 	}
 
 	return EM_TRUE;
+}
+
+/**
+ * @brief Close a connection slot and release its browser-side socket
+ *
+ * Used both when a slot is recycled (see WS_GetConnection) and at shutdown.
+ * The onclose callback still fires afterwards, but it is harmless: the slot is
+ * already marked inactive and its socket handle cleared.
+ */
+static void WS_CloseConnection(wsConnection_t *conn)
+{
+	if (!conn)
+	{
+		return;
+	}
+
+	if (conn->socket > 0)
+	{
+		emscripten_websocket_close(conn->socket, 1000, "recycled");
+		emscripten_websocket_delete(conn->socket);
+	}
+
+	conn->socket       = 0;
+	conn->active       = qfalse;
+	conn->open         = qfalse;
+	conn->pendingCount = 0;
 }
 
 /**
@@ -335,6 +381,7 @@ static wsConnection_t *WS_GetConnection(const netadr_t *to)
 	{
 		if (wsConnections[i].active && NET_CompareAdr(&wsConnections[i].remoteAddr, to))
 		{
+			wsConnections[i].lastUsed = Sys_Milliseconds();
 			return &wsConnections[i];
 		}
 	}
@@ -350,8 +397,26 @@ static wsConnection_t *WS_GetConnection(const netadr_t *to)
 
 	if (i == MAX_WS_CONNECTIONS)
 	{
-		Com_Printf("WS_GetConnection: no free WebSocket slots\n");
-		return NULL;
+		// All slots are in use. Rather than refusing the new address - which
+		// used to make every connect after a server-list refresh fail - drop
+		// the least recently used connection and take its slot. The client
+		// only ever needs the connection it is actively talking to; the
+		// browser's server list re-pings anything it still cares about.
+		int oldest    = 0;
+		int oldestAge = wsConnections[0].lastUsed;
+
+		for (i = 1; i < MAX_WS_CONNECTIONS; i++)
+		{
+			if (wsConnections[i].lastUsed < oldestAge)
+			{
+				oldestAge = wsConnections[i].lastUsed;
+				oldest    = i;
+			}
+		}
+
+		i = oldest;
+		Com_DPrintf("WS_GetConnection: recycling slot %d (%s)\n", i, wsConnections[i].url);
+		WS_CloseConnection(&wsConnections[i]);
 	}
 
 	// Build WebSocket URL using the relay server. A synthetic 240.0.0.0/8
@@ -396,6 +461,7 @@ static wsConnection_t *WS_GetConnection(const netadr_t *to)
 	wsConnections[i].active       = qtrue;
 	wsConnections[i].open         = qfalse;
 	wsConnections[i].pendingCount = 0;
+	wsConnections[i].lastUsed     = Sys_Milliseconds();
 	Com_Memcpy(&wsConnections[i].remoteAddr, to, sizeof(netadr_t));
 	Q_strncpyz(wsConnections[i].url, url, sizeof(wsConnections[i].url));
 
@@ -771,6 +837,8 @@ void Sys_SendPacket(int length, const void *data, const netadr_t *to)
 		return;
 	}
 
+	conn->lastUsed = Sys_Milliseconds();
+
 	EMSCRIPTEN_RESULT result = emscripten_websocket_send_binary(conn->socket, (void *)data, length);
 
 	if (result != EMSCRIPTEN_RESULT_SUCCESS)
@@ -811,9 +879,7 @@ void NET_Shutdown(void)
 	{
 		if (wsConnections[i].active)
 		{
-			emscripten_websocket_close(wsConnections[i].socket, 1000, "shutdown");
-			emscripten_websocket_delete(wsConnections[i].socket);
-			wsConnections[i].active = qfalse;
+			WS_CloseConnection(&wsConnections[i]);
 		}
 	}
 

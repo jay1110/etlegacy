@@ -157,7 +157,11 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            z-index: 50;
+            /* Above #touch-overlay (900): the touch overlay's look area covers
+               the whole viewport, so with a lower z-index the controls bar
+               (including the button that turns the overlay back off) became
+               unclickable as soon as the overlay was switched on. */
+            z-index: 950;
             border-top: 1px solid #333;
             opacity: 0;
             transition: opacity 0.3s ease;
@@ -230,6 +234,40 @@
             touch-action: none;
         }
         #touch-overlay .touch-btn { min-width: 9vh; min-height: 9vh; }
+        /* Overlay tool buttons (hide overlay / show keyboard). They live inside
+           the overlay and sit above its full-screen look area, so the overlay
+           can always be dismissed no matter what else is on screen. */
+        #touch-overlay #touch-tools {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            display: flex;
+            gap: 8px;
+            pointer-events: auto;
+            z-index: 10;
+        }
+        #touch-overlay .touch-tool {
+            pointer-events: auto;
+            touch-action: manipulation;
+            width: 44px;
+            height: 44px;
+            font-size: 20px;
+            line-height: 1;
+            cursor: pointer;
+            color: #dfe4ff;
+            background: rgba(20, 22, 40, 0.75);
+            border: 2px solid rgba(180, 190, 255, 0.55);
+            border-radius: 10px;
+        }
+        /* Off-screen but focusable, so focusing it opens the mobile keyboard. */
+        #touch-overlay #touch-keyboard-input {
+            position: absolute;
+            top: 0;
+            left: -2000px;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+        }
         .control-btn {
             background-color: #2a2a4a;
             color: #e0e0e0;
@@ -528,6 +566,20 @@
     <div id="touch-overlay" aria-hidden="true">
         <div id="touch-look"></div>
         <div id="touch-stick"><div id="touch-stick-knob"></div></div>
+        <!-- Always-reachable overlay controls. The look area covers the whole
+             viewport, so without these the overlay could only be turned off
+             from the controls bar underneath it - which was unreachable. -->
+        <div id="touch-tools">
+            <button type="button" id="touch-keyboard" class="touch-tool"
+                    title="Show keyboard">&#9000;</button>
+            <button type="button" id="touch-close" class="touch-tool"
+                    title="Hide touch controls">&#10005;</button>
+        </div>
+        <!-- Hidden input used to raise the mobile on-screen keyboard. What is
+             typed here is forwarded to the engine as key events. -->
+        <input id="touch-keyboard-input" type="text" autocomplete="off"
+               autocorrect="off" autocapitalize="none" spellcheck="false"
+               aria-label="Keyboard input">
     </div>
 
     <!-- Controls bar -->
@@ -1441,36 +1493,111 @@
                 resetStick = setupStick(document.getElementById('touch-stick'),
                                         document.getElementById('touch-stick-knob'));
                 setupLook(document.getElementById('touch-look'));
+                setupTools();
                 built = true;
             }
 
-            window.etlToggleTouchControls = function () {
-                build();
-                etlTouchActive = !etlTouchActive;
+            // The on-screen keyboard: focusing the (off-screen) input raises the
+            // mobile keyboard, and everything typed there is forwarded to the
+            // engine as key events, then removed again so the input stays empty.
+            function setupTools() {
+                var close = document.getElementById('touch-close');
+                var kbd = document.getElementById('touch-keyboard');
+                var input = document.getElementById('touch-keyboard-input');
+
+                if (close) {
+                    close.addEventListener('click', function (e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        etlSetTouchControls(false);
+                    });
+                }
+
+                if (kbd && input) {
+                    kbd.addEventListener('click', function (e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (document.activeElement === input) {
+                            input.blur();
+                        } else {
+                            input.value = '';
+                            input.focus();
+                        }
+                    });
+
+                    // Printable characters: forward each one as a key press.
+                    input.addEventListener('input', function () {
+                        var text = input.value;
+                        input.value = '';
+                        for (var i = 0; i < text.length; i++) {
+                            var ch = text.charAt(i);
+                            var spec = {
+                                key: ch,
+                                code: '',
+                                keyCode: ch.toUpperCase().charCodeAt(0)
+                            };
+                            sendKey(spec, true);
+                            sendKey(spec, false);
+                        }
+                    });
+
+                    // Non-printable keys (Enter, Backspace, Escape, ...) never
+                    // reach 'input', so pass the raw key event on instead.
+                    input.addEventListener('keydown', function (e) {
+                        if (e.key && e.key.length > 1) {
+                            var spec = { key: e.key, code: e.code, keyCode: e.keyCode };
+                            sendKey(spec, true);
+                            sendKey(spec, false);
+                            e.preventDefault();
+                        }
+                    });
+                }
+            }
+
+            // Explicit on/off, so callers never have to guess the current state.
+            window.etlSetTouchControls = function (on) {
+                on = !!on;
+
+                if (on) {
+                    build();
+                }
+
+                etlTouchActive = on;
 
                 var overlay = document.getElementById('touch-overlay');
-                overlay.classList.toggle('active', etlTouchActive);
-                overlay.setAttribute('aria-hidden', etlTouchActive ? 'false' : 'true');
+                if (overlay) {
+                    overlay.classList.toggle('active', on);
+                    overlay.setAttribute('aria-hidden', on ? 'false' : 'true');
+                }
 
                 var toggle = document.getElementById('touch-toggle');
                 if (toggle) {
-                    toggle.textContent = etlTouchActive ? 'Touch controls: on'
-                                                        : 'Touch controls';
+                    toggle.textContent = on ? 'Touch controls: on' : 'Touch controls';
                 }
 
-                if (!etlTouchActive) {
+                if (!on) {
+                    var input = document.getElementById('touch-keyboard-input');
+                    if (input) {
+                        input.blur();
+                    }
                     resetStick();
                     releaseAll();
                 }
+            };
 
-                try {
-                    window.localStorage.setItem('etl-touch-controls',
-                        etlTouchActive ? '1' : '0');
-                } catch (e) { /* private mode - not important */ }
+            window.etlToggleTouchControls = function () {
+                window.etlSetTouchControls(!etlTouchActive);
             };
 
             // Show the toggle on touch devices (?touch=1 forces it, ?touch=0
-            // hides it) and restore the last choice.
+            // hides it).
+            //
+            // The overlay itself always starts OFF: it is a *in-game* control,
+            // and it used to be restored from localStorage, which meant it came
+            // back on every page load (and, because its look area covers the
+            // whole viewport, blocked the launcher and the menus underneath).
+            // A reload (F5) is therefore always a clean slate; the player turns
+            // the overlay on from the controls bar once the game runs.
             document.addEventListener('DOMContentLoaded', function () {
                 var forced = new URLSearchParams(window.location.search).get('touch');
                 var isTouch = ('ontouchstart' in window) ||
@@ -1484,15 +1611,6 @@
                 var toggle = document.getElementById('touch-toggle');
                 if (toggle) {
                     toggle.style.display = '';
-                }
-
-                var remembered = null;
-                try {
-                    remembered = window.localStorage.getItem('etl-touch-controls');
-                } catch (e) { /* ignore */ }
-
-                if (remembered === '1' || (remembered === null && forced === '1')) {
-                    window.etlToggleTouchControls();
                 }
             });
 
@@ -2512,6 +2630,12 @@
                 document.getElementById('launcher-overlay').style.display = 'flex';
                 document.getElementById('loading-overlay').style.display = 'none';
                 window.etlLauncherWaiting = true;
+                // The touch overlay is an in-game control and its look area
+                // covers the whole viewport; leaving it on would make the
+                // launcher panel underneath unclickable.
+                if (window.etlSetTouchControls) {
+                    window.etlSetTouchControls(false);
+                }
             }
 
             function hideLauncher() {

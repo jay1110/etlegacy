@@ -13,6 +13,10 @@
  *   ws://host:port/<server-ip>:<server-port>    (plain)
  *   wss://host:port/<server-ip>:<server-port>   (with --tls-cert/--tls-key)
  *
+ * The target may also be given as a query parameter, so the relay is a
+ * drop-in replacement for simple "full UDP gateway" scripts:
+ *   ws://host:port/?target=<server-ip>:<server-port>
+ *
  * Browsers served over HTTPS may only open secure (wss://) WebSockets, so a
  * page hosted on GitHub Pages / any HTTPS host needs the relay behind TLS -
  * either terminate TLS here with --tls-cert/--tls-key or in front of it with a
@@ -176,6 +180,13 @@ function parseTargetAddress(pathname) {
     // Remove leading slash
     const addr = pathname.replace(/^\//, '');
 
+    return parseTargetSpec(addr);
+}
+
+/**
+ * Parse a "<ip-or-hostname>:<port>" target specification.
+ */
+function parseTargetSpec(addr) {
     if (!addr) {
         return null;
     }
@@ -207,6 +218,22 @@ function parseTargetAddress(pathname) {
     }
 
     return null;
+}
+
+/**
+ * Determine the target for a WebSocket upgrade request. Two URL forms are
+ * accepted, so the relay is a drop-in replacement for simple UDP gateways:
+ *   ws://relay/<host>:<port>          (path form - what the engine emits)
+ *   ws://relay/?target=<host>:<port>  (query form)
+ */
+function parseTargetFromRequestUrl(requestUrl) {
+    const url = new URL(requestUrl, 'http://relay');
+
+    if (url.searchParams.has('target')) {
+        return parseTargetSpec(url.searchParams.get('target'));
+    }
+
+    return parseTargetAddress(url.pathname);
 }
 
 /**
@@ -261,14 +288,14 @@ wss.on('connection', (ws, req) => {
     // Parse target address from URL
     let target = null;
     try {
-        target = parseTargetAddress(new URL(req.url, 'http://relay').pathname);
+        target = parseTargetFromRequestUrl(req.url);
     } catch (err) {
         target = null;
     }
 
     if (!target) {
         console.log(`Connection rejected: invalid target address in URL: ${req.url}`);
-        ws.close(1008, 'Invalid target address. Use ws://relay/<ip>:<port>');
+        ws.close(1008, 'Invalid target address. Use ws://relay/<ip>:<port> or ws://relay/?target=<ip>:<port>');
         return;
     }
 

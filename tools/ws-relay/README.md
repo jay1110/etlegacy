@@ -39,6 +39,12 @@ node relay.js --tls-cert /path/cert.pem --tls-key /path/key.pem
    The target may be a numeric IP **or a hostname** (`ws://relay:8080/etclan.de:27966`).
    The browser cannot resolve names itself, so the relay does the DNS lookup.
 
+   The target can also be passed as a query parameter, which makes the relay a
+   drop-in replacement for simple UDP-gateway scripts:
+   ```
+   ws://relay-server:8080/?target=<game-server-ip>:<game-server-port>
+   ```
+
 2. The relay opens a UDP socket and forwards packets bidirectionally:
    - Browser → WebSocket → Relay → UDP → Game Server
    - Game Server → UDP → Relay → WebSocket → Browser
