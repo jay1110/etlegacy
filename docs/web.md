@@ -320,4 +320,22 @@ node tools/web-smoke/boot-smoke.mjs dist/etlegacy-web
      INITIAL_MEMORY`) and raises the cap to the wasm32 maximum (`-s
      MAXIMUM_MEMORY=4gb`, growing on demand); large maps plus downloaded pk3s
      overflow the 2 GiB Emscripten default cap.
+- **`indirect call to null` (at `dynCallLegacy` → `silence_callback`, or the
+  `SDL2.audio.scriptProcessorNode.onaudioprocess` handler)** — another face of
+  the same Asyncify re-entrancy corruption, but triggered by SDL itself rather
+  than the game. SDL2's Emscripten OpenGL backend (`Emscripten_GLES_SwapWindow`)
+  calls `emscripten_sleep(0)` from inside `SDL_GL_SwapWindow` whenever the module
+  is built with Asyncify and `SDL_HINT_EMSCRIPTEN_ASYNCIFY` is enabled (its
+  default). That yield unwinds the engine mid-frame; while it is suspended
+  waiting to be rewound, SDL's audio callback (the `setInterval`-driven
+  `silence_callback` used while the `AudioContext` is still suspended, and the
+  `onaudioprocess` handler once it is running) re-enters the wasm through
+  `dynCall('vp', HandleAudioProcess, …)`. Re-entering Asyncify-instrumented code
+  while a rewind is pending corrupts the saved rewind state and traps with
+  `indirect call to null`. The engine already drives the browser main loop
+  itself via `setMainLoop()` (see `Sys_GameLoop` in `src/sys/sys_main.c`), so it
+  does not need SDL's mid-frame yield: `src/sdl/sdl_glimp.c` sets
+  `SDL_HINT_EMSCRIPTEN_ASYNCIFY` to `0` before `SDL_Init(SDL_INIT_VIDEO)`, which
+  makes `SDL_GL_SwapWindow` return synchronously and removes the mid-frame
+  unwind the audio callback was racing against.
 

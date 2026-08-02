@@ -1183,6 +1183,29 @@ static qboolean GLimp_StartDriverAndSetMode(glconfig_t *glConfig, int mode, qboo
 		SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "system");
 #endif
 
+#ifdef __EMSCRIPTEN__
+		// Browser build: keep SDL from unwinding the wasm call stack in the
+		// middle of a frame. SDL's Emscripten OpenGL backend
+		// (Emscripten_GLES_SwapWindow) calls emscripten_sleep(0) from inside
+		// SDL_GL_SwapWindow whenever the wasm module is built with Asyncify and
+		// SDL_HINT_EMSCRIPTEN_ASYNCIFY is enabled (its default). That yield
+		// leaves the engine suspended (asyncify-unwound) mid-frame while it
+		// waits to be rewound on the next browser tick. While it is unwound,
+		// SDL's own audio callback - the setInterval-driven silence_callback and
+		// the ScriptProcessorNode onaudioprocess handler - re-enters wasm via
+		// dynCall('vp', HandleAudioProcess, ...). Re-entering asyncify-
+		// instrumented code while a rewind is pending corrupts the saved rewind
+		// state and traps with "indirect call to null" (seen in the field at
+		// dynCallLegacy -> silence_callback). This engine does not rely on SDL's
+		// mid-frame yield: it drives the browser main loop itself via
+		// setMainLoop() (see Sys_GameLoop in src/sys/sys_main.c), so each frame
+		// returns to the browser cleanly with the stack fully unwound, which is
+		// the only point at which it is safe for the audio callback to re-enter.
+		// Turning the hint off makes SDL_GL_SwapWindow return synchronously and
+		// removes the dangerous mid-frame unwind entirely.
+		SDL_SetHint(SDL_HINT_EMSCRIPTEN_ASYNCIFY, "0");
+#endif
+
 		if (SDL_Init(SDL_INIT_VIDEO) < 0)
 		{
 			Com_Printf("SDL_Init(SDL_INIT_VIDEO) FAILED (%s)\n", SDL_GetError());
