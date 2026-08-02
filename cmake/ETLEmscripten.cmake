@@ -150,7 +150,7 @@ set(EMSCRIPTEN_LINK_FLAGS
 	"-s FETCH=1"
 	"-s INITIAL_MEMORY=2147483648" # 2 GiB up front; grows on demand up to MAXIMUM_MEMORY
 	"-s MAXIMUM_MEMORY=4294967296" # 4 GiB heap cap (wasm32 maximum; Emscripten default 2 GiB is too small)
-	"-s STACK_SIZE=8388608" # 8 MiB native stack (Emscripten default 64 KiB is too small)
+	"-s TOTAL_STACK=8388608" # 8 MiB native stack (Emscripten default 64 KiB is too small)
 	"-s FULL_ES2=1"
 	"-s GL_UNSAFE_OPTS=0"
 	"-s FORCE_FILESYSTEM=1"
