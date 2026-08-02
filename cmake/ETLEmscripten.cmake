@@ -115,23 +115,27 @@ set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS TRUE)
 #   reason.
 # ALLOW_MEMORY_GROWTH=1: Allow the WASM heap to grow dynamically
 # WASM=1: Output WebAssembly (not asm.js)
-# ASYNCIFY: Enable async/await support for the main loop. NOTE: Asyncify is a
-#   link-time whole-program instrumentation; the dlopen()ed cgame/ui SIDE_MODULEs
-#   must also be linked with -sASYNCIFY (see cmake/ETLBuildMod.cmake) or any
-#   unwind that crosses a mod frame corrupts the rewind and traps with
-#   "memory access out of bounds" at doRewind.
+# NOTE: This build deliberately does NOT use -sASYNCIFY. Asyncify unwinds and
+#   rewinds the whole wasm call stack, and any JS callback that re-enters the
+#   module while a rewind is pending corrupts that saved state - in the field
+#   SDL2's Emscripten audio callback (the setInterval silence_callback and the
+#   ScriptProcessorNode onaudioprocess handler) fires on the browser event loop
+#   independently of the frame and traps with "indirect call to null" /
+#   "memory access out of bounds" at doRewind. The engine does not need
+#   Asyncify: it drives the browser main loop itself via setMainLoop() (a
+#   non-blocking, self-scheduled frame - see Sys_GameLoop in src/sys/sys_main.c),
+#   downloads asynchronously via emscripten_fetch callbacks (dl_main_web.c), and
+#   loads the cgame/ui/qagame side modules from the shell's preloadedWasm cache
+#   so dlopen() resolves synchronously (Sys_PreloadGameDlls in src/sys/sys_web.c,
+#   preloadSideModule in src/web/shell.html). Without Asyncify the audio callback
+#   re-entering wasm is harmless, exactly like the other q3 wasm ports
+#   (jdarpinian/ioq3, Qwasm2/Wwasm) which also run without it.
 # FETCH=1: Provide the emscripten_fetch API used by src/qcommon/dl_main_web.c
 # INITIAL_MEMORY: Set initial memory allocation
 # STACK_SIZE: The engine has deep call stacks (renderer -> backend ->
 #   SDL_GL_SwapWindow, deeply nested game/ui code); the Emscripten default
 #   (64 KiB) overflows into "memory access out of bounds" traps, so give it a
 #   generous native stack (8 MiB; the reference web ports use 4-5 MiB).
-# ASYNCIFY_STACK_SIZE: Asyncify unwinds/rewinds the whole call stack through
-#   the blocking main loop (SDL_GL_SwapWindow -> emscripten_sleep). If this
-#   buffer is too small the rewind overruns it and traps with "memory access
-#   out of bounds" (seen at doRewind / __synccall / silence_callback). 64 KiB
-#   is not enough for this engine's stack depth; 1 MiB still trapped at
-#   doRewind in the field, so use a deliberately generous 16 MiB.
 # MAXIMUM_MEMORY: With ALLOW_MEMORY_GROWTH the wasm heap grows on demand, but
 #   only up to this cap (the Emscripten default is 2 GiB). Loading large maps
 #   plus server-downloaded pk3s can exceed that and traps with "memory access
@@ -143,12 +147,10 @@ set(EMSCRIPTEN_COMMON_FLAGS "-s USE_SDL=2")
 set(EMSCRIPTEN_LINK_FLAGS
 	"-s ALLOW_MEMORY_GROWTH=1"
 	"-s WASM=1"
-	"-s ASYNCIFY"
 	"-s FETCH=1"
 	"-s INITIAL_MEMORY=2147483648" # 2 GiB up front; grows on demand up to MAXIMUM_MEMORY
 	"-s MAXIMUM_MEMORY=4294967296" # 4 GiB heap cap (wasm32 maximum; Emscripten default 2 GiB is too small)
 	"-s STACK_SIZE=8388608" # 8 MiB native stack (Emscripten default 64 KiB is too small)
-	"-s ASYNCIFY_STACK_SIZE=16777216" # 16 MiB Asyncify rewind buffer (1 MiB still overflowed at doRewind)
 	"-s FULL_ES2=1"
 	"-s GL_UNSAFE_OPTS=0"
 	"-s FORCE_FILESYSTEM=1"
@@ -157,20 +159,22 @@ set(EMSCRIPTEN_LINK_FLAGS
 	# are SIDE_MODULEs (see cmake/ETLBuildMod.cmake). MAIN_MODULE=1 keeps all
 	# symbols so the side modules can resolve engine functions at load time.
 	"-s MAIN_MODULE=1"
-	# EXPORT_ALL=1 is REQUIRED for input (and any other emscripten_set_*_callback
-	# based event) to work at all in this configuration. With MAIN_MODULE=1 and
-	# EXPORT_ALL=0, emcc links twice ("LINKABLE and not EXPORT_ALL" in
-	# tools/link.py) and generates the JS glue from the *first* link's metadata,
-	# which predates the dynCall_<sig> exports that wasm-emscripten-finalize adds
-	# for -sASYNCIFY (ASYNCIFY forces DYNCALLS). makeDynCall() then sees no
-	# dynCall_* exports and compiles EVERY JS-library callback dispatch - all of
-	# SDL's mouse/keyboard/pointerlock/focus handlers registered via
-	# emscripten_set_*_callback - into a silent no-op stub ("no exported function
-	# pointers with that signature"), so DOM events never reach SDL and the mouse
-	# cursor/keyboard are completely dead in game. EXPORT_ALL=1 skips the
-	# double-link so the JS glue is generated from the final metadata and calls
-	# the real dynCall_* exports. Costs etl.js size (one export var per symbol),
-	# which is acceptable; the wasm already exports everything via MAIN_MODULE=1.
+	# EXPORT_ALL=1 keeps every engine symbol exported so the dlopen()ed cgame/ui/
+	# qagame SIDE_MODULEs can resolve engine functions at load time, and it makes
+	# emcc skip the EXPORT_ALL=0 "LINKABLE and not EXPORT_ALL" double-link (see
+	# tools/link.py) that generates the JS glue from stale first-link metadata.
+	# That double-link was historically fatal to input: under the old -sASYNCIFY
+	# build ASYNCIFY forced DYNCALLS, so makeDynCall() dispatched every
+	# emscripten_set_*_callback handler (all of SDL's mouse/keyboard/pointerlock/
+	# focus callbacks) through a dynCall_<sig> export - and the stale metadata
+	# lacked those exports, compiling each dispatch into a silent no-op stub so
+	# DOM events never reached SDL and the mouse/keyboard were dead in game. This
+	# build no longer uses Asyncify, so DYNCALLS is off and makeDynCall() now
+	# emits direct wasm-table calls that do not depend on dynCall_<sig> exports;
+	# EXPORT_ALL=1 is kept as the known-good configuration (avoids the double-link
+	# and keeps the engine symbols available to the side modules). Costs etl.js
+	# size (one export var per symbol), which is acceptable; the wasm already
+	# exports everything via MAIN_MODULE=1.
 	"-s EXPORT_ALL=1"
 	# Runtime helpers used by the asset bootstrap in src/web/shell.html to fetch
 	# the etmain paks into the virtual filesystem before main() runs.

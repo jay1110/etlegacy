@@ -1340,20 +1340,22 @@ static int Sys_GameLoop(void)
 	// Yield control back to the browser each frame via emscripten's main loop
 	// machinery (fps=0 -> requestAnimationFrame scheduling).
 	//
-	// emscripten_set_main_loop() itself cannot be used to register the
-	// callback in this build configuration: with MAIN_MODULE + ASYNCIFY the
-	// dynCall_v wasm export that its JS library code needs only materializes
-	// after the JS glue has been generated, so emscripten silently compiles
-	// the C-function-pointer dispatch into an empty stub ("a dynamic function
-	// call to signature v, but there are no exported function pointers with
-	// that signature") - the browser then runs an empty main loop and the
-	// game never advances past Com_Init() (observed as a black canvas).
+	// The loop is registered against the wasm *export* of Sys_EmscriptenFrame
+	// (wasmExports['Sys_EmscriptenFrame'], kept alive by EMSCRIPTEN_KEEPALIVE +
+	// EXPORT_ALL) through emscripten's internal $setMainLoop helper, rather than
+	// by passing the C function pointer to emscripten_set_main_loop() directly.
+	// In this MAIN_MODULE (dynamic-linking) configuration the plain C-pointer
+	// path proved unreliable - the JS glue's makeDynCall dispatch for it was
+	// generated from stale first-link metadata and could compile into an empty
+	// stub ("a dynamic function call to signature v, but there are no exported
+	// function pointers with that signature"), leaving an empty main loop that
+	// never advances past Com_Init() (a black canvas). Registering the browser
+	// loop against the guaranteed-present wasm export avoids depending on how
+	// that pointer dispatch resolves.
 	//
-	// Instead, register the loop through the internal $setMainLoop JS helper
-	// with the real (asyncify-wrapped) wasm export of Sys_EmscriptenFrame.
-	// The emscripten_set_main_loop() call below only exists to pull that
-	// helper into the build and initialize the MainLoop machinery; its no-op
-	// callback registration is cancelled before it can ever run.
+	// The emscripten_set_main_loop() call below only exists to pull the
+	// $setMainLoop helper into the build and initialize the MainLoop machinery;
+	// its no-op callback registration is cancelled before it can ever run.
 	emscripten_set_main_loop(Sys_EmscriptenFrame, 0, 0);
 	emscripten_cancel_main_loop();
 	EM_ASM({
@@ -1457,14 +1459,13 @@ int main(int argc, char **argv)
 	Sys_SetBinaryPath("/etlegacy");
 	Sys_SetDefaultInstallPath("/etlegacy");
 
-	// dlopen() the cgame/ui side modules NOW, while the call stack is only one
-	// frame deep. Under -sASYNCIFY every first dlopen() of a path unwinds and
-	// rewinds the whole wasm stack; doing that later from deep inside
-	// Com_Frame (client init -> VM_Create -> Sys_LoadGameDll) corrupts the
-	// rewind and traps with "memory access out of bounds" at doRewind.
-	// Emscripten caches loaded DSOs by path and never unloads them (dlclose is
-	// a no-op), so the engine's own Sys_LoadLibrary() of these paths becomes a
-	// synchronous cache hit. See Sys_PreloadGameDlls in sys_web.c.
+	// dlopen() the cgame/ui/qagame side modules up front. They are wasm
+	// SIDE_MODULEs the shell has precompiled into Emscripten's preloadedWasm
+	// cache, so dlopen() only instantiates them - synchronous on the browser
+	// main thread. Emscripten caches loaded DSOs by path and never unloads them
+	// (dlclose is a no-op), so the engine's own later Sys_LoadLibrary() of these
+	// paths is a synchronous find_existing() cache hit. See Sys_PreloadGameDlls
+	// in sys_web.c.
 	Sys_PreloadGameDlls();
 #else
 
