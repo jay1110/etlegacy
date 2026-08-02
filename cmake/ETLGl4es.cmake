@@ -44,6 +44,21 @@ if(CMAKE_TOOLCHAIN_FILE)
 	list(APPEND GL4ES_CMAKE_ARGS -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
 endif()
 
+# The browser build links the engine as a wasm -sMAIN_MODULE (dynamic linking,
+# see cmake/ETLEmscripten.cmake), which requires every object linked into it -
+# including this external static library - to be compiled as position
+# independent code. Without it wasm-ld aborts the engine link with
+#   "relocation R_WASM_MEMORY_ADDR_SLEB cannot be used against symbol ...;
+#    recompile with -fPIC"
+# for the gl4es objects. The ExternalProject does not inherit the parent
+# project's flags, so pass -fPIC explicitly.
+if(EMSCRIPTEN)
+	list(APPEND GL4ES_CMAKE_ARGS
+		-DCMAKE_POSITION_INDEPENDENT_CODE=ON
+		-DCMAKE_C_FLAGS=-fPIC
+	)
+endif()
+
 ExternalProject_Add(bundled_gl4es
 	GIT_REPOSITORY https://github.com/ptitSeb/gl4es.git
 	# Pinned to a known-good gl4es commit (master, 2024-06-06) verified to build

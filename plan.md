@@ -63,9 +63,19 @@ Legend: `[ ]` = TODO, `[x]` = done.
       `.so` suffix (`cgame.mp.wasm32.so`, `ui.mp.wasm32.so`) so Emscripten
       precompiles the preloaded modules and the engine's `dlopen` succeeds as a
       cache hit — see `cmake/ETLBuildMod.cmake`.
-- [ ] **Verify with a real emcc build** that the `MAIN_MODULE`/`SIDE_MODULE`
-      link succeeds and that `Sys_LoadGameDll` resolves `dllEntry`/`vmMain` from
-      the side modules at runtime. (Not verifiable in this environment — no emcc.)
+- [x] **Verify with a real emcc build** that the `MAIN_MODULE`/`SIDE_MODULE`
+      link succeeds. Done: a full `emcmake cmake` + `cmake --build` run produced
+      `etl.wasm`, `cgame.mp.wasm32.so`, `ui.mp.wasm32.so` and
+      `qagame.mp.wasm32.so` (all with the `\0asm` magic). This uncovered two real
+      build breakages that are now fixed: every object linked into a
+      `MAIN_MODULE`/`SIDE_MODULE` must be compiled with `-fPIC`, both for the
+      engine/mods (`cmake/ETLEmscripten.cmake`) and for the gl4es
+      `ExternalProject` (`cmake/ETLGl4es.cmake`); without it `wasm-ld` aborts the
+      engine link with "relocation R_WASM_MEMORY_ADDR_* cannot be used against
+      symbol ...; recompile with -fPIC".
+- [ ] Verify at runtime that `Sys_LoadGameDll` resolves `dllEntry`/`vmMain` from
+      the side modules (needs the retail paks; the boot smoke test only gets as
+      far as the asset bootstrap).
 - [ ] Confirm the client reaches the main menu (ui module loads).
 
 ### 2. Package and mount game assets
@@ -132,6 +142,73 @@ Legend: `[ ]` = TODO, `[x]` = done.
       not possible in CI because the retail paks are not redistributable.
 - [x] Document the full local workflow (build, run relay, run dedicated server,
       open page) in `docs/web.md`.
+- [x] **Executed** (not just wired up): the whole section-6 pipeline was run
+      locally against a real Emscripten toolchain — configure, full build,
+      packaging of `dist/etlegacy-web`, `tools/web-smoke/verify-dist.mjs`
+      (all structural checks pass) and `tools/web-smoke/boot-smoke.mjs` in
+      headless Chromium ("PASS loading overlay dismissed: engine started").
+      The two `-fPIC` fixes above were required to get there.
+- [ ] Follow-up found while running it: the side modules and the engine carry a
+      very large wasm *data* section (`cgame`/`qagame` ~66-68 MB each, `etl.wasm`
+      ~70 MB), because a side module has no BSS - zero-initialised statics are
+      emitted as real data. That makes the page download huge; worth shrinking
+      (e.g. `-sSIDE_MODULE=2`/`--strip-debug` for the modules, `-Os`, or moving
+      the large static buffers to heap allocations) before promoting the link.
+
+### 7. Omni-bot (bots) for the web build
+
+Source under review: `omni-bot-0.93.zip` in the repository root (the Omni-bot
+0.83/0.93 tree with `Omnibot/Common`, `Omnibot/ET`, `dependencies/`).
+
+Analysis of "build it as wasm":
+
+- [x] Establish where bots would run: Omni-bot is a **server-side** library. The
+      game module (`qagame`) loads `omnibot_et.<arch>.so` through `dlopen`
+      (`vendor/Omnibot/Common/BotLoadLibrary.cpp`, enabled by `FEATURE_OMNIBOT`).
+      The browser build is a **client** that joins a native dedicated server
+      (see section 3), and that server already runs the native Omni-bot - so a
+      wasm Omni-bot adds no gameplay today. It would only matter if the wasm
+      `qagame` were ever run as an in-browser/host-side server.
+- [x] Check whether the supplied archive can be built at all:
+      **it cannot as-is.** `0.83/Omnibot/dependencies/gmscriptex` is an empty
+      directory - the GameMonkey script engine is a git submodule
+      (`.gitmodules`: `path = 0.83/Omnibot/dependencies/gmscriptex`) and the zip
+      contains no submodule content, while `Omnibot/Common/CMakeLists.txt` globs
+      its entire `gmsrc_ex` tree into `omnibot-common`.
+- [x] Check the remaining dependencies against the browser target:
+      - Boost **compiled** libraries are required (`find_package(Boost COMPONENTS
+        system filesystem regex date_time REQUIRED)`); Emscripten ships no Boost
+        port, so they would have to be cross-built for wasm first.
+      - `Omnibot/Common/Interprocess.cpp` uses `boost::interprocess::message_queue`
+        (shared-memory IPC) and `Common/common.h` pulls in `boost/thread.hpp` and
+        `boost/asio.hpp`. Shared memory and threads need
+        `SharedArrayBuffer`/pthreads, which this build deliberately does not use
+        (no COOP/COEP, see section 4), and `boost::asio` sockets do not exist in
+        the browser.
+      - `omnibot-common` is compiled with `-pthread -ffriend-injection`;
+        `-ffriend-injection` is a GCC-only, long-removed flag that clang/emcc
+        rejects.
+- [ ] Consequently **not started**: wiring a wasm Omni-bot build into
+      `cmake/ETLEmscripten.cmake` (`FEATURE_OMNIBOT` is force-disabled there).
+
+If it is still wanted, the order of work would be:
+
+1. Obtain the missing `gmscriptex` submodule and vendor it next to the Omni-bot
+   sources (the zip alone is not a complete source tree).
+2. Cross-build the needed Boost libraries for wasm, or replace their uses
+   (`filesystem` -> `std::filesystem`, `regex` -> `std::regex`, drop
+   `date_time`).
+3. Stub out the browser-impossible parts: `Interprocess.cpp` (debug-draw shared
+   memory queue), the `boost::asio` remote-debugger/`FileDownloader` paths and
+   all threading (the bot would have to run on the engine's own frame loop).
+4. Build `omnibot-et` as an Emscripten `SIDE_MODULE` named
+   `omnibot_et.wasm32.so` (matching the `SUFFIX`/`POSTFIX` logic in
+   `BotLoadLibrary.cpp`, which needs a wasm32 case), and preload it in
+   `src/web/shell.html` like the other side modules so `qagame`'s `dlopen`
+   resolves synchronously.
+5. Ship the Omni-bot script/nav data (`0.83/Omnibot/ET/scripts`, nav meshes)
+   into the browser filesystem, and only then enable `FEATURE_OMNIBOT` for the
+   wasm build.
 
 ---
 

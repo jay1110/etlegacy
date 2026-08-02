@@ -143,14 +143,25 @@ set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS TRUE)
 #   architectural maximum of 4 GiB so the engine can use as much memory as it
 #   needs.
 #-----------------------------------------------------------------
-set(EMSCRIPTEN_COMMON_FLAGS "-s USE_SDL=2")
+# -fPIC is REQUIRED, not optional: this build links the engine as a
+# -sMAIN_MODULE and the game logic as -sSIDE_MODULEs (dynamic linking, see
+# above and cmake/ETLBuildMod.cmake). Emscripten only sets the PIC ABI on the
+# *compile* command line when -sMAIN_MODULE/-sSIDE_MODULE (or -fPIC) is passed
+# to the compiler as well; passing them only at link time leaves every object
+# non-PIC and wasm-ld then aborts the link with hundreds of
+#   "relocation R_WASM_MEMORY_ADDR_LEB cannot be used against symbol `...`;
+#    recompile with -fPIC"
+# errors (first seen on src/qcommon/cm_load.c.o). Compiling everything - the
+# engine, the bundled libraries and the cgame/ui/qagame side modules - with
+# -fPIC produces the relocatable code the dynamic linker needs.
+set(EMSCRIPTEN_COMMON_FLAGS "-s USE_SDL=2 -fPIC")
 set(EMSCRIPTEN_LINK_FLAGS
 	"-s ALLOW_MEMORY_GROWTH=1"
 	"-s WASM=1"
 	"-s FETCH=1"
 	"-s INITIAL_MEMORY=2147483648" # 2 GiB up front; grows on demand up to MAXIMUM_MEMORY
 	"-s MAXIMUM_MEMORY=4294967296" # 4 GiB heap cap (wasm32 maximum; Emscripten default 2 GiB is too small)
-	"-s TOTAL_STACK=8388608" # 8 MiB native stack (Emscripten default 64 KiB is too small)
+	"-s STACK_SIZE=8388608" # 8 MiB native stack (Emscripten default 64 KiB is too small)
 	"-s FULL_ES2=1"
 	"-s GL_UNSAFE_OPTS=0"
 	"-s FORCE_FILESYSTEM=1"
