@@ -274,68 +274,54 @@ node tools/web-smoke/boot-smoke.mjs dist/etlegacy-web
   setup-menu click). If sound is still missing, check the console for
   `memory access out of bounds` first: once the wasm traps, the audio callback
   dies with it (see below).
-- **`memory access out of bounds` (at `doRewind` / `__synccall` /
-  `silence_callback`, often followed by an endless stream of the same error
-  from `SDL2.audio.scriptProcessorNode.onaudioprocess`)** — an Asyncify state
-  corruption or resource-limit problem. The first trap (usually at `doRewind`)
-  poisons the Asyncify state, after which *every* re-entry into the wasm (e.g.
-  the SDL2 audio callback) traps with the same error, forever — only the first
-  error matters for diagnosis. Causes, all handled by the build:
-  1. **dlopen() of a side module from deep inside the running engine (the
-     root cause of the field crash at `__dlopen_js` → `doRewind`).** Under
-     `-sASYNCIFY`, Emscripten's `_dlopen_js` is *always* asynchronous: it
-     unwinds and rewinds the entire wasm call stack, even when the module is
-     already precompiled in the `preloadedWasm` cache (the cache only skips
-     the fetch/compile, not the unwind). The engine used to first dlopen
-     cgame/ui deep inside `Com_Frame` (client init → `VM_Create` →
-     `Sys_LoadGameDll`); the dlopen mutated the dynamic-linking state while
-     dozens of frames were unwound and the rewind trapped. None of the
-     working browser ports (Qwasm2, jdarpinian/ioq3) ever dlopen from inside
-     the running engine. The engine now dlopen()s both side modules at the
-     very top of `main()` (`Sys_PreloadGameDlls` in `src/sys/sys_web.c`),
-     the officially supported Asyncify+dlopen pattern; Emscripten caches
-     loaded DSOs by path and its `dlclose()` is a no-op, so every later
-     `Sys_LoadLibrary()` of the same path is a synchronous cache hit and no
-     mid-frame unwind ever happens.
-  2. **Stale cgame/ui side modules from an old build.** The engine is linked
-     with `-sASYNCIFY`; every dlopen()ed
-     side module must be Asyncify-instrumented too (`-sASYNCIFY` in
-     `cmake/ETLBuildMod.cmake`, requires Emscripten ≥ 3.1.17 for shared
-     Asyncify globals across dynamic linking; CI uses 4.0.23). A module built
-     without it cannot save/restore its frames when Asyncify unwinds through
-     them, which corrupts the rewind. Because the mod pk3 and the standalone
-     `.so` files are cached in IndexedDB and the browser HTTP cache, a site
-     update used to leave old modules paired with a new engine. The shell now
-     (a) revalidates the mod pk3/`.so` against the server on every load,
-     (b) deletes cached `legacy_*.pk3` from other builds, and (c) refuses to
-     preload any side module that lacks the `asyncify_start_rewind` export,
-     reporting a clear error instead of crashing later. If you see that error,
-     redeploy matching `etl.wasm`/`etl.js`/pk3/`.so` artifacts from one build,
-     and clear the site data if it persists.
-  3. Asyncify/native stack overflow — the web build sets a generous `-s
-     ASYNCIFY_STACK_SIZE` (16 MiB) and native `-s STACK_SIZE` (8 MiB) in
-     `cmake/ETLEmscripten.cmake`; the engine's deep call stacks overflow the
-     Emscripten defaults.
-  4. The heap hitting its growth cap — the build starts at 2 GiB (`-s
+- **`memory access out of bounds` or `indirect call to null` (at `doRewind`,
+  `__synccall`, `silence_callback`, or the
+  `SDL2.audio.scriptProcessorNode.onaudioprocess` handler)** — this whole crash
+  family came from **Asyncify** and no longer occurs: the web build is
+  deliberately **not** linked with `-sASYNCIFY` (see the note in
+  `cmake/ETLEmscripten.cmake`, and `-sSIDE_MODULE=1` without Asyncify in
+  `cmake/ETLBuildMod.cmake`). Asyncify unwinds and rewinds the entire wasm call
+  stack, and any JS callback that re-entered the module while a rewind was
+  pending corrupted the saved state and trapped; once the Asyncify state was
+  poisoned, *every* later re-entry — most visibly SDL2's audio callback, which
+  fires on the browser event loop independently of the frame — trapped the same
+  way forever. Removing Asyncify removes the rewind state entirely, so the audio
+  callback re-entering wasm is now harmless, exactly how the other q3 wasm ports
+  (jdarpinian/ioq3, Qwasm2/Wwasm) run. The engine never needed Asyncify:
+  - it drives the browser main loop itself, non-blocking, via `setMainLoop()`
+    (`Sys_GameLoop` in `src/sys/sys_main.c`) instead of a blocking loop that
+    yields with `emscripten_sleep`;
+  - it downloads asynchronously through `emscripten_fetch` callbacks
+    (`src/qcommon/dl_main_web.c`), never a synchronous fetch;
+  - it loads the cgame/ui/qagame side modules from the shell's `preloadedWasm`
+    cache, so `dlopen()` only has to *instantiate* an already-compiled module —
+    synchronous on the main thread, needing no async unwind (`preloadSideModule`
+    in `src/web/shell.html`, `Sys_PreloadGameDlls` in `src/sys/sys_web.c`).
+
+  A `memory access out of bounds` now only means a genuine resource-limit or
+  module-mismatch problem (not an Asyncify rewind). Check:
+  1. **Stale cgame/ui/qagame side modules from an old build.** The mod pk3 and
+     the standalone `.so` files are cached in IndexedDB and the browser HTTP
+     cache, so a site update can leave old game modules paired with a new
+     engine; a mismatched VM syscall ABI then traps (e.g. `table index is out of
+     bounds`). The shell (a) revalidates the mod pk3/`.so` against the server on
+     every load and (b) deletes cached `legacy_*.pk3` from other builds. If it
+     persists, redeploy matching `etl.wasm`/`etl.js`/pk3/`.so` artifacts from one
+     build and clear the site data.
+  2. **Native stack overflow** — the build sets a generous `-s STACK_SIZE`
+     (8 MiB) in `cmake/ETLEmscripten.cmake`; the engine's deep call stacks
+     overflow the 64 KiB Emscripten default.
+  3. **The heap hitting its growth cap** — the build starts at 2 GiB (`-s
      INITIAL_MEMORY`) and raises the cap to the wasm32 maximum (`-s
      MAXIMUM_MEMORY=4gb`, growing on demand); large maps plus downloaded pk3s
      overflow the 2 GiB Emscripten default cap.
-- **`indirect call to null` (at `dynCallLegacy` → `silence_callback`, or the
-  `SDL2.audio.scriptProcessorNode.onaudioprocess` handler)** — another face of
-  the same Asyncify re-entrancy corruption, but triggered by SDL itself rather
-  than the game. SDL2's Emscripten OpenGL backend (`Emscripten_GLES_SwapWindow`)
-  calls `emscripten_sleep(0)` from inside `SDL_GL_SwapWindow` whenever the module
-  is built with Asyncify and `SDL_HINT_EMSCRIPTEN_ASYNCIFY` is enabled (its
-  default). That yield unwinds the engine mid-frame; while it is suspended
-  waiting to be rewound, SDL's audio callback (the `setInterval`-driven
-  `silence_callback` used while the `AudioContext` is still suspended, and the
-  `onaudioprocess` handler once it is running) re-enters the wasm through
-  `dynCall('vp', HandleAudioProcess, …)`. Re-entering Asyncify-instrumented code
-  while a rewind is pending corrupts the saved rewind state and traps with
-  `indirect call to null`. The engine already drives the browser main loop
-  itself via `setMainLoop()` (see `Sys_GameLoop` in `src/sys/sys_main.c`), so it
-  does not need SDL's mid-frame yield: `src/sdl/sdl_glimp.c` sets
-  `SDL_HINT_EMSCRIPTEN_ASYNCIFY` to `0` before `SDL_Init(SDL_INIT_VIDEO)`, which
-  makes `SDL_GL_SwapWindow` return synchronously and removes the mid-frame
-  unwind the audio callback was racing against.
+- **`VM_Create on cgame/ui/qagame failed` / `dlopen` errors** — a side module
+  was not compiled into `preloadedWasm` before the engine `dlopen()`ed it.
+  Without Asyncify the browser cannot compile a wasm module synchronously on the
+  main thread, so each side module must first be run through Emscripten's wasm
+  preload plugin (`FS.createPreloadedFile`, see `createPreloadedSideModule` in
+  `src/web/shell.html`); `dlopen()` then instantiates the cached module
+  synchronously. The shell extracts the modules from the mod pk3 (falling back to
+  the standalone `.so`) and preloads them into every directory the engine may
+  load them from before `main()` runs.
 

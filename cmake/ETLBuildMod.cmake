@@ -31,18 +31,16 @@ endfunction()
 # (and served same-origin as a raw fallback); they are NOT baked into the engine
 # filesystem image any more (see the removed --preload-file block below).
 #
-# The engine is linked with -sASYNCIFY (see cmake/ETLEmscripten.cmake): the
-# blocking main loop (SDL_GL_SwapWindow -> emscripten_sleep) unwinds and
-# rewinds the *entire* wasm call stack. That stack routinely passes through the
-# mod side modules (engine -> vmMain -> cgame/ui -> engine syscall -> sleep).
-# Asyncify is a whole-program instrumentation applied at link time; a side
-# module linked without -sASYNCIFY has no unwind/rewind support, so as soon as
-# an unwind crosses one of its frames the saved stack is incomplete and the
-# subsequent rewind jumps through garbage - trapping with
-# "RuntimeError: memory access out of bounds at ... doRewind", after which the
-# corrupted Asyncify state makes every later entry into wasm (e.g. the SDL2
-# scriptProcessorNode.onaudioprocess audio callback) trap the same way. The
-# side modules therefore MUST be linked with -sASYNCIFY as well.
+# The engine is NOT linked with -sASYNCIFY (see cmake/ETLEmscripten.cmake), so
+# neither are these side modules. Asyncify's whole-program stack unwind/rewind
+# is only needed for blocking APIs the engine deliberately avoids on the web
+# (its main loop is self-driven via setMainLoop, downloads use async
+# emscripten_fetch, and the side modules are dlopen()ed from the shell's
+# preloadedWasm cache so the load resolves synchronously). Keeping the modules
+# free of Asyncify instrumentation - like the engine - means a JS callback that
+# re-enters wasm (e.g. SDL2's audio callback) can never corrupt a pending
+# rewind, which was the root cause of the "indirect call to null" /
+# "memory access out of bounds at doRewind" boot crashes.
 #
 # -fvisibility=hidden is REQUIRED: cgame and ui define hundreds of identically
 # named symbols (trap_*, dllEntry helpers, String_Init, ...). Emscripten's
@@ -59,7 +57,7 @@ endfunction()
 function(etl_configure_wasm_side_module target_name base_name)
 	if(EMSCRIPTEN)
 		target_compile_options(${target_name} PRIVATE "-fvisibility=hidden")
-		target_link_options(${target_name} PRIVATE "-sSIDE_MODULE=1" "-sASYNCIFY")
+		target_link_options(${target_name} PRIVATE "-sSIDE_MODULE=1")
 		set_target_properties(${target_name} PROPERTIES
 			PREFIX ""
 			SUFFIX ".so"
@@ -194,7 +192,7 @@ if(BUILD_SERVER_MOD)
 	target_compile_definitions(qagame PRIVATE GAMEDLL=1 MODLIB=1)
 	# On Emscripten qagame is loaded at runtime via dlopen, so it must be built
 	# as a wasm SIDE_MODULE (matching cgame/ui): produces qagame.mp.wasm32.so
-	# with -sSIDE_MODULE=1 -sASYNCIFY and hidden visibility.
+	# with -sSIDE_MODULE=1 and hidden visibility.
 	etl_configure_wasm_side_module(qagame qagame)
 endif()
 

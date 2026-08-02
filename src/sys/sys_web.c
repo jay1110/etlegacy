@@ -167,30 +167,25 @@ void Sys_PlatformInit(void)
 }
 
 /**
- * @brief Sys_PreloadGameDlls - dlopen() the cgame/ui side modules while the
- * wasm call stack is still trivially shallow (called from the top of main()).
+ * @brief Sys_PreloadGameDlls - dlopen() the cgame/ui/qagame side modules once
+ * at the top of main(), before the engine loads them itself.
  *
- * Under -sASYNCIFY, Emscripten's _dlopen_js is ALWAYS asynchronous: it wraps
- * the load in Asyncify.handleSleep(), unwinding and rewinding the entire wasm
- * call stack - even when the module is already precompiled in the
- * preloadedWasm cache (the cache only skips the fetch/compile, not the
- * unwind). When the engine's Sys_LoadGameDll runs deep inside Com_Frame
- * (client init -> VM_Create -> dlopen), that unwind spans dozens of frames
- * and the dlopen mutates the dynamic-linking state (table entries, merged
- * symbols, Asyncify-instrumented exports) while the stack is unwound; the
- * subsequent rewind then traps with "RuntimeError: memory access out of
- * bounds at ... doRewind". None of the working browser ports (Qwasm2,
- * jdarpinian/ioq3, ...) ever dlopen() from deep inside the running engine -
- * side modules are always linked up front.
+ * On the web the game-logic modules are wasm SIDE_MODULEs the shell has already
+ * compiled into Emscripten's preloadedWasm cache (see preloadSideModule in
+ * src/web/shell.html). dlopen()ing such a preloaded module only has to
+ * instantiate it, which is synchronous on the browser main thread - unlike a
+ * module that still needs compiling, which the browser refuses to compile
+ * synchronously off the main thread and which this build cannot load (there is
+ * no Asyncify to unwind for an async compile). Pre-opening the modules here
+ * guarantees they are registered up front and surfaces a clear error if one is
+ * missing, instead of failing later deep inside client init.
  *
  * Emscripten's C-side dlopen (system/lib/libc/dynlink.c) keeps every loaded
- * DSO in a global list and short-circuits via find_existing(name) WITHOUT
- * calling the asynchronous _dlopen_js when the same path is opened again
- * (dlclose() is a no-op on Emscripten, so entries are never removed). By
- * dlopen()ing the modules here - the officially supported Asyncify+dlopen
- * pattern, exercised by Emscripten's own test_dlfcn_asyncify - every later
- * Sys_LoadLibrary() of the same path becomes a synchronous cache hit and no
- * mid-frame unwind ever happens.
+ * DSO in a global list and short-circuits via find_existing(name) when the same
+ * path is opened again (dlclose() is a no-op on Emscripten, so entries are
+ * never removed). By dlopen()ing the modules here, every later
+ * Sys_LoadLibrary() of the same path is a synchronous find_existing() cache
+ * hit.
  *
  * The paths probed here must match FS_BuildOSPath(base, gamedir, fname)
  * exactly (find_existing compares the raw path string): the engine searches
@@ -697,11 +692,10 @@ void Sys_OpenURL(const char *url, qboolean doexit)
  * The web shell (src/web/shell.html) lets the user type console commands into
  * an input line on the page; they are queued in window.etlPendingCommands.
  * The queue is drained here, once per frame from Sys_EmscriptenFrame, on the
- * engine side of the JS boundary: with MAIN_MODULE + ASYNCIFY the page must
- * NOT call an asyncify-instrumented wasm export directly (the engine spends
- * most of its time unwound inside emscripten_sleep, and re-entering wasm in
- * that state corrupts the asyncify rewind). Copying the text from inside the
- * frame callback via EM_ASM is always safe.
+ * engine side of the JS boundary. Draining from inside the frame callback keeps
+ * all engine entry on the single per-frame code path instead of poking the
+ * engine from an arbitrary DOM event handler; copying the text via EM_ASM is
+ * always safe.
  */
 void Sys_WebPumpConsoleCommands(void)
 {

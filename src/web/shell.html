@@ -878,11 +878,12 @@
             showError('An exception was thrown: ' + event);
         };
 
-        // Startup runs largely inside promises (asset/mod fetch, the ASYNCIFY
-        // main loop). A rejected promise does NOT trigger window.onerror, so
-        // without this handler an async failure (e.g. a TextDecoder/WebGL/asset
-        // error) would leave the loading overlay frozen with no visible reason.
-        // Surface it on screen so it is diagnosable instead of a silent hang.
+        // Startup runs largely inside promises (asset/mod fetch, the
+        // self-driven main loop). A rejected promise does NOT trigger
+        // window.onerror, so without this handler an async failure (e.g. a
+        // TextDecoder/WebGL/asset error) would leave the loading overlay frozen
+        // with no visible reason. Surface it on screen so it is diagnosable
+        // instead of a silent hang.
         window.addEventListener('unhandledrejection', function (e) {
             var reason = e && e.reason;
             var msg = (reason && (reason.stack || reason.message)) ||
@@ -1087,9 +1088,9 @@
 
         // Queue a console command for the engine. The engine drains
         // window.etlPendingCommands once per frame (Sys_WebPumpConsoleCommands
-        // in src/sys/sys_web.c) - the page must never call an
-        // asyncify-instrumented wasm export directly, so a plain JS queue is
-        // the safe hand-off.
+        // in src/sys/sys_web.c) - the page hands commands off through this queue
+        // rather than calling into the engine from a DOM event handler, so all
+        // engine entry stays on the single per-frame path.
         window.etlPendingCommands = window.etlPendingCommands || [];
         function etlSendCommand(text) {
             text = String(text || '').trim();
@@ -1450,8 +1451,8 @@
             // fallback. Used for the mod pk3, which carries the cgame/ui game
             // logic that MUST match the engine build: silently reusing a stale
             // IndexedDB copy after the site was updated loads old game modules
-            // into a new engine and crashes at runtime (e.g. Asyncify's
-            // "RuntimeError: memory access out of bounds at ... doRewind").
+            // into a new engine and crashes at runtime (mismatched VM syscall
+            // ABI - e.g. a "table index is out of bounds" indirect call).
             function downloadInto(sourceUrl, target, label, opts) {
                 var refresh = !!(opts && opts.refresh);
                 var fetchOpts = refresh ? { cache: 'no-cache' } : undefined;
@@ -1640,11 +1641,11 @@
             // so after a site update the old pk3 lingers in IndexedDB under a
             // different name. listModPk3s()/the engine's pk3 scan would still
             // find it and its stale cgame/ui side modules, which no longer match
-            // the engine build - pairing them crashes at runtime (Asyncify
-            // "memory access out of bounds" at doRewind, cascading into the SDL2
-            // audio callback). Only auto-named legacy_*.pk3 files that are not
-            // the configured MOD_PK3 are removed; user-hosted custom pk3s with
-            // other names are left alone.
+            // the engine build - pairing them crashes at runtime (a mismatched VM
+            // syscall ABI, e.g. a "table index is out of bounds" indirect call).
+            // Only auto-named legacy_*.pk3 files that are not the configured
+            // MOD_PK3 are removed; user-hosted custom pk3s with other names are
+            // left alone.
             function removeStaleModPk3s() {
                 var keep = {};
                 MOD_PK3.forEach(function (name) { keep[name] = true; });
@@ -1788,71 +1789,6 @@
                     bytes[2] === 0x73 && bytes[3] === 0x6d;
             }
 
-            // The engine is linked with -sASYNCIFY, which requires every
-            // dlopen()ed side module to be Asyncify-instrumented as well (built
-            // with -sASYNCIFY, see cmake/ETLBuildMod.cmake). An uninstrumented
-            // module cannot save/restore its stack frames when Asyncify unwinds
-            // through them (e.g. around the engine's dlopen), which corrupts the
-            // rewind and traps with "RuntimeError: memory access out of bounds"
-            // at doRewind - after which every re-entry into the wasm (like the
-            // SDL2 audio callback) traps the same way, forever. The instrumented
-            // module always exports the Asyncify control functions, so their
-            // presence in the wasm export section is a reliable marker. Checking
-            // it up front rejects the classic real-world cause - a stale module
-            // from an old build (browser cache or an old pk3 still on the
-            // server) - with a clear message instead of the cryptic crash.
-            //
-            // Minimal wasm export-section walk. Returns the export names, or
-            // null if the binary cannot be parsed (in which case the check is
-            // skipped rather than producing a false rejection).
-            function wasmExportNames(bytes) {
-                try {
-                    var pos = 8; // skip \0asm magic + version
-                    function leb() {
-                        var result = 0, shift = 0, b;
-                        do {
-                            if (pos >= bytes.length) {
-                                throw new Error('truncated wasm binary');
-                            }
-                            b = bytes[pos++];
-                            result |= (b & 0x7f) << shift;
-                            shift += 7;
-                        } while (b & 0x80);
-                        return result >>> 0;
-                    }
-                    while (pos < bytes.length) {
-                        var id = bytes[pos++];
-                        var size = leb();
-                        var end = pos + size;
-                        if (end > bytes.length) {
-                            throw new Error('malformed wasm binary (section overruns file)');
-                        }
-                        if (id === 7) { // export section
-                            var names = [];
-                            var count = leb();
-                            for (var i = 0; i < count; i++) {
-                                var len = leb();
-                                names.push(utf8Decode(bytes.subarray(pos, pos + len)));
-                                pos += len;
-                                pos++; // export kind
-                                leb(); // export index
-                            }
-                            return names;
-                        }
-                        pos = end;
-                    }
-                    return [];
-                } catch (e) {
-                    return null;
-                }
-            }
-
-            function lacksAsyncifyInstrumentation(bytes) {
-                var names = wasmExportNames(bytes);
-                if (!names) { return false; } // unparseable - don't false-reject
-                return names.indexOf('asyncify_start_rewind') === -1;
-            }
-
             function describeNonWasm(bytes) {
                 if (!bytes || !bytes.length) { return 'the file is empty'; }
                 // A mis-served HTML error/redirect page is the usual "HTTP 200 but
@@ -1880,19 +1816,13 @@
                 // Obtain the module bytes once - preferably straight from the mod
                 // pk3 the shell downloaded (the reliable, always-present source),
                 // otherwise from the standalone .so served next to the pk3. Bytes
-                // that are not a valid wasm module (a corrupt/mis-served file) or
-                // that lack the Asyncify instrumentation the engine requires (a
-                // stale module from an old build) are rejected so the other
-                // source still gets a chance.
+                // that are not a valid wasm module (a corrupt or mis-served file)
+                // are rejected so the other source still gets a chance.
                 function describeProblem(bytes) {
-                    if (!hasWasmMagic(bytes)) { return describeNonWasm(bytes); }
-                    return 'it was built without Asyncify instrumentation (no ' +
-                        'asyncify_start_rewind export). It is a stale module from an ' +
-                        'old build - clear the site data / update the hosted files so ' +
-                        'the pk3 and .so match this engine build';
+                    return describeNonWasm(bytes);
                 }
                 function usable(bytes) {
-                    return hasWasmMagic(bytes) && !lacksAsyncifyInstrumentation(bytes);
+                    return hasWasmMagic(bytes);
                 }
                 return extractSideModuleFromPk3(name).then(function (bytes) {
                     if (bytes && usable(bytes)) { return bytes; }
