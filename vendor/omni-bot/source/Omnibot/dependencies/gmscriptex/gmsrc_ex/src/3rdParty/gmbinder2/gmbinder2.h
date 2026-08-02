@@ -222,7 +222,11 @@ namespace gmBind2
 	template<typename T>
 #ifdef _WIN32
 	__declspec( noreturn ) inline gmVariable ToGmVar( T& ); /* LINKER ERROR! */
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) || defined(__clang__)
+	// clang propagates the noreturn attribute of the primary template to the
+	// explicit specializations below, which turns every ToGmVar() call site into
+	// unreachable code. Only declare the primary template so that instantiating
+	// it stays a linker error instead. /* LINKER ERROR! */
 	inline gmVariable ToGmVar(T&);
 #else
 	__attribute__((noreturn)) inline gmVariable ToGmVar(T&) {}

@@ -441,6 +441,25 @@ Still open:
       false, `Omnibot_LoadLibrary` prints the reason and the match runs without
       bots.
 
+- [x] **`BotInitialise()` trapped with `RuntimeError: unreachable`.** Starting a
+      quick single game aborted the frame right after `Omnibot_LoadLibrary`
+      printed "Attempting to Initialize", inside `ScriptManager::Init()`.
+
+      Cause: `gmbinder2.h` declares the primary `ToGmVar` template
+      `__attribute__((noreturn))` *with an empty body* on non-Windows,
+      non-Apple targets - a deliberate trick so that using an unspecialised type
+      fails. gcc ignores it for the explicit specialisations that follow; clang
+      propagates the attribute to them, so every `gmBind2::Global(...).var(...)`
+      call - the first one being `MapGoal::Bind()` - becomes UB and is emitted as
+      a bare `unreachable`. The Apple branch (also clang) already only *declares*
+      the primary template, so the fix is to take that branch for `__clang__` as
+      well, which keeps "instantiating the primary template is a link error".
+
+      Verified by building `vendor/omni-bot` with `em++` and driving
+      `BotInitialise()` from a standalone Node/wasm harness with a stub
+      `IEngineInterface`: it trapped before, and after the change reports
+      "Omni-bot 0.93 initialized" and returns `BOT_ERROR_NONE`.
+
 - [ ] **The bot's `catch` blocks are compiled away.** Emscripten defaults to
       `DISABLE_EXCEPTION_CATCHING=1`, which passes `-fignore-exceptions`: `throw`
       still works, landing pads do not. Confirmed on the built artifact - it
