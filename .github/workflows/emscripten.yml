@@ -56,6 +56,16 @@ jobs:
           emcc --version
           em++ --version
 
+      # Omni-bot is compiled from vendor/omni-bot/source for the browser build
+      # (there is no prebuilt wasm binary on the mirror). With
+      # OMNIBOT_STD_FILESYSTEM the remaining Boost usage is header only and
+      # therefore architecture independent, so the host headers are enough -
+      # no cross-compiled Boost is required. See cmake/ETLOmniBotWasm.cmake.
+      - name: Install Omni-bot build dependencies (Boost headers)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libboost-dev
+
       - name: Configure with CMake
         run: |
           emcmake cmake -B build-wasm \
@@ -79,7 +89,7 @@ jobs:
             -DFEATURE_CURL=OFF \
             -DFEATURE_SSL=OFF \
             -DFEATURE_AUTH=OFF \
-            -DFEATURE_OMNIBOT=OFF \
+            -DFEATURE_OMNIBOT=ON \
             -DFEATURE_TRACKER=OFF \
             -DFEATURE_ANTICHEAT=OFF \
             -DFEATURE_OGG_VORBIS=OFF \
@@ -136,6 +146,20 @@ jobs:
               exit 1
             fi
           done
+          # Omni-bot: the bot library is a wasm side module too, plus its data
+          # (global_scripts/ + et/{scripts,nav}). Omni-bot resolves its data
+          # directory from the location of the loaded library, so both are
+          # served from legacy/omni-bot/. The ~1.4 MB data zip is downloaded by
+          # the shell only when the player actually hosts a game in the browser.
+          mkdir -p dist/etlegacy-web/legacy/omni-bot
+          for f in omnibot_et.wasm32.so omni-bot-data.zip; do
+            if [ -f "build-wasm/${f}" ]; then
+              cp "build-wasm/${f}" dist/etlegacy-web/legacy/omni-bot/
+            else
+              echo "ERROR: required Omni-bot artifact build-wasm/${f} not found" >&2
+              exit 1
+            fi
+          done
           # Placeholder for the retail assets the user must supply
           mkdir -p dist/etlegacy-web/etmain
           cat > dist/etlegacy-web/etmain/README.txt <<'EOF'
@@ -158,6 +182,9 @@ jobs:
                                      plus the standalone cgame/ui/qagame side
                                      modules (required; the engine loads its game
                                      logic from these)
+            legacy/omni-bot/       - Omni-bot side module + its script/navigation
+                                     data zip, downloaded on demand when you host
+                                     a game in the browser (bots)
             etmain/                - put pak0.pk3, pak1.pk3, pak2.pk3 here
 
           How to run:
