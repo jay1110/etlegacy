@@ -69,6 +69,13 @@ set(OMNIBOT_WASM_CMAKE_ARGS
 	-DOMNIBOT_BOOST_INCLUDEDIR=${OMNIBOT_BOOST_INCLUDEDIR}
 )
 
+# NOTE: this builds with Emscripten's default exception model
+# (DISABLE_EXCEPTION_CATCHING=1), so the bot's catch blocks are dropped while
+# throw still works - a std::regex_error or a bad std::filesystem::path escapes
+# into JS instead of being logged. Enabling them needs -fwasm-exceptions on this
+# module *and* on the engine's main module (JS exceptions cannot work across
+# dlopen), which raises the minimum browser version. See plan.md, section 7.
+
 # Build for the same (Emscripten) target as the engine.
 if(CMAKE_TOOLCHAIN_FILE)
 	list(APPEND OMNIBOT_WASM_CMAKE_ARGS -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})

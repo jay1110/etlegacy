@@ -120,6 +120,15 @@ pthreads, the page must then be served with
 `Cross-Origin-Opener-Policy: same-origin` and
 `Cross-Origin-Embedder-Policy: require-corp`.)
 
+> **Serve the `.wasm` files compressed.** They are big on disk - the engine and
+> each side module carry a wasm *data* section of tens of megabytes, because a
+> wasm side module has no BSS and zero-initialised statics are emitted as literal
+> zero bytes. Those bytes compress away almost entirely (measured on a test
+> module: 32 MB → 30 KB with `gzip -9`), so any server that sends
+> `Content-Encoding: gzip` or `br` makes the download small. `python3 -m
+> http.server` does **not** compress and will transfer the full size; use it for
+> a quick local check only.
+
 > **Upload the `.pk3` and `.so` files in binary mode.** They are binary
 > WebAssembly data. If they are transferred over FTP/SFTP in *ASCII*/*text*
 > mode (or rewritten by a server content filter), their bytes get mangled and

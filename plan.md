@@ -189,9 +189,18 @@ Legend: `[ ]` = TODO, `[x]` = done.
 - [ ] Follow-up found while running it: the side modules and the engine carry a
       very large wasm *data* section (`cgame`/`qagame` ~66-68 MB each, `etl.wasm`
       ~70 MB), because a side module has no BSS - zero-initialised statics are
-      emitted as real data. That makes the page download huge; worth shrinking
-      (e.g. `-sSIDE_MODULE=2`/`--strip-debug` for the modules, `-Os`, or moving
-      the large static buffers to heap allocations) before promoting the link.
+      emitted as real data. Confirmed in isolation: a side module whose only
+      content is a 32 MB zero-filled static array links to a 32 MB `.so`, while
+      the same file built as a normal (non-PIC) module keeps it in BSS.
+
+      It matters much less than the raw numbers suggest, because those bytes are
+      zeros: that same 32 MB module is **30 KB** after `gzip -9`. So any host that
+      sends `Content-Encoding: gzip`/`br` already makes the download small, and
+      GitHub Actions artifacts are zipped anyway. `docs/web.md` now says so, and
+      warns that `python3 -m http.server` does not compress. What is left is disk
+      footprint and wasm compile time in the browser, worth attacking with
+      `-sSIDE_MODULE=2`/`--strip-debug`, `-Os`, or by heap-allocating the big
+      static buffers - none of which can be measured without the engine build.
 
 ### 7. Omni-bot (bots) for the web build
 
@@ -341,9 +350,65 @@ Still open:
       4.0.23 passes. The two `FEATURE_OMNIBOT` sources were compiled with `em++`
       individually instead; CI is the first place the whole thing is linked.
 - [ ] That a wasm side module (`qagame`) can `dlopen()` another side module
-      (`omnibot_et`) is expected to work - `dlopen` is JS glue in the main
-      module, and preloading makes it a synchronous cache hit - but has not been
-      observed at runtime.
+      (`omnibot_et`) has not been *observed* at runtime: `-sMAIN_MODULE` aborts
+      in `initRuntime` with emcc 3.1.6 on Node 24 even for a hello-world, so no
+      dynamic-linking test can run here.
+
+      What *was* checked, statically, by reading the module tables with
+      `WebAssembly.Module.imports()/exports()`: `omnibot_et.wasm32.so` has 531
+      function imports and every one of them is satisfiable. 342 are imported
+      *and* exported by the bot module itself - normal PIC interposition, they
+      resolve against the module's own exports - 180 come from the main
+      module's wasm exports, and the last 9 (`__cxa_throw`,
+      `__cxa_allocate_exception`, `abort`, `exit`, `clock`, `time`, `strftime`,
+      `getTempRet0`, `setTempRet0`) are JS-library functions that `MAIN_MODULE=1`
+      always includes, because it implies `INCLUDE_FULL_LIBRARY`. A C-only main
+      module is enough: `MAIN_MODULE=1` force-links libc++/libc++abi, so it
+      exports the 2752 C++ symbols the bot needs.
+
+      A failed `dlopen` is not fatal in any case - `Bot_Interface_Init()` returns
+      false, `Omnibot_LoadLibrary` prints the reason and the match runs without
+      bots.
+
+- [ ] **The bot's `catch` blocks are compiled away.** Emscripten defaults to
+      `DISABLE_EXCEPTION_CATCHING=1`, which passes `-fignore-exceptions`: `throw`
+      still works, landing pads do not. Confirmed on the built artifact - it
+      imports `__cxa_throw` and `__cxa_allocate_exception` but no
+      `__cxa_begin_catch` or `invoke_*`. So the 25 `catch (const std::exception &)`
+      handlers in `Common/` (`FileSystem::GetRealDir`, `Utils::RegexMatch`,
+      `ScriptManager`, `gmSystemLibApp`, ...) no longer run; a `std::regex_error`
+      or a bad `fs::path` escapes as a JS exception instead of being logged and
+      swallowed. These are all defensive paths, so a normal match is unaffected,
+      but a malformed script or filter kills the frame rather than printing a
+      warning.
+
+      The fix is *not* `-fexceptions` (JS exceptions): that makes the side module
+      import `invoke_ii`, `invoke_viiii`, `__cxa_find_matching_catch_2/3`, ... and
+      those wrappers are emitted per call signature into the *main* module's JS,
+      which cannot know the signatures of a module it will `dlopen` later. They
+      come out unresolved.
+
+      It has to be native Wasm exception handling on **both** modules. Verified
+      by building a representative side module both ways: with
+      `-fwasm-exceptions` on the side module and on the main module there are
+      **zero** unresolved imports - no `invoke_*` at all, the `env.__cpp_exception`
+      tag is created by the main module's JS (`new WebAssembly.Tag(...)`, present
+      even in a default `MAIN_MODULE=1` build) and the two remaining symbols,
+      `_Unwind_CallPersonality` and the `__wasm_lpad_context` data symbol, come
+      from libunwind, which only gets linked when the main module is built with
+      `-fwasm-exceptions` too. Building only the bot that way leaves both
+      unresolved and `dlopen` fails.
+
+      Not done here because it cannot be validated: the engine wasm build does not
+      run in this sandbox, and the change raises the browser floor - Wasm EH needs
+      Chrome 95+, Safari 15.2+ and Firefox 131+, and a browser without it fails to
+      compile the main module at all, which would break the page for everyone
+      rather than just disabling bots. Worth doing once someone can build and load
+      the result: add `-fwasm-exceptions` to the Emscripten compile *and* link
+      flags in `cmake/ETLEmscripten.cmake`, pass
+      `-DCMAKE_CXX_FLAGS=-fwasm-exceptions` through `OMNIBOT_WASM_CMAKE_ARGS` in
+      `cmake/ETLOmniBotWasm.cmake`, and document the minimum browser versions in
+      `docs/web.md`.
 
 ---
 
