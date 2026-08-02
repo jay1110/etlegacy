@@ -60,8 +60,8 @@ if (exists('etl.html')) {
     check(!html.includes('{{{'), 'etl.html has the emcc script placeholder substituted');
 }
 
-// 4. The standalone cgame/ui side modules must be present in legacy/ AND be
-//    valid WebAssembly. A frequent packaging/build regression is shipping an
+// 4. The standalone cgame/ui/qagame side modules must be present in legacy/ AND
+//    be valid WebAssembly. A frequent packaging/build regression is shipping an
 //    `ar` static archive (starts with "!<arch>", 0x21 0x3C 0x61 0x72) instead
 //    of a linked wasm side module (starts with "\0asm", 0x00 0x61 0x73 0x6D),
 //    e.g. when CMake downgrades the MODULE library to a static library. The
@@ -79,7 +79,7 @@ function hasWasmMagic(buf) {
     return buf.length >= 4 && buf.subarray(0, 4).equals(WASM_MAGIC);
 }
 
-const sideModules = ['cgame.mp.wasm32.so', 'ui.mp.wasm32.so'];
+const sideModules = ['cgame.mp.wasm32.so', 'ui.mp.wasm32.so', 'qagame.mp.wasm32.so'];
 for (const so of sideModules) {
     const rel = path.join('legacy', so);
     const present = exists(rel);

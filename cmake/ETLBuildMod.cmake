@@ -192,12 +192,17 @@ if(BUILD_SERVER_MOD)
 		RUNTIME_OUTPUT_DIRECTORY_RELEASE "${MODNAME}"
 	)
 	target_compile_definitions(qagame PRIVATE GAMEDLL=1 MODLIB=1)
+	# On Emscripten qagame is loaded at runtime via dlopen, so it must be built
+	# as a wasm SIDE_MODULE (matching cgame/ui): produces qagame.mp.wasm32.so
+	# with -sSIDE_MODULE=1 -sASYNCIFY and hidden visibility.
+	etl_configure_wasm_side_module(qagame qagame)
 endif()
 
 #
 # tvgame
 #
-if(BUILD_SERVER_MOD)
+# tvgame is a native-only server module; it is not built for the browser.
+if(BUILD_SERVER_MOD AND NOT EMSCRIPTEN)
 	add_library(tvgame MODULE ${TVGAME_SRC})
 	target_link_libraries(tvgame tvgame_libraries mod_libraries)
 	etl_enforce_linux_mod_no_undefined(tvgame)
@@ -286,11 +291,20 @@ endif()
 
 # install bins of cgame, ui and qgame
 if(BUILD_SERVER_MOD)
-	install(TARGETS qagame tvgame
-		RUNTIME DESTINATION "${INSTALL_DEFAULT_MODDIR}/${MODNAME}"
-		LIBRARY DESTINATION "${INSTALL_DEFAULT_MODDIR}/${MODNAME}"
-		ARCHIVE DESTINATION "${INSTALL_DEFAULT_MODDIR}/${MODNAME}"
-	)
+	if(EMSCRIPTEN)
+		# tvgame is not built for the browser (see above); only install qagame.
+		install(TARGETS qagame
+			RUNTIME DESTINATION "${INSTALL_DEFAULT_MODDIR}/${MODNAME}"
+			LIBRARY DESTINATION "${INSTALL_DEFAULT_MODDIR}/${MODNAME}"
+			ARCHIVE DESTINATION "${INSTALL_DEFAULT_MODDIR}/${MODNAME}"
+		)
+	else()
+		install(TARGETS qagame tvgame
+			RUNTIME DESTINATION "${INSTALL_DEFAULT_MODDIR}/${MODNAME}"
+			LIBRARY DESTINATION "${INSTALL_DEFAULT_MODDIR}/${MODNAME}"
+			ARCHIVE DESTINATION "${INSTALL_DEFAULT_MODDIR}/${MODNAME}"
+		)
+	endif()
 endif()
 
 if(NOT BUILD_MOD_PK3 AND BUILD_CLIENT_MOD)

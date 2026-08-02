@@ -150,9 +150,15 @@ static qboolean G_SnapshotCallback(int entityNum, int clientNum)
  * @param[in] arg4
  * @param arg5 - unused
  * @param arg6 - unused
+ * @param arg7 - unused (required by VM_EntryPoint_t for wasm signature matching)
+ * @param arg8 - unused
+ * @param arg9 - unused
+ * @param arg10 - unused
+ * @param arg11 - unused
  * @return
  */
-Q_EXPORT intptr_t vmMain(intptr_t command, intptr_t arg0, intptr_t arg1, intptr_t arg2, intptr_t arg3, intptr_t arg4, intptr_t arg5, intptr_t arg6)
+Q_EXPORT intptr_t vmMain(intptr_t command, intptr_t arg0, intptr_t arg1, intptr_t arg2, intptr_t arg3, intptr_t arg4, intptr_t arg5, intptr_t arg6,
+                         intptr_t arg7, intptr_t arg8, intptr_t arg9, intptr_t arg10, intptr_t arg11)
 {
 	switch (command)
 	{

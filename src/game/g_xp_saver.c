@@ -26,9 +26,6 @@
 
 #ifdef FEATURE_DBMS
 #include <sqlite3.h>
-#else
-#error Well here we are. Fix this. This whole file and functionality needs to be macroed away.
-#endif
 
 #ifndef _MSC_VER
 #define __FUNCTION__ __func__
@@ -764,3 +761,29 @@ void G_XPImportAll_IntoDatabase()
 	Com_Dealloc(fileList);
 	G_Printf("=== Import Complete ===\n");
 }
+
+#else // !FEATURE_DBMS
+
+int G_XPSaver_CheckDB(char *db_path, int db_mode)
+{
+	return 1;
+}
+
+void G_XPSaver_Load(gclient_t *cl)
+{
+}
+
+void G_XPSaver_Store(gclient_t *cl)
+{
+}
+
+int G_XPSaver_Clear()
+{
+	return 1;
+}
+
+void G_XPSaver_Convert()
+{
+}
+
+#endif // FEATURE_DBMS
