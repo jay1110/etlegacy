@@ -102,8 +102,20 @@ namespace stdext
 #	pragma warning(disable : 4100 4244 4265 26135 26160 26400 26401 26415 26418 26451 26457 26471 26472 26473 26476 26490 26491 26496 26814 28182 33010)
 #endif
 
+#ifdef OMNIBOT_USE_STD_FILESYSTEM
+// Header-only Boost only: <filesystem> and <regex> replace the two Boost
+// libraries that have to be compiled and therefore cross-compiled. That makes
+// the bot library buildable for targets that have no prebuilt Boost - most
+// importantly the WebAssembly build, where pointing the compiler at any host
+// Boost header tree is now enough. Requires C++17.
+#include <filesystem>
+#include <regex>
+#else
 #include <boost/filesystem/operations.hpp>
 #include <boost/filesystem/path.hpp>
+#include <boost/regex.hpp>
+#endif
+
 #include <boost/static_assert.hpp>
 #include <boost/bind/bind.hpp>
 #include <boost/shared_ptr.hpp>
@@ -111,7 +123,6 @@ namespace stdext
 #include <boost/weak_ptr.hpp>
 #include <boost/dynamic_bitset.hpp>
 #include <boost/algorithm/string.hpp>
-#include <boost/regex.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/array.hpp>
 #include <boost/multi_array.hpp>
@@ -128,7 +139,19 @@ namespace stdext
 #pragma warning( default: 4711 )	// function '...' selected for automatic inline expansion
 #endif
 
+// namespace: fs
+//		The filesystem library in use, see OMNIBOT_USE_STD_FILESYSTEM.
+// namespace: obre
+//		The regular expression library in use: obre::regex, obre::regex_match
+//		and obre::regex_replace. std and Boost agree on all three, including
+//		the syntax_option_type constants used by REGEX_OPTIONS.
+#ifdef OMNIBOT_USE_STD_FILESYSTEM
+namespace fs = std::filesystem;
+namespace obre = std;
+#else
 namespace fs = boost::filesystem;
+namespace obre = boost;
+#endif
 
 #ifdef ENABLE_FILE_DOWNLOADER
 // typedef: Thread
@@ -219,7 +242,7 @@ typedef std::vector<Destination> DestinationVector;
 typedef boost::dynamic_bitset<obuint32> DynBitSet32;
 //typedef boost::dynamic_bitset<obuint64> DynBitSet64;
 
-#define REGEX_OPTIONS boost::regex::basic|boost::regex::icase|boost::regex::grep
+#define REGEX_OPTIONS obre::regex::basic|obre::regex::icase|obre::regex::grep
 
 #define OB_DELETE(p)   { if(p) { delete (p); (p)=NULL; } }
 #define OB_ARRAY_DELETE(p)   { if(p) { delete [] (p); (p)=NULL; } }

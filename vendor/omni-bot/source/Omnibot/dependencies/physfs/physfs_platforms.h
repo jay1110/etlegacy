@@ -38,6 +38,13 @@
 #  endif
 #elif defined(macintosh)
 #  error Classic Mac OS support was dropped from PhysicsFS 2.0. Move to OS X.
+#elif (defined __EMSCRIPTEN__)
+/* The browser build has a POSIX-like libc but no mount table and no CD-ROMs.
+   Checked before the generic "unix" case below because emcc does not define
+   the (non-conforming) "unix" macro in strict-conformance modes. */
+#  define PHYSFS_PLATFORM_UNIX
+#  define PHYSFS_PLATFORM_POSIX
+#  define PHYSFS_NO_CDROM_SUPPORT
 #elif defined(unix)
 #  define PHYSFS_PLATFORM_UNIX
 #  define PHYSFS_PLATFORM_POSIX

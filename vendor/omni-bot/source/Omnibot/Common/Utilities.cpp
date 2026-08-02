@@ -77,8 +77,8 @@ namespace Utils
 
 		try
 		{
-			boost::regex expression( exp, REGEX_OPTIONS );
-			return boost::regex_match( str, expression );
+			obre::regex expression( exp, REGEX_OPTIONS );
+			return obre::regex_match( str, expression );
 		}
 		catch(const std::exception&e)
 		{

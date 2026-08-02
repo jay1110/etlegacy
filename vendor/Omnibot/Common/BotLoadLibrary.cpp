@@ -315,7 +315,12 @@ eomnibot_error Omnibot_LoadLibrary(int version, const char *lib, const char *pat
 #define SUFFIX "_mac"
 #else
 #define POSTFIX ".so"
-#ifdef __x86_64__
+#ifdef __EMSCRIPTEN__
+// Browser build: matches ARCH_STRING and the naming of the engine's other
+// side modules (cgame.mp.wasm32.so, ...), which the web shell compiles up
+// front so that dlopen() can resolve them synchronously.
+#define SUFFIX ".wasm32"
+#elif defined __x86_64__
 #define SUFFIX ".x86_64"
 #elif defined __aarch64__
 #define SUFFIX ".aarch64"

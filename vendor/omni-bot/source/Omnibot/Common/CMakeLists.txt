@@ -29,7 +29,10 @@ file(GLOB COMMON_SRC CONFIGURE_DEPENDS
 list(FILTER COMMON_SRC EXCLUDE REGEX ".*gmSqliteLib\\.cpp$")
 
 add_library(omnibot-common STATIC ${COMMON_SRC})
-set_property(TARGET omnibot-common PROPERTY CXX_STANDARD 11)
+if (NOT OMNIBOT_STD_FILESYSTEM)
+    # std::filesystem/std::regex need C++17, see the top level CMakeLists.txt
+    set_property(TARGET omnibot-common PROPERTY CXX_STANDARD 11)
+endif ()
 set_property(TARGET omnibot-common PROPERTY C_STANDARD 99)
 
 target_include_directories(omnibot-common
@@ -71,7 +74,17 @@ target_link_libraries(omnibot-common PUBLIC omni-shared)
 target_compile_definitions(omnibot-common PUBLIC PHYSFS_SUPPORTS_ZIP=1 PHYSFS_SUPPORTS_7Z=1 PHYSFS_NO_CDROM_SUPPORT)
 
 if (UNIX)
-    set_target_properties(omnibot-common PROPERTIES COMPILE_FLAGS -pthread -ffriend-injection -fno-strict-aliasing)
+    # NOTE: this used to be a set_target_properties(... COMPILE_FLAGS <a> <b> <c>)
+    # call, which takes property/value *pairs* - so only "-pthread" was ever
+    # passed to the compiler and "-ffriend-injection" silently became a bogus
+    # property name. The flag was removed from GCC 8 and clang never had it, so
+    # it is simply gone now; the tree builds without it.
+    target_compile_options(omnibot-common PRIVATE -fno-strict-aliasing)
+    if (NOT EMSCRIPTEN)
+        # Emscripten only accepts -pthread when built with thread support, and
+        # the bot library is single threaded (ENABLE_FILE_DOWNLOADER is off).
+        target_compile_options(omnibot-common PRIVATE -pthread)
+    endif ()
 endif ()
 
 if(APPLE)

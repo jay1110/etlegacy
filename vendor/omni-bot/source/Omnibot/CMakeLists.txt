@@ -20,8 +20,29 @@ option(OMNIBOT_ET "Build the Enemy Territory bots module" ON)
 option(OMNIBOT_RTCW "Build the Return to Castle Wolfenstein bots module" ON)
 option(OMNIBOT_STATIC_BOOST "Use static linked boost libraries" ON)
 
+# Boost.Filesystem and Boost.Regex are the only Boost libraries here that have
+# to be compiled; everything else is header only. Replacing them with
+# <filesystem> and <regex> means a cross build - the WebAssembly one above all -
+# only needs Boost *headers*, which are architecture independent, instead of a
+# full cross-compiled Boost. Requires C++17, so it stays opt-in for the native
+# builds that are known to work with the C++11/Boost combination.
+if (EMSCRIPTEN)
+    set(OMNIBOT_STD_FILESYSTEM_DEFAULT ON)
+else ()
+    set(OMNIBOT_STD_FILESYSTEM_DEFAULT OFF)
+endif ()
+option(OMNIBOT_STD_FILESYSTEM "Use std::filesystem/std::regex instead of the compiled Boost libraries" ${OMNIBOT_STD_FILESYSTEM_DEFAULT})
+
+if (OMNIBOT_STD_FILESYSTEM)
+    set(CMAKE_CXX_STANDARD 17)
+endif ()
+
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" SYSTEM_PROCESSOR_LOWER)
-if (APPLE)
+if (EMSCRIPTEN)
+    # Matches ARCH_STRING and the engine's other side modules
+    # (cgame.mp.wasm32.so, ...), see vendor/Omnibot/Common/BotLoadLibrary.cpp.
+    string(APPEND MODULE_SUFFIX ".wasm32")
+elseif (APPLE)
     string(APPEND MODULE_SUFFIX "_mac")
 elseif (SYSTEM_PROCESSOR_LOWER MATCHES "(x86)|(amd64)")
     if(CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -49,8 +70,21 @@ if (WIN32)
 else ()
     set(Boost_USE_STATIC_RUNTIME    OFF)
 endif ()
-find_package(Boost COMPONENTS system filesystem regex date_time REQUIRED)
-target_link_libraries(omni-shared INTERFACE Boost::boost Boost::filesystem Boost::regex Boost::date_time)
+
+if (OMNIBOT_STD_FILESYSTEM)
+    find_package(Boost REQUIRED)
+    target_link_libraries(omni-shared INTERFACE Boost::boost)
+    target_compile_definitions(omni-shared INTERFACE OMNIBOT_USE_STD_FILESYSTEM)
+    if (NOT MSVC)
+        # C++17 removed the (long ignored) "register" storage class, which the
+        # vendored gmscript sources still use - a hard error instead of the
+        # warning it is in C++11.
+        target_compile_options(omni-shared INTERFACE $<$<COMPILE_LANGUAGE:CXX>:-Wno-register>)
+    endif ()
+else ()
+    find_package(Boost COMPONENTS system filesystem regex date_time REQUIRED)
+    target_link_libraries(omni-shared INTERFACE Boost::boost Boost::filesystem Boost::regex Boost::date_time)
+endif ()
 
 target_include_directories(omni-shared INTERFACE "${DEPENDENCIES_PATH}/WildMagic5/SDK/include")
 

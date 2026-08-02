@@ -295,8 +295,8 @@ void MapGoal::GenerateName(int _instance, bool _skipdupecheck)
 		char c = *s;
 		if(!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'))
 		{
-			static boost::regex re("[^A-Za-z0-9_]");
-			m_Name = boost::regex_replace(m_Name, re, "");
+			static obre::regex re("[^A-Za-z0-9_]");
+			m_Name = obre::regex_replace(m_Name, re, "");
 			break;
 		}
 	}

@@ -57,6 +57,7 @@ MessageQueuePtr g_MessageQueue;
 #include <dlfcn.h>
 
 #ifndef __APPLE__
+#ifndef __EMSCRIPTEN__
 #include <link.h>
 
 static int dl_iterate_callback(struct dl_phdr_info *info, size_t size, void *data)
@@ -75,6 +76,7 @@ static int dl_iterate_callback(struct dl_phdr_info *info, size_t size, void *dat
 	}
 	return 0;
 }
+#endif
 #endif
 #endif
 
@@ -135,6 +137,13 @@ namespace InterProcess
 #if defined __APPLE__
 			hmod = dlopen(va("%s/omnibot/cgame_mac", g_EngineFuncs->GetLogPath()), RTLD_NOW|RTLD_NOLOAD); //ETLegacy
 			if(!hmod) hmod = dlopen("omnibot/cgame.mp.x86_64.dylib", RTLD_NOW|RTLD_NOLOAD); //ioRTCW
+#elif defined __EMSCRIPTEN__
+			// No dl_iterate_phdr in the browser. The engine has already loaded
+			// the cgame side module, and emscripten's loader keys its module
+			// cache on the path it was opened with, so ask for the same names
+			// the engine uses. RTLD_NOLOAD guarantees no second instance.
+			hmod = dlopen(va("%s/legacy/cgame.mp.wasm32.so", g_EngineFuncs->GetLogPath()), RTLD_NOW|RTLD_NOLOAD);
+			if(!hmod) hmod = dlopen("cgame.mp.wasm32.so", RTLD_NOW|RTLD_NOLOAD);
 #else
 			dl_iterate_phdr(dl_iterate_callback, &hmod);
 #endif

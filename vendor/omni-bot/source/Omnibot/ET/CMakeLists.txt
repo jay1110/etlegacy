@@ -10,6 +10,16 @@ set_target_properties(omnibot-et PROPERTIES
     # MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
 )
 
+if (EMSCRIPTEN)
+    # A dlopen()-able wasm side module, named like the engine's other ones
+    # (omnibot_et.wasm32.so) so BotLoadLibrary.cpp finds it. The web shell has
+    # to compile it up front (FS.createPreloadedFile) just like cgame/ui/qagame,
+    # because the browser will not compile a module synchronously on the main
+    # thread and dlopen() would fail otherwise.
+    set_target_properties(omnibot-et PROPERTIES SUFFIX ".so")
+    target_link_options(omnibot-et PRIVATE -sSIDE_MODULE=1)
+endif ()
+
 if (WIN32)
     set_target_properties(omnibot-et PROPERTIES
             LIBRARY_OUTPUT_DIRECTORY ""
