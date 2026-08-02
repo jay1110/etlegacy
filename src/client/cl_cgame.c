@@ -1133,7 +1133,20 @@ intptr_t CL_CgameSystemCalls(intptr_t *args)
 		return Cvar_SetDescriptionByName(VMA(1), VMA(2));
 
 	default:
-		Com_Error(ERR_DROP, "Bad cgame system trap: %ld", (long int) args[0]);
+		// A trap number this engine does not implement means the loaded cgame
+		// module was not built against this API. On the web build it is usually
+		// a mod side module compiled without -fvisibility=hidden: cgame and ui
+		// define hundreds of identically named symbols and Emscripten resolves
+		// the address-taken ones (cgDC.registerShaderNoMip, ...) through a
+		// single global name-keyed table, so the cgame ends up calling the ui
+		// module's copy, which sends a *ui* trap number (24 =
+		// UI_R_REGISTERSHADERNOMIP) into this dispatcher. See docs/web.md.
+#ifdef __EMSCRIPTEN__
+		Com_Error(ERR_DROP, "Bad cgame system trap: %ld\n\nThe cgame module of mod '%s' is not compatible with this engine - wasm side modules must be built with ^2-fvisibility=hidden^* (see docs/web.md).",
+		          (long int) args[0], Cvar_VariableString("fs_game"));
+#else
+		Com_Error(ERR_DROP, "Bad cgame system trap: %ld (mod '%s')", (long int) args[0], Cvar_VariableString("fs_game"));
+#endif
 		break;
 	}
 	return 0;

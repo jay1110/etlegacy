@@ -315,6 +315,35 @@ node tools/web-smoke/boot-smoke.mjs dist/etlegacy-web
      INITIAL_MEMORY`) and raises the cap to the wasm32 maximum (`-s
      MAXIMUM_MEMORY=4gb`, growing on demand); large maps plus downloaded pk3s
      overflow the 2 GiB Emscripten default cap.
+- **`Bad cgame system trap: 24` (or another unimplemented trap) right after
+  connecting to a third-party mod server (xmod, …)** — trap 24 is **not** a
+  cgame trap in any ET engine (`CG_CM_LOADMODEL` is an unused enum slot that
+  neither 2.60b nor ET: Legacy implements); it is `UI_R_REGISTERSHADERNOMIP`,
+  a **ui** trap number. It arrives in the cgame dispatcher because the mod's
+  wasm side modules were built **without `-fvisibility=hidden`**: `cgame` and
+  `ui` define hundreds of identically named symbols (`trap_*`), and Emscripten
+  resolves address-taken ones through a single global name-keyed GOT, so the
+  module loaded first wins. The ui module is loaded first, so the cgame's
+  `cgDC.registerShaderNoMip = &trap_R_RegisterShaderNoMip` (`cg_main.c`) binds
+  to **ui's** copy; the connect/loading screen (`DC->registerShaderNoMip` in
+  `cg_loadpanel.c`) then sends UI trap 24 while the cgame VM is current. This
+  is the same bug that used to break ET: Legacy's own modules ("table index is
+  out of bounds" during `UI_Init`) and is why `etl_configure_wasm_side_module`
+  in `cmake/ETLBuildMod.cmake` compiles them with `-fvisibility=hidden`.
+  **The fix belongs in the mod's own build, not in the engine.** A mod that
+  ships wasm game logic for this client must:
+  1. compile `cgame`/`ui` with `-fvisibility=hidden` and link them with
+     `-sSIDE_MODULE=1`, leaving only `vmMain`/`dllEntry` (`Q_EXPORT`) exported;
+  2. use the array-based syscall ABI — under `__EMSCRIPTEN__` `dllEntry`
+     receives `intptr_t (*)(intptr_t *args)` and each trap passes one argument
+     array (see `src/cgame/cg_syscalls.c` and `SystemCall_*` in
+     `src/qcommon/q_shared.h`); wasm `call_indirect` requires an exact
+     signature match, so the variadic ABI cannot be used;
+  3. name the modules `cgame.mp.wasm32.so` / `ui.mp.wasm32.so` (`ARCH_STRING` +
+     `DLL_EXT`, see `src/qcommon/q_platform.h`), and make them reachable in the
+     mod's own game directory — every module must be run through Emscripten's
+     wasm preload plugin before the engine `dlopen()`s it (see the next entry;
+     the shipped shell only preloads the `legacy` game directory).
 - **`VM_Create on cgame/ui/qagame failed` / `dlopen` errors** — a side module
   was not compiled into `preloadedWasm` before the engine `dlopen()`ed it.
   Without Asyncify the browser cannot compile a wasm module synchronously on the

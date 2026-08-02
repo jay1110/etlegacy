@@ -1361,7 +1361,14 @@ intptr_t CL_UISystemCalls(intptr_t *args)
 	case UI_CVAR_SET_DESCRIPTION:
 		return Cvar_SetDescriptionByName(VMA(1), VMA(2));
 	default:
-		Com_Error(ERR_DROP, "Bad UI system trap: %ld", (long int) args[0]);
+		// See the note in CL_CgameSystemCalls: an unimplemented trap number
+		// means the loaded ui module was not built against this API.
+#ifdef __EMSCRIPTEN__
+		Com_Error(ERR_DROP, "Bad UI system trap: %ld\n\nThe ui module of mod '%s' is not compatible with this engine - wasm side modules must be built with ^2-fvisibility=hidden^* (see docs/web.md).",
+		          (long int) args[0], Cvar_VariableString("fs_game"));
+#else
+		Com_Error(ERR_DROP, "Bad UI system trap: %ld (mod '%s')", (long int) args[0], Cvar_VariableString("fs_game"));
+#endif
 	}
 
 	return 0; // never reached, Com_Error quits ...
