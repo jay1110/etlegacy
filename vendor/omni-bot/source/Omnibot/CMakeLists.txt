@@ -72,8 +72,19 @@ else ()
 endif ()
 
 if (OMNIBOT_STD_FILESYSTEM)
-    find_package(Boost REQUIRED)
-    target_link_libraries(omni-shared INTERFACE Boost::boost)
+    # What is left of Boost here is header only (dynamic_bitset, multi_array,
+    # pool, lexical_cast, algorithm/string, bind, smart pointers, ...) and
+    # therefore architecture independent. Emscripten's toolchain file restricts
+    # find_package()/find_path() to its own sysroot, which has no Boost, so
+    # allow pointing straight at any host header tree instead:
+    #   -DOMNIBOT_BOOST_INCLUDEDIR=/usr/include
+    if (OMNIBOT_BOOST_INCLUDEDIR)
+        message(STATUS "Using Boost headers from ${OMNIBOT_BOOST_INCLUDEDIR}")
+        target_include_directories(omni-shared SYSTEM INTERFACE "${OMNIBOT_BOOST_INCLUDEDIR}")
+    else ()
+        find_package(Boost REQUIRED)
+        target_link_libraries(omni-shared INTERFACE Boost::boost)
+    endif ()
     target_compile_definitions(omni-shared INTERFACE OMNIBOT_USE_STD_FILESYSTEM)
     if (NOT MSVC)
         # C++17 removed the (long ignored) "register" storage class, which the
