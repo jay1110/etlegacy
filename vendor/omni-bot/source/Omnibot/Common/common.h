@@ -334,7 +334,7 @@ enum MoveMode
 #include "Utilities.h"
 
 // cs: FIXME: debug version of OBASSERT doesnt build in linux. doesn't like __VA_ARGS__
-#ifdef __linux__
+#if defined(__linux__) || defined(__EMSCRIPTEN__)
 #ifdef	_DEBUG
 #define OBASSERT(f, msg, ...) { static bool bShowAssert = true; \
 	if(bShowAssert) { \

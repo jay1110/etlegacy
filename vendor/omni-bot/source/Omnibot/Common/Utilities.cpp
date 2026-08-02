@@ -7,7 +7,7 @@
 
 #if defined WIN32
 #define PATHDELIMITER ";"
-#elif defined __linux__ || ((defined __MACH__) && (defined __APPLE__))
+#elif defined __linux__ || defined __EMSCRIPTEN__ || ((defined __MACH__) && (defined __APPLE__))
 #define PATHDELIMITER ":"
 #endif
 

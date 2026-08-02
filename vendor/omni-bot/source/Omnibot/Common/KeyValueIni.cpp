@@ -72,7 +72,7 @@ namespace KEYVALUEINI
 #define DEFAULT_BUFFER_SIZE 1000000
 #define DEFAULT_GROW_SIZE   2000000
 
-#if defined(__linux__) || ((defined __MACH__) && (defined __APPLE__))
+#if defined(__linux__) || defined(__EMSCRIPTEN__) || ((defined __MACH__) && (defined __APPLE__))
 #   define _stricmp strcasecmp
 #endif
 

@@ -23,7 +23,7 @@
 
 // system defines
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__EMSCRIPTEN__)
   #define GM_LITTLE_ENDIAN      1
   #define GM_COMPILER_GCC
   #if defined(__LP64__) // 64bit target

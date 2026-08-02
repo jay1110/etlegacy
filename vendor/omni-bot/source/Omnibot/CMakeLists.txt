@@ -39,6 +39,16 @@ endif ()
 
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" SYSTEM_PROCESSOR_LOWER)
 if (EMSCRIPTEN)
+    # Emscripten's CMake platform module sets
+    #   set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS FALSE)
+    # which makes CMake silently turn add_library(omnibot-et MODULE ...) into a
+    # static archive: it runs emar instead of em++, so the -sSIDE_MODULE=1 link
+    # option below is never applied and omnibot_et.wasm32.so comes out as a Unix
+    # "!<arch>" file rather than a WebAssembly module ("\0asm" magic). dlopen()
+    # then rejects it. emcc does support wasm side modules, so re-enable shared
+    # library support before any target is created - the same thing
+    # cmake/ETLEmscripten.cmake does for the engine's cgame/ui/qagame modules.
+    set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS TRUE)
     # Matches ARCH_STRING and the engine's other side modules
     # (cgame.mp.wasm32.so, ...), see vendor/Omnibot/Common/BotLoadLibrary.cpp.
     string(APPEND MODULE_SUFFIX ".wasm32")
@@ -79,8 +89,32 @@ if (OMNIBOT_STD_FILESYSTEM)
     # allow pointing straight at any host header tree instead:
     #   -DOMNIBOT_BOOST_INCLUDEDIR=/usr/include
     if (OMNIBOT_BOOST_INCLUDEDIR)
+        if (NOT EXISTS "${OMNIBOT_BOOST_INCLUDEDIR}/boost/version.hpp")
+            message(FATAL_ERROR
+                "OMNIBOT_BOOST_INCLUDEDIR=${OMNIBOT_BOOST_INCLUDEDIR} does not contain boost/version.hpp")
+        endif ()
         message(STATUS "Using Boost headers from ${OMNIBOT_BOOST_INCLUDEDIR}")
-        target_include_directories(omni-shared SYSTEM INTERFACE "${OMNIBOT_BOOST_INCLUDEDIR}")
+        # Do NOT put that directory on the include path directly. The usual value
+        # is a system include root such as /usr/include, and adding it makes the
+        # *host* libc headers visible to the cross compiler: <stdio.h> then
+        # resolves to glibc's, which immediately fails with
+        #   fatal error: 'bits/libc-header-start.h' file not found
+        # because that glibc-internal header does not exist in the Emscripten
+        # sysroot. Expose a directory that contains nothing but "boost" instead,
+        # so only the header-only Boost tree is added and the toolchain keeps its
+        # own libc/libc++.
+        set(OMNIBOT_BOOST_INCLUDE_STAGE "${CMAKE_BINARY_DIR}/boost-include")
+        file(MAKE_DIRECTORY "${OMNIBOT_BOOST_INCLUDE_STAGE}")
+        file(CREATE_LINK "${OMNIBOT_BOOST_INCLUDEDIR}/boost"
+             "${OMNIBOT_BOOST_INCLUDE_STAGE}/boost"
+             RESULT OMNIBOT_BOOST_LINK_RESULT SYMBOLIC)
+        if (NOT OMNIBOT_BOOST_LINK_RESULT EQUAL 0)
+            # Filesystems without symlink support (e.g. Windows without developer
+            # mode): fall back to copying the header tree into the build dir.
+            file(COPY "${OMNIBOT_BOOST_INCLUDEDIR}/boost"
+                 DESTINATION "${OMNIBOT_BOOST_INCLUDE_STAGE}")
+        endif ()
+        target_include_directories(omni-shared SYSTEM INTERFACE "${OMNIBOT_BOOST_INCLUDE_STAGE}")
     else ()
         find_package(Boost REQUIRED)
         target_link_libraries(omni-shared INTERFACE Boost::boost)

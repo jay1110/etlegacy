@@ -3,6 +3,9 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <algorithm>
+#include <iterator>
+#include <utility>
 
 #include "Trajectory.h"
 
@@ -51,6 +54,23 @@ namespace Utils
 	obint32 StringCompareNoCase(const String &_s1, const String &_s2);
 
 	String StringToLower(const String &_s1);
+
+	// std::random_shuffle was deprecated in C++14 and removed in C++17, which
+	// the OMNIBOT_STD_FILESYSTEM build (and therefore the WebAssembly build)
+	// requires. This is the same Fisher-Yates shuffle the removed function
+	// performed, still driven by rand() so bot behaviour is unchanged and the
+	// existing srand() seeding keeps applying.
+	template <typename RandomIt>
+	void RandomShuffle(RandomIt _first, RandomIt _last)
+	{
+		typedef typename std::iterator_traits<RandomIt>::difference_type diff_t;
+
+		const diff_t n = _last - _first;
+		for (diff_t i = n - 1; i > 0; --i)
+		{
+			std::swap(_first[i], _first[rand() % (i + 1)]);
+		}
+	}
 
 	bool IsWhiteSpace(const char _ch);
 

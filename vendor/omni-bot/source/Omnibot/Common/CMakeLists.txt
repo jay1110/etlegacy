@@ -27,6 +27,22 @@ file(GLOB COMMON_SRC CONFIGURE_DEPENDS
 )
 
 list(FILTER COMMON_SRC EXCLUDE REGEX ".*gmSqliteLib\\.cpp$")
+# The LZMA SDK ships several mutually exclusive files in one directory, and the
+# glob above happily takes all of them:
+#   LzmaDecodeSize.c  - the size-optimised decoder, an *alternative* to
+#                       LzmaDecode.c; both define LzmaDecode/LzmaDecodeProperties
+#   LzmaTest.c        - a standalone test program (defines main())
+#   LzmaStateTest.c   - ditto for the state decoder
+# A native link never noticed: only the objects needed to resolve a symbol are
+# pulled out of a static archive, so the alternatives and the test programs were
+# silently dropped. A wasm SIDE_MODULE is linked with --whole-archive, which
+# pulls in every object, and the link then fails with
+#   wasm-ld: error: duplicate symbol: LzmaDecodeProperties
+#   wasm-ld: error: duplicate symbol: LzmaDecode
+# Keep only the decoder physfs actually uses (LzmaDecode.c, via
+# lzma/C/Archive/7z/7zDecode.c) and drop the test programs - a library must not
+# carry a main() in any case.
+list(FILTER COMMON_SRC EXCLUDE REGEX ".*/lzma/C/Compress/Lzma/(LzmaDecodeSize|LzmaTest|LzmaStateTest)\\.c$")
 
 add_library(omnibot-common STATIC ${COMMON_SRC})
 if (NOT OMNIBOT_STD_FILESYSTEM)

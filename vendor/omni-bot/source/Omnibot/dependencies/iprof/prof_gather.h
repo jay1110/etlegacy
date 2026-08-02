@@ -13,7 +13,7 @@
 
 #if defined(WIN32)
 	#include "prof_win32.h"
-#elif defined(__linux__) || ((defined __MACH__) && (defined __APPLE__))
+#elif defined(__linux__) || defined(__EMSCRIPTEN__) || ((defined __MACH__) && (defined __APPLE__))
 	#include "prof_unix.h"	
 #else
   #error "need to define Prof_get_timestamp() and Prof_Int64"
