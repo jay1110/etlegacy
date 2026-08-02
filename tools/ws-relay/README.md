@@ -205,7 +205,14 @@ For production use, consider:
 The WebSocket relay adds latency compared to native UDP:
 - WebSocket uses TCP, which adds ~10-30ms overhead from TCP handshake and head-of-line blocking
 - The relay itself adds minimal processing time (<1ms)
-- For lower latency, consider implementing WebRTC data channels (future work)
+- Nagle's algorithm is disabled on every accepted connection (`setNoDelay`), so
+  the small, frequent game packets are not held back to be coalesced
+- For lower latency, WebRTC data channels (unordered, `maxRetransmits: 0`) would
+  avoid TCP head-of-line blocking altogether. See the "WebRTC data channels"
+  entry in `plan.md` for why that is not implemented yet: it needs a DTLS/SCTP
+  endpoint here (a new native dependency), a hand-written WebRTC transport in
+  the engine (emscripten's own `SOCKET_WEBRTC` is deprecated upstream), and a
+  signalling channel - which would be this WebSocket anyway.
 
 ## License
 

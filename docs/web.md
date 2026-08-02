@@ -260,9 +260,11 @@ idle-connection reaper and a failed bind.
 
 ## Known limitations
 
-- Latency is higher than native UDP (the relay uses TCP/WebSocket).
+- Latency is higher than native UDP (the relay uses TCP/WebSocket; Nagle is
+  disabled on the relay side, but TCP head-of-line blocking remains).
 - The retail paks must be supplied by the user; they are never redistributed.
-- WebRTC data channels (lower latency than WebSocket) are possible future work.
+- WebRTC data channels (lower latency than WebSocket) are possible future work —
+  see `plan.md` for why they are not implemented yet.
 - `vid_restart` (and the settings menu's "apply" that issues it) is disabled in
   the browser: a canvas WebGL context and gl4es cannot be torn down and
   re-created within the same page (the Wwasm reference port suppresses it the

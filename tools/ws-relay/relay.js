@@ -293,6 +293,17 @@ listeningServer.on('listening', () => {
 });
 
 wss.on('connection', (ws, req) => {
+    // Game traffic is a stream of small packets. Nagle's algorithm holds those
+    // back to coalesce them, which adds tens of milliseconds on top of the
+    // relay - exactly the latency this relay is judged by. Node only defaults
+    // this to true on newer releases and the relay supports Node >= 16, so set
+    // it explicitly rather than relying on the default.
+    try {
+        req.socket.setNoDelay(true);
+    } catch (err) {
+        // Socket already gone - the connection handler below deals with it.
+    }
+
     // Check connection limit
     if (connections.size >= maxConnections) {
         console.log(`Connection rejected: max connections (${maxConnections}) reached`);

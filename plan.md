@@ -132,16 +132,66 @@ Legend: `[ ]` = TODO, `[x]` = done.
       browser build depends on, because it cannot resolve names itself), a
       packet sent before the relay's UDP socket has finished binding, five
       packets in a row on one connection, six kinds of malformed target (close
-      code 1008) and the `--max-connections` limit (1013). It runs as the
-      `relay-test` job in `emscripten.yml`, needs no toolchain and no game data.
+      code 1008), the `--max-connections` limit (1013), the idle-connection
+      reaper and a failed bind. It runs as the `relay-test` job in
+      `emscripten.yml`, needs no toolchain and no game data.
       What is still untested is the *browser* end of the chain, which needs the
       retail paks and a real dedicated server.
 
-      (Noted while writing it: the relay prints "Listening on ..." synchronously,
-      before the listening socket is actually bound, so anything scripting it has
-      to poll the port rather than trust the banner.)
+      Found and fixed while writing it: the relay printed "Listening on ..."
+      synchronously, before the socket was bound - and on `EADDRINUSE` (a
+      restart while the old process still held the port) it *stayed running*,
+      relaying nothing, while looking healthy to systemd/pm2 and to anything
+      reading its log. The banner is now printed from the `listening` event and
+      a failed bind exits with status 1; both are asserted by the test.
 - [ ] Verify two browser clients can join the same server simultaneously.
-- [ ] (Optional/perf) Investigate WebRTC data channels to reduce latency.
+
+      The relay half is covered by `test-relay.mjs` as well: two WebSocket
+      clients on one target at the same time each get their own UDP source port
+      (that is what lets the game server tell two players behind one relay
+      apart), each sees only its own replies, a packet the server pushes to one
+      of them does not leak to the other, and one client disconnecting leaves
+      the other working. What is left is the browser end - two real clients,
+      which needs the retail paks and a dedicated server.
+- [x] (Optional/perf) Investigate WebRTC data channels to reduce latency.
+
+      Outcome: **not worth doing yet**, and nothing about the current design
+      blocks it later.
+
+      The win would be real. An `RTCDataChannel` opened with
+      `{ordered: false, maxRetransmits: 0}` has exactly the semantics ET's
+      netchan already expects - it does its own sequencing and tolerates loss -
+      so it removes the TCP head-of-line blocking and retransmit stalls that a
+      WebSocket adds, which are the part that actually hurts, not the constant
+      overhead.
+
+      The cost is a whole second transport on both ends:
+
+      - Emscripten's built-in `SOCKET_WEBRTC` backend is a dead end. It is
+        marked `[deprecated]` in emscripten's `src/settings.js` and is listed as
+        "under consideration for removal" in `tools/settings.py`, it is built on
+        bundled copies of socket.io/wrtcp, and it plugs into the BSD-socket
+        emulation (SOCKFS) - which this port deliberately does not use;
+        `src/qcommon/net_web.c` talks to `emscripten/websocket.h` directly. So
+        the engine side means a hand-written `--js-library` shim around
+        `RTCPeerConnection`.
+      - The relay would have to terminate DTLS+SCTP, which Node cannot do on
+        its own: it needs a new dependency (`node-datachannel`/libdatachannel,
+        or the pure-JS `werift`) next to the single, ubiquitous `ws` it has
+        today.
+      - WebRTC still needs a signalling channel for the offer/answer exchange,
+        plus ICE (STUN, and TURN for symmetric NAT). The WebSocket path stays
+        in place either way, as signalling and as the fallback.
+
+      None of that can be validated in this environment (no browser end-to-end
+      run, see the two items above), and shipping an unvalidated second
+      transport is worse than a slightly slower one that works.
+
+      What *was* done instead, because it is the cheap half of the same
+      problem: the relay now disables Nagle's algorithm on every accepted
+      connection (`setNoDelay(true)`). Small game packets were otherwise liable
+      to be held back and coalesced, which adds tens of milliseconds - the same
+      order as the head-of-line blocking WebRTC would remove.
 
 ### 4. Hosting the "link"
 
@@ -432,6 +482,34 @@ Still open:
       `docs/web.md`.
 
 ---
+
+## What is still open, and why
+
+Everything that can be built, run and asserted without the retail game data is
+done and covered by CI. The open boxes above all sit behind one of three
+external blockers:
+
+1. **The retail paks (`pak0-2.pk3`) are not redistributable.** Blocks every
+   "does it actually load/render/play" item: `Sys_LoadGameDll` resolving
+   `dllEntry`/`vmMain` at runtime, reaching the main menu, a map rendering, the
+   browser end of the connect path, two browser clients on one server, and the
+   whole "Definition of done". The automated boot smoke test deliberately stops
+   where the missing paks would be loaded, and every layer *below* that is
+   asserted structurally (`tools/web-smoke/verify-dist.mjs`) or end to end on
+   the relay side (`tools/ws-relay/test-relay.mjs`).
+2. **The pinned Emscripten SDK cannot be downloaded here** -
+   `storage.googleapis.com` answers 403, so only the distribution's emcc 3.1.6
+   is available, and that one fails `cmake/ETLPlatform.cmake`'s
+   `SUPPORT_ERROR_IMPLICIT_FUNCTION_DECLARATION` probe. Blocks the full engine
+   build with `FEATURE_OMNIBOT=ON`, the side-module-`dlopen`s-side-module
+   runtime check, the `-fwasm-exceptions` switch (which must be validated in a
+   real build before it is turned on, because a browser without Wasm EH would
+   fail to load the page at all) and measuring the wasm data-section
+   improvements. CI (`emscripten.yml`, emsdk 4.0.23) is the place these get
+   exercised.
+3. **No published deployment to open.** `deploy-pages` only runs on the default
+   branch, so "confirm the published URL loads in a fresh browser" needs this
+   branch merged first.
 
 ## Definition of done
 
