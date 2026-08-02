@@ -450,6 +450,8 @@
             <div id="error-actions">
                 <button class="control-btn" type="button" onclick="pickLocalPaks()">Load local game files (pak0-2.pk3)</button>
                 <button class="control-btn" type="button" onclick="retryDownload()">Retry download</button>
+                <button class="control-btn" type="button" onclick="copyErrorMessage(this)">Copy error message</button>
+                <button class="control-btn" type="button" onclick="hideError()">Close</button>
             </div>
         </div>
     </div>
@@ -638,6 +640,44 @@
                     }
                 }
                 return originalDecode.call(this, input, options);
+            };
+        })();
+
+        // --- Pointer lock rejection guard ----------------------------------
+        // The engine re-requests pointer lock whenever the mouse is
+        // (re)activated - e.g. IN_ActivateMouse -> emscripten_request_pointerlock
+        // after focus returns to the game. Browsers only grant pointer lock from
+        // a user gesture and also enforce a short cool-down after it is exited
+        // (pressing Escape, or leaving/returning via the Win/Super key). Outside
+        // those windows requestPointerLock() rejects. In modern browsers it
+        // returns a Promise, and Emscripten's libhtml5 wrapper does not consume
+        // it, so the rejection surfaces as an unhandledrejection and our handler
+        // wrongly reported it as a fatal "Startup failed" error - even though the
+        // game keeps running fine. Patch requestPointerLock (before etl.js loads)
+        // so the returned promise is always consumed and such benign failures are
+        // swallowed with a console warning instead of crashing the UI.
+        (function () {
+            if (typeof Element === 'undefined' || !Element.prototype) return;
+            var proto = Element.prototype;
+            var original = proto.requestPointerLock ||
+                           proto.mozRequestPointerLock ||
+                           proto.webkitRequestPointerLock;
+            if (typeof original !== 'function') return;
+            proto.requestPointerLock = function () {
+                var result;
+                try {
+                    result = original.apply(this, arguments);
+                } catch (e) {
+                    // Synchronous throw (older browsers) - benign, just log it.
+                    console.warn('requestPointerLock failed (ignored):', e);
+                    return undefined;
+                }
+                if (result && typeof result.then === 'function') {
+                    result.then(undefined, function (e) {
+                        console.warn('requestPointerLock rejected (ignored):', e);
+                    });
+                }
+                return result;
             };
         })();
 
@@ -847,6 +887,16 @@
             var reason = e && e.reason;
             var msg = (reason && (reason.stack || reason.message)) ||
                 String(reason) || 'Unknown error';
+            // Pointer lock requests can legitimately reject (no user gesture /
+            // browser cool-down after Escape or Win/Super key). These are
+            // harmless - the game keeps running - so never surface them as a
+            // fatal error. The requestPointerLock patch above normally consumes
+            // them; this is a defensive backstop for any that slip through.
+            if (/pointer\s*lock/i.test(msg)) {
+                console.warn('Ignoring pointer lock rejection:', msg);
+                e.preventDefault();
+                return;
+            }
             Module.setStatus('Error');
             showError('Startup failed: ' + msg);
         });
@@ -912,6 +962,7 @@
         // download is never wrongly flagged.
         scheduleStartupWatchdog(STARTUP_STALL_MS);
 
+        var lastErrorMessage = '';
         function showError(message) {
             var overlay = document.getElementById('error-overlay');
             var text = document.getElementById('error-text');
@@ -920,9 +971,57 @@
             if (recentLog.length) {
                 full += '\n\nLast engine messages:\n' + recentLog.slice(-8).join('\n');
             }
+            lastErrorMessage = full;
             text.style.whiteSpace = 'pre-wrap';
             text.style.textAlign = 'left';
             text.textContent = full;
+        }
+
+        // Dismiss the error overlay so the user can carry on (the game keeps
+        // running behind it for non-fatal errors such as pointer lock).
+        function hideError() {
+            var overlay = document.getElementById('error-overlay');
+            if (overlay) {
+                overlay.style.display = 'none';
+            }
+        }
+
+        // Copy the currently shown error text to the clipboard so it is easy to
+        // paste into a bug report. Falls back to a legacy execCommand copy when
+        // the async Clipboard API is unavailable (e.g. non-secure contexts).
+        function copyErrorMessage(btn) {
+            var message = lastErrorMessage ||
+                (document.getElementById('error-text') || {}).textContent || '';
+            function done() {
+                if (!btn) return;
+                var original = btn.textContent;
+                btn.textContent = 'Copied!';
+                setTimeout(function () { btn.textContent = original; }, 1500);
+            }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(message).then(done, function () {
+                    legacyCopy(message);
+                    done();
+                });
+            } else {
+                legacyCopy(message);
+                done();
+            }
+        }
+
+        function legacyCopy(text) {
+            try {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            } catch (e) {
+                console.warn('Could not copy error message:', e);
+            }
         }
 
         // Fullscreen support (toggle: enter if windowed, exit if already full).
