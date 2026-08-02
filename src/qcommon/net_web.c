@@ -45,8 +45,22 @@
 // Packet buffer for received data
 #define WS_RECV_BUFFER_SIZE (MAX_MSGLEN * 4)
 
-// Default WebSocket relay server URL (must match tools/ws-relay default port)
+// Default WebSocket relay server URL (must match tools/ws-relay default port).
+// The web shell (src/web/shell.html) normally passes an explicit relay via
+// "+set net_wsRelayServer" (?relay=), so this only applies to a client started
+// without one - e.g. from the in-game console.
 #define WS_DEFAULT_RELAY_URL "ws://localhost:8080"
+
+// Hostnames the browser cannot resolve itself are handed to the relay as-is
+// (the relay resolves them, see tools/ws-relay/relay.js). The engine still
+// needs a netadr_t for every server, so each hostname gets a synthetic address
+// from the reserved, never-routable 240.0.0.0/8 block, which is translated
+// back into the hostname when the relay URL is built and when an address is
+// printed. Without this the browser build could only ever connect to numeric
+// IPs, so a server that changes its IP (or is only published as a name) is
+// unreachable.
+#define WS_HOSTADDR_PREFIX 240
+#define WS_MAX_HOSTNAMES   32
 
 // Outgoing packets queued while the WebSocket is still CONNECTING. The very
 // first packets of a connection handshake (getchallenge / getinfo) are sent
@@ -88,6 +102,121 @@ static int            packetQueueTail   = 0;
 static qboolean       networkingEnabled = qfalse;
 
 static cvar_t *net_wsRelayServer;
+
+static char wsHostnames[WS_MAX_HOSTNAMES][MAX_QPATH];
+static int  wsHostnameCount = 0;
+
+/**
+ * @brief Return the hostname a synthetic 240.0.0.0/8 address stands for
+ * @param[in] a address to look up
+ * @return the hostname, or NULL when @p a is a real address
+ */
+static const char *WS_HostnameForAdr(const netadr_t *a)
+{
+	int index;
+
+	if (!a || a->type != NA_IP || a->ip[0] != WS_HOSTADDR_PREFIX)
+	{
+		return NULL;
+	}
+
+	index = (a->ip[2] << 8) | a->ip[3];
+
+	if (index < 1 || index > wsHostnameCount)
+	{
+		return NULL;
+	}
+
+	return wsHostnames[index - 1];
+}
+
+/**
+ * @brief Check that a string is a syntactically valid DNS hostname
+ *
+ * The name ends up in the relay's WebSocket URL path, so anything that could
+ * change that URL's meaning (slashes, '@', '?', '#', whitespace, ...) must be
+ * rejected here.
+ *
+ * @param[in] name candidate hostname
+ * @return qtrue when @p name is a plausible hostname
+ */
+static qboolean WS_IsValidHostname(const char *name)
+{
+	size_t len = name ? strlen(name) : 0;
+	size_t i;
+	qboolean hasLetter = qfalse;
+
+	if (len < 1 || len >= MAX_QPATH || len > 253)
+	{
+		return qfalse;
+	}
+
+	if (name[0] == '-' || name[0] == '.' || name[len - 1] == '-' || name[len - 1] == '.')
+	{
+		return qfalse;
+	}
+
+	for (i = 0; i < len; i++)
+	{
+		char c = name[i];
+
+		if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))
+		{
+			hasLetter = qtrue;
+			continue;
+		}
+
+		if ((c >= '0' && c <= '9') || c == '-' || c == '.')
+		{
+			continue;
+		}
+
+		return qfalse;
+	}
+
+	// a purely numeric name is a malformed IP, not a hostname
+	return hasLetter;
+}
+
+/**
+ * @brief Assign (or reuse) a synthetic address for a hostname
+ * @param[in] name hostname to register
+ * @param[out] a receives the synthetic address (port is left untouched)
+ * @return qtrue when the hostname could be registered
+ */
+static qboolean WS_AdrForHostname(const char *name, netadr_t *a)
+{
+	int index;
+
+	for (index = 0; index < wsHostnameCount; index++)
+	{
+		if (!Q_stricmp(wsHostnames[index], name))
+		{
+			break;
+		}
+	}
+
+	if (index == wsHostnameCount)
+	{
+		if (wsHostnameCount >= WS_MAX_HOSTNAMES)
+		{
+			Com_Printf("WS_AdrForHostname: too many hostnames (max %d)\n", WS_MAX_HOSTNAMES);
+			return qfalse;
+		}
+
+		Q_strncpyz(wsHostnames[index], name, sizeof(wsHostnames[index]));
+		wsHostnameCount++;
+	}
+
+	// index + 1, so a hostname is never mapped to 240.0.0.0 itself
+	a->type  = NA_IP;
+	a->ip[0] = WS_HOSTADDR_PREFIX;
+	a->ip[1] = 0;
+	a->ip[2] = (byte)(((index + 1) >> 8) & 0xff);
+	a->ip[3] = (byte)((index + 1) & 0xff);
+
+	return qtrue;
+}
 
 /**
  * @brief Queue a received packet for later retrieval by NET_GetPacket
@@ -225,19 +354,26 @@ static wsConnection_t *WS_GetConnection(const netadr_t *to)
 		return NULL;
 	}
 
-	// Build WebSocket URL using the relay server
-	if (net_wsRelayServer && net_wsRelayServer->string[0])
+	// Build WebSocket URL using the relay server. A synthetic 240.0.0.0/8
+	// address stands for a hostname the browser could not resolve; the relay
+	// is given the name and resolves it.
 	{
-		Com_sprintf(url, sizeof(url), "%s/%d.%d.%d.%d:%d",
-		            net_wsRelayServer->string,
-		            to->ip[0], to->ip[1], to->ip[2], to->ip[3],
-		            BigShort(to->port));
-	}
-	else
-	{
-		Com_sprintf(url, sizeof(url), WS_DEFAULT_RELAY_URL "/%d.%d.%d.%d:%d",
-		            to->ip[0], to->ip[1], to->ip[2], to->ip[3],
-		            BigShort(to->port));
+		const char *relay    = (net_wsRelayServer && net_wsRelayServer->string[0]) ?
+		                       net_wsRelayServer->string : WS_DEFAULT_RELAY_URL;
+		const char *hostname = WS_HostnameForAdr(to);
+		char       target[MAX_QPATH];
+
+		if (hostname)
+		{
+			Q_strncpyz(target, hostname, sizeof(target));
+		}
+		else
+		{
+			Com_sprintf(target, sizeof(target), "%d.%d.%d.%d",
+			            to->ip[0], to->ip[1], to->ip[2], to->ip[3]);
+		}
+
+		Com_sprintf(url, sizeof(url), "%s/%s:%d", relay, target, BigShort(to->port));
 	}
 
 	// Create WebSocket
@@ -371,8 +507,17 @@ const char *NET_AdrToStringNoPort(const netadr_t *a)
 	}
 	else if (a->type == NA_IP)
 	{
-		Com_sprintf(s, sizeof(s), "%i.%i.%i.%i",
-		            a->ip[0], a->ip[1], a->ip[2], a->ip[3]);
+		const char *hostname = WS_HostnameForAdr(a);
+
+		if (hostname)
+		{
+			Com_sprintf(s, sizeof(s), "%s", hostname);
+		}
+		else
+		{
+			Com_sprintf(s, sizeof(s), "%i.%i.%i.%i",
+			            a->ip[0], a->ip[1], a->ip[2], a->ip[3]);
+		}
 	}
 	else
 	{
@@ -397,9 +542,18 @@ const char *NET_AdrToString(const netadr_t *a)
 	}
 	else if (a->type == NA_IP)
 	{
-		Com_sprintf(s, sizeof(s), "%i.%i.%i.%i:%hu",
-		            a->ip[0], a->ip[1], a->ip[2], a->ip[3],
-		            BigShort(a->port));
+		const char *hostname = WS_HostnameForAdr(a);
+
+		if (hostname)
+		{
+			Com_sprintf(s, sizeof(s), "%s:%hu", hostname, BigShort(a->port));
+		}
+		else
+		{
+			Com_sprintf(s, sizeof(s), "%i.%i.%i.%i:%hu",
+			            a->ip[0], a->ip[1], a->ip[2], a->ip[3],
+			            BigShort(a->port));
+		}
 	}
 	else
 	{
@@ -435,16 +589,21 @@ qboolean Sys_StringToAdr(const char *s, netadr_t *a, netadrtype_t family)
 		port++;
 	}
 
+	Com_Memset(a->ip, 0, sizeof(a->ip));
 	a->type = NA_IP;
 
 	if (sscanf(base, "%hhu.%hhu.%hhu.%hhu", &a->ip[0], &a->ip[1], &a->ip[2], &a->ip[3]) != 4)
 	{
-		// The browser has no DNS resolver for raw sockets; the relay is
-		// addressed by URL but game servers must be given as numeric IPs.
-		Com_Printf("Sys_StringToAdr: cannot resolve '%s' - the browser build "
-		           "cannot resolve hostnames, use a numeric IP (e.g. 203.0.113.10:27960)\n", base);
-		a->type = NA_BAD;
-		return qfalse;
+		// Not a numeric IP. The browser has no DNS resolver for raw sockets,
+		// but the relay does: give the hostname a synthetic address here and
+		// hand the name itself to the relay when the WebSocket URL is built
+		// (see WS_GetConnection). This is what makes "etclan.de:27966" work.
+		if (!WS_IsValidHostname(base) || !WS_AdrForHostname(base, a))
+		{
+			Com_Printf("Sys_StringToAdr: cannot resolve '%s' - not a valid IP or hostname\n", base);
+			a->type = NA_BAD;
+			return qfalse;
+		}
 	}
 
 	if (port)

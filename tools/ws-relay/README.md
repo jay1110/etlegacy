@@ -36,6 +36,9 @@ node relay.js --tls-cert /path/cert.pem --tls-key /path/key.pem
    ws://relay-server:8080/<game-server-ip>:<game-server-port>
    ```
 
+   The target may be a numeric IP **or a hostname** (`ws://relay:8080/etclan.de:27966`).
+   The browser cannot resolve names itself, so the relay does the DNS lookup.
+
 2. The relay opens a UDP socket and forwards packets bidirectionally:
    - Browser → WebSocket → Relay → UDP → Game Server
    - Game Server → UDP → Relay → WebSocket → Browser
@@ -104,12 +107,15 @@ shell (`src/web/shell.html`) reads these query parameters:
 |-----------|---------|---------|
 | `assets`  | Base URL to download `pak0-2.pk3` from | `?assets=https://et.clan-etc.de/etmain/` |
 | `relay`   | WebSocket relay URL (`net_wsRelayServer`) | `?relay=wss://relay.example.com` |
-| `connect` | Game server `host:port` to auto-join | `?connect=203.0.113.10:27960` |
+| `connect` | Game server `host:port` to auto-join | `?connect=etclan.de:27966` |
+| `touch`   | Force the on-screen touch controls off/on | `?touch=1` |
 
-Full example:
+`relay` is optional: the shell has a default relay built in (`DEFAULT_RELAY_HOST`
+in `src/web/shell.html`) and picks `ws://` or `wss://` to match the page, so a
+share link normally only needs the server:
 
 ```
-etl.html?relay=wss://relay.example.com&connect=203.0.113.10:27960
+etl.html?connect=etclan.de:27966
 ```
 
 ## Hosting a game others can join

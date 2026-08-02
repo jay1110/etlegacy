@@ -28,6 +28,7 @@
 'use strict';
 
 const dgram = require('dgram');
+const dns = require('dns');
 const fs = require('fs');
 const https = require('https');
 const { WebSocketServer } = require('ws');
@@ -148,8 +149,28 @@ function closeConnection(conn, code, reason, logMessage) {
 }
 
 /**
+ * Check that a string is a syntactically valid DNS hostname. The browser build
+ * cannot resolve names itself, so it passes them here (see
+ * src/qcommon/net_web.c) and the relay resolves them - that is what makes a
+ * target like "etclan.de:27966" work.
+ */
+function isValidHostname(name) {
+    if (!name || name.length > 253) {
+        return false;
+    }
+    if (!/^[A-Za-z0-9.-]+$/.test(name)) {
+        return false;
+    }
+    if (/^[-.]|[-.]$/.test(name)) {
+        return false;
+    }
+    // must contain a letter - a purely numeric name is a malformed IP
+    return /[A-Za-z]/.test(name);
+}
+
+/**
  * Parse the target server address from the WebSocket URL path.
- * Expected format: /<ip>:<port>
+ * Expected format: /<ip-or-hostname>:<port>
  */
 function parseTargetAddress(pathname) {
     // Remove leading slash
@@ -171,20 +192,21 @@ function parseTargetAddress(pathname) {
         return null;
     }
 
-    // Basic IP address validation
+    // Numeric IPv4 target
     const ipParts = targetHost.split('.');
-    if (ipParts.length !== 4) {
-        return null;
+    if (ipParts.length === 4 &&
+        ipParts.every(function (part) {
+            return /^\d{1,3}$/.test(part) && Number(part) <= 255;
+        })) {
+        return { host: targetHost, port: targetPort, isIp: true };
     }
 
-    for (const part of ipParts) {
-        const num = parseInt(part, 10);
-        if (isNaN(num) || num < 0 || num > 255) {
-            return null;
-        }
+    // Hostname target - resolved via DNS when the connection is set up
+    if (isValidHostname(targetHost)) {
+        return { host: targetHost, port: targetPort, isIp: false };
     }
 
-    return { host: targetHost, port: targetPort };
+    return null;
 }
 
 /**
@@ -267,6 +289,7 @@ wss.on('connection', (ws, req) => {
         lastActivity: Date.now(),
         closed: false,
         udpReady: false,
+        resolved: false,
         pendingPackets: [],
         isAlive: true,
         packetsSent: 0,
@@ -284,7 +307,7 @@ wss.on('connection', (ws, req) => {
         }
 
         try {
-            udpSocket.send(buffer, 0, buffer.length, target.port, target.host, (err) => {
+            udpSocket.send(buffer, 0, buffer.length, target.port, target.address, (err) => {
                 if (err) {
                     console.log(`[${connId}] UDP send error: ${err.message}`);
                 } else {
@@ -307,7 +330,7 @@ wss.on('connection', (ws, req) => {
 
             // Packets that arrive before bind() completed are queued instead of
             // being dropped, so the initial handshake is never lost.
-            if (!connection.udpReady) {
+            if (!connection.udpReady || !connection.resolved) {
                 if (connection.pendingPackets.length < 64) {
                     connection.pendingPackets.push(buffer);
                 }
@@ -322,10 +345,22 @@ wss.on('connection', (ws, req) => {
         connection.isAlive = true;
     });
 
+    function flushPending() {
+        if (connection.closed || !connection.udpReady || !connection.resolved) {
+            return;
+        }
+
+        const queued = connection.pendingPackets;
+        connection.pendingPackets = [];
+        for (const buffer of queued) {
+            sendToServer(buffer);
+        }
+    }
+
     // Forward UDP responses back to WebSocket
     udpSocket.on('message', (msg, rinfo) => {
         // Ignore traffic that does not come from the target game server.
-        if (rinfo.address !== target.host || rinfo.port !== target.port) {
+        if (rinfo.address !== target.address || rinfo.port !== target.port) {
             return;
         }
 
@@ -349,13 +384,31 @@ wss.on('connection', (ws, req) => {
 
     udpSocket.on('listening', () => {
         connection.udpReady = true;
-
-        const queued = connection.pendingPackets;
-        connection.pendingPackets = [];
-        for (const buffer of queued) {
-            sendToServer(buffer);
-        }
+        flushPending();
     });
+
+    // Resolve a hostname target once, then start forwarding. Until both the
+    // DNS lookup and the bind() have completed, packets stay queued above.
+    if (!target.isIp) {
+        dns.lookup(target.host, { family: 4 }, (err, address) => {
+            if (connection.closed) {
+                return;
+            }
+            if (err) {
+                closeConnection(connection, 1011, 'DNS lookup failed',
+                                `Cannot resolve ${target.host}: ${err.message}`);
+                return;
+            }
+
+            console.log(`[${connId}] Resolved ${target.host} -> ${address}`);
+            target.address = address;
+            connection.resolved = true;
+            flushPending();
+        });
+    } else {
+        target.address = target.host;
+        connection.resolved = true;
+    }
 
     // Bind UDP socket to any available port
     try {

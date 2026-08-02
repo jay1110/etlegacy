@@ -167,6 +167,69 @@
             opacity: 1;
         }
 
+        /* --- Touch controls -------------------------------------------
+           An on-screen control overlay for phones/tablets, which have no
+           keyboard and no mouse. It is off by default and toggled with the
+           "Touch controls" button in the controls bar; the toggle itself is
+           only shown on touch-capable devices (or with ?touch=1). The overlay
+           feeds the engine by dispatching the very same DOM events SDL
+           listens for, so no engine change is needed. */
+        #touch-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 900;
+            pointer-events: none;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        #touch-overlay.active { display: block; }
+        #touch-overlay .touch-btn,
+        #touch-overlay #touch-stick {
+            position: absolute;
+            pointer-events: auto;
+            touch-action: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid rgba(180, 190, 255, 0.55);
+            background: rgba(20, 22, 40, 0.42);
+            color: #dfe4ff;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            text-align: center;
+            border-radius: 12px;
+        }
+        #touch-overlay .touch-btn.pressed {
+            background: rgba(90, 120, 255, 0.6);
+        }
+        #touch-overlay #touch-stick {
+            left: 4vh;
+            bottom: 4vh;
+            width: 34vh;
+            height: 34vh;
+            max-width: 45vw;
+            max-height: 45vw;
+            border-radius: 50%;
+        }
+        #touch-overlay #touch-stick-knob {
+            width: 33%;
+            height: 33%;
+            border-radius: 50%;
+            background: rgba(140, 160, 255, 0.55);
+            pointer-events: none;
+        }
+        /* The look area covers the rest of the screen: dragging it moves the
+           view, a tap fires. It sits below the buttons so they keep priority. */
+        #touch-overlay #touch-look {
+            position: absolute;
+            inset: 0;
+            pointer-events: auto;
+            touch-action: none;
+        }
+        #touch-overlay .touch-btn { min-width: 9vh; min-height: 9vh; }
         .control-btn {
             background-color: #2a2a4a;
             color: #e0e0e0;
@@ -461,6 +524,12 @@
         <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
     </div>
 
+    <!-- Touch controls overlay (mobile/tablet) -->
+    <div id="touch-overlay" aria-hidden="true">
+        <div id="touch-look"></div>
+        <div id="touch-stick"><div id="touch-stick-knob"></div></div>
+    </div>
+
     <!-- Controls bar -->
     <div id="controls-bar">
         <div>
@@ -468,6 +537,8 @@
             <button class="control-btn" onclick="etlRequestPointerLock()">Capture Mouse</button>
             <button class="control-btn" onclick="openConnectPanel()">Connect...</button>
             <button class="control-btn" onclick="toggleConsole()">Console</button>
+            <button class="control-btn" id="touch-toggle" style="display:none"
+                    onclick="etlToggleTouchControls()">Touch controls</button>
         </div>
         <div id="controls-info">
             Click the game to capture mouse | ESC to release | Move mouse to show controls
@@ -478,11 +549,11 @@
     <div id="connect-panel">
         <h2>Connect to a server</h2>
         <label for="connect-relay">WebSocket relay URL</label>
-        <input id="connect-relay" type="text" placeholder="wss://relay.example.com:8443" autocomplete="off">
-        <div class="hint">The ws-relay bridge (tools/ws-relay). HTTPS pages need wss://.</div>
+        <input id="connect-relay" type="text" placeholder="leave empty to use the built-in relay" autocomplete="off">
+        <div class="hint">The ws-relay bridge (tools/ws-relay). Leave empty to use the built-in default; HTTPS pages need wss://.</div>
         <label for="connect-server">Game server (host:port)</label>
-        <input id="connect-server" type="text" placeholder="203.0.113.10:27960" autocomplete="off">
-        <div class="hint">The native dedicated server to join through the relay.</div>
+        <input id="connect-server" type="text" placeholder="etclan.de:27966" autocomplete="off">
+        <div class="hint">The dedicated server to join through the relay. A hostname works - the relay resolves it.</div>
         <div class="panel-actions">
             <button class="control-btn" onclick="closeConnectPanel()">Cancel</button>
             <button class="control-btn" onclick="applyConnect()">Connect &amp; Reload</button>
@@ -530,7 +601,7 @@
             </button>
             <button class="launcher-btn" type="button" id="menu-join-etc">
                 Join ETc server
-                <span class="launcher-btn-sub">84.200.135.3:27965 (xmod) &ndash; missing pk3 files are downloaded from the server.</span>
+                <span class="launcher-btn-sub">etclan.de:27966 &ndash; missing pk3 files are downloaded from the server.</span>
             </button>
             <button class="launcher-btn" type="button" id="menu-quick">
                 Quick single game
@@ -542,7 +613,7 @@
             </button>
             <button class="launcher-btn" type="button" id="menu-host">
                 Host game
-                <span class="launcher-btn-sub">Host a game in your browser that others can join.</span>
+                <span class="launcher-btn-sub">Start a local game in your browser (map, server name and player slots of your choice).</span>
             </button>
             <button class="launcher-btn" type="button" id="menu-profile">
                 Player profile
@@ -572,9 +643,11 @@
             <label for="host-maxclients">Max players</label>
             <input id="host-maxclients" type="number" value="8" min="2" max="32">
             <div class="launcher-hint">
-                Starts a listen server inside your browser. Other players join it
-                through the WebSocket relay (see tools/ws-relay); a browser cannot
-                accept direct UDP connections.
+                Starts a server inside your browser and drops you straight into
+                the map. A browser cannot accept incoming connections, so this is
+                a local game - to host a match others can join, run a native
+                dedicated server and share it with
+                <code>?connect=host:port</code> (see docs/web.md).
             </div>
             <div class="launcher-actions">
                 <button class="control-btn" type="button" id="host-back">Back</button>
@@ -1075,6 +1148,358 @@
             etlRequestPointerLock();
         });
 
+
+        // --- Touch controls -----------------------------------------------
+        // Phones and tablets have neither a keyboard nor a mouse, so the game
+        // is unplayable without on-screen controls. The overlay does not touch
+        // the engine at all: it dispatches the same DOM keyboard/mouse events
+        // that SDL's Emscripten backend already listens for, so a virtual key
+        // is indistinguishable from a real one. It can be switched on and off
+        // at any time with the "Touch controls" button.
+        var etlTouchActive = false;
+
+        (function () {
+            var KEYS = {
+                w:     { key: 'w', code: 'KeyW', keyCode: 87 },
+                a:     { key: 'a', code: 'KeyA', keyCode: 65 },
+                s:     { key: 's', code: 'KeyS', keyCode: 83 },
+                d:     { key: 'd', code: 'KeyD', keyCode: 68 },
+                jump:  { key: ' ', code: 'Space', keyCode: 32 },
+                crouch:{ key: 'c', code: 'KeyC', keyCode: 67 },
+                prone: { key: 'x', code: 'KeyX', keyCode: 88 },
+                sprint:{ key: 'Shift', code: 'ShiftLeft', keyCode: 16 },
+                reload:{ key: 'r', code: 'KeyR', keyCode: 82 },
+                use:   { key: 'f', code: 'KeyF', keyCode: 70 },
+                chat:  { key: 't', code: 'KeyT', keyCode: 84 },
+                next:  { key: 'q', code: 'KeyQ', keyCode: 81 },
+                esc:   { key: 'Escape', code: 'Escape', keyCode: 27 },
+                tab:   { key: 'Tab', code: 'Tab', keyCode: 9 }
+            };
+
+            // Buttons on the right half of the screen: label, key, position.
+            var BUTTONS = [
+                { id: 'fire',   label: 'FIRE',  mouse: 0, css: 'right:4vh;bottom:5vh;width:16vh;height:16vh;border-radius:50%;font-size:16px;' },
+                { id: 'jump',   label: 'JUMP',  key: 'jump',   css: 'right:22vh;bottom:16vh;' },
+                { id: 'crouch', label: 'CROUCH',key: 'crouch', css: 'right:22vh;bottom:5vh;' },
+                { id: 'prone',  label: 'PRONE', key: 'prone',  css: 'right:33vh;bottom:5vh;' },
+                { id: 'sprint', label: 'SPRINT',key: 'sprint', css: 'left:4vh;top:16vh;' },
+                { id: 'reload', label: 'RELOAD',key: 'reload', css: 'right:4vh;top:16vh;' },
+                { id: 'use',    label: 'USE',   key: 'use',    css: 'right:15vh;top:16vh;' },
+                { id: 'next',   label: 'WEAP',  key: 'next',   css: 'right:26vh;top:16vh;' },
+                { id: 'chat',   label: 'CHAT',  key: 'chat',   css: 'left:4vh;top:5vh;' },
+                { id: 'tab',    label: 'SCORE', key: 'tab',    css: 'left:15vh;top:5vh;' },
+                { id: 'esc',    label: 'MENU',  key: 'esc',    css: 'right:4vh;top:5vh;' }
+            ];
+
+            var LOOK_SENSITIVITY = 1.4;
+            var STICK_DEADZONE = 0.28;
+
+            function target() {
+                return document.getElementById('canvas') || window;
+            }
+
+            function sendKey(spec, down) {
+                var ev = new KeyboardEvent(down ? 'keydown' : 'keyup', {
+                    key: spec.key,
+                    code: spec.code,
+                    keyCode: spec.keyCode,
+                    which: spec.keyCode,
+                    bubbles: true,
+                    cancelable: true,
+                    composed: true
+                });
+                // Dispatched on the canvas: the event bubbles up to the
+                // document/window, where SDL's Emscripten backend listens, so
+                // one dispatch is enough (dispatching again on the window would
+                // deliver every key twice).
+                target().dispatchEvent(ev);
+            }
+
+            function sendMouseButton(button, down) {
+                var el = target();
+                var ev = new MouseEvent(down ? 'mousedown' : 'mouseup', {
+                    button: button,
+                    buttons: down ? (button === 0 ? 1 : 2) : 0,
+                    bubbles: true,
+                    cancelable: true,
+                    composed: true
+                });
+                el.dispatchEvent(ev);
+            }
+
+            function sendMouseMove(dx, dy) {
+                var el = target();
+                var ev = new MouseEvent('mousemove', {
+                    movementX: dx,
+                    movementY: dy,
+                    bubbles: true,
+                    cancelable: true,
+                    composed: true
+                });
+                el.dispatchEvent(ev);
+            }
+
+            // Keys currently held down by the overlay, so switching the overlay
+            // off (or losing a touch) can never leave a key stuck.
+            var held = {};
+
+            function hold(name, down) {
+                if (!!held[name] === !!down) {
+                    return;
+                }
+                held[name] = !!down;
+                sendKey(KEYS[name], down);
+            }
+
+            function releaseAll() {
+                Object.keys(held).forEach(function (name) {
+                    if (held[name]) {
+                        held[name] = false;
+                        sendKey(KEYS[name], false);
+                    }
+                });
+                if (held.__fire) {
+                    held.__fire = false;
+                    sendMouseButton(0, false);
+                }
+            }
+
+            function buildButtons(overlay) {
+                BUTTONS.forEach(function (def) {
+                    var el = document.createElement('div');
+                    el.className = 'touch-btn';
+                    el.id = 'touch-btn-' + def.id;
+                    el.textContent = def.label;
+                    el.setAttribute('style', def.css);
+
+                    function press(on) {
+                        el.classList.toggle('pressed', on);
+                        if (def.mouse !== undefined) {
+                            if (!!held.__fire !== on) {
+                                held.__fire = on;
+                                sendMouseButton(def.mouse, on);
+                            }
+                        } else {
+                            hold(def.key, on);
+                        }
+                    }
+
+                    el.addEventListener('touchstart', function (e) {
+                        e.preventDefault();
+                        press(true);
+                    }, { passive: false });
+                    ['touchend', 'touchcancel'].forEach(function (type) {
+                        el.addEventListener(type, function (e) {
+                            e.preventDefault();
+                            press(false);
+                        }, { passive: false });
+                    });
+                    // Mouse fallback so the overlay can be tried on a desktop.
+                    el.addEventListener('mousedown', function (e) {
+                        e.preventDefault();
+                        press(true);
+                    });
+                    document.addEventListener('mouseup', function () {
+                        if (el.classList.contains('pressed')) {
+                            press(false);
+                        }
+                    });
+
+                    overlay.appendChild(el);
+                });
+            }
+
+            function setupStick(stick, knob) {
+                var stickTouch = null;
+                var centre = { x: 0, y: 0 };
+                var radius = 1;
+
+                function update(x, y) {
+                    var dx = (x - centre.x) / radius;
+                    var dy = (y - centre.y) / radius;
+                    var len = Math.sqrt(dx * dx + dy * dy);
+
+                    if (len > 1) {
+                        dx /= len;
+                        dy /= len;
+                    }
+
+                    knob.style.transform = 'translate(' + (dx * radius * 0.6) +
+                        'px,' + (dy * radius * 0.6) + 'px)';
+
+                    hold('w', dy < -STICK_DEADZONE);
+                    hold('s', dy > STICK_DEADZONE);
+                    hold('a', dx < -STICK_DEADZONE);
+                    hold('d', dx > STICK_DEADZONE);
+                }
+
+                function reset() {
+                    stickTouch = null;
+                    knob.style.transform = '';
+                    hold('w', false);
+                    hold('a', false);
+                    hold('s', false);
+                    hold('d', false);
+                }
+
+                stick.addEventListener('touchstart', function (e) {
+                    e.preventDefault();
+                    var rect = stick.getBoundingClientRect();
+                    centre.x = rect.left + rect.width / 2;
+                    centre.y = rect.top + rect.height / 2;
+                    radius = rect.width / 2;
+                    stickTouch = e.changedTouches[0].identifier;
+                    update(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+                }, { passive: false });
+
+                stick.addEventListener('touchmove', function (e) {
+                    e.preventDefault();
+                    for (var i = 0; i < e.changedTouches.length; i++) {
+                        if (e.changedTouches[i].identifier === stickTouch) {
+                            update(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
+                        }
+                    }
+                }, { passive: false });
+
+                ['touchend', 'touchcancel'].forEach(function (type) {
+                    stick.addEventListener(type, function (e) {
+                        e.preventDefault();
+                        for (var i = 0; i < e.changedTouches.length; i++) {
+                            if (e.changedTouches[i].identifier === stickTouch) {
+                                reset();
+                            }
+                        }
+                    }, { passive: false });
+                });
+
+                return reset;
+            }
+
+            function setupLook(area) {
+                var lookTouch = null;
+                var last = { x: 0, y: 0 };
+                var moved = 0;
+                var startedAt = 0;
+
+                area.addEventListener('touchstart', function (e) {
+                    if (lookTouch !== null) {
+                        return;
+                    }
+                    e.preventDefault();
+                    var t = e.changedTouches[0];
+                    lookTouch = t.identifier;
+                    last.x = t.clientX;
+                    last.y = t.clientY;
+                    moved = 0;
+                    startedAt = Date.now();
+                }, { passive: false });
+
+                area.addEventListener('touchmove', function (e) {
+                    e.preventDefault();
+                    for (var i = 0; i < e.changedTouches.length; i++) {
+                        var t = e.changedTouches[i];
+                        if (t.identifier !== lookTouch) {
+                            continue;
+                        }
+                        var dx = t.clientX - last.x;
+                        var dy = t.clientY - last.y;
+                        last.x = t.clientX;
+                        last.y = t.clientY;
+                        moved += Math.abs(dx) + Math.abs(dy);
+                        sendMouseMove(dx * LOOK_SENSITIVITY, dy * LOOK_SENSITIVITY);
+                    }
+                }, { passive: false });
+
+                ['touchend', 'touchcancel'].forEach(function (type) {
+                    area.addEventListener(type, function (e) {
+                        for (var i = 0; i < e.changedTouches.length; i++) {
+                            if (e.changedTouches[i].identifier !== lookTouch) {
+                                continue;
+                            }
+                            e.preventDefault();
+                            lookTouch = null;
+                            // A short tap without dragging fires the weapon.
+                            if (type === 'touchend' && moved < 12 &&
+                                (Date.now() - startedAt) < 300) {
+                                sendMouseButton(0, true);
+                                setTimeout(function () { sendMouseButton(0, false); }, 60);
+                            }
+                        }
+                    }, { passive: false });
+                });
+            }
+
+            var built = false;
+            var resetStick = function () {};
+
+            function build() {
+                if (built) {
+                    return;
+                }
+                var overlay = document.getElementById('touch-overlay');
+                buildButtons(overlay);
+                resetStick = setupStick(document.getElementById('touch-stick'),
+                                        document.getElementById('touch-stick-knob'));
+                setupLook(document.getElementById('touch-look'));
+                built = true;
+            }
+
+            window.etlToggleTouchControls = function () {
+                build();
+                etlTouchActive = !etlTouchActive;
+
+                var overlay = document.getElementById('touch-overlay');
+                overlay.classList.toggle('active', etlTouchActive);
+                overlay.setAttribute('aria-hidden', etlTouchActive ? 'false' : 'true');
+
+                var toggle = document.getElementById('touch-toggle');
+                if (toggle) {
+                    toggle.textContent = etlTouchActive ? 'Touch controls: on'
+                                                        : 'Touch controls';
+                }
+
+                if (!etlTouchActive) {
+                    resetStick();
+                    releaseAll();
+                }
+
+                try {
+                    window.localStorage.setItem('etl-touch-controls',
+                        etlTouchActive ? '1' : '0');
+                } catch (e) { /* private mode - not important */ }
+            };
+
+            // Show the toggle on touch devices (?touch=1 forces it, ?touch=0
+            // hides it) and restore the last choice.
+            document.addEventListener('DOMContentLoaded', function () {
+                var forced = new URLSearchParams(window.location.search).get('touch');
+                var isTouch = ('ontouchstart' in window) ||
+                    (navigator.maxTouchPoints > 0);
+                var show = (forced === null) ? isTouch : (forced !== '0');
+
+                if (!show) {
+                    return;
+                }
+
+                var toggle = document.getElementById('touch-toggle');
+                if (toggle) {
+                    toggle.style.display = '';
+                }
+
+                var remembered = null;
+                try {
+                    remembered = window.localStorage.getItem('etl-touch-controls');
+                } catch (e) { /* ignore */ }
+
+                if (remembered === '1' || (remembered === null && forced === '1')) {
+                    window.etlToggleTouchControls();
+                }
+            });
+
+            // Never leave a virtual key stuck when the page loses focus.
+            window.addEventListener('blur', releaseAll);
+        })();
+
         // Console panel
         var consoleVisible = false;
         function toggleConsole() {
@@ -1283,10 +1708,15 @@
                                     allow CORS downloads of the paks.
                ?legacy=<base-url>   override where the mod pk3 is downloaded from.
                ?mod=<a.pk3,b.pk3>   override which mod pk3(s) to download.
-               ?relay=<ws-url>      WebSocket relay (see tools/ws-relay)
-               ?connect=<host:port> game server to join through the relay
+               ?relay=<ws-url>      WebSocket relay (see tools/ws-relay).
+                                    Defaults to the built-in relay below, so a
+                                    share link normally only needs ?connect=.
+               ?connect=<host:port> game server to join through the relay. May
+                                    be a hostname - the relay resolves it.
+               ?touch=0|1           force the on-screen touch controls off/on
+                                    (they default to on-screen-capable devices)
         Example:
-          etl.html?relay=wss://relay.example.com&connect=203.0.113.10:27960
+          etl.html?connect=etclan.de:27966
     -->
     <script>
         (function () {
@@ -1404,12 +1834,26 @@
             // fallback when a module is missing from the pk3.
             var MOD_FILES = ['cgame.mp.wasm32.so', 'ui.mp.wasm32.so', 'qagame.mp.wasm32.so'];
 
+            // --- Relay / server defaults ---------------------------------
+            // The community relay that serves this deployment. It is built in
+            // so a share link only has to name the server
+            // (?connect=etclan.de:27966) - or nothing at all - instead of
+            // spelling out a URL-encoded ?relay= every time. Override with
+            // ?relay=<ws-url>.
+            var DEFAULT_RELAY_HOST = '135.125.189.21:8080';
+
+            // A page served over https:// may only open wss:// sockets, so the
+            // scheme follows the page. Run the relay with --tls-cert/--tls-key
+            // (or behind an nginx TLS proxy) when the page is HTTPS.
+            function defaultRelayUrl() {
+                var scheme = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
+                return scheme + DEFAULT_RELAY_HOST;
+            }
+
             // Build the engine command line from URL parameters.
             var args = [];
-            var relay = params.get('relay');
-            if (relay) {
-                args.push('+set', 'net_wsRelayServer', relay);
-            }
+            var relay = params.get('relay') || defaultRelayUrl();
+            args.push('+set', 'net_wsRelayServer', relay);
             var connect = params.get('connect');
             if (connect) {
                 args.push('+set', 'cl_allowDownload', '1');
@@ -1427,14 +1871,16 @@
             // Maintain this list manually: add one { name, address } entry per
             // server. Missing pk3s (e.g. a different fs_game such as xmod) are
             // downloaded from the server on connect (cl_allowDownload 1).
+            // Addresses may be given as a hostname (the relay resolves it, see
+            // tools/ws-relay), so a server that changes its IP keeps working.
             var SERVER_LIST = [
-                { name: 'ETc | XMOD', address: '84.200.135.3:27965' }
+                { name: 'ETc', address: 'etclan.de:27966' }
                 // Add more compatible servers here, e.g.:
                 // { name: 'My server', address: '203.0.113.10:27960' }
             ];
 
             // Address + parameters of the dedicated "Join ETc server" button.
-            var ETC_SERVER = '84.200.135.3:27965';
+            var ETC_SERVER = 'etclan.de:27966';
 
             function statusFor(name, received, total) {
                 if (total) {
@@ -2206,6 +2652,31 @@
                 return persist().then(function () { return clean; });
             }
 
+            // Make sure a default profile exists before the engine starts.
+            // Without one the game boots into the first-start profile wizard and
+            // stays there: the queued "+connect" / "+map" never gets the player
+            // into a game, which looks like "connecting does nothing". A profile
+            // created here is a completely normal profile - the player can
+            // rename it in the launcher or in the in-game menu at any time.
+            function ensureProfile() {
+                if (etlDefaultProfile()) {
+                    return Promise.resolve();
+                }
+
+                var name = 'ETPlayer' + (1000 + Math.floor(Math.random() * 9000));
+                try {
+                    return etlSaveProfile(name, name);
+                } catch (e) {
+                    // A missing profile is not fatal - the game then simply shows
+                    // its own profile wizard, exactly as before.
+                    if (console && console.warn) {
+                        console.warn('Could not create a default profile: ' +
+                            (e && e.message || e));
+                    }
+                    return Promise.resolve();
+                }
+            }
+
             // Step 2: pak0.pk3 is set - show the "Run game" menu and resolve
             // with the extra engine arguments for the chosen mode. Skipped when
             // the URL already dictates what to do (?connect= or ?map=).
@@ -2213,6 +2684,30 @@
                 return ['+set', 'cl_allowDownload', '1',
                         '+set', 'cl_wwwDownload', '1',
                         '+connect', address];
+            }
+
+            // Arguments for a game hosted inside the browser. A browser has no
+            // listening socket, so this is a *local* server: the player plays on
+            // it alone (remote players cannot reach it - they need a native
+            // dedicated server, see docs/web.md). Everything a self-contained
+            // match needs is set explicitly, because the browser profile has no
+            // server settings of its own:
+            //   dedicated 0      - listen server, the local player joins it
+            //   g_gametype 2     - Objective; the default (campaign) needs a
+            //                      campaign definition and refuses a plain "map"
+            //   sv_pure 0        - the browser filesystem only holds the paks the
+            //                      shell downloaded, so pure checks would reject
+            //                      the local client
+            //   omnibot_enable 0 - the bot library is native-only and not part of
+            //                      the wasm build
+            function localGameArgs(map, hostname, maxClients) {
+                return ['+set', 'dedicated', '0',
+                        '+set', 'sv_hostname', hostname,
+                        '+set', 'sv_maxclients', String(maxClients),
+                        '+set', 'g_gametype', '2',
+                        '+set', 'sv_pure', '0',
+                        '+set', 'omnibot_enable', '0',
+                        '+map', map];
             }
 
             function chooseGameMode() {
@@ -2243,7 +2738,7 @@
 
                     // Button 2: quick single game on map oasis.
                     document.getElementById('menu-quick').onclick = function () {
-                        pick(['+map', 'oasis']);
+                        pick(localGameArgs('oasis', 'ET:Legacy Web Game', 8));
                     };
 
                     // Button 3: manually maintained list of compatible servers.
@@ -2312,10 +2807,7 @@
                         var maxClients = parseInt(
                             document.getElementById('host-maxclients').value, 10);
                         if (!(maxClients >= 2 && maxClients <= 32)) { maxClients = 8; }
-                        pick(['+set', 'sv_hostname', name,
-                              '+set', 'sv_maxclients', String(maxClients),
-                              '+set', 'dedicated', '0',
-                              '+map', map]);
+                        pick(localGameArgs(map, name, maxClients));
                     };
 
                     showLauncherPanel('launcher-menu');
@@ -2344,6 +2836,12 @@
                         return downloadModAssets();
                     })
                     .then(persist)
+                    .then(function () {
+                        // A default profile must exist, otherwise the engine
+                        // stops at its first-start profile wizard and never
+                        // executes the queued connect/map command.
+                        return ensureProfile();
+                    })
                     .then(function () {
                         // Step 2: everything is in place - show the "Run game"
                         // menu (unless the URL already says what to do) and
