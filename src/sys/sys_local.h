@@ -71,7 +71,7 @@ void Sys_GLimpInit(void);
 void Sys_PlatformInit(void);
 
 #ifdef __EMSCRIPTEN__
-// Preload the cgame/ui side modules via dlopen() while the wasm call stack is
+// Preload the cgame/ui/qagame side modules via dlopen() while the wasm call stack is
 // shallow, so the engine's later dlopen() calls are synchronous (see sys_web.c)
 void Sys_PreloadGameDlls(void);
 // Drain console commands queued by the web page (window.etlPendingCommands)

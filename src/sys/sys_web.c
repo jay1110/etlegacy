@@ -201,7 +201,7 @@ void Sys_PlatformInit(void)
  */
 void Sys_PreloadGameDlls(void)
 {
-	static const char *mods[]  = { "cgame", "ui" };
+	static const char *mods[]  = { "cgame", "ui", "qagame" };
 	static const char *bases[] = { "/home/web_user/.etlegacy", "/etlegacy" }; // fs_homepath, fs_basepath
 	size_t             i, j;
 
