@@ -123,6 +123,23 @@ Legend: `[ ]` = TODO, `[x]` = done.
       refresh pinned the sockets of every server it touched, and a refresh while
       playing could evict the connection the player was actually using.
 - [ ] End-to-end test: browser client -> relay -> dedicated server connect.
+
+      The relay half of this is now tested automatically:
+      `tools/ws-relay/test-relay.mjs` drives a real WebSocket client through
+      `relay.js` to a UDP stand-in server that answers ET's out-of-band
+      `getinfo`, and asserts the `infoResponse` comes back with the same
+      challenge. It covers both URL forms, hostname targets (the DNS path the
+      browser build depends on, because it cannot resolve names itself), a
+      packet sent before the relay's UDP socket has finished binding, five
+      packets in a row on one connection, six kinds of malformed target (close
+      code 1008) and the `--max-connections` limit (1013). It runs as the
+      `relay-test` job in `emscripten.yml`, needs no toolchain and no game data.
+      What is still untested is the *browser* end of the chain, which needs the
+      retail paks and a real dedicated server.
+
+      (Noted while writing it: the relay prints "Listening on ..." synchronously,
+      before the listening socket is actually bound, so anything scripting it has
+      to poll the port rather than trust the banner.)
 - [ ] Verify two browser clients can join the same server simultaneously.
 - [ ] (Optional/perf) Investigate WebRTC data channels to reduce latency.
 
@@ -180,6 +197,10 @@ Legend: `[ ]` = TODO, `[x]` = done.
       not possible in CI because the retail paks are not redistributable.
 - [x] Document the full local workflow (build, run relay, run dedicated server,
       open page) in `docs/web.md`.
+- [x] Test the WebSocket relay end to end (`tools/ws-relay/test-relay.mjs`,
+      `relay-test` job): a real WebSocket client through `relay.js` to a UDP
+      stand-in game server, 19 assertions, no toolchain or game data needed. See
+      section 3.
 - [x] **Executed** (not just wired up): the whole section-6 pipeline was run
       locally against a real Emscripten toolchain — configure, full build,
       packaging of `dist/etlegacy-web`, `tools/web-smoke/verify-dist.mjs`

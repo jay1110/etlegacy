@@ -243,6 +243,19 @@ node tools/web-smoke/verify-dist.mjs dist/etlegacy-web
 node tools/web-smoke/boot-smoke.mjs dist/etlegacy-web
 ```
 
+The relay has its own end-to-end test, which needs neither the build nor the
+game data and runs as a separate CI job:
+
+```bash
+npm --prefix tools/ws-relay install
+node tools/ws-relay/test-relay.mjs
+```
+
+It drives a real WebSocket client through `relay.js` to a stand-in UDP game
+server that answers ET's out-of-band `getinfo` query, covering both URL forms,
+hostname targets, packets sent before the UDP socket is bound, malformed targets
+and the connection limit.
+
 ## Known limitations
 
 - Latency is higher than native UDP (the relay uses TCP/WebSocket).

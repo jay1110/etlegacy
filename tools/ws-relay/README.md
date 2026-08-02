@@ -162,6 +162,24 @@ players.
 Raise `--timeout` if you want idle spectators to stay connected longer; lower it
 to reclaim sockets faster.
 
+## Tests
+
+`test-relay.mjs` exercises the whole path - WebSocket client → relay → UDP game
+server - against a stand-in server that answers ET's out-of-band `getinfo`
+query, which is the same exchange a client uses to ping a server:
+
+```bash
+npm --prefix tools/ws-relay install
+node tools/ws-relay/test-relay.mjs        # or: npm --prefix tools/ws-relay test
+```
+
+It covers both URL forms (`/<host>:<port>` and `/?target=<host>:<port>`), the
+hostname form that needs the relay's DNS lookup, a packet sent before the UDP
+socket has finished binding, several packets in a row on one connection, the
+rejection of malformed targets (close code 1008) and the `--max-connections`
+limit (close code 1013). It needs no game data and no toolchain, and runs in CI
+as the `relay-test` job of `.github/workflows/emscripten.yml`.
+
 ## Deployment
 
 For production use, consider:
