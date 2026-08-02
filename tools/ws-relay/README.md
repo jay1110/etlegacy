@@ -50,6 +50,8 @@ node relay.js --tls-cert /path/cert.pem --tls-key /path/key.pem
 | `--host` | 0.0.0.0 | WebSocket listen host |
 | `--tls-cert` | _(none)_ | TLS certificate (PEM); enables `wss://` |
 | `--tls-key` | _(none)_ | TLS private key (PEM); enables `wss://` |
+| `--timeout` | 120 | Idle timeout in seconds (no traffic in either direction) |
+| `--max-connections` | 128 | Maximum simultaneous connections |
 
 Provide **both** `--tls-cert` and `--tls-key` to accept secure `wss://`
 connections. With neither, the relay serves plain `ws://`.
@@ -127,13 +129,35 @@ relay.
    relay, and joins the server — multiple browser players can join the same
    server at once (each gets its own UDP socket on the relay side).
 
+## Reliability
+
+The relay is built to stay up: a broken client must never take down the other
+players.
+
+- Every connection is torn down exactly once (WebSocket close, WebSocket error,
+  UDP error, idle timeout and shutdown all share one idempotent teardown), so a
+  UDP socket is never closed twice (this used to crash the process with
+  `ERR_SOCKET_DGRAM_NOT_RUNNING`).
+- Uncaught exceptions and unhandled promise rejections are logged, not fatal.
+- A WebSocket ping/pong heartbeat (every 15s) drops half-open connections whose
+  peer vanished without sending a close frame.
+- UDP datagrams that do not come from the requested game server are ignored.
+- Packets arriving before the UDP socket finished binding are queued instead of
+  dropped, so the initial connection handshake is not lost.
+- `SIGINT`/`SIGTERM` shut down cleanly, with a 5s fallback so shutdown cannot
+  hang.
+
+Raise `--timeout` if you want idle spectators to stay connected longer; lower it
+to reclaim sockets faster.
+
 ## Deployment
 
 For production use, consider:
 
 - Running behind a reverse proxy (nginx) with TLS (`wss://`)
 - Setting up CORS headers if needed
-- Using a process manager (pm2, systemd) for reliability
+- Using a process manager (pm2, systemd) for reliability, e.g.
+  `pm2 start relay.js -- --port 8080` or a systemd unit with `Restart=always`
 - Deploying near your game servers to minimize latency
 
 ## Latency Considerations

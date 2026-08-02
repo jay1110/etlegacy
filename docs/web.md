@@ -147,6 +147,12 @@ A page served over `https://` (e.g. GitHub Pages) can only open `wss://`
 sockets, so the relay must be reachable over TLS — either terminate TLS in the
 relay (above) or behind an nginx reverse proxy (see the relay README).
 
+The relay keeps running when a single connection fails (all connection errors
+are logged, never fatal) and drops dead peers via a WebSocket heartbeat. Idle
+timeout and connection limit are tunable with `--timeout <secs>` and
+`--max-connections <n>`. For unattended hosting still run it under a process
+manager (systemd with `Restart=always`, or pm2).
+
 ## 6. Open the game and connect
 
 On first load the page asks how to provide the game data: **download
