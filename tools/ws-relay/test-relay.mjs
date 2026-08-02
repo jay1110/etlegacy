@@ -9,6 +9,12 @@
  *   WebSocket client  ->  relay.js  ->  UDP "game server"
  *                     <-           <-
  *
+ * Covered: both URL forms, hostname targets (the relay's DNS lookup), packets
+ * sent before the UDP socket is bound, several packets in a row, two clients
+ * on one server at the same time (own UDP port each, no cross-talk), the
+ * "only the target may answer" filter, malformed targets, the connection
+ * limit, the idle-connection reaper and a failed bind.
+ *
  * Run with:  npm --prefix tools/ws-relay install && node tools/ws-relay/test-relay.mjs
  *
  * License: GPL-3.0 (same as ET: Legacy)
@@ -71,6 +77,11 @@ function freePort() {
  * A minimal stand-in for a dedicated server: replies to the out-of-band
  * `getinfo <challenge>` with an `infoResponse` carrying the same challenge,
  * which is exactly the exchange a client uses to ping a server.
+ *
+ * Every datagram is recorded with the source address the relay sent it from,
+ * so a test can tell two relayed clients apart and push a packet back to one
+ * of them specifically - the way a real server addresses each connected
+ * player.
  */
 function startFakeServer() {
 	return new Promise((resolve, reject) => {
@@ -79,7 +90,7 @@ function startFakeServer() {
 
 		sock.on('error', reject);
 		sock.on('message', (msg, rinfo) => {
-			received.push(msg);
+			received.push({ msg, address: rinfo.address, port: rinfo.port });
 			if (!msg.subarray(0, 4).equals(OOB)) {
 				return;
 			}
@@ -99,7 +110,14 @@ function startFakeServer() {
 		sock.bind(0, '127.0.0.1', () => {
 			const port = sock.address().port;
 			cleanups.push(() => sock.close());
-			resolve({ port, received });
+			resolve({
+				port,
+				received,
+				/** Push an unsolicited packet to one relayed client. */
+				sendTo(client, buffer) {
+					sock.send(buffer, client.port, client.address);
+				}
+			});
 		});
 	});
 }
@@ -127,30 +145,21 @@ async function startRelay(extraArgs = []) {
 		});
 	}), 'the relay to start');
 
-	// The banner is printed synchronously, before the listening socket is
-	// actually bound, so wait for the port to accept connections.
-	await deadline(waitForPort(port), 'the relay port to accept connections');
+	// The banner is printed from the server's "listening" event, so the port
+	// has to accept a connection right away - no polling. The relay used to
+	// announce itself synchronously, before (and even without) a successful
+	// bind, which made the banner meaningless.
+	await deadline(connectOnce(port), 'the relay port to accept a connection right after its banner');
 
 	return { port, proc, log };
 }
 
-/** Poll a TCP port until it accepts a connection. */
-function waitForPort(port) {
+/** Open one TCP connection, without retrying. */
+function connectOnce(port) {
 	return new Promise((resolve, reject) => {
-		let attempts = 0;
-		const attempt = () => {
-			const sock = net.connect(port, '127.0.0.1');
-			sock.once('connect', () => { sock.destroy(); resolve(); });
-			sock.once('error', () => {
-				sock.destroy();
-				if (++attempts > 200) {
-					reject(new Error('port ' + port + ' never accepted a connection'));
-					return;
-				}
-				setTimeout(attempt, 25);
-			});
-		};
-		attempt();
+		const sock = net.connect(port, '127.0.0.1');
+		sock.once('connect', () => { sock.destroy(); resolve(); });
+		sock.once('error', (err) => { sock.destroy(); reject(err); });
 	});
 }
 
@@ -178,6 +187,10 @@ function nextMessage(ws) {
 
 function closedWith(ws) {
 	return new Promise((resolve) => {
+		if (ws.readyState === ws.CLOSED) {
+			resolve({ code: ws._closeCode || 1000, reason: '' });
+			return;
+		}
 		ws.once('close', (code, reason) => resolve({ code, reason: String(reason) }));
 		ws.once('error', () => { /* a rejected upgrade also surfaces as an error */ });
 	});
@@ -185,6 +198,27 @@ function closedWith(ws) {
 
 function getinfo(challenge) {
 	return Buffer.concat([OOB, Buffer.from('getinfo ' + challenge, 'latin1')]);
+}
+
+function oob(text) {
+	return Buffer.concat([OOB, Buffer.from(text, 'latin1')]);
+}
+
+function text(buffer) {
+	return Buffer.from(buffer).toString('latin1');
+}
+
+/** Resolve to false if a message arrives within `ms`, true if none does. */
+function noMessageWithin(ws, ms) {
+	return new Promise((resolve) => {
+		const onMessage = () => { cleanup(); resolve(false); };
+		const cleanup = () => {
+			clearTimeout(timer);
+			ws.off('message', onMessage);
+		};
+		const timer = setTimeout(() => { cleanup(); resolve(true); }, ms);
+		ws.on('message', onMessage);
+	});
 }
 
 /** One round trip through the relay: send getinfo, expect the matching infoResponse. */
@@ -195,11 +229,134 @@ async function roundTrip(relayPort, urlPath, challenge, what) {
 	// bound (and the hostname resolved) instead of dropping it.
 	ws.send(getinfo(challenge));
 	const reply = await deadline(nextMessage(ws), 'the infoResponse');
-	const text = Buffer.from(reply).toString('latin1');
 	check(Buffer.from(reply).subarray(0, 4).equals(OOB), what + ': reply is an out-of-band packet');
-	check(text.includes('infoResponse'), what + ': reply is an infoResponse');
-	check(text.includes('\\challenge\\' + challenge), what + ': reply carries the challenge back');
+	check(text(reply).includes('infoResponse'), what + ': reply is an infoResponse');
+	check(text(reply).includes('\\challenge\\' + challenge), what + ': reply carries the challenge back');
 	ws.close();
+}
+
+/**
+ * Two clients on one game server at the same time - the relay half of "two
+ * players join from their own browser". Each connection must get its own UDP
+ * socket, and traffic must never cross over between them: the relay is the
+ * only thing that knows which browser a datagram belongs to, because from the
+ * game server's point of view both players share the relay's IP.
+ */
+async function testTwoClientsAtOnce(relay, server) {
+	const a = open(relay.port, '/127.0.0.1:' + server.port);
+	const b = open(relay.port, '/127.0.0.1:' + server.port);
+
+	await deadline(Promise.all([opened(a), opened(b)]), 'both WebSockets to open');
+
+	const before = server.received.length;
+
+	a.send(getinfo('playerA'));
+	b.send(getinfo('playerB'));
+
+	const [replyA, replyB] = await deadline(
+		Promise.all([nextMessage(a), nextMessage(b)]),
+		'both infoResponses'
+	);
+
+	check(text(replyA).includes('\\challenge\\playerA'), 'two clients: the first client gets its own reply');
+	check(text(replyB).includes('\\challenge\\playerB'), 'two clients: the second client gets its own reply');
+
+	const seen = server.received.slice(before);
+	const fromA = seen.find(p => text(p.msg).includes('playerA'));
+	const fromB = seen.find(p => text(p.msg).includes('playerB'));
+
+	check(Boolean(fromA && fromB), 'two clients: the server saw both requests');
+	check(Boolean(fromA && fromB) && fromA.port !== fromB.port,
+		'two clients: the relay uses a separate UDP source port per client');
+
+	// A server-initiated packet (a snapshot, in a real match) must reach only
+	// the player it was addressed to.
+	server.sendTo(fromA, oob('print\nfor the first client'));
+
+	const pushed = await deadline(nextMessage(a), 'the server push to the first client');
+	check(text(pushed).includes('for the first client'), 'two clients: a server push reaches the addressed client');
+	check(await noMessageWithin(b, 300), 'two clients: a server push does not leak to the other client');
+
+	// One player leaving must not disturb the other.
+	a.close();
+	await deadline(closedWith(a), 'the first client to close');
+
+	b.send(getinfo('stillhere'));
+	const afterClose = await deadline(nextMessage(b), 'the second client to still work');
+	check(text(afterClose).includes('\\challenge\\stillhere'),
+		'two clients: the remaining client keeps working after the other disconnects');
+
+	b.close();
+}
+
+/**
+ * Datagrams from anywhere but the requested game server are dropped. Without
+ * this, anyone who can guess the relay's ephemeral UDP port could inject
+ * packets into a player's session.
+ */
+async function testForeignSourceIsDropped(relay, server) {
+	const ws = open(relay.port, '/127.0.0.1:' + server.port);
+	await deadline(opened(ws), 'the WebSocket to open');
+
+	const before = server.received.length;
+	ws.send(getinfo('spoof'));
+	await deadline(nextMessage(ws), 'the infoResponse');
+
+	const mine = server.received.slice(before).find(p => text(p.msg).includes('spoof'));
+	check(Boolean(mine), 'spoof filter: the relay port used for this client is known');
+
+	const intruder = dgram.createSocket('udp4');
+	cleanups.push(() => { try { intruder.close(); } catch (err) { /* already closed */ } });
+	await new Promise((resolve) => intruder.bind(0, '127.0.0.1', resolve));
+	intruder.send(oob('disconnect'), mine.port, '127.0.0.1');
+
+	check(await noMessageWithin(ws, 300), 'spoof filter: a datagram from another source is not forwarded');
+
+	ws.send(getinfo('afterspoof'));
+	const reply = await deadline(nextMessage(ws), 'the connection to still work after the spoofed packet');
+	check(text(reply).includes('\\challenge\\afterspoof'), 'spoof filter: the connection survives the spoofed packet');
+
+	intruder.close();
+	ws.close();
+}
+
+/** An idle connection is reaped, and the relay survives it. */
+async function testIdleTimeout(server) {
+	const relay = await startRelay(['--timeout', '5']);
+	const ws = open(relay.port, '/127.0.0.1:' + server.port);
+	await deadline(opened(ws), 'the WebSocket to open');
+
+	// The reaper runs every 5s, so an idle connection goes away after 5-10s.
+	const closed = await deadline(closedWith(ws), 'the idle connection to be closed', 20000);
+	check(closed.code === 1000, 'an idle connection is closed by the relay (got ' + closed.code + ')');
+	check(relay.proc.exitCode === null, 'the relay survives reaping an idle connection');
+
+	relay.proc.kill('SIGTERM');
+}
+
+/**
+ * A relay that cannot bind must fail loudly. It used to print "Listening on
+ * ..." and then keep running after EADDRINUSE, so a restarted-too-early relay
+ * looked healthy to systemd/pm2 while relaying nothing at all.
+ */
+async function testBindFailureIsFatal(occupiedPort) {
+	const proc = spawn(process.execPath, [RELAY, '--host', '127.0.0.1', '--port', String(occupiedPort)], {
+		stdio: ['ignore', 'pipe', 'pipe']
+	});
+	cleanups.push(() => proc.kill('SIGKILL'));
+
+	let output = '';
+	proc.stdout.setEncoding('utf8');
+	proc.stderr.setEncoding('utf8');
+	proc.stdout.on('data', d => output += d);
+	proc.stderr.on('data', d => output += d);
+
+	const code = await deadline(new Promise((resolve) => proc.on('exit', resolve)),
+		'the relay to exit after a failed bind');
+
+	check(code === 1, 'a relay whose port is taken exits non-zero (got ' + code + ')');
+	check(!output.includes('Listening on'), 'a relay whose port is taken never claims to be listening');
+	check(/EADDRINUSE/.test(output), 'the bind failure is reported');
 }
 
 async function main() {
@@ -220,11 +377,14 @@ async function main() {
 		for (let i = 0; i < 5; i++) {
 			ws.send(getinfo('seq' + i));
 			const reply = await deadline(nextMessage(ws), 'infoResponse ' + i);
-			ok = ok && Buffer.from(reply).toString('latin1').includes('\\challenge\\seq' + i);
+			ok = ok && text(reply).includes('\\challenge\\seq' + i);
 		}
 		check(ok, 'five packets in a row are all relayed in order');
 		ws.close();
 	}
+
+	await testTwoClientsAtOnce(relay, server);
+	await testForeignSourceIsDropped(relay, server);
 
 	// A syntactically invalid target must be refused, not silently dropped.
 	for (const [urlPath, what] of [
@@ -251,6 +411,9 @@ async function main() {
 		first.close();
 		limited.proc.kill('SIGTERM');
 	}
+
+	await testBindFailureIsFatal(relay.port);
+	await testIdleTimeout(server);
 
 	check(server.received.length > 0, 'the fake game server actually received UDP traffic');
 

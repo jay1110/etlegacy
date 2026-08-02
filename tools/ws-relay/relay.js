@@ -271,11 +271,26 @@ if (useTls) {
 
 const scheme = useTls ? 'wss' : 'ws';
 
-console.log(`ET: Legacy WebSocket-to-UDP Relay Server`);
-console.log(`Listening on ${scheme}://${host}:${port}`);
-console.log(`Max connections: ${maxConnections}`);
-console.log(`Connection timeout: ${connectionTimeoutMs / 1000}s`);
-console.log('');
+// The banner is printed from the "listening" event, not before it: until the
+// socket is actually bound the relay may still fail, and a banner printed
+// up front is a lie that anything scripting the relay (tests, a health check,
+// an operator reading the log) has no way to tell from a working start.
+const listeningServer = httpsServer || wss;
+let listening = false;
+let startupFailed = false;
+
+listeningServer.on('listening', () => {
+    listening = true;
+
+    const bound = typeof listeningServer.address === 'function' ? listeningServer.address() : null;
+    const boundPort = bound && bound.port ? bound.port : port;
+
+    console.log(`ET: Legacy WebSocket-to-UDP Relay Server`);
+    console.log(`Listening on ${scheme}://${host}:${boundPort}`);
+    console.log(`Max connections: ${maxConnections}`);
+    console.log(`Connection timeout: ${connectionTimeoutMs / 1000}s`);
+    console.log('');
+});
 
 wss.on('connection', (ws, req) => {
     // Check connection limit
@@ -456,17 +471,41 @@ wss.on('connection', (ws, req) => {
 });
 
 wss.on('error', (err) => {
-    console.error(`WebSocket server error: ${err.message}`);
+    handleServerError('WebSocket server', err);
 });
 
 if (httpsServer) {
     httpsServer.on('error', (err) => {
-        console.error(`HTTPS server error: ${err.message}`);
+        handleServerError('HTTPS server', err);
     });
 
     httpsServer.on('tlsClientError', () => {
         // Ignore - probes and plain-HTTP requests must not affect the relay.
     });
+}
+
+/**
+ * A server error before the socket is listening (EADDRINUSE, EACCES,
+ * EADDRNOTAVAIL, ...) means the relay never came up. Staying alive in that
+ * state is worse than exiting: nothing can connect, yet a process manager,
+ * container health check or operator sees a running relay. Fail fast instead,
+ * so `Restart=always` retries and a wrapper script notices. Errors after a
+ * successful bind stay non-fatal - one broken connection must not take the
+ * relay, and everyone playing through it, down.
+ */
+function handleServerError(what, err) {
+    if (listening) {
+        console.error(`${what} error: ${err.message}`);
+        return;
+    }
+
+    if (startupFailed) {
+        return;
+    }
+    startupFailed = true;
+
+    console.error(`Error: ${what} could not listen on ${host}:${port}: ${err.message}`);
+    process.exit(1);
 }
 
 // Timeout checker - close idle connections

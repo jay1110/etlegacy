@@ -158,6 +158,11 @@ players.
   dropped, so the initial connection handshake is not lost.
 - `SIGINT`/`SIGTERM` shut down cleanly, with a 5s fallback so shutdown cannot
   hang.
+- Startup is fail-fast: `Listening on …` is printed from the socket's
+  `listening` event, and a relay that cannot bind (`EADDRINUSE` after a restart
+  that was too quick, `EACCES` on a privileged port) exits with status 1
+  instead of staying up relaying nothing. A process manager restarts it, and
+  the banner in the log means the relay really is accepting connections.
 
 Raise `--timeout` if you want idle spectators to stay connected longer; lower it
 to reclaim sockets faster.
@@ -175,10 +180,15 @@ node tools/ws-relay/test-relay.mjs        # or: npm --prefix tools/ws-relay test
 
 It covers both URL forms (`/<host>:<port>` and `/?target=<host>:<port>`), the
 hostname form that needs the relay's DNS lookup, a packet sent before the UDP
-socket has finished binding, several packets in a row on one connection, the
-rejection of malformed targets (close code 1008) and the `--max-connections`
-limit (close code 1013). It needs no game data and no toolchain, and runs in CI
-as the `relay-test` job of `.github/workflows/emscripten.yml`.
+socket has finished binding, several packets in a row on one connection, **two
+clients playing on the same server at once** (each gets its own UDP source
+port, a server push reaches only the client it is addressed to, and one player
+leaving does not disturb the other), the rejection of datagrams from anything
+but the target server, the rejection of malformed targets (close code 1008),
+the `--max-connections` limit (close code 1013), the idle-connection reaper and
+a failed bind. It needs no game data and no toolchain, takes about 11 seconds
+(most of it waiting for the idle timeout) and runs in CI as the `relay-test`
+job of `.github/workflows/emscripten.yml`.
 
 ## Deployment
 

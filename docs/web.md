@@ -253,8 +253,10 @@ node tools/ws-relay/test-relay.mjs
 
 It drives a real WebSocket client through `relay.js` to a stand-in UDP game
 server that answers ET's out-of-band `getinfo` query, covering both URL forms,
-hostname targets, packets sent before the UDP socket is bound, malformed targets
-and the connection limit.
+hostname targets, packets sent before the UDP socket is bound, two clients on
+the same server at once (own UDP source port each, no cross-talk between them),
+datagrams from a foreign source, malformed targets, the connection limit, the
+idle-connection reaper and a failed bind.
 
 ## Known limitations
 
