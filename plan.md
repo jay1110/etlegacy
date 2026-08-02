@@ -105,6 +105,16 @@ Legend: `[ ]` = TODO, `[x]` = done.
       (browsers block `ws://` from `https://`): `relay.js` now serves `wss://`
       directly via `--tls-cert`/`--tls-key` (smoke-tested), and the README
       documents both that and an nginx reverse-proxy setup.
+- [x] Accept the target as a query parameter as well
+      (`ws://relay/?target=host:port`) next to the path form, so the relay is a
+      drop-in replacement for simple UDP gateway scripts.
+- [x] Fix "Join a server does nothing / client stays in the main menu":
+      `src/qcommon/net_web.c` only had `MAX_WS_CONNECTIONS 4` sockets and never
+      recycled them. The in-game server browser pings one address per server and
+      exhausted every slot, so `WS_GetConnection()` returned `NULL` for the
+      server the player actually clicked *Join* on and `Sys_SendPacket()`
+      silently dropped the `getchallenge`. There are now 64 slots and the least
+      recently used one is closed and reused when they run out.
 - [ ] End-to-end test: browser client -> relay -> dedicated server connect.
 - [ ] Verify two browser clients can join the same server simultaneously.
 - [ ] (Optional/perf) Investigate WebRTC data channels to reduce latency.
@@ -130,6 +140,19 @@ Legend: `[ ]` = TODO, `[x]` = done.
 - [x] Handle browser constraints: user-gesture required for audio (AudioContext
       resume on first gesture), pointer lock for mouse look (click-to-capture),
       fullscreen toggle (enter/exit).
+- [x] Touch overlay fixes: the look area covered the whole viewport at
+      `z-index: 900` while the controls bar sat at `z-index: 50`, so once the
+      overlay was switched on its own off-switch (and everything else) was
+      unreachable. The controls bar is now above the overlay, the overlay itself
+      carries a close (X) and a keyboard button, its state is no longer
+      persisted in `localStorage` (so F5 always starts with it off) and it is
+      force-disabled whenever a launcher panel is shown.
+- [ ] "Quick single game" / "Host game" (in-browser listen server) do not
+      actually reach the map yet. The engine side looks complete - the server
+      code is linked into the client target, `qagame` is built as a wasm side
+      module and pre-`dlopen`ed by `Sys_PreloadGameDlls`, and the loopback
+      netchan path in `net_web.c`/`net_chan.c` is intact - so this needs the
+      actual browser console output of a failed `+map` run to go further.
 
 ### 6. CI / verification
 
@@ -157,8 +180,16 @@ Legend: `[ ]` = TODO, `[x]` = done.
 
 ### 7. Omni-bot (bots) for the web build
 
-Source under review: `omni-bot-0.93.zip` in the repository root (the Omni-bot
-0.83/0.93 tree with `Omnibot/Common`, `Omnibot/ET`, `dependencies/`).
+All Omni-bot sources and data are now vendored in one place,
+`vendor/omni-bot/` - see `vendor/omni-bot/README.md` for the provenance of each
+subtree and what was pruned:
+
+| Path | From |
+| --- | --- |
+| `vendor/omni-bot/source/` | `omni-bot-0.93.zip` (buildable 0.8x/0.93 tree) |
+| `vendor/omni-bot/source/Omnibot/dependencies/gmscriptex/` | <https://github.com/jswigart/gmscriptex> |
+| `vendor/omni-bot/upstream/` | <https://github.com/jswigart/omni-bot> (reference only) |
+| `vendor/omni-bot/data/` | `omnibot.zip` (scripts + navigation meshes) |
 
 Analysis of "build it as wasm":
 
@@ -193,8 +224,9 @@ Analysis of "build it as wasm":
 
 If it is still wanted, the order of work would be:
 
-1. Obtain the missing `gmscriptex` submodule and vendor it next to the Omni-bot
-   sources (the zip alone is not a complete source tree).
+1. [x] Obtain the missing `gmscriptex` submodule and vendor it next to the
+   Omni-bot sources (the zip alone is not a complete source tree) - done, see
+   `vendor/omni-bot/source/Omnibot/dependencies/gmscriptex/`.
 2. Cross-build the needed Boost libraries for wasm, or replace their uses
    (`filesystem` -> `std::filesystem`, `regex` -> `std::regex`, drop
    `date_time`).
