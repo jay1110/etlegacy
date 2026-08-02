@@ -149,6 +149,39 @@ if (exists('etl.html')) {
     );
 }
 
+// 7. Omni-bot: the bot library is a side module of its own, dlopen()ed by
+//    qagame, and it locates its scripts/navigation data relative to itself.
+//    Both must therefore be shipped, in one and the same folder, or a game
+//    hosted in the browser has no opponents at all.
+const omniBotModule = path.join('legacy', 'omni-bot', 'omnibot_et.wasm32.so');
+const omniBotPresent = exists(omniBotModule);
+check(omniBotPresent, `Omni-bot module present: ${omniBotModule}`);
+if (omniBotPresent) {
+    const buf = fs.readFileSync(path.join(dir, omniBotModule));
+    check(
+        hasWasmMagic(buf),
+        `${omniBotModule} is valid WebAssembly (got ${firstBytes(buf)}, expected 00 61 73 6d)`
+    );
+}
+
+const omniBotData = path.join('legacy', 'omni-bot', 'omni-bot-data.zip');
+const omniBotDataPresent = exists(omniBotData);
+check(omniBotDataPresent, `Omni-bot data pack present: ${omniBotData}`);
+if (omniBotDataPresent) {
+    try {
+        const listing = execFileSync('unzip', ['-l', path.join(dir, omniBotData)], {
+            encoding: 'utf8'
+        });
+        // The bot mounts global_scripts/ and the per-game "et" folder (its
+        // scripts and the per-map navigation meshes) from next to the library.
+        for (const entry of ['global_scripts/', 'et/scripts/', 'et/nav/']) {
+            check(listing.includes(entry), `Omni-bot data pack contains ${entry}`);
+        }
+    } catch (e) {
+        check(false, `Omni-bot data pack is a readable zip (${e.message})`);
+    }
+}
+
 if (failures) {
     console.error(`\n${failures} check(s) failed.`);
     process.exit(1);

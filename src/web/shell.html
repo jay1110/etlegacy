@@ -1952,6 +1952,30 @@
             // fallback when a module is missing from the pk3.
             var MOD_FILES = ['cgame.mp.wasm32.so', 'ui.mp.wasm32.so', 'qagame.mp.wasm32.so'];
 
+            // --- Omni-bot ------------------------------------------------
+            // The bot library is a side module of its own, loaded by qagame
+            // through dlopen() (Omnibot_LoadLibrary), plus a data pack with the
+            // bot scripts and the per-map navigation meshes. Both are served
+            // from legacy/omni-bot/ and are fetched on demand, only when a game
+            // is actually hosted in the browser (see setupOmniBot).
+            var OMNIBOT_MODULE = 'omnibot_et.wasm32.so';
+            var OMNIBOT_DATA_PACK = 'omni-bot-data.zip';
+
+            // Omni-bot locates its data relative to the *loaded library*
+            // (Utils::GetBaseFolder() takes the parent path of the library the
+            // engine dlopen()ed), so the module and the unpacked global_scripts/
+            // + et/ tree must end up in one and the same directory. The engine
+            // is pointed at it with "+set omnibot_path": the cvar's default
+            // ("legacy/omni-bot") is relative to the working directory, which is
+            // "/" in the browser, so an absolute path is required.
+            //
+            // Deliberately NOT under LEGACY_DIR: that is IDBFS-mounted, and the
+            // pack holds ~300 small files that have no business being written to
+            // IndexedDB on every periodic syncfs. Only the (single) zip is
+            // cached there; unpacking it again into this plain in-memory
+            // directory on each visit is fast.
+            var OMNIBOT_DIR = INSTALL_DIR + '/omni-bot';
+
             // --- Relay / server defaults ---------------------------------
             // The community relay that serves this deployment. It is built in
             // so a share link only has to name the server
@@ -2125,14 +2149,14 @@
             }
 
             // --- Minimal ZIP reader -------------------------------------------
-            // The mod pk3 is a plain ZIP archive. To load the cgame/ui side
-            // modules straight out of it (see preloadSideModule below) the shell
-            // needs to pull a single entry's bytes from the archive. Locate the
-            // entry through the End-Of-Central-Directory record + central
-            // directory (so it works regardless of how the archive was produced)
-            // and return its raw, still-compressed bytes plus the compression
-            // method. Only "stored" (0) and "deflate" (8) are used by pk3s.
-            function findZipEntry(u8, wantName) {
+            // The mod pk3 is a plain ZIP archive, and so is the Omni-bot data
+            // pack. To load the cgame/ui side modules straight out of the pk3
+            // (see preloadSideModule below), and to unpack the bot data (see
+            // unzipInto), the shell enumerates the archive through the
+            // End-Of-Central-Directory record + central directory (so it works
+            // regardless of how the archive was produced). Only "stored" (0) and
+            // "deflate" (8) are used by either.
+            function listZipEntries(u8) {
                 var dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
                 // Scan backwards for the EOCD signature (0x06054b50). The record
                 // is at most 22 bytes + a 64 KiB comment from the end.
@@ -2142,34 +2166,55 @@
                     if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
                 }
                 if (eocd < 0) {
-                    throw new Error('not a valid pk3 (no zip end-of-central-directory record)');
+                    throw new Error('not a valid pk3/zip (no zip end-of-central-directory record)');
                 }
                 var count = dv.getUint16(eocd + 10, true);
                 var off = dv.getUint32(eocd + 16, true);
+                var entries = [];
                 for (var n = 0; n < count; n++) {
                     if (dv.getUint32(off, true) !== 0x02014b50) {
-                        throw new Error('corrupt pk3 (bad central directory header)');
+                        throw new Error('corrupt pk3/zip (bad central directory header)');
                     }
-                    var method = dv.getUint16(off + 10, true);
-                    var compSize = dv.getUint32(off + 20, true);
                     var nameLen = dv.getUint16(off + 28, true);
                     var extraLen = dv.getUint16(off + 30, true);
                     var commentLen = dv.getUint16(off + 32, true);
-                    var localOff = dv.getUint32(off + 42, true);
-                    var name = utf8Decode(u8.subarray(off + 46, off + 46 + nameLen));
-                    if (name === wantName) {
-                        // The central-directory record does not point at the file
-                        // data directly; re-read the local header to skip its
-                        // (possibly differently sized) name/extra fields.
-                        if (dv.getUint32(localOff, true) !== 0x04034b50) {
-                            throw new Error('corrupt pk3 (bad local file header for ' + wantName + ')');
-                        }
-                        var lNameLen = dv.getUint16(localOff + 26, true);
-                        var lExtraLen = dv.getUint16(localOff + 28, true);
-                        var dataStart = localOff + 30 + lNameLen + lExtraLen;
-                        return { method: method, raw: u8.subarray(dataStart, dataStart + compSize) };
-                    }
+                    entries.push({
+                        name: utf8Decode(u8.subarray(off + 46, off + 46 + nameLen)),
+                        method: dv.getUint16(off + 10, true),
+                        compSize: dv.getUint32(off + 20, true),
+                        localOff: dv.getUint32(off + 42, true)
+                    });
                     off += 46 + nameLen + extraLen + commentLen;
+                }
+                return entries;
+            }
+
+            // Raw (still compressed) bytes of one entry from listZipEntries. The
+            // central-directory record does not point at the file data directly,
+            // so re-read the local header to skip its (possibly differently
+            // sized) name/extra fields. Read lazily, per entry, so one damaged
+            // record cannot make enumerating the archive fail.
+            function zipEntryData(u8, entry) {
+                var dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+                if (dv.getUint32(entry.localOff, true) !== 0x04034b50) {
+                    throw new Error('corrupt pk3/zip (bad local file header for ' +
+                        entry.name + ')');
+                }
+                var nameLen = dv.getUint16(entry.localOff + 26, true);
+                var extraLen = dv.getUint16(entry.localOff + 28, true);
+                var dataStart = entry.localOff + 30 + nameLen + extraLen;
+                return u8.subarray(dataStart, dataStart + entry.compSize);
+            }
+
+            function findZipEntry(u8, wantName) {
+                var entries = listZipEntries(u8);
+                for (var i = 0; i < entries.length; i++) {
+                    if (entries[i].name === wantName) {
+                        return {
+                            method: entries[i].method,
+                            raw: zipEntryData(u8, entries[i])
+                        };
+                    }
                 }
                 return null;
             }
@@ -2196,6 +2241,44 @@
                 return new Response(stream).arrayBuffer().then(function (buf) {
                     return new Uint8Array(buf);
                 });
+            }
+
+            // Unpack a whole ZIP archive into a directory of the virtual
+            // filesystem, creating intermediate directories as needed. Used for
+            // the Omni-bot data pack, whose scripts and navigation meshes the bot
+            // library reads as ordinary files. Entry names are validated: a zip
+            // may contain absolute or "../" paths ("zip slip"), which must never
+            // be allowed to write outside destDir.
+            function unzipInto(bytes, destDir) {
+                var entries = listZipEntries(bytes);
+                Module.FS.mkdirTree(destDir);
+                return entries.reduce(function (chain, entry) {
+                    return chain.then(function () {
+                        var name = entry.name.replace(/\\/g, '/');
+                        if (!name || name.charAt(0) === '/' ||
+                            /(^|\/)\.\.(\/|$)/.test(name) || /^[a-zA-Z]:/.test(name)) {
+                            throw new Error('refusing unsafe zip entry name "' + entry.name + '"');
+                        }
+                        var target = destDir + '/' + name;
+                        if (name.charAt(name.length - 1) === '/') {
+                            Module.FS.mkdirTree(target.slice(0, -1));
+                            return;
+                        }
+                        Module.FS.mkdirTree(target.slice(0, target.lastIndexOf('/')));
+                        var raw = zipEntryData(bytes, entry);
+                        if (entry.method === 0) {
+                            Module.FS.writeFile(target, raw);
+                            return;
+                        }
+                        if (entry.method !== 8) {
+                            throw new Error('unsupported zip compression method ' +
+                                entry.method + ' for ' + entry.name);
+                        }
+                        return inflateRaw(raw).then(function (data) {
+                            Module.FS.writeFile(target, data);
+                        });
+                    });
+                }, Promise.resolve());
             }
 
             // Every pk3 present in LEGACY_DIR, in the order they should be tried
@@ -2491,6 +2574,102 @@
                         });
                     }, Promise.resolve());
                 });
+            }
+
+            // Give Omni-bot's server manager a starting bot count. Without one it
+            // defaults to MinBots -1 ("do not add any"), which would leave the
+            // player alone on the map - the browser cannot host other players,
+            // so bots are the only opponents there are.
+            //
+            // The setting lives in an ini that Omni-bot reads from fs_homepath
+            // (Options::LoadConfigFile -> "homepath/omni-bot.cfg") and rewrites
+            // itself when the count is changed in-game with "/bot minbots N".
+            // It is therefore only written when absent, so a returning player's
+            // own choice (persisted in IndexedDB with the rest of fs_homepath)
+            // is never overwritten.
+            function writeDefaultOmniBotConfig(bots) {
+                var cfg = HOME_ETL_DIR + '/omni-bot.cfg';
+                try {
+                    if (Module.FS.analyzePath(cfg).exists) { return; }
+                    Module.FS.mkdirTree(HOME_ETL_DIR);
+                    Module.FS.writeFile(cfg,
+                        '; Written by the ET: Legacy web launcher on first start.\n' +
+                        '; Change the bot count in-game with "/bot minbots <n>".\n' +
+                        '[ServerManager]\n' +
+                        'MinBots=' + bots + '\n' +
+                        'MaxBots=' + bots + '\n');
+                } catch (e) {
+                    if (console && console.warn) {
+                        console.warn('Could not write ' + cfg + ': ' + (e && e.message || e));
+                    }
+                }
+            }
+
+            // Fetch and install Omni-bot, so a game hosted in the browser can be
+            // played against bots.
+            //
+            // This is deliberately *not* part of downloadModAssets(): bots are
+            // only relevant for a locally hosted game, while a player joining a
+            // dedicated server plays against that server's bots. Making every
+            // visitor pay the ~3.5 MB (module + data pack) up front would slow
+            // down the common case for nothing, so it runs the first time a local
+            // game is started and its result is remembered.
+            //
+            // Resolves to true when the bot is ready, false when it could not be
+            // installed - the caller then starts the game without bots rather
+            // than not at all (the engine would otherwise sit in a map with an
+            // Omni-bot that cannot load its scripts).
+            var omniBotInstall = null;
+            function setupOmniBot(bots) {
+                if (omniBotInstall) { return omniBotInstall; }
+
+                var moduleUrl = LEGACY_BASE + 'omni-bot/' + OMNIBOT_MODULE;
+                var packUrl = LEGACY_BASE + 'omni-bot/' + OMNIBOT_DATA_PACK;
+                var packCache = LEGACY_DIR + '/' + OMNIBOT_DATA_PACK;
+
+                omniBotInstall = Promise.resolve().then(function () {
+                    Module.setStatus('Loading Omni-bot');
+                    // The library is a side module like cgame/ui/qagame, so it
+                    // has to go through the wasm preload plugin as well: qagame
+                    // dlopen()s it (Omnibot_LoadLibrary), and on Emscripten that
+                    // can only ever succeed for a module already compiled into
+                    // the preloadedWasm cache under exactly this path.
+                    return fetch(moduleUrl, { cache: 'no-cache' });
+                }).then(function (response) {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status + ' for ' + moduleUrl);
+                    }
+                    return response.arrayBuffer();
+                }).then(function (buf) {
+                    var bytes = new Uint8Array(buf);
+                    if (!hasWasmMagic(bytes)) {
+                        throw new Error(moduleUrl + ' is not usable: ' + describeNonWasm(bytes));
+                    }
+                    return createPreloadedSideModule(OMNIBOT_DIR, OMNIBOT_MODULE, bytes);
+                }).then(function () {
+                    // Cache the (single) zip in the IndexedDB-backed legacy dir,
+                    // then unpack it next to the library.
+                    return downloadInto(packUrl, packCache, 'Omni-bot data');
+                }).then(function () {
+                    return unzipInto(Module.FS.readFile(packCache), OMNIBOT_DIR);
+                }).then(function () {
+                    writeDefaultOmniBotConfig(bots);
+                    return true;
+                }).catch(function (err) {
+                    if (console && console.warn) {
+                        console.warn('Omni-bot is not available, starting without ' +
+                            'bots: ' + (err && err.message || err));
+                    }
+                    // Drop a half-unpacked tree so a later attempt starts clean
+                    // and the engine never sees a partial data directory.
+                    try {
+                        if (Module.FS.analyzePath(packCache).exists) {
+                            Module.FS.unlink(packCache);
+                        }
+                    } catch (e) { /* nothing cached */ }
+                    return false;
+                });
+                return omniBotInstall;
             }
 
             // Persist the etmain data to IndexedDB so subsequent loads are fast.
@@ -2848,16 +3027,35 @@
             //   sv_pure 0        - the browser filesystem only holds the paks the
             //                      shell downloaded, so pure checks would reject
             //                      the local client
-            //   omnibot_enable 0 - the bot library is native-only and not part of
-            //                      the wasm build
+            //   omnibot_enable   - bots. Since no other player can join, they are
+            //                      the only opponents; the library and its data
+            //                      are fetched on demand here (setupOmniBot), and
+            //                      the game still starts - just empty - if that
+            //                      fails, so a hiccup fetching them never blocks
+            //                      the player from getting into a map.
+            //   omnibot_path     - absolute path, because the cvar's default
+            //                      ("legacy/omni-bot") is relative to the working
+            //                      directory, which is "/" in the browser
+            //
+            // Resolves with the argument list, since installing Omni-bot needs
+            // the network.
             function localGameArgs(map, hostname, maxClients) {
-                return ['+set', 'dedicated', '0',
-                        '+set', 'sv_hostname', hostname,
-                        '+set', 'sv_maxclients', String(maxClients),
-                        '+set', 'g_gametype', '2',
-                        '+set', 'sv_pure', '0',
-                        '+set', 'omnibot_enable', '0',
-                        '+map', map];
+                var args = ['+set', 'dedicated', '0',
+                            '+set', 'sv_hostname', hostname,
+                            '+set', 'sv_maxclients', String(maxClients),
+                            '+set', 'g_gametype', '2',
+                            '+set', 'sv_pure', '0'];
+                // Leave one slot free for the player and cap the default at a
+                // count a browser can still render at a reasonable frame rate.
+                var bots = Math.max(1, Math.min(maxClients - 1, 8));
+                return setupOmniBot(bots).then(function (ready) {
+                    args.push('+set', 'omnibot_enable', ready ? '1' : '0');
+                    if (ready) {
+                        args.push('+set', 'omnibot_path', OMNIBOT_DIR);
+                    }
+                    args.push('+map', map);
+                    return args;
+                });
             }
 
             function chooseGameMode() {
