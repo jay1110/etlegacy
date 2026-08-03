@@ -3815,12 +3815,6 @@
             // profiles into it before the engine starts.
             var HOME_ETL_DIR = '/home/web_user/.etlegacy';
 
-            // Every directory the engine may dlopen() a side module from, in the
-            // order it searches them. Precompiling the modules into all of them
-            // makes the first dlopen() a preloadedWasm cache hit instead of
-            // depending on the engine falling through to fs_basepath.
-            var SIDE_MODULE_DIRS = [HOME_LEGACY_DIR, LEGACY_DIR];
-
             // Where to download the ET: Legacy mod data from. This is the mod's
             // "legacy/" folder (analogous to etmain/ for the retail paks) served
             // next to this page by default, so it is fetched same-origin (no CORS
@@ -3870,6 +3864,44 @@
             // standalone .so served in the same legacy/ folder is used only as a
             // fallback when a module is missing from the pk3.
             var MOD_FILES = ['cgame.mp.wasm32.so', 'ui.mp.wasm32.so', 'qagame.mp.wasm32.so'];
+
+            // --- Mod asset locations ---------------------------------------
+            // Everything the shell needs to install one mod: where its files are
+            // served, where they are downloaded to and which directories the
+            // engine may dlopen() its side modules from (in the order it searches
+            // them - precompiling the modules into all of them makes the first
+            // dlopen() a preloadedWasm cache hit instead of depending on the
+            // engine falling through to fs_basepath).
+            //
+            // The mod that ships with this deployment is "legacy", but a hosted
+            // game can run a different one (see HOST_MODS). The engine treats them
+            // all alike: "+set fs_game <mod>" simply makes Sys_LoadGameDll look for
+            // the same three modules in <fs_homepath>/<mod>/ and <fs_basepath>/<mod>/,
+            // and FS mounts the pk3s of that directory. Only the directory name
+            // changes, so one descriptor per mod is enough to reuse the whole
+            // download/preload machinery below for any of them.
+            //
+            // Another mod's files are served in a folder named after its fs_game
+            // directory next to this page - e.g. "xmod/" holding xmod-2.0.3.pk3
+            // and the three *.mp.wasm32.so modules - which is also how a dedicated
+            // server lays them out.
+            function modAssets(fsGame, pk3s, base) {
+                var url = base || (fsGame + '/');
+                if (url.charAt(url.length - 1) !== '/') { url += '/'; }
+                return {
+                    fsGame: fsGame,
+                    base: url,
+                    dir: INSTALL_DIR + '/' + fsGame,
+                    pk3s: pk3s || [],
+                    moduleDirs: [HOME_ETL_DIR + '/' + fsGame,
+                                 INSTALL_DIR + '/' + fsGame]
+                };
+            }
+
+            // The mod shipped with this deployment, downloaded during the
+            // bootstrap. Its directories are the ones mounted from IndexedDB
+            // (see mountCache), so its pk3 is cached across sessions.
+            var LEGACY_ASSETS = modAssets('legacy', MOD_PK3, LEGACY_BASE);
 
             // --- Omni-bot ------------------------------------------------
             // The bot library is a side module of its own, loaded by qagame
@@ -4218,14 +4250,15 @@
                 return downloadInto(ASSET_BASE + name, ETMAIN_DIR + '/' + name, name);
             }
 
-            // Download one file from the legacy/ folder into LEGACY_DIR. Unlike
-            // the huge retail paks, the mod files are always revalidated against
-            // the server: they contain the cgame/ui game-logic side modules,
-            // which must exactly match the engine build being served. Reusing a
-            // stale IndexedDB copy after a site update pairs old modules with a
-            // new engine, which crashes at runtime (see downloadInto).
-            function downloadLegacyFile(name) {
-                return downloadInto(LEGACY_BASE + name, LEGACY_DIR + '/' + name, name,
+            // Download one file of a mod's folder into that mod's directory.
+            // Unlike the huge retail paks, the mod files are always revalidated
+            // against the server: they contain the cgame/ui game-logic side
+            // modules, which must exactly match the engine build being served.
+            // Reusing a stale IndexedDB copy after a site update pairs old
+            // modules with a new engine, which crashes at runtime (see
+            // downloadInto).
+            function downloadModFile(name, assets) {
+                return downloadInto(assets.base + name, assets.dir + '/' + name, name,
                     { refresh: true });
             }
 
@@ -4362,24 +4395,24 @@
                 }, Promise.resolve());
             }
 
-            // Every pk3 present in LEGACY_DIR, in the order they should be tried
-            // for the cgame/ui side modules. The configured MOD_PK3 name(s) come
-            // first (so the intended mod pk3 wins), followed by any other *.pk3
-            // the user hosts in legacy/ or that was cached from a previous
-            // session. This mirrors the engine, which scans the whole fs_game
-            // folder for *.pk3 (FS_CL_ExtractFromPakFile) rather than relying on
-            // one exact filename: a legacy pk3 served under a name that does not
-            // match @ETL_MOD_PK3_NAME@ (e.g. a different version) is still found,
-            // instead of failing to preload and falling back to a standalone .so
-            // that may not be hosted.
-            function listModPk3s() {
+            // Every pk3 present in the mod's directory, in the order they should
+            // be tried for the cgame/ui side modules. The configured pk3 name(s)
+            // come first (so the intended mod pk3 wins), followed by any other
+            // *.pk3 the user hosts in that folder or that was cached from a
+            // previous session. This mirrors the engine, which scans the whole
+            // fs_game folder for *.pk3 (FS_CL_ExtractFromPakFile) rather than
+            // relying on one exact filename: a mod pk3 served under a name that
+            // does not match the configured one (e.g. a different version) is
+            // still found, instead of failing to preload and falling back to a
+            // standalone .so that may not be hosted.
+            function listModPk3s(assets) {
                 var seen = {};
                 var pk3s = [];
-                MOD_PK3.forEach(function (name) {
+                assets.pk3s.forEach(function (name) {
                     if (name && !seen[name]) { seen[name] = true; pk3s.push(name); }
                 });
                 try {
-                    Module.FS.readdir(LEGACY_DIR).forEach(function (entry) {
+                    Module.FS.readdir(assets.dir).forEach(function (entry) {
                         if (entry === '.' || entry === '..') { return; }
                         if (!/\.pk3$/i.test(entry)) { return; }
                         if (seen[entry]) { return; }
@@ -4399,7 +4432,8 @@
             // syscall ABI, e.g. a "table index is out of bounds" indirect call).
             // Only auto-named legacy_*.pk3 files that are not the configured
             // MOD_PK3 are removed; user-hosted custom pk3s with other names are
-            // left alone.
+            // left alone. Only the legacy directory is cached in IndexedDB, so
+            // only it can hold a pk3 from a previous session.
             function removeStaleModPk3s() {
                 var keep = {};
                 MOD_PK3.forEach(function (name) { keep[name] = true; });
@@ -4419,17 +4453,18 @@
                 } catch (e) { /* dir missing/unreadable - nothing to clean */ }
             }
 
-            // Extract a side module (cgame/ui) from one of the already-downloaded
-            // mod pk3s in LEGACY_DIR. Returns the module bytes, or null if none of
-            // the pk3s contains it. The pk3 is the primary, always-present source
-            // for the game logic (it is the mod's data package), so loading the
-            // modules from it removes any dependency on separate standalone .so
-            // files being hosted and served correctly.
-            function extractSideModuleFromPk3(name) {
-                return listModPk3s().reduce(function (chain, pk3) {
+            // Extract a side module (cgame/ui/qagame) from one of the
+            // already-downloaded pk3s in the mod's directory. Returns the module
+            // bytes, or null if none of the pk3s contains it. The pk3 is the
+            // primary, always-present source for the game logic (it is the mod's
+            // data package), so loading the modules from it removes any
+            // dependency on separate standalone .so files being hosted and served
+            // correctly.
+            function extractSideModuleFromPk3(name, assets) {
+                return listModPk3s(assets).reduce(function (chain, pk3) {
                     return chain.then(function (found) {
                         if (found) { return found; }
-                        var pk3Path = LEGACY_DIR + '/' + pk3;
+                        var pk3Path = assets.dir + '/' + pk3;
                         var bytes;
                         try {
                             if (!Module.FS.analyzePath(pk3Path).exists) { return null; }
@@ -4511,15 +4546,16 @@
                 });
             }
 
-            // Fetch the raw bytes of a standalone side module served in legacy/.
-            // Used only as a fallback when the module is not inside the mod pk3.
-            // 'no-cache' forces HTTP revalidation so a stale browser-cached copy
-            // from a previous deployment is not silently reused.
-            function fetchStandaloneSideModule(name) {
-                return fetch(LEGACY_BASE + name, { cache: 'no-cache' }).then(function (response) {
+            // Fetch the raw bytes of a standalone side module served in the mod's
+            // folder. Used only as a fallback when the module is not inside the
+            // mod pk3. 'no-cache' forces HTTP revalidation so a stale
+            // browser-cached copy from a previous deployment is not silently
+            // reused.
+            function fetchStandaloneSideModule(name, assets) {
+                return fetch(assets.base + name, { cache: 'no-cache' }).then(function (response) {
                     if (!response.ok) {
                         throw new Error('HTTP ' + response.status + ' for ' +
-                            LEGACY_BASE + name);
+                            assets.base + name);
                     }
                     return response.arrayBuffer();
                 }).then(function (buf) { return new Uint8Array(buf); });
@@ -4565,7 +4601,7 @@
                     'mode instead of binary) or altered by the web server';
             }
 
-            function preloadSideModule(name) {
+            function preloadSideModule(name, assets) {
                 Module.setStatus('Loading ' + name);
                 // Obtain the module bytes once - preferably straight from the mod
                 // pk3 the shell downloaded (the reliable, always-present source),
@@ -4578,7 +4614,7 @@
                 function usable(bytes) {
                     return hasWasmMagic(bytes);
                 }
-                return extractSideModuleFromPk3(name).then(function (bytes) {
+                return extractSideModuleFromPk3(name, assets).then(function (bytes) {
                     if (bytes && usable(bytes)) { return bytes; }
                     if (bytes && console && console.warn) {
                         console.warn('Ignoring ' + name + ' from the mod pk3: ' +
@@ -4587,24 +4623,24 @@
                     var pk3Problem = bytes ?
                         ' (its copy inside the mod pk3 is not usable: ' +
                         describeProblem(bytes) + ')' : '';
-                    return fetchStandaloneSideModule(name).catch(function (err) {
+                    return fetchStandaloneSideModule(name, assets).catch(function (err) {
                         throw new Error('it is not usable from the mod pk3 and the ' +
-                            'standalone copy at ' + LEGACY_BASE + name +
+                            'standalone copy at ' + assets.base + name +
                             ' could not be loaded (' +
                             (err && err.message || err) + ')' + pk3Problem);
                     }).then(function (bytes) {
                         if (usable(bytes)) { return bytes; }
-                        throw new Error('the standalone copy at ' + LEGACY_BASE +
+                        throw new Error('the standalone copy at ' + assets.base +
                             name + ' is not usable: ' +
                             describeProblem(bytes) + pk3Problem);
                     });
                 }).then(function (bytes) {
                     // Precompile the module into every directory the engine may
-                    // dlopen() it from (fs_homepath/legacy is searched first in a
-                    // release build, then fs_basepath/legacy) so the very first
+                    // dlopen() it from (fs_homepath/<mod> is searched first in a
+                    // release build, then fs_basepath/<mod>) so the very first
                     // load attempt is a preloadedWasm cache hit instead of failing
                     // on the engine's freshly-extracted, un-preloaded copy.
-                    return SIDE_MODULE_DIRS.reduce(function (chain, dir) {
+                    return assets.moduleDirs.reduce(function (chain, dir) {
                         return chain.then(function () {
                             return createPreloadedSideModule(dir, name, bytes);
                         });
@@ -4620,8 +4656,8 @@
                 });
             }
 
-            // Fetch the mod data. Two things are needed:
-            //   1. The legacy pk3 - it carries the cgame/ui/qagame game logic side
+            // Fetch a mod's data. Two things are needed:
+            //   1. The mod pk3 - it carries the cgame/ui/qagame game logic side
             //      modules plus the ui .menu files and other mod media.
             //   2. The cgame/ui/qagame side modules, preloaded (compiled up front) so
             //      the engine's dlopen() succeeds. Their bytes are taken from the
@@ -4630,14 +4666,16 @@
             // engine aborts later with "VM_Create on game failed". The pk3 download
             // itself is only "optional" in that a network blip is retried via the
             // standalone fallback; without either source the side modules fail.
-            function downloadModAssets() {
+            function downloadModAssets(assets) {
+                assets = assets || LEGACY_ASSETS;
+
                 // 1) mod pk3(s) - the source of the game logic + ui media.
-                var pk3Chain = MOD_PK3.reduce(function (chain, name) {
+                var pk3Chain = assets.pk3s.reduce(function (chain, name) {
                     return chain.then(function () {
-                        return downloadLegacyFile(name).catch(function (err) {
+                        return downloadModFile(name, assets).catch(function (err) {
                             if (console && console.warn) {
                                 console.warn('Mod pk3 ' + name + ' not fetched from ' +
-                                    LEGACY_BASE + ': ' + err.message);
+                                    assets.base + ': ' + err.message);
                             }
                         });
                     });
@@ -4648,10 +4686,10 @@
                 //    versioned pk3s cached from a previous deployment are removed
                 //    first so their stale side modules can never be picked up.
                 return pk3Chain.then(function () {
-                    removeStaleModPk3s();
+                    if (assets === LEGACY_ASSETS) { removeStaleModPk3s(); }
                     return MOD_FILES.reduce(function (chain, name) {
                         return chain.then(function () {
-                            return preloadSideModule(name);
+                            return preloadSideModule(name, assets);
                         });
                     }, Promise.resolve());
                 });
@@ -5166,9 +5204,19 @@
             // can actually run in a browser, which is what "available" means
             // here; the others are listed (and disabled in the drop-down) so it
             // is clear that they are known but not usable yet.
+            //
+            // "pk3s" names the mod's data package(s) as served in its folder
+            // (see modAssets): unlike the legacy pk3, whose name this page gets
+            // from the build, another mod's pk3 carries its own version, which
+            // the browser cannot guess - a folder cannot be listed over HTTP.
+            // Point the shell at a differently named/versioned one with
+            // ?modpk3=<a.pk3,b.pk3>, and at a different folder with
+            // ?modbase=<url> (e.g. when the files are not served next to this
+            // page). Both apply to the mod that is started, not to legacy.
             var HOST_MODS = {
                 legacy:    { name: 'Legacy Mod', fsGame: 'legacy',    available: true },
-                xmod:      { name: 'XMod',       fsGame: 'xmod',      available: true },
+                xmod:      { name: 'XMod',       fsGame: 'xmod',      available: true,
+                             pk3s: ['xmod-2.0.3.pk3'] },
                 etbloat:   { name: 'ETBloat',    fsGame: 'etbloat',   available: false },
                 jaymod:    { name: 'Jaymod',     fsGame: 'jaymod',    available: false },
                 noquarter: { name: 'No Quarter', fsGame: 'nq',        available: false },
@@ -5177,8 +5225,63 @@
             };
             var DEFAULT_MOD = 'legacy';
 
-            // Resolves with the argument list, since installing Omni-bot needs
-            // the network.
+            // --- Installing another mod --------------------------------------
+            // The mod of this deployment (legacy) is installed during the
+            // bootstrap, before main() runs. Any other mod is only needed once a
+            // game that uses it is actually started - hosted here, or joined in
+            // somebody else's browser - so it is fetched on demand, exactly like
+            // Omni-bot, and only the first time it is used in this tab.
+            //
+            // Doing this is what makes "+set fs_game xmod" work at all: the
+            // engine loads a mod's game logic through dlopen()
+            // (Sys_LoadGameDll -> <fs_homepath|fs_basepath>/<mod>/qagame...so),
+            // and on Emscripten dlopen() can only return a module that was
+            // compiled up front by the wasm preload plugin. The copy the engine
+            // extracts from the pk3 itself (FS_CL_ExtractFromPakFile) is inert
+            // data, so without preloading the modules here the game stops with
+            //   VM_Create on game failed
+            //   Sys_LoadDll(...xmod/ui.mp.wasm32.so)... skipped (not present in
+            //   virtual filesystem)
+            // even though the files are served correctly.
+            var modInstalls = {};
+
+            function hostModAssets(mod) {
+                var pk3s = params.get('modpk3');
+                return modAssets(mod.fsGame,
+                    pk3s ? pk3s.split(',').map(function (s) { return s.trim(); })
+                                .filter(function (s) { return s.length; })
+                         : (mod.pk3s || []),
+                    params.get('modbase') || null);
+            }
+
+            // Resolves once the mod's game logic is in place; rejects with a
+            // message that names what has to be served where, because a missing
+            // file here is a deployment problem the host can fix.
+            function installMod(modKey) {
+                var mod = HOST_MODS[modKey];
+                if (!mod || !mod.available || mod.fsGame === HOST_MODS[DEFAULT_MOD].fsGame) {
+                    return Promise.resolve();     // shipped with the page already
+                }
+                if (modInstalls[modKey]) { return modInstalls[modKey]; }
+
+                var assets = hostModAssets(mod);
+                var install = downloadModAssets(assets).catch(function (err) {
+                    // A failed install must not be remembered: the next attempt
+                    // (after the file was uploaded, or on a better connection)
+                    // has to try again.
+                    if (modInstalls[modKey] === install) { modInstalls[modKey] = null; }
+                    throw new Error(mod.name + ' could not be loaded: ' +
+                        (err && err.message || err) + '. Serve ' +
+                        (assets.pk3s.length ? assets.pk3s.join(', ') + ' and ' : '') +
+                        MOD_FILES.join(', ') + ' in the "' +
+                        assets.base.replace(/\/$/, '') + '" folder next to this page.');
+                });
+                modInstalls[modKey] = install;
+                return install;
+            }
+
+            // Resolves with the argument list, since installing the mod and
+            // Omni-bot needs the network.
             function hostedGameArgs(settings) {
                 var args = ['+set', 'dedicated', '0',
                             '+set', 'sv_hostname', settings.name,
@@ -5208,7 +5311,12 @@
                 args.push('+set', 'g_userAxisRespawnTime',
                           String(settings.axisRespawn || 0));
 
-                return setupOmniBot(settings.bots).then(function (ready) {
+                // The mod's game logic has to be in the browser before the engine
+                // starts with "+set fs_game <mod>", and the bot library before
+                // the first map is loaded.
+                return installMod(settings.mod).then(function () {
+                    return setupOmniBot(settings.bots);
+                }).then(function (ready) {
                     if (!ready) {
                         // Omni-bot could not be installed: the game starts
                         // without bots, so the settings (and the game list, and

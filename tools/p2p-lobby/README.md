@@ -123,7 +123,7 @@ control messages; **binary** frames are game packets (the fallback relay path).
 | Message | Reply / effect |
 |---------|----------------|
 | `{"t":"hello","name":"<name>","version":1}` | `{"t":"welcome","peer":<uint32>,"ice":[<RTCIceServer>…],"rooms":<public count>}`. `peer` is this connection's unique id. |
-| `{"t":"host","room":{name,map,maxPlayers,bots,timeLimit,private}}` | `{"t":"hosted","roomId":"<6-8 chars>","room":{…normalised…}}`. One room per connection; re-hosting replaces the old room. |
+| `{"t":"host","room":{name,map,mod,maxPlayers,bots,timeLimit,private}}` | `{"t":"hosted","roomId":"<6-8 chars>","room":{…normalised…}}`. One room per connection; re-hosting replaces the old room. |
 | `{"t":"update","room":{<subset of fields, plus players>}}` | `{"t":"updated","room":{…}}` and a coalesced push to subscribers. |
 | `{"t":"unhost"}` | `{"t":"unhosted"}`; the room disappears. Disconnecting does the same. |
 | `{"t":"list"}` | `{"t":"rooms","rooms":[…],"count":<n>}` (public rooms only). |
@@ -154,13 +154,15 @@ anything else is dropped silently. Payload limit **16384 bytes** (`MAX_MSGLEN`).
 ### Room record (as published in `rooms` / `GET /rooms`)
 
 ```json
-{ "roomId", "name", "map", "players", "maxPlayers", "bots",
+{ "roomId", "name", "map", "mod", "players", "maxPlayers", "bots",
   "timeLimit", "private": false, "created" }
 ```
 
 Nothing else is ever leaked — in particular **no IP addresses**. Every field is
 validated and clamped server-side: `name`/`map` trimmed and stripped of control
-characters (`name` ≤ 64, `map` ≤ 64 and restricted to `[A-Za-z0-9_-]`),
+characters (`name` ≤ 64, `map` ≤ 64 and `mod` ≤ 32, both restricted to
+`[A-Za-z0-9_-]`; `mod` defaults to `legacy` and tells joiners which mod's game
+logic to install before they connect),
 `maxPlayers` 2–32, `bots` 0–31 and never more than `maxPlayers-1`, `timeLimit`
 0–1440, `players` 0–`maxPlayers`, `private` coerced to a boolean.
 

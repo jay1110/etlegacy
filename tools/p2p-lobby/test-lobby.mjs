@@ -360,7 +360,11 @@ async function testUpdateAndSubscribe(port) {
 	await delay(150);
 }
 
-async function testDisconnectClosesRoom(port) {
+async function testDisconnectClosesRoom() {
+	// A very short grace period so the "not reclaimed" path is testable.
+	const lobby = await startLobby(['--reclaim-ms', '300']);
+	const port = lobby.port;
+
 	const host = new Client(port);
 	await host.hello('DropHost');
 	host.send({ t: 'host', room: { name: 'droproom', map: 'oasis', maxPlayers: 4 } });
@@ -372,18 +376,90 @@ async function testDisconnectClosesRoom(port) {
 	await joiner.waitType('joined', 'drop joined');
 	await host.waitType('peer', 'drop peer');
 
-	// The host vanishes without an unhost - the joiner must be told.
+	// The host vanishes without an unhost - it may just be reloading its page,
+	// so the joiner is told to wait rather than being thrown out.
 	host.ws.terminate();
-	const rc = await joiner.waitType('roomclosed', 'roomclosed on host disconnect');
-	check(rc.roomId === hosted.roomId, 'a joiner gets roomclosed when the host disconnects');
+	const away = await joiner.waitType('hostaway', 'hostaway on host disconnect');
+	check(away.roomId === hosted.roomId, 'a joiner gets hostaway when the host disconnects');
+
+	// While the host is away the room is still there, but not joinable.
+	const other = new Client(port);
+	await other.hello('TooEarly');
+	other.send({ t: 'join', roomId: hosted.roomId });
+	const busy = await other.waitType('error', 'join while the host is away');
+	check(busy.code === 'hostaway', 'joining a paused room -> hostaway');
+	other.close();
+
+	// The host never comes back: the room is closed when the grace period ends.
+	const rc = await joiner.waitType('roomclosed', 'roomclosed after the grace period');
+	check(rc.roomId === hosted.roomId, 'a joiner gets roomclosed when the host stays away');
 
 	await delay(150);
 	const res = await fetch('http://127.0.0.1:' + port + '/rooms');
 	const json = await res.json();
-	check(!json.rooms.some(r => r.roomId === hosted.roomId), 'the room disappears when the host disconnects');
+	check(!json.rooms.some(r => r.roomId === hosted.roomId), 'the room disappears when the host stays away');
 
 	joiner.close();
 	await delay(100);
+	lobby.proc.kill('SIGKILL');
+}
+
+async function testReclaimAfterHostReload(port) {
+	const host = new Client(port);
+	await host.hello('ReloadHost');
+	host.send({ t: 'host', room: { name: 'reloadroom', map: 'oasis', mod: 'xmod', maxPlayers: 4 } });
+	const hosted = await host.waitType('hosted', 'reclaim host');
+	check(typeof hosted.hostToken === 'string' && hosted.hostToken.length >= 16,
+		'hosting hands the host a reclaim token');
+	check(hosted.room.mod === 'xmod', 'the room carries the mod it runs');
+
+	const joiner = new Client(port);
+	await joiner.hello('ReloadGuest');
+	joiner.send({ t: 'join', roomId: hosted.roomId });
+	const joined = await joiner.waitType('joined', 'reclaim joined');
+	check(joined.room.mod === 'xmod', 'a joiner is told which mod the game runs');
+	check(joined.room.hostToken === undefined, 'the reclaim token is never sent to a joiner');
+	await host.waitType('peer', 'reclaim peer');
+
+	// The host reloads its page: the connection dies and comes back.
+	host.ws.terminate();
+	await joiner.waitType('hostaway', 'hostaway before reclaim');
+
+	const back = new Client(port);
+	await back.hello('ReloadHost');
+	back.send({ t: 'reclaim', roomId: hosted.roomId, hostToken: 'not-the-token' });
+	const bad = await back.waitType('error', 'reclaim with a wrong token');
+	check(bad.code === 'badtoken', 'reclaiming with a wrong token -> badtoken');
+
+	back.send({ t: 'reclaim', roomId: hosted.roomId, hostToken: hosted.hostToken, room: { map: 'radar' } });
+	const again = await back.waitType('hosted', 'reclaimed');
+	check(again.roomId === hosted.roomId, 'a reclaimed room keeps its id');
+	check(again.reclaimed === true, 'the reply says the room was reclaimed');
+	check(again.room.map === 'radar', 'a reclaiming host can change the room settings');
+	check(again.room.paused === false, 'a reclaimed room is not paused any more');
+
+	const hb = await joiner.waitType('hostback', 'hostback after reclaim');
+	check(hb.roomId === hosted.roomId, 'joiners are told the host is back');
+
+	// The joiner re-joins the very same room and reaches the new host peer.
+	joiner.send({ t: 'join', roomId: hosted.roomId });
+	const rejoined = await joiner.waitType('joined', 'rejoined after reclaim');
+	check(rejoined.room.map === 'radar', 'the re-joined room carries the new settings');
+
+	// A stranger cannot take the room over, even knowing its id.
+	const thief = new Client(port);
+	await thief.hello('Thief');
+	thief.send({ t: 'reclaim', roomId: hosted.roomId, hostToken: '' });
+	const denied = await thief.waitType('error', 'reclaim without a token');
+	check(denied.code === 'noroom', 'reclaiming without a token is refused');
+	thief.close();
+
+	back.send({ t: 'unhost' });
+	await back.waitType('unhosted', 'unhost after reclaim');
+	back.close();
+	joiner.close();
+	host.close();
+	await delay(150);
 }
 
 async function testJoinErrors(port) {
@@ -610,7 +686,8 @@ async function main() {
 	await testHostListAndHttp(lobby.port);
 	await testPrivateRoomHiddenButJoinable(lobby.port);
 	await testUpdateAndSubscribe(lobby.port);
-	await testDisconnectClosesRoom(lobby.port);
+	await testDisconnectClosesRoom();
+	await testReclaimAfterHostReload(lobby.port);
 	await testJoinErrors(lobby.port);
 	await testSignalling(lobby.port);
 	await testBinaryRelay(lobby.port);

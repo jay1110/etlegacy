@@ -91,6 +91,8 @@ const WS_MAX_PAYLOAD = 65536;
 // Room field bounds. Never trust the client - every field is clamped/stripped.
 const NAME_MAX = 64;
 const MAP_MAX = 64;
+// A mod is an fs_game directory name (e.g. "legacy", "xmod").
+const MOD_MAX = 32;
 const MIN_PLAYERS = 2;
 const MAX_PLAYERS = 32;
 const MAX_BOTS = 31;
@@ -111,6 +113,19 @@ const LIST_PUSH_COALESCE_MS = 250;
 
 const ROOM_ID_MIN = 6;
 const ROOM_ID_MAX = 8;
+
+// --- Reclaiming a room after the host reloaded its page --------------------
+// A hosted game lives in a browser tab, and reloading that tab (F5, or the
+// page restarting itself to change the map) drops the host's WebSocket. The
+// room is therefore not destroyed right away: it is kept "paused" for a short
+// grace period during which only the original host - proving itself with the
+// token it got when it created the room - can take it over again, so the
+// invite link, the room id and the players stay valid across the reload.
+// Joiners are told to wait (`hostaway`) and to reconnect (`hostback`) instead
+// of being thrown out. When the grace period expires the room is closed for
+// good, exactly as if the host had left.
+const RECLAIM_GRACE_MS = 60000;
+const HOST_TOKEN_BYTES = 16;
 
 // ---------------------------------------------------------------------------
 // Command line / environment configuration
@@ -133,6 +148,7 @@ let tlsCert = process.env.ETL_LOBBY_TLS_CERT || null;
 let tlsKey = process.env.ETL_LOBBY_TLS_KEY || null;
 let maxConnections = envInt('ETL_LOBBY_MAX_CONNECTIONS', DEFAULT_MAX_CONNECTIONS);
 let maxRooms = envInt('ETL_LOBBY_MAX_ROOMS', DEFAULT_MAX_ROOMS);
+let reclaimGraceMs = envInt('ETL_LOBBY_RECLAIM_MS', RECLAIM_GRACE_MS);
 let iceSpec = process.env.ETL_LOBBY_ICE || DEFAULT_ICE;
 let turnUser = process.env.ETL_LOBBY_TURN_USER || null;
 let turnPass = process.env.ETL_LOBBY_TURN_PASS || null;
@@ -150,6 +166,9 @@ function usage() {
 	console.log('  --tls-key <file>         TLS private key (PEM) to serve wss://');
 	console.log('  --max-connections <n>    Connection limit (default: 512)');
 	console.log('  --max-rooms <n>          Hosted-room limit (default: 128)');
+	console.log('  --reclaim-ms <ms>        How long a room survives its host reloading its');
+	console.log('                           page, so the same host can take it over again');
+	console.log('                           (default: ' + RECLAIM_GRACE_MS + ', 0 disables it)');
 	console.log('  --ice <list>             Comma separated stun:/turn: URLs advertised to clients');
 	console.log('                           (default: ' + DEFAULT_ICE + ')');
 	console.log('  --turn-user <user>       Username applied to turn: URLs');
@@ -176,6 +195,8 @@ for (let i = 0; i < args.length; i++) {
 		maxConnections = parseInt(args[++i], 10);
 	} else if (a === '--max-rooms' && args[i + 1]) {
 		maxRooms = parseInt(args[++i], 10);
+	} else if (a === '--reclaim-ms' && args[i + 1]) {
+		reclaimGraceMs = parseInt(args[++i], 10);
 	} else if (a === '--ice' && args[i + 1]) {
 		iceSpec = args[++i];
 	} else if (a === '--turn-user' && args[i + 1]) {
@@ -202,6 +223,10 @@ if (isNaN(maxConnections) || maxConnections < 1) {
 }
 if (isNaN(maxRooms) || maxRooms < 1) {
 	console.error('Error: --max-rooms must be a number >= 1.');
+	process.exit(1);
+}
+if (isNaN(reclaimGraceMs) || reclaimGraceMs < 0) {
+	console.error('Error: --reclaim-ms must be a number >= 0.');
 	process.exit(1);
 }
 if ((tlsCert && !tlsKey) || (!tlsCert && tlsKey)) {
@@ -294,6 +319,19 @@ function cleanString(value, max, fallback) {
 }
 
 /**
+ * Compare a client-supplied token with the stored one without leaking its
+ * length or a byte-by-byte match through timing.
+ */
+function safeTokenEqual(a, b) {
+	const ab = Buffer.from(String(a));
+	const bb = Buffer.from(String(b));
+	if (ab.length !== bb.length) {
+		return false;
+	}
+	return crypto.timingSafeEqual(ab, bb);
+}
+
+/**
  * Produce a fully normalised room from arbitrary client input, merged onto an
  * optional existing room (for `update`, where only a subset of fields is sent).
  * Every field is clamped/stripped so nothing a client sends can be trusted or
@@ -315,6 +353,18 @@ function normaliseRoom(input, base) {
 	map = map.replace(/[^A-Za-z0-9_-]/g, '');
 	if (!map.length) {
 		map = base.map || 'unknown';
+	}
+
+	// Which mod the game runs (its fs_game directory). Joiners need it to put
+	// the same game logic in place before they connect, so it travels with the
+	// room; like the map name it ends up in a command line and a file path, so
+	// it is restricted to the same safe identifier charset.
+	let mod = cleanString(
+		input.mod !== undefined ? input.mod : base.mod,
+		MOD_MAX, base.mod !== undefined ? base.mod : 'legacy');
+	mod = mod.replace(/[^A-Za-z0-9_-]/g, '');
+	if (!mod.length) {
+		mod = base.mod || 'legacy';
 	}
 
 	const maxPlayers = clampInt(
@@ -355,6 +405,7 @@ function normaliseRoom(input, base) {
 	return {
 		name: name,
 		map: map,
+		mod: mod,
 		maxPlayers: maxPlayers,
 		bots: bots,
 		timeLimit: timeLimit,
@@ -373,11 +424,15 @@ function roomRecord(room, listing) {
 		roomId: room.roomId,
 		name: room.name,
 		map: room.map,
+		mod: room.mod,
 		players: room.players,
 		maxPlayers: room.maxPlayers,
 		bots: room.bots,
 		timeLimit: room.timeLimit,
 		private: listing ? false : room.private,
+		// True while the host is reloading its page: the room is still there
+		// (and keeps its id) but cannot be joined for a moment.
+		paused: Boolean(room.paused),
 		created: room.created
 	};
 }
@@ -493,18 +548,78 @@ function removeHostedRoom(conn) {
 	if (!room) {
 		return;
 	}
+	closeRoom(room, conn);
+}
+
+/** Close a room for good: evict its joiners and forget it. */
+function closeRoom(room, hostConn) {
 	rooms.delete(room.roomId);
+	if (room.reclaimTimer) {
+		clearTimeout(room.reclaimTimer);
+		room.reclaimTimer = null;
+	}
 
 	room.joinedPeers.forEach(function (peerId) {
 		const joiner = peers.get(peerId);
 		if (joiner) {
 			joiner.joinedRoomId = null;
-			unlinkPeers(joiner, conn);
+			if (hostConn) {
+				unlinkPeers(joiner, hostConn);
+			}
 			sendJson(joiner, { t: 'roomclosed', roomId: room.roomId });
 		}
 	});
 	room.joinedPeers.clear();
 
+	if (!room.private) {
+		scheduleListPush();
+	}
+}
+
+/**
+ * The host's connection went away without unhosting - it is most likely
+ * reloading its page. Keep the room alive (paused) for the grace period so the
+ * same host can reclaim it with its token, and tell the joiners to hold on
+ * instead of dropping them.
+ */
+function pauseHostedRoom(conn) {
+	if (!conn.roomId) {
+		return;
+	}
+	const room = rooms.get(conn.roomId);
+	conn.roomId = null;
+	if (!room) {
+		return;
+	}
+	if (reclaimGraceMs <= 0) {
+		closeRoom(room, conn);
+		return;
+	}
+
+	room.paused = true;
+	room.hostPeer = 0;
+	room.joinedPeers.forEach(function (peerId) {
+		const joiner = peers.get(peerId);
+		if (joiner) {
+			// The signalling link dies with the connection; the joiner
+			// re-joins (and re-negotiates) once the host is back.
+			unlinkPeers(joiner, conn);
+			sendJson(joiner, { t: 'hostaway', roomId: room.roomId, grace: reclaimGraceMs });
+		}
+	});
+
+	room.reclaimTimer = setTimeout(function () {
+		room.reclaimTimer = null;
+		if (rooms.get(room.roomId) === room && room.paused) {
+			log('room ' + room.roomId + ' not reclaimed, closing');
+			closeRoom(room, null);
+		}
+	}, reclaimGraceMs);
+	if (room.reclaimTimer.unref) {
+		room.reclaimTimer.unref();
+	}
+
+	log('room ' + room.roomId + ' paused, reclaimable for ' + reclaimGraceMs + ' ms');
 	if (!room.private) {
 		scheduleListPush();
 	}
@@ -570,18 +685,30 @@ function handleControl(conn, msg) {
 			hostPeer: conn.id,
 			name: norm.name,
 			map: norm.map,
+			mod: norm.mod,
 			maxPlayers: norm.maxPlayers,
 			bots: norm.bots,
 			timeLimit: norm.timeLimit,
 			players: norm.players,
 			private: norm.private,
 			created: Date.now(),
-			joinedPeers: new Set()
+			joinedPeers: new Set(),
+			// Secret handed out to the host only. It is what lets the same
+			// host take this room over again after its page reloaded, and it
+			// is never part of a room record sent to anybody else.
+			hostToken: crypto.randomBytes(HOST_TOKEN_BYTES).toString('hex'),
+			paused: false,
+			reclaimTimer: null
 		};
 		rooms.set(roomId, room);
 		conn.roomId = roomId;
 		stats.roomsCreated++;
-		sendJson(conn, { t: 'hosted', roomId: roomId, room: roomRecord(room, false) });
+		sendJson(conn, {
+			t: 'hosted',
+			roomId: roomId,
+			hostToken: room.hostToken,
+			room: roomRecord(room, false)
+		});
 		if (!room.private) {
 			scheduleListPush();
 		}
@@ -603,6 +730,7 @@ function handleControl(conn, msg) {
 		const norm = normaliseRoom(msg.room, room);
 		room.name = norm.name;
 		room.map = norm.map;
+		room.mod = norm.mod;
 		room.maxPlayers = norm.maxPlayers;
 		room.bots = norm.bots;
 		room.timeLimit = norm.timeLimit;
@@ -611,6 +739,76 @@ function handleControl(conn, msg) {
 		sendJson(conn, { t: 'updated', room: roomRecord(room, false) });
 		// The public list changes if the room is (or just became/left being) public.
 		if (!room.private || !wasPrivate) {
+			scheduleListPush();
+		}
+		break;
+	}
+
+	case 'reclaim': {
+		// A host whose page reloaded takes its own room over again. The room
+		// survived the disconnect (see pauseHostedRoom) and the token proves
+		// this really is the host that created it - everything else about the
+		// room, above all its id and therefore its invite link, stays as it
+		// was.
+		const roomId = typeof msg.roomId === 'string' ? msg.roomId : '';
+		const token = typeof msg.hostToken === 'string' ? msg.hostToken : '';
+		const room = rooms.get(roomId);
+		if (!room || !token) {
+			sendError(conn, 'noroom', 'no such room');
+			return;
+		}
+		if (!room.hostToken || !safeTokenEqual(token, room.hostToken)) {
+			sendError(conn, 'badtoken', 'not the host of this room');
+			return;
+		}
+		// One room per connection, and a room has one host: drop whatever
+		// either side was still attached to.
+		if (conn.roomId && conn.roomId !== roomId) {
+			removeHostedRoom(conn);
+		}
+		const previous = peers.get(room.hostPeer);
+		if (previous && previous !== conn) {
+			previous.roomId = null;
+		}
+		if (room.reclaimTimer) {
+			clearTimeout(room.reclaimTimer);
+			room.reclaimTimer = null;
+		}
+		room.hostPeer = conn.id;
+		room.paused = false;
+		conn.roomId = room.roomId;
+		// The host may come back with changed settings (a different map, for
+		// instance); merge whatever it sent onto the room it left behind.
+		if (msg.room) {
+			const norm = normaliseRoom(msg.room, room);
+			room.name = norm.name;
+			room.map = norm.map;
+			room.mod = norm.mod;
+			room.maxPlayers = norm.maxPlayers;
+			room.bots = norm.bots;
+			room.timeLimit = norm.timeLimit;
+			room.players = norm.players;
+			room.private = norm.private;
+		}
+		log('room ' + room.roomId + ' reclaimed by [' + conn.id + ']');
+		sendJson(conn, {
+			t: 'hosted',
+			roomId: room.roomId,
+			hostToken: room.hostToken,
+			reclaimed: true,
+			room: roomRecord(room, false)
+		});
+		// Everybody who was in the game is told to reconnect: the host is a
+		// new peer now, so the old links are gone and have to be set up again.
+		room.joinedPeers.forEach(function (peerId) {
+			const joiner = peers.get(peerId);
+			if (joiner) {
+				joiner.joinedRoomId = null;
+				sendJson(joiner, { t: 'hostback', roomId: room.roomId });
+			}
+		});
+		room.joinedPeers.clear();
+		if (!room.private) {
 			scheduleListPush();
 		}
 		break;
@@ -655,6 +853,12 @@ function handleControl(conn, msg) {
 		}
 		if (room.hostPeer === conn.id) {
 			sendError(conn, 'self', 'cannot join your own room');
+			return;
+		}
+		if (room.paused) {
+			// The host is reloading its page; there is nothing to connect to
+			// until it is back (see pauseHostedRoom).
+			sendError(conn, 'hostaway', 'the host is reloading, try again in a moment');
 			return;
 		}
 		if (room.joinedPeers.has(conn.id)) {
@@ -763,8 +967,10 @@ function cleanupConnection(conn) {
 	peers.delete(conn.id);
 	subscribers.delete(conn);
 
-	// A peer disappearing must remove its room and notify its partners.
-	removeHostedRoom(conn);
+	// A peer disappearing does not destroy its room right away: a host whose
+	// page is reloading gets a grace period to reclaim it (see
+	// pauseHostedRoom). Joiners are detached as usual.
+	pauseHostedRoom(conn);
 	leaveJoinedRoom(conn);
 
 	// Break any lingering signalling links (e.g. via bye without a join).
