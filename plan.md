@@ -500,6 +500,59 @@ Still open:
       `cmake/ETLOmniBotWasm.cmake`, and document the minimum browser versions in
       `docs/web.md`.
 
+### 8. Host a game in the browser: settings, map list and peer-to-peer play
+
+- [x] **`maplist.json` in the root of the release** (`maplist.json`, copied to
+      `dist/etlegacy-web/` by `.github/workflows/emscripten.yml` and next to
+      `etl.html` in the build directory by `cmake/ETLBuildMod.cmake`). Maps a
+      map's bsp name to the pk3 it is downloaded from; an empty link marks a
+      stock map. Both sides use it: the host installs the map before the server
+      starts (and before a map change), a joining player installs the same pk3
+      before connecting. Downloads go through the existing `downloadInto()`
+      path, so they are cached in IndexedDB like the retail paks and only
+      fetched once. Sanitised on load (bsp name charset, `http(s)` + `.pk3`
+      only), with the stock maps as a fallback if the file cannot be read.
+- [x] **Host settings in the launcher** (`src/web/shell.html`): room name, map
+      (or *Random map*), max players 2-32, bots 0-31 (clamped to the free
+      slots, both fields limit each other while editing), time limit in minutes
+      (`0` = whatever the map script sets, via `g_userTimeLimit`) and a
+      *private room* checkbox. They map onto `sv_hostname`, `sv_maxclients`,
+      Omni-bot's `omni-bot.cfg` + `/bot minbots|maxbots`, `g_userTimeLimit` and
+      the lobby's room record.
+- [x] **In-game sidebar** (`#game-sidebar`): narrow column on the left of a
+      running game with *leave* (two clicks; the host leaving closes the room,
+      so every player is returned to the launcher), *settings* (a panel showing
+      the current map and player count, all host settings and a map switch) and
+      *invite link* (copied to the clipboard). Settings are applied to the
+      running game through the existing `window.etlPendingCommands` bridge
+      (`Sys_WebPumpConsoleCommands`), so no engine change was needed;
+      `sv_maxclients` and the time limit are followed by a `map_restart`
+      because they only take effect when a match starts.
+- [x] **Lobby / signalling server** (`tools/p2p-lobby/`): a small Node service
+      (one dependency, `ws`) that keeps the list of open games, hands out the
+      ICE configuration and forwards offers/answers between players. HTTP
+      `GET /rooms` and `/health` for monitoring, TLS or nginx in front of it,
+      systemd unit in the README. Covered by `test-lobby.mjs` in CI.
+- [x] **Browser transport** (`src/web/etl-p2p.js`): `RTCPeerConnection` +
+      unreliable/unordered `RTCDataChannel`, exposed as `window.ETLP2P`. Covered
+      by `test-p2p-client.mjs`, which runs the full handshake in Node against
+      a real lobby instance.
+- [x] **Engine side** (`src/qcommon/net_web.c`): a peer is mapped to a
+      synthetic address (`241.0.<hi>.<lo>:27960`) that the engine treats like
+      any other UDP address, so `Sys_SendPacket()` routes those to the data
+      channel and `NET_Event()` pumps received packets into the normal packet
+      queue. Nothing above the socket layer knows the difference between a
+      relayed dedicated server and a peer.
+- [x] **"Join games" button**: shows how many games are running (live, from the
+      lobby) and lists them with name, map, player count and a *Join* button.
+      An invite link (`?join=<room-id>`) joins directly and also works for a
+      private room, which is not listed.
+- [ ] **Play-test with two browsers on the published page.** Blocked by the same
+      three external blockers as the rest of the plan (no retail paks here, no
+      published deployment of this branch); the handshake itself is asserted
+      end to end in Node, but the WebRTC path itself can only be exercised in a
+      real browser.
+
 ---
 
 ## What is still open, and why

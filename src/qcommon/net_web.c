@@ -28,6 +28,13 @@
  * - No raw UDP/TCP socket access
  * - All network traffic must go through WebSocket or WebRTC
  * - A relay server is required to bridge WebSocket ↔ UDP for game servers
+ *
+ * Two transports live side by side here:
+ * - the relay WebSockets described above, used for every ordinary server
+ *   address, and
+ * - a peer-to-peer transport (WebRTC data channels, src/web/etl-p2p.js) for the
+ *   synthetic 241.0.0.0/8 address block, which is how a game *hosted in a
+ *   browser* is reached. See the P2P section below.
  */
 
 #ifdef __EMSCRIPTEN__
@@ -35,6 +42,7 @@
 #include "q_shared.h"
 #include "qcommon.h"
 
+#include <emscripten.h>
 #include <emscripten/websocket.h>
 #include <string.h>
 #include <sys/select.h>
@@ -82,6 +90,28 @@
 // unreachable.
 #define WS_HOSTADDR_PREFIX 240
 #define WS_MAX_HOSTNAMES   128
+
+// Peer-to-peer (WebRTC) addresses.
+//
+// A game hosted *inside a browser* has no address anything can connect to: the
+// tab has no listening socket, and the relay above can only ever reach a real
+// UDP server. Such a host is instead reached through WebRTC data channels that
+// the page negotiates with a lobby/signalling server (src/web/etl-p2p.js,
+// tools/p2p-lobby). The engine still wants a netadr_t per remote end, so every
+// peer gets a synthetic address out of a second reserved, never-routable block,
+// 241.0.0.0/8:
+//
+//   241.0.<hi>.<lo>:27960  <->  peer index (hi << 8) | lo, 1..WS_MAX_P2P_PEERS
+//
+// On a joining client the host is always peer index 1 (241.0.0.1), which is the
+// address the launcher hands to "+connect". On a host every joining player gets
+// its own index, so the server tells them apart exactly as it would tell apart
+// two UDP clients. Sys_SendPacket routes these addresses to the data channels
+// instead of a relay WebSocket, and NET_GetPacket drains what arrives on them;
+// nothing else in the engine has to know that this is not a normal address.
+#define WS_P2PADDR_PREFIX 241
+#define WS_MAX_P2P_PEERS  250
+#define WS_P2P_PORT       27960
 
 // Outgoing packets queued while the WebSocket is still CONNECTING. The very
 // first packets of a connection handshake (getchallenge / getinfo) are sent
@@ -265,6 +295,152 @@ static void WS_QueuePacket(const byte *data, int length, const netadr_t *from)
 	Com_Memcpy(&packetQueue[packetQueueHead].from, from, sizeof(netadr_t));
 
 	packetQueueHead = nextHead;
+}
+
+/**
+ * @brief Is this one of the synthetic peer-to-peer addresses (241.0.0.0/8)?
+ * @param[in] a address to test
+ * @return qtrue when @p a addresses a WebRTC peer instead of a relayed server
+ */
+static qboolean WS_IsP2PAdr(const netadr_t *a)
+{
+	return (qboolean)(a && a->type == NA_IP && a->ip[0] == WS_P2PADDR_PREFIX);
+}
+
+/**
+ * @brief Peer index encoded in a synthetic peer-to-peer address
+ * @param[in] a a P2P address (see WS_IsP2PAdr)
+ * @return the peer index, or 0 when the address encodes no valid peer
+ */
+static int WS_P2PPeerForAdr(const netadr_t *a)
+{
+	int peer = (a->ip[2] << 8) | a->ip[3];
+
+	if (peer < 1 || peer > WS_MAX_P2P_PEERS)
+	{
+		return 0;
+	}
+
+	return peer;
+}
+
+/**
+ * @brief Build the synthetic address of a peer
+ * @param[in] peer peer index (1..WS_MAX_P2P_PEERS)
+ * @param[out] a receives the address
+ */
+static void WS_AdrForP2PPeer(int peer, netadr_t *a)
+{
+	Com_Memset(a, 0, sizeof(*a));
+
+	a->type  = NA_IP;
+	a->ip[0] = WS_P2PADDR_PREFIX;
+	a->ip[1] = 0;
+	a->ip[2] = (byte)((peer >> 8) & 0xff);
+	a->ip[3] = (byte)(peer & 0xff);
+	a->port  = BigShort(WS_P2P_PORT);
+}
+
+/**
+ * @brief Hand a packet to the page's peer-to-peer transport
+ *
+ * The transport itself (WebRTC data channel, with the lobby's WebSocket relay
+ * as fallback) lives in JavaScript, because only the page can drive
+ * RTCPeerConnection. The bytes are copied out of the wasm heap here (slice, not
+ * subarray): the heap can be detached or moved by a later allocation, and the
+ * data channel may well send asynchronously.
+ *
+ * @param[in] peer peer index
+ * @param[in] data packet
+ * @param[in] length packet size in bytes
+ * @return qtrue when the transport accepted the packet
+ */
+static qboolean WS_P2PSend(int peer, const void *data, int length)
+{
+	int sent = EM_ASM_INT({
+		var api = (typeof ETLP2P !== 'undefined') ? ETLP2P :
+		          ((typeof window !== 'undefined') ? window.ETLP2P : null);
+		if (!api || typeof api.send !== 'function')
+		{
+			return 0;
+		}
+		try {
+			return api.send($0, HEAPU8.slice($1, $1 + $2)) ? 1 : 0;
+		} catch (e) {
+			return 0;
+		}
+	}, peer, data, length);
+
+	return (qboolean)(sent != 0);
+}
+
+/**
+ * @brief Move everything the peer-to-peer transport has received into the
+ *        engine's packet queue
+ *
+ * Called once per NET_Event, i.e. once per frame, which is where the WebSocket
+ * transport's own callbacks have already put their packets. Doing it in one
+ * place keeps both transports on the single NET_GetPacket path.
+ */
+static void WS_P2PPump(void)
+{
+	byte     buf[MAX_MSGLEN];
+	netadr_t from;
+	int      peer;
+	int      length;
+	int      guard;
+
+	// Bounded so a peer that floods faster than the frame rate cannot keep the
+	// engine in this loop forever.
+	for (guard = 0; guard < WS_PACKET_QUEUE_SIZE; guard++)
+	{
+		peer   = 0;
+		length = EM_ASM_INT({
+			var api = (typeof ETLP2P !== 'undefined') ? ETLP2P :
+			          ((typeof window !== 'undefined') ? window.ETLP2P : null);
+			if (!api || typeof api.receive !== 'function')
+			{
+				return -1;              // no transport on this page at all
+			}
+			var pkt;
+			try {
+				pkt = api.receive();
+			} catch (e) {
+				return -1;
+			}
+			if (!pkt || !pkt.data)
+			{
+				return 0;               // nothing pending
+			}
+			if (pkt.data.length < 1 || pkt.data.length > $1)
+			{
+				return -2;              // unusable, but keep draining
+			}
+			HEAPU8.set(pkt.data, $0);
+			HEAP32[$2 >> 2] = pkt.peer | 0;
+			return pkt.data.length;
+		}, buf, (int)sizeof(buf), &peer);
+
+		if (length == -2)
+		{
+			Com_DPrintf("WS_P2PPump: dropped an oversized/empty peer packet\n");
+			continue;
+		}
+
+		if (length <= 0)
+		{
+			break;
+		}
+
+		if (peer < 1 || peer > WS_MAX_P2P_PEERS)
+		{
+			Com_DPrintf("WS_P2PPump: packet from out-of-range peer %d\n", peer);
+			continue;
+		}
+
+		WS_AdrForP2PPeer(peer, &from);
+		WS_QueuePacket(buf, length, &from);
+	}
 }
 
 /**
@@ -881,6 +1057,25 @@ void Sys_SendPacket(int length, const void *data, const netadr_t *to)
 		return;
 	}
 
+	// A game hosted in a browser is reached over a WebRTC data channel, not
+	// through the relay - see the WS_P2PADDR_PREFIX block at the top.
+	if (WS_IsP2PAdr(to))
+	{
+		int peer = WS_P2PPeerForAdr(to);
+
+		if (!peer)
+		{
+			Com_DPrintf("Sys_SendPacket: bad peer address %s\n", NET_AdrToString(to));
+			return;
+		}
+
+		if (!WS_P2PSend(peer, data, length))
+		{
+			Com_DPrintf("Sys_SendPacket: peer %d unreachable, packet dropped\n", peer);
+		}
+		return;
+	}
+
 	conn = WS_GetConnection(to);
 	if (!conn)
 	{
@@ -986,6 +1181,11 @@ void NET_Event(fd_set *fdr)
 	byte     bufData[MAX_MSGLEN + 1];
 	netadr_t from;
 	msg_t    netmsg;
+
+	// The WebSocket transport queues from its own callbacks; the peer-to-peer
+	// transport is a JavaScript object the engine has to poll, so drain it here
+	// before anything is dispatched.
+	WS_P2PPump();
 
 	while (1)
 	{

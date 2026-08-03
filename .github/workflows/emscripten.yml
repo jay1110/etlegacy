@@ -111,6 +111,13 @@ jobs:
           cp build-wasm/etl.html build-wasm/etl.js build-wasm/etl.wasm build-wasm/etl.data dist/etlegacy-web/
           # Serve the game at the site root as well
           cp build-wasm/etl.html dist/etlegacy-web/index.html
+          # Files the page loads from its own directory at runtime:
+          #   etl-p2p.js   lobby client + WebRTC data channels, used for games
+          #                hosted inside a browser (tools/p2p-lobby)
+          #   maplist.json the maps the host can pick from and where a
+          #                non-stock map is downloaded from
+          cp src/web/etl-p2p.js dist/etlegacy-web/
+          cp maplist.json dist/etlegacy-web/
           # The ET: Legacy mod data the client downloads at startup: the legacy
           # pk3 (game logic side modules cgame/ui/qagame + the ui menu files),
           # served
@@ -178,6 +185,10 @@ jobs:
             etl.wasm               - engine WebAssembly binary
             etl.data               - preloaded virtual-filesystem image
                                      (browser default config)
+            etl-p2p.js             - peer-to-peer transport (lobby + WebRTC)
+                                     for games hosted in a browser
+            maplist.json           - maps offered when hosting a game, with the
+                                     download link of every non-stock map
             legacy/                - ET: Legacy mod pk3 (cgame/ui/qagame + ui menus)
                                      plus the standalone cgame/ui/qagame side
                                      modules (required; the engine loads its game
@@ -202,6 +213,17 @@ jobs:
                  ?mod=<a.pk3,b.pk3>    override which mod pk3(s) to download
                  ?relay=<ws-url>       WebSocket->UDP relay (tools/ws-relay)
                  ?connect=<host:port>  game server to join through the relay
+                 ?lobby=<ws-url>       lobby for browser-hosted games
+                                       (tools/p2p-lobby)
+                 ?join=<room-id>       join a browser-hosted game (invite link)
+                 ?maplist=<url>        use another maplist.json
+
+          Hosting games in the browser:
+            "Host game" announces the game on a lobby server so other players
+            can find it under "Join games" (or via the invite link the game's
+            sidebar offers). The lobby is a small Node service you run
+            yourself, see tools/p2p-lobby/README.md and docs/web.md. Edit
+            maplist.json to change which maps can be hosted.
           EOF
           (cd dist && zip -9 -r etlegacy-web.zip etlegacy-web)
           # GitHub Pages (actions/deploy-pages) serves the artifact verbatim, but
@@ -279,3 +301,21 @@ jobs:
         run: |
           npm --prefix tools/ws-relay install --no-audit --no-fund
           node tools/ws-relay/test-relay.mjs
+
+  # The lobby/signalling server for games hosted inside a browser, and the
+  # browser-side transport that talks to it. Both are plain JavaScript, so they
+  # are tested next to the relay instead of waiting for the wasm build.
+  lobby-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Test the P2P lobby server and the browser transport
+        run: |
+          npm --prefix tools/p2p-lobby install --no-audit --no-fund
+          node tools/p2p-lobby/test-lobby.mjs
+          node tools/p2p-lobby/test-p2p-client.mjs

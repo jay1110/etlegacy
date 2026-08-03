@@ -182,6 +182,62 @@ if (omniBotDataPresent) {
     }
 }
 
+// 8. Hosting a game in the browser needs two more files next to etl.html: the
+//    peer-to-peer transport the page loads with a <script src="etl-p2p.js">
+//    tag, and the map list the host picks its map from (and every joining
+//    player downloads the map from). Both are fetched at runtime relative to
+//    the page, so they must sit in the root of the package.
+check(exists('etl-p2p.js'), 'P2P transport present: etl-p2p.js');
+if (exists('etl-p2p.js')) {
+    const js = fs.readFileSync(path.join(dir, 'etl-p2p.js'), 'utf8');
+    // The engine (src/qcommon/net_web.c) and the launcher both talk to the
+    // transport through window.ETLP2P; without these entry points a hosted
+    // game silently has no networking at all.
+    for (const api of ['send', 'receive', 'host', 'join', 'listRooms']) {
+        check(new RegExp(`\\b${api}\\s*[:=(]`).test(js),
+            `etl-p2p.js exposes ${api}()`);
+    }
+}
+
+const mapListPresent = exists('maplist.json');
+check(mapListPresent, 'map list present: maplist.json');
+if (mapListPresent) {
+    try {
+        const list = JSON.parse(fs.readFileSync(path.join(dir, 'maplist.json'), 'utf8'));
+        const names = Object.keys(list);
+        check(names.length > 0, 'maplist.json contains at least one map');
+        // An entry is either "" (a stock map, no download) or an http(s) link
+        // to the pk3 the map ships in.
+        const bad = names.filter((name) => {
+            const url = list[name];
+            if (typeof url !== 'string') return true;
+            if (!/^[A-Za-z0-9_-]+$/.test(name)) return true;
+            return url !== '' && !/^https?:\/\/.+\.pk3$/.test(url);
+        });
+        check(bad.length === 0,
+            `maplist.json entries are "<bsp name>": "" or a .pk3 URL${bad.length ? ` (bad: ${bad.join(', ')})` : ''}`);
+    } catch (e) {
+        check(false, `maplist.json is valid JSON (${e.message})`);
+    }
+}
+
+if (exists('etl.html')) {
+    const html = fs.readFileSync(path.join(dir, 'etl.html'), 'utf8');
+    check(/<script[^>]+src="etl-p2p\.js"/.test(html),
+        'etl.html loads etl-p2p.js');
+    // The controls of a running game: leave, settings, invite link.
+    for (const id of ['game-sidebar', 'sidebar-exit', 'sidebar-settings',
+                      'sidebar-invite', 'game-panel']) {
+        check(html.includes(`id="${id}"`), `etl.html contains the #${id} element`);
+    }
+    // The host settings and the "Join games" browser.
+    for (const id of ['host-map', 'host-name', 'host-maxclients', 'host-bots',
+                      'host-timelimit', 'host-private', 'menu-join-games',
+                      'join-list']) {
+        check(html.includes(`id="${id}"`), `etl.html contains the #${id} element`);
+    }
+}
+
 if (failures) {
     console.error(`\n${failures} check(s) failed.`);
     process.exit(1);
