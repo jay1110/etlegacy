@@ -397,6 +397,14 @@ idle-connection reaper and a failed bind.
   same way). Latched video cvar changes take effect on the next page reload.
   `etl.data` preloads `com_recommendedSet 1` so the first-run "apply
   recommended settings + vid_restart" path is never taken.
+- The cgame/ui/qagame side modules are never unloaded: Emscripten's `dlclose()`
+  is a no-op, so a later `dlopen()` of the same path hands back the instance that
+  is already loaded. A VM restart - which happens on every map change - therefore
+  reuses the module *with all of its globals still set*, unlike native platforms
+  where the library is genuinely reloaded. Mod code that keeps "already
+  initialised" flags in module globals while the matching state lives in
+  `cgs`/`cg` (wiped by `CG_Init()`) has to cope with that; see the loading screen
+  font restore in `CG_DrawConnectScreen()`.
 - The browser console logs `The ScriptProcessorNode is deprecated. Use
   AudioWorkletNode instead.` once at startup. This comes from Emscripten's
   bundled SDL2 audio backend, not from ET: Legacy, and is a harmless
