@@ -50,6 +50,17 @@ This produces `etl.html`, `etl.js`, `etl.wasm`, the side modules
 `build-wasm/`. The exact CMake flags CI uses are in
 `.github/workflows/emscripten.yml` — copy them for an exact match.
 
+> **Build from a full git clone.** The mod pk3 is named after the version
+> `git describe` reports (`legacy_v2.84.0-21-g7a784b4.pk3`), and CMake writes
+> that name to `build-wasm/etl_web_pk3_name.txt`. Without history and tags
+> (a shallow clone, a source tarball) `git describe` returns nothing and every
+> build falls back to the same generic `legacy_2.84-dirty.pk3` — two servers
+> with different game logic then advertise an identically named pk3, and a
+> client that already has one of them cannot connect to the other. CI checks
+> out with `fetch-depth: 0` and, for a repository without tags, passes
+> `CI_ETL_DESCRIBE`/`CI_ETL_TAG` built from `VERSION.txt`, the commit count and
+> the commit hash, so the name is always unique.
+
 ## 2. Lay out the web directory
 
 Serve a directory with this layout (the CI "Package web release" step builds
@@ -143,23 +154,55 @@ pthreads, the page must then be served with
 
 ### Start page layout
 
-The start page ships with three layouts. Which one is used is decided by the
-operator of the page, not by the players: open `etl.html` (or `index.html`) in
-an editor and set the value near the top of `<body>`:
+The start page groups its buttons by *where* a game runs, so it is obvious which
+button leads to a dedicated server and which one stays in the browser:
+
+| Group | Buttons |
+|-------|---------|
+| Play on your own | **Quick single game** (pick a map and a bot count), **Start game** (main menu, no connection) |
+| Games in the browser | **Host game**, **Join games** — with the number of games currently hosted |
+| Dedicated servers | **Dedicated serverlist** (the maintained list plus a free address field with **Connect**) |
+| More | **Player profile**, **Download full game** (the native build, for full compatibility) |
+
+Above them sits the ET: Legacy logo (loaded from `etlegacy.com`; if it cannot be
+fetched the page simply shows the title instead).
+
+Three layouts are available for the button style. Which one is used is decided by
+the operator of the page, not by the players: open `etl.html` (or `index.html`)
+in an editor and set the value near the top of `<body>`:
 
 ```html
-<script>window.ETL_HOME_LAYOUT = 'classic';</script>
+<script>window.ETL_HOME_LAYOUT = 'hero';</script>
 ```
 
 | Value | Layout |
 |-------|--------|
-| `classic` | The familiar single column of wide buttons with descriptions |
+| `classic` | A single column of wide buttons with descriptions |
 | `cards` | A two-column grid of tiles with icons (one column on narrow screens) |
-| `hero` | A large title over a compact, borderless button column with icons |
+| `hero` | A large title over a compact, borderless button column with icons (default) |
 
-Anything else falls back to `classic`. For a quick look at the alternatives
-before editing the file, `?home=cards` / `?home=hero` switches the layout for
-one page load.
+Anything else falls back to `hero`. For a quick look at the alternatives before
+editing the file, `?home=cards` / `?home=classic` switches the layout for one
+page load.
+
+### Screen sizes and orientation
+
+The page is laid out for any window size and both orientations without anything
+leaving the screen or covering something else:
+
+- All panels are `header + scrolling body + fixed footer`. The action buttons
+  (**Back**, **Start hosting**, …) sit in the footer and stay reachable no matter
+  how long the content above them is — a map rotation with ten entries scrolls,
+  the buttons do not move.
+- Sizes are derived from the viewport (`dvh`/`dvw` where available, with a
+  measured fallback for browsers that resize their URL bar), so mobile browsers
+  cannot cut off the bottom of the page.
+- The controls bar scales its buttons with the window and drops labels, then
+  whole buttons, on small screens instead of wrapping into a second row or
+  pushing itself off screen. In a landscape window shorter than 480 px it hides
+  automatically.
+- Notches and rounded corners are respected (`viewport-fit=cover` plus the safe
+  area insets).
 
 ### Hosting on GitHub Pages
 
@@ -215,12 +258,19 @@ manager (systemd with `Restart=always`, or pm2).
 On first load the page asks how to provide the game data: **download
 pak0.pk3** (fetched together with pak1/pak2 and cached in the browser) or
 **use a local pak0.pk3** picked from your own installation. Once the data is
-set, a **Run game** menu offers: starting the game to the main menu without
-connecting anywhere, joining the preconfigured ETc server (a
-different `fs_game`, xmod — missing pk3s are downloaded from the server),
-a quick single game (`+map oasis`), a manually maintained server list
-(`SERVER_LIST` in `src/web/shell.html`), **hosting a game** in the browser and
-**joining a game** somebody else hosts (both described in section 7).
+set, the start page offers: a **quick single game** (choose the map and how many
+bots play — the server is sized to fit, e.g. 10 bots means 11 slots), **starting
+the game** to the main menu without connecting anywhere, the **dedicated
+serverlist** (the maintained `SERVER_LIST` in `src/web/shell.html`, plus an
+address field and a **Connect** button for any other server), **hosting a game**
+in the browser and **joining a game** somebody else hosts (both described in
+section 7).
+
+While a game runs, the **✕** button in the left sidebar returns to the start
+page; it asks for confirmation once (a host is told that all players lose their
+connection). Quitting the engine itself — `/quit` in the console or the main
+menu's Quit — returns to the start page as well instead of leaving an empty
+page behind.
 
 Locally hosted games fill the server with Omni-bot bots. The bot count is the
 one chosen in the launcher; it is written to `omni-bot.cfg` in `fs_homepath`
@@ -298,6 +348,8 @@ passes through it.
 
 ### What the host can set
 
+The host form has two tabs. **Basic** holds everything a game needs:
+
 | Setting | Meaning |
 |---------|---------|
 | Room name | Name shown in the game list and as `sv_hostname` |
@@ -307,16 +359,48 @@ passes through it.
 | Time limit | Minutes; `0` keeps the time the map itself sets (`g_userTimeLimit`) |
 | Private room | The game is not listed; it can only be joined with the invite link |
 
+**Advanced** adds the mod and the usual server cvars:
+
+| Setting | Cvar | Default | Meaning |
+|---------|------|---------|---------|
+| Mod | `fs_game` | `legacy` | Legacy mod, or XMod. ETBloat, Jaymod, No Quarter, ETPub and ETJump are listed but disabled — they have no WebAssembly game logic, so they cannot run in the browser |
+| Balanced teams | `g_teamForceBalance` | `0` | Players cannot join the team that already has more players (the read-only `g_balancedteams` the server advertises is derived from it) |
+| Warmup | `g_doWarmup` | `1` | Players have to be ready before a match starts |
+| Friendly fire | `g_friendlyFire` | `1` | Teammates can hurt each other |
+| Warmup time | `g_warmup` | `60` | Length of the warmup before a match starts, in seconds |
+| Allied respawn time | `g_userAlliedRespawnTime` | `0` | `0` keeps the map's own time, any higher value sets the respawn time in seconds |
+| Axis respawn time | `g_userAxisRespawnTime` | `0` | Same for the Axis team |
+
+Only the Legacy mod actually ships game logic for the browser; picking another
+entry sets `fs_game` but the mod's own `.wasm` modules must be served under
+`<mod>/` next to the page for it to start.
+
+**Export settings** writes everything above — including the map rotation — to a
+`.json` file, **Import settings** reads such a file back. Import is deliberately
+strict: the file must be smaller than 64 KB, only known keys are read (an
+attacker cannot inject additional cvars or command-line arguments through it),
+every value is type-checked and clamped to its allowed range, map names must
+exist in `maplist.json`, and the room name is stripped of quotes, backslashes
+and control characters. Anything that does not fit is dropped and reported
+instead of being applied.
+
 The rotation is programmed into the server as a chain of `nextmap` cvars, which
 ET runs when a match ends, and it wraps around to the first map after the last
 one. It can be changed while the game runs (**⚙** in the sidebar), and it is
 announced in the lobby together with the rest of the room.
 
 Once the game runs, a narrow column on the left has an **✕** button (leave the
-game — if the host leaves, everybody is returned to the launcher), a **⚙**
-button (current map, player count and the map rotation; every setting above can
-be changed and any map of the rotation can be played immediately while the game
-runs) and a **🔗** button that copies the invite link.
+game — after a confirmation; if the host leaves, everybody is returned to the
+launcher), a **⚙** button (current map, player count and the map rotation; every
+setting above can be changed and any map of the rotation can be played
+immediately while the game runs) and a **🔗** button that copies the invite link.
+
+The invite link is also written into the browser's address bar
+(`?join=<room>`), so it can be copied straight from there. It also means a host
+may reload the page (F5, or a `/vid_restart`): the room settings are remembered
+for the tab and the game is hosted again automatically. The room gets a new id
+in that case — the address bar is updated with it, and anybody still holding the
+old link has to be given the new one.
 
 **A hosted game only lives as long as its tab is in the foreground.** Browsers
 throttle background tabs, which stops the server from stepping and disconnects
@@ -456,11 +540,15 @@ idle-connection reaper and a failed bind.
   channels, section 7). Native clients cannot join it, because a browser has no
   listening UDP socket — use a native dedicated server for that.
 - A browser-hosted game depends on the host's browser tab: closing it ends the
-  game for everybody (the players are returned to the launcher).
+  game for everybody (the players are returned to the launcher). Reloading the
+  page (F5) is fine for the host: the settings are kept for the tab and the game
+  is hosted again right away — but it is a *new* room, so its invite link
+  changes and the players have to rejoin.
 - `vid_restart` (and the settings menu's "apply" that issues it) is disabled in
   the browser: a canvas WebGL context and gl4es cannot be torn down and
   re-created within the same page (the Wwasm reference port suppresses it the
-  same way). Latched video cvar changes take effect on the next page reload.
+  same way). Latched video cvar changes take effect on the next page reload —
+  which for a host means re-hosting as described above.
   `etl.data` preloads `com_recommendedSet 1` so the first-run "apply
   recommended settings + vid_restart" path is never taken.
 - The cgame/ui/qagame side modules are never unloaded: Emscripten's `dlclose()`

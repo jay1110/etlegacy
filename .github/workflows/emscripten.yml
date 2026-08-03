@@ -42,6 +42,37 @@ jobs:
       - uses: actions/checkout@v5
         with:
           submodules: recursive
+          # The whole history including tags: cmake/ETLVersion.cmake runs
+          # "git describe" and the mod pk3 is named after its result (see
+          # ETL_MOD_PK3_NAME in cmake/ETLBuildMod.cmake). Without this the
+          # shallow checkout has no tags, git describe returns nothing and
+          # every build produces the same "legacy_2.84-dirty.pk3" - so two
+          # servers with different content end up with an identical pk3 name
+          # and clients cannot tell them apart (a client that already has one
+          # of them refuses to connect to the other).
+          fetch-depth: 0
+
+      # A unique, version-based pk3 name in every case. With tags present
+      # "git describe" already produces one (e.g. v2.84.0-21-g7a784b4);
+      # a repository without tags (a fresh fork, for instance) falls back to
+      # the version from VERSION.txt plus the commit count and the commit
+      # hash, which is just as unique. ETLVersion.cmake reads both variables.
+      - name: Determine version
+        run: |
+          DESCRIBE="$(git describe --abbrev=7 2>/dev/null || true)"
+          TAG="$(git describe --abbrev=0 2>/dev/null || true)"
+          if [ -z "${DESCRIBE}" ]; then
+            MAJOR="$(sed -n 's/^VERSION_MAJOR \([0-9]*\).*/\1/p' VERSION.txt)"
+            MINOR="$(sed -n 's/^VERSION_MINOR \([0-9]*\).*/\1/p' VERSION.txt)"
+            PATCH="$(sed -n 's/^VERSION_PATCH \([0-9]*\).*/\1/p' VERSION.txt)"
+            COUNT="$(git rev-list --count HEAD)"
+            SHA="$(git rev-parse --short=7 HEAD)"
+            TAG="v${MAJOR}.${MINOR}.${PATCH}"
+            DESCRIBE="${TAG}-${COUNT}-g${SHA}"
+          fi
+          echo "CI_ETL_DESCRIBE=${DESCRIBE}" >> "$GITHUB_ENV"
+          echo "CI_ETL_TAG=${TAG}" >> "$GITHUB_ENV"
+          echo "Building version ${DESCRIBE} (tag ${TAG})"
 
       - name: Setup Emscripten
         # v16 runs on Node 24 (v14 targeted the deprecated Node 20 runtime)
