@@ -1530,6 +1530,12 @@ dialogResult_t Sys_SDLDialog(dialogType_t type, const char *message, const char 
 void Sys_StartProcess(char *cmdline, qboolean doexit);
 void Sys_OpenURL(const char *url, qboolean doexit);
 
+#ifdef __EMSCRIPTEN__
+// Hand a map change of a browser-hosted game to the web page, which reloads
+// itself instead of starting a second map in the same page (see sys_web.c)
+qboolean Sys_WebRestartServer(const char *mapname);
+#endif
+
 #ifndef _WIN32
 void Sys_Chmod(const char *file, int mode);
 #endif

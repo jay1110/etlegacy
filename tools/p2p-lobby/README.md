@@ -69,6 +69,7 @@ node lobby.js --tls-cert /etc/letsencrypt/live/EXAMPLE/fullchain.pem \
 | `--tls-key <file>` | _(none)_ | TLS private key (PEM); enables `wss://`/`https://` |
 | `--max-connections <n>` | `512` | Maximum simultaneous connections (excess closed with code 1013) |
 | `--max-rooms <n>` | `128` | Maximum hosted rooms (excess `host` gets `toomanyrooms`) |
+| `--reclaim-ms <ms>` | `60000` | How long a room is kept alive after its host's connection drops, so the host can reclaim it after a page reload (`0` closes it right away) |
 | `--ice <list>` | `stun:stun.l.google.com:19302` | Comma-separated `stun:`/`turn:` URLs advertised to every client |
 | `--turn-user <user>` | _(none)_ | Username applied to `turn:` URLs in `--ice` |
 | `--turn-pass <pass>` | _(none)_ | Credential applied to `turn:` URLs in `--ice` |
@@ -77,8 +78,9 @@ node lobby.js --tls-cert /etc/letsencrypt/live/EXAMPLE/fullchain.pem \
 
 Each option also has an environment-variable fallback: `ETL_LOBBY_PORT`,
 `ETL_LOBBY_HOST`, `ETL_LOBBY_TLS_CERT`, `ETL_LOBBY_TLS_KEY`,
-`ETL_LOBBY_MAX_CONNECTIONS`, `ETL_LOBBY_MAX_ROOMS`, `ETL_LOBBY_ICE`,
-`ETL_LOBBY_TURN_USER`, `ETL_LOBBY_TURN_PASS`. Command-line flags win.
+`ETL_LOBBY_MAX_CONNECTIONS`, `ETL_LOBBY_MAX_ROOMS`, `ETL_LOBBY_RECLAIM_MS`,
+`ETL_LOBBY_ICE`, `ETL_LOBBY_TURN_USER`, `ETL_LOBBY_TURN_PASS`. Command-line
+flags win.
 
 Provide **both** `--tls-cert` and `--tls-key` to accept secure `wss://`.
 Otherwise the server serves plain `ws://` and `http://`.
@@ -123,12 +125,13 @@ control messages; **binary** frames are game packets (the fallback relay path).
 | Message | Reply / effect |
 |---------|----------------|
 | `{"t":"hello","name":"<name>","version":1}` | `{"t":"welcome","peer":<uint32>,"ice":[<RTCIceServer>…],"rooms":<public count>}`. `peer` is this connection's unique id. |
-| `{"t":"host","room":{name,map,mod,maxPlayers,bots,timeLimit,private}}` | `{"t":"hosted","roomId":"<6-8 chars>","room":{…normalised…}}`. One room per connection; re-hosting replaces the old room. |
+| `{"t":"host","room":{name,map,mod,maxPlayers,bots,timeLimit,private}}` | `{"t":"hosted","roomId":"<6-8 chars>","hostToken":"<32 hex chars>","room":{…normalised…}}`. One room per connection; re-hosting replaces the old room. `hostToken` is a secret that is only ever sent to the host; it is what `reclaim` needs. |
+| `{"t":"reclaim","roomId":"<id>","hostToken":"<token>","room":{…optional new settings…}}` | Takes a paused room over again after the host's page reloaded: `{"t":"hosted","roomId","hostToken","reclaimed":true,"room":{…}}`, and everyone joined to it gets `{"t":"hostback","roomId"}`. The room keeps its id. Errors: `noroom` (unknown, still hosted, or the grace period ran out), `badtoken`, `badrequest`. |
 | `{"t":"update","room":{<subset of fields, plus players>}}` | `{"t":"updated","room":{…}}` and a coalesced push to subscribers. |
 | `{"t":"unhost"}` | `{"t":"unhosted"}`; the room disappears. Disconnecting does the same. |
 | `{"t":"list"}` | `{"t":"rooms","rooms":[…],"count":<n>}` (public rooms only). |
 | `{"t":"subscribe"}` / `{"t":"unsubscribe"}` | After subscribing, `{"t":"rooms",…}` is pushed whenever the public list changes (add/remove/update), coalesced to at most ~1 push per 250 ms. Subscribing also sends an immediate snapshot. |
-| `{"t":"join","roomId":"<id>"}` | Joiner gets `{"t":"joined","roomId","host":<host peer>,"room":{…}}`; the host gets `{"t":"peer","peer":<joiner>,"name":"<name>"}`. Errors: `noroom`, `full`, `self`, `badrequest`. Private rooms are joinable by id but never listed. |
+| `{"t":"join","roomId":"<id>"}` | Joiner gets `{"t":"joined","roomId","host":<host peer>,"room":{…}}`; the host gets `{"t":"peer","peer":<joiner>,"name":"<name>"}`. Errors: `noroom`, `full`, `self`, `badrequest`, `hostaway` (the host is reloading — try again in a moment). Private rooms are joinable by id but never listed. |
 | `{"t":"signal","to":<peer>,"data":<any JSON>}` | Forwarded verbatim to that peer as `{"t":"signal","from":<sender>,"data":<…>}`. Only between peers with an active join relationship, else `{"t":"error","code":"nopeer"}`. |
 | `{"t":"bye","to":<peer>}` | The target receives `{"t":"peerleft","peer":<sender>}`. |
 | `{"t":"ping"}` | `{"t":"pong"}` |
@@ -137,7 +140,17 @@ control messages; **binary** frames are game packets (the fallback relay path).
 
 `rooms`, `signal`, `peer`, `peerleft`, `roomclosed`
 (`{"t":"roomclosed","roomId":"…"}` sent to everyone joined to a room whose host
-went away), and `error` (`{"t":"error","code":"…","message":"…"}`).
+went away for good), `hostaway`/`hostback` and `error`
+(`{"t":"error","code":"…","message":"…"}`).
+
+When a host's connection drops, its room is **not** closed right away: it is
+marked paused (`"paused": true` in the room record), everyone joined to it gets
+`{"t":"hostaway","roomId":"…","grace":<ms>}` and further `join`s are refused
+with the `hostaway` error code. A `reclaim` with the room's host token within
+that grace period (`--reclaim-ms`) hands the room - and its id, so every invite
+link stays valid - to the new connection and pushes `{"t":"hostback","roomId"}`
+to the joiners, who then `join` again. If nobody reclaims it in time the room is
+closed as before (`roomclosed`).
 
 ### Binary frames — the data fallback
 
@@ -155,8 +168,11 @@ anything else is dropped silently. Payload limit **16384 bytes** (`MAX_MSGLEN`).
 
 ```json
 { "roomId", "name", "map", "mod", "players", "maxPlayers", "bots",
-  "timeLimit", "private": false, "created" }
+  "timeLimit", "private": false, "paused": false, "created" }
 ```
+
+The host token is **not** part of the room record and is never published: it is
+only in the reply to the `host`/`reclaim` of that very connection.
 
 Nothing else is ever leaked — in particular **no IP addresses**. Every field is
 validated and clamped server-side: `name`/`map` trimmed and stripped of control
@@ -410,7 +426,8 @@ Built to stay up — a broken client must never take down the other players.
 - **Connection & room caps.** `--max-connections` (close 1013) and `--max-rooms`
   (`toomanyrooms`) bound resource use.
 - **Heartbeat.** A `ws.ping()` every 30 s terminates connections that miss two
-  pongs; a peer disappearing removes its room and notifies its partners.
+  pongs; a peer disappearing pauses its room (see `reclaim`) and notifies its
+  partners, and the room is removed once the grace period is over.
 - Uncaught exceptions and unhandled rejections are logged, not fatal.
 - `SIGINT`/`SIGTERM` shut down cleanly, with a 5 s fallback so shutdown can't
   hang.
@@ -431,8 +448,11 @@ node tools/p2p-lobby/test-p2p-client.mjs   # loads src/web/etl-p2p.js against a 
 `test-lobby.mjs` drives a real `lobby.js` with raw `ws` clients and asserts the
 whole control protocol (hello/welcome, unique peer ids, ICE delivery), hosting
 and listing (including `GET /rooms`, and private rooms that are hidden but
-joinable by id), updates and coalesced subscriber pushes, `roomclosed` on host
-disconnect, the join errors (`noroom`/`full`/`self`), verbatim signalling
+joinable by id), updates and coalesced subscriber pushes, the pause/reclaim path
+after a host disconnect (`hostaway`, a refused join, `roomclosed` once the grace
+period is over, and a `reclaim` that keeps the room id, applies new settings and
+pushes `hostback` - including the `badtoken` and missing-token refusals), the
+join errors (`noroom`/`full`/`self`), verbatim signalling
 between partners and its refusal between strangers, the binary relay both ways
 with correct source ids and its silent drop between strangers, all the field
 validation/clamping, oversized-frame handling, the control-message rate limit,

@@ -5884,7 +5884,7 @@
             // same validation as an imported settings file.
             var HOST_SESSION_KEY = 'etl.hostSession';
 
-            function rememberHostSession(roomId, settings, hostToken) {
+            function rememberHostSession(roomId, settings, hostToken, restart) {
                 try {
                     sessionStorage.setItem(HOST_SESSION_KEY, JSON.stringify({
                         roomId: String(roomId || ''),
@@ -5892,6 +5892,10 @@
                         // the room id survives a reload. It never leaves this
                         // tab (sessionStorage, same origin).
                         hostToken: hostToken ? String(hostToken) : '',
+                        // One-shot: this page is reloading itself on purpose
+                        // (a map change) and has to come back up hosting, even
+                        // without an invite link in the address bar.
+                        restart: !!restart,
                         settings: etlSettingsToJson(settings)
                     }));
                 } catch (e) { /* private mode / quota - hosting still works */ }
@@ -5901,25 +5905,35 @@
                 try { sessionStorage.removeItem(HOST_SESSION_KEY); } catch (e) { /* ignore */ }
             }
 
-            // The remembered session, but only for the room the URL asks for -
-            // so an invite link to somebody else's game is still a join.
-            // Returns {settings, hostToken} or null.
-            function rememberedHostSession(roomId) {
+            // The session this tab remembers, if any: {roomId, hostToken,
+            // settings, restart}. The restart flag is one-shot and cleared
+            // here, so a page that is reloaded again later does not start a
+            // game the player never asked for.
+            function takeHostSession() {
                 var raw = null;
                 try { raw = sessionStorage.getItem(HOST_SESSION_KEY); } catch (e) { return null; }
                 if (!raw) { return null; }
                 var stored;
                 try { stored = JSON.parse(raw); } catch (e) { return null; }
-                if (!stored || typeof stored !== 'object' || stored.roomId !== roomId) {
-                    return null;
+                if (!stored || typeof stored !== 'object') { return null; }
+
+                var restart = !!stored.restart;
+                if (restart) {
+                    stored.restart = false;
+                    try {
+                        sessionStorage.setItem(HOST_SESSION_KEY, JSON.stringify(stored));
+                    } catch (e) { /* the flag is only an optimisation */ }
                 }
+
                 var result = etlSettingsFromJson(JSON.stringify(stored.settings));
                 if (!result.settings || !result.settings.rotation.length) {
                     return null;
                 }
                 return {
-                    settings: result.settings,
-                    hostToken: typeof stored.hostToken === 'string' ? stored.hostToken : ''
+                    roomId: typeof stored.roomId === 'string' ? stored.roomId : '',
+                    hostToken: typeof stored.hostToken === 'string' ? stored.hostToken : '',
+                    restart: restart,
+                    settings: result.settings
                 };
             }
 
@@ -6301,10 +6315,85 @@
                     : 'Settings applied.');
             }
 
+            // --- Changing the map of a hosted game --------------------------
+            // A browser page can only load one map: starting a second one in
+            // the same page traps the wasm build while the new world is loaded
+            // ("index out of bounds"), the same limitation that makes
+            // vid_restart unusable here. The engine therefore hands every map
+            // change of a game hosted in this page back to the shell
+            // (Sys_WebRestartServer, called from SV_SpawnServer) and the page
+            // reloads itself on the new map instead.
+            //
+            // Nothing about the game is lost in that: the settings and the room
+            // are remembered for the tab, the room - and with it the invite
+            // link - is taken back over after the reload (see startHosting),
+            // and the players in it are paused and reconnected by the lobby
+            // instead of being thrown out.
+            //
+            // This covers every way a map change can start: the "Change map"
+            // button, the map rotation at the end of a match ("vstr nextmap"),
+            // a "map" typed into the console and a settings change that makes
+            // the server respawn (sv_maxclients).
+            var restartingHostedGame = false;
+
+            window.etlRestartHostedGame = function (map) {
+                // The engine hands us the map it was about to spawn; it is used
+                // to build a command line again, so it is filtered down to what
+                // a map name can be.
+                var clean = String(map || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
+                if (!clean) { return false; }
+                if (restartingHostedGame) { return true; }   // already on the way
+
+                var settings = gameSettings();
+                if (!session || session.role === 'client' || !settings) {
+                    // Not a game this page hosts. The development entry point
+                    // (?map=<map>) has no game to keep alive, but reloading it
+                    // with the new map is still the only way it can change one.
+                    if (!session && mapParam && history.replaceState) {
+                        restartingHostedGame = true;
+                        reloadWith('map', clean);
+                        return true;
+                    }
+                    return false;
+                }
+                restartingHostedGame = true;
+
+                var next = {};
+                Object.keys(settings).forEach(function (key) {
+                    next[key] = settings[key];
+                });
+                next.map = clean;
+
+                rememberHostSession(session.roomId || '', next,
+                    (p2p && p2p.getHostToken) ? p2p.getHostToken() : '', true);
+                if (p2p && session.roomId) {
+                    // Best effort - the room is updated again when it is taken
+                    // back over after the reload.
+                    updateRoomQuietly({ map: clean });
+                }
+
+                gameMessage('Changing the map to "' + clean + '"...');
+                showLoading('Loading "' + clean + '"...');
+                setTimeout(function () { location.reload(); }, 100);
+                return true;
+            };
+
+            // Reload this page with one URL parameter replaced.
+            function reloadWith(name, value) {
+                try {
+                    var url = new URL(location.href);
+                    url.searchParams.set(name, value);
+                    location.href = url.pathname + url.search;
+                } catch (e) {
+                    location.reload();
+                }
+            }
+
             // Jump straight to the map selected in the drop-down: it is
             // downloaded first (players get it from the map list as well) and
             // then loaded, which restarts the match. The rotation carries on
-            // from that map when it is part of it.
+            // from that map when it is part of it - see etlRestartHostedGame
+            // for what "loading" a map means in a browser.
             function changeGameMap() {
                 var settings = gameSettings();
                 if (!settings) { return; }
@@ -6989,6 +7078,24 @@
                         fillMapSelect(document.getElementById('game-map'), null, true);
                     });
 
+                    // What this tab was doing before it reloaded (hosting a
+                    // game, or restarting one to change the map).
+                    var stored = takeHostSession();
+
+                    // A hosted game that changed its map reloaded this page on
+                    // purpose (see etlRestartHostedGame): put it straight back
+                    // up on the new map. With a room in the lobby that room is
+                    // taken back over below, so nothing about the invite link
+                    // or the players in it changes.
+                    if (stored && stored.restart && (!joinParam || stored.roomId === joinParam)) {
+                        showLoading('Loading "' + stored.settings.map + '"...');
+                        startFlow(startHosting(stored.settings, stored.roomId ? {
+                            roomId: stored.roomId,
+                            hostToken: stored.hostToken
+                        } : null), 'launcher-host', 'host-hint');
+                        return;
+                    }
+
                     // An invite link (?join=<roomId>) skips the menu entirely.
                     if (joinParam) {
                         // The host's own address bar carries that link too (see
@@ -6998,12 +7105,11 @@
                         // is taken back over with the token stored for this tab,
                         // which keeps the id - every invite link handed out so
                         // far stays valid and the players in it are only paused.
-                        var restored = rememberedHostSession(joinParam);
-                        if (restored) {
+                        if (stored && stored.roomId === joinParam) {
                             showLoading('Restarting your hosted game...');
-                            startFlow(startHosting(restored.settings, {
+                            startFlow(startHosting(stored.settings, {
                                 roomId: joinParam,
-                                hostToken: restored.hostToken
+                                hostToken: stored.hostToken
                             }), 'launcher-host', 'host-hint');
                             return;
                         }

@@ -700,6 +700,20 @@ void SV_SpawnServer(const char *server)
 	qboolean     isBot;
 	const char   *p;
 
+#ifdef __EMSCRIPTEN__
+	// A browser page cannot load a second map: everything below tears the
+	// client down and builds it back up again, which the wasm build does not
+	// survive (see Sys_WebRestartServer). The page reloads itself and starts
+	// the new map from scratch instead, keeping the hosted game alive across
+	// the reload. Only a server that is already running is handed over - the
+	// first map of the page is spawned normally.
+	if (com_sv_running && com_sv_running->integer && Sys_WebRestartServer(server))
+	{
+		Com_Printf("Restarting the page to load %s.\n", server);
+		return;
+	}
+#endif
+
 	// broadcast a level change to all connected clients
 	if (svs.clients && !com_errorEntered)
 	{

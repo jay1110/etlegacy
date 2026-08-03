@@ -286,6 +286,8 @@ or from the in-page **Connect…** panel (bottom controls bar):
 | `assets`  | Base URL for `pak0-2.pk3` | `?assets=https://example.com/etmain/` |
 | `legacy`  | Base URL for the mod pk3 | `?legacy=https://example.com/legacy/` |
 | `mod`     | Override which mod pk3(s) to fetch | `?mod=legacy_2.84.0.pk3` |
+| `modpk3`  | Override the pk3(s) of a *hosted* mod (XMod) | `?modpk3=xmod-2.0.4.pk3` |
+| `modbase` | Base URL for that mod's folder | `?modbase=https://example.com/xmod/` |
 | `relay`   | WebSocket relay URL (`net_wsRelayServer`) | `?relay=wss://relay.example.com:8443` |
 | `connect` | Game server `host:port` to auto-join | `?connect=203.0.113.10:27960` |
 | `map`     | Start a local game on this map | `?map=oasis` |
@@ -371,9 +373,32 @@ The host form has two tabs. **Basic** holds everything a game needs:
 | Allied respawn time | `g_userAlliedRespawnTime` | `0` | `0` keeps the map's own time, any higher value sets the respawn time in seconds |
 | Axis respawn time | `g_userAxisRespawnTime` | `0` | Same for the Axis team |
 
-Only the Legacy mod actually ships game logic for the browser; picking another
-entry sets `fs_game` but the mod's own `.wasm` modules must be served under
-`<mod>/` next to the page for it to start.
+A mod other than Legacy is fetched on demand, the first time a game that uses
+it is hosted **or joined**, and its game logic is compiled up front exactly like
+the Legacy modules — without that the engine stops with `VM_Create on game
+failed` / `Sys_LoadDll(...) skipped (not present in virtual filesystem)`, because
+`dlopen()` in the browser can only return a module the page compiled before the
+engine asked for it (see "Loading order" above). Serve the mod next to the page,
+in a folder named after its `fs_game`:
+
+```
+xmod/
+├── xmod-2.0.3.pk3            # the mod's data package(s)
+├── qagame.mp.wasm32.so       # server game logic
+├── cgame.mp.wasm32.so        # client game logic
+└── ui.mp.wasm32.so           # menus
+```
+
+The standalone `.so` files are what the page compiles; the pk3 is only read as a
+fallback if one of them is missing. Unlike the Legacy folder, the name of a
+mod's pk3 cannot be guessed (a folder cannot be listed over HTTP), so the page
+uses the name in its mod table (`HOST_MODS` in `src/web/shell.html`). Point it
+at a different name or version with `?modpk3=<a.pk3,b.pk3>`, and at a different
+location with `?modbase=<url>`. A missing pk3 is only a warning; missing
+modules are an error that names the files and the folder they belong in.
+
+Only `etmain/`, `legacy/` and the home directory are stored persistently, so
+another mod's files are downloaded once per browser session.
 
 **Export settings** writes everything above — including the map rotation — to a
 `.json` file, **Import settings** reads such a file back. Import is deliberately
@@ -398,9 +423,20 @@ immediately while the game runs) and a **🔗** button that copies the invite li
 The invite link is also written into the browser's address bar
 (`?join=<room>`), so it can be copied straight from there. It also means a host
 may reload the page (F5, or a `/vid_restart`): the room settings are remembered
-for the tab and the game is hosted again automatically. The room gets a new id
-in that case — the address bar is updated with it, and anybody still holding the
-old link has to be given the new one.
+for the tab and the game is hosted again automatically — **with the same room
+id**, so every invite link handed out stays valid.
+
+The lobby makes that possible: hosting a room hands the page a secret host
+token (kept in `sessionStorage`, so it never leaves the tab), and when the
+host's connection drops the room is only *paused* for a grace period
+(`--reclaim-ms`, 60 s by default) instead of being closed. The players in it are
+shown "the host is reloading the page" and are reconnected automatically as
+soon as the page is back; only when nobody comes back within the grace period is
+the room closed and everybody returned to the launcher. Leaving the game through
+the sidebar (**✕**) closes it right away, as before.
+
+Changing the map of a hosted game reloads the page as well, for the same reason
+`vid_restart` is not available in the browser — see "Limitations" below.
 
 **A hosted game only lives as long as its tab is in the foreground.** Browsers
 throttle background tabs, which stops the server from stepping and disconnects
@@ -549,6 +585,22 @@ idle-connection reaper and a failed bind.
   re-created within the same page (the Wwasm reference port suppresses it the
   same way). Latched video cvar changes take effect on the next page reload —
   which for a host means re-hosting as described above.
+- **A page can only load one map.** Starting a second one tears the client down
+  and builds it back up inside the same page (`SV_SpawnServer` →
+  `CL_ShutdownAll` → `Hunk_Clear` → `CL_StartHunkUsers`), which the wasm build
+  does not survive: it traps with `RuntimeError: index out of bounds` while the
+  world of the new map is loaded. A map change of a *browser-hosted* game is
+  therefore handed to the page (`Sys_WebRestartServer`, called at the top of
+  `SV_SpawnServer` in `src/server/sv_init.c`, which calls the shell's
+  `window.etlRestartHostedGame`) and the page reloads itself on the new map
+  instead of spawning it in place. This covers every way a map change can
+  start — the sidebar's "Change map", the map rotation at the end of a match,
+  a `map` typed into the console and a settings change that respawns the server
+  (`sv_maxclients`) — and it costs an engine restart (a few seconds), not the
+  game: the room, its invite link and the players in it survive the reload as
+  described in "Hosting a game in the browser". Connecting to a *dedicated*
+  server is not affected; there the map change happens on the server and the
+  browser only reloads the map data, which works.
   `etl.data` preloads `com_recommendedSet 1` so the first-run "apply
   recommended settings + vid_restart" path is never taken.
 - The cgame/ui/qagame side modules are never unloaded: Emscripten's `dlclose()`
