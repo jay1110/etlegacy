@@ -862,6 +862,23 @@
             display: flex;
         }
 
+        /* The sidebar is part of the *running game*, and it draws above every
+           other page of the shell. A full-screen shell page must therefore
+           never end up underneath it - on a phone in portrait the panel spans
+           the whole width, so the column would lie right on top of its
+           buttons. The launcher takes the sidebar off the screen entirely
+           (like the controls bar: the page it covers has its own way onward),
+           and the loader/error pages - which can appear while a game is
+           running - start next to it instead. */
+        body.launcher-open #game-sidebar {
+            display: none;
+        }
+
+        body.sidebar-visible:not(.launcher-open) #loading-overlay,
+        body.sidebar-visible:not(.launcher-open) #error-overlay {
+            left: var(--sidebar-w);
+        }
+
         /* The controls-bar actions as icons. They are the mobile replacement
            for the bottom bar, so they only show there. */
         #sidebar-tools {
@@ -1247,13 +1264,33 @@
         }
 
         /* A short explanation under an advanced setting, so players do not
-           have to look the cvar up elsewhere. */
+           have to look the cvar up elsewhere. The negative top margin pulls it
+           up under the input above it, which already carries a bottom margin
+           of its own. */
         .setting-hint {
             font-size: clamp(0.62rem, 1.5vmin, 0.72rem);
             color: #888;
             line-height: 1.45;
             margin: -10px 0 12px;
             overflow-wrap: anywhere;
+        }
+
+        /* A row of buttons inside a settings page (export/import). Buttons
+           have no bottom margin of their own, so the row carries the one the
+           hint underneath expects - without it the hint's negative top margin
+           pulls the text on top of the buttons. */
+        .settings-actions {
+            display: flex;
+            gap: clamp(6px, 1.2vw, 10px);
+            margin-bottom: 14px;
+        }
+
+        .settings-actions .control-btn {
+            flex: 1 1 0;
+            min-width: 0;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
         }
 
         /* --- Confirm dialog --------------------------------------------
@@ -1325,8 +1362,10 @@
         }
 
         /* The logo is optional: if it cannot be loaded (offline deployment,
-           blocked third-party request) it hides itself and the text title
-           below carries the branding on its own. */
+           blocked third-party request) it hides itself, the header is marked
+           .no-logo and the text title below takes over the branding. As long
+           as the logo is there the title stays hidden - the logo already says
+           "ET: Legacy", so printing it again underneath is pure repetition. */
         #home-logo {
             display: block;
             width: min(320px, 70%);
@@ -1335,16 +1374,15 @@
         }
 
         #home-header .home-title {
+            display: none;
             font-size: clamp(1.15rem, 4.2vmin, 1.6rem);
             font-weight: bold;
             color: #c4a000;
             letter-spacing: 1px;
         }
 
-        #home-header .home-sub {
-            font-size: clamp(0.7rem, 1.8vmin, 0.85rem);
-            color: #9aa;
-            margin-top: 4px;
+        #home-header.no-logo .home-title {
+            display: block;
         }
 
         /* A group of related start page buttons. The groups are what tells
@@ -1400,8 +1438,12 @@
             margin-bottom: clamp(6px, 1.2vh, 10px);
         }
 
-        /* Two buttons side by side inside a group. They share the row and
-           shrink with it instead of wrapping onto a second line. */
+        /* Buttons side by side inside a group ("Quick single game", "Host
+           game", "Join games"). They share the row and shrink with it instead
+           of wrapping onto a second line, so the three ways into a match stay
+           next to each other down to a phone in portrait: the label is
+           centred, may wrap, and the icon sits above it instead of beside it
+           (see the per-layout rules further down). */
         .home-actions {
             display: flex;
             gap: clamp(6px, 1.2vw, 10px);
@@ -1411,6 +1453,8 @@
             flex: 1 1 0;
             min-width: 0;
             margin-bottom: 0;
+            text-align: center;
+            overflow-wrap: anywhere;
         }
 
         /* The download link looks like a button but is a real link. */
@@ -1520,6 +1564,21 @@
             display: none;
         }
 
+        /* A row of equal buttons has no room for an icon *next to* the label
+           once there are three of them on a phone, so in every layout that
+           shows icons they move above the (centred) label. */
+        body[data-home-layout="hero"] #launcher-menu .home-actions .launcher-btn,
+        body[data-home-layout="cards"] #launcher-menu .home-actions .launcher-btn {
+            padding: clamp(8px, 1.8vmin, 12px) clamp(6px, 1.4vmin, 12px);
+        }
+
+        body[data-home-layout="hero"] #launcher-menu .home-actions .launcher-btn-icon,
+        body[data-home-layout="cards"] #launcher-menu .home-actions .launcher-btn-icon {
+            position: static;
+            transform: none;
+            margin: 0 auto 4px;
+        }
+
         /* --- Responsive rules ------------------------------------------
            Everything above already scales with clamp()/min(); these rules
            handle the layout changes that scaling alone cannot do: on small
@@ -1571,7 +1630,6 @@
                 margin-bottom: 6px;
             }
 
-            #home-header .home-sub,
             .home-section-desc {
                 display: none;
             }
@@ -1593,7 +1651,7 @@
         /* Very short screens: drop the remaining start page branding too. */
         @media (max-height: 420px) {
             #home-logo,
-            #home-header .home-title {
+            #home-header.no-logo .home-title {
                 display: none;
             }
 
@@ -1847,49 +1905,38 @@
              look is chosen with window.ETL_HOME_LAYOUT at the top of the file
              (see the #launcher-menu layout rules in the stylesheet).
 
-             The options are grouped by *where* the game runs, so it is obvious
-             which button leads to a dedicated server, which one hosts a game
-             in this browser and which one joins a game hosted in somebody
-             else's browser. -->
+             The three ways to get into a match - alone against bots, hosting
+             for others, or joining somebody else's hosted game - sit next to
+             each other in one row at the top, because that is what players
+             come here for. Everything else (dedicated servers, profile,
+             download) follows underneath. -->
         <div class="launcher-panel" id="launcher-menu">
             <h2>Run game</h2>
             <div class="panel-body">
                 <div id="home-header">
                     <img id="home-logo" src="https://www.etlegacy.com/images/logo.png"
                          alt="ET: Legacy" referrerpolicy="no-referrer">
+                    <!-- Only shown when the logo could not be loaded (see the
+                         #home-header.no-logo rules): the logo already carries
+                         the name, so repeating it under it is noise. -->
                     <div class="home-title">ET: Legacy</div>
-                    <div class="home-sub">WebAssembly Edition &ndash; play in the browser</div>
                 </div>
                 <div class="home-buttons">
                     <section class="home-section">
                         <div class="home-section-head">
-                            <span class="home-section-title">Play on your own</span>
-                        </div>
-                        <div class="home-section-desc">
-                            Runs only in this browser tab. Nobody else can join.
-                        </div>
-                        <button class="launcher-btn" type="button" id="menu-quick">
-                            <span class="launcher-btn-icon" aria-hidden="true">&#9889;</span>
-                            Quick single game
-                            <span class="launcher-btn-sub">Pick a map and how many bots play against you.</span>
-                        </button>
-                        <button class="launcher-btn" type="button" id="menu-start">
-                            <span class="launcher-btn-icon" aria-hidden="true">&#9654;</span>
-                            Start game
-                            <span class="launcher-btn-sub">Starts the game to its main menu without connecting anywhere.</span>
-                        </button>
-                    </section>
-
-                    <section class="home-section">
-                        <div class="home-section-head">
-                            <span class="home-section-title">Games in the browser</span>
+                            <span class="home-section-title">Play</span>
                             <span class="home-count" id="home-room-count">checking...</span>
                         </div>
                         <div class="home-section-desc">
-                            Host a game directly from this browser - no server needed -
-                            and other players join it straight from theirs.
+                            Play on your own against bots, host a game in this browser
+                            for others to join - no server needed - or join a game
+                            somebody else is hosting.
                         </div>
                         <div class="home-actions">
+                            <button class="launcher-btn" type="button" id="menu-quick">
+                                <span class="launcher-btn-icon" aria-hidden="true">&#9889;</span>
+                                Quick single game
+                            </button>
                             <button class="launcher-btn" type="button" id="menu-host">
                                 <span class="launcher-btn-icon" aria-hidden="true">&#127917;</span>
                                 Host game
@@ -1919,6 +1966,11 @@
                         <div class="home-section-head">
                             <span class="home-section-title">More</span>
                         </div>
+                        <button class="launcher-btn" type="button" id="menu-start">
+                            <span class="launcher-btn-icon" aria-hidden="true">&#9654;</span>
+                            Start game
+                            <span class="launcher-btn-sub">Starts the game to its main menu without connecting anywhere.</span>
+                        </button>
                         <button class="launcher-btn" type="button" id="menu-profile">
                             <span class="launcher-btn-icon" aria-hidden="true">&#128100;</span>
                             Player profile
@@ -2086,7 +2138,7 @@
                         respawn time in seconds.
                     </div>
 
-                    <div class="home-actions">
+                    <div class="settings-actions">
                         <button class="control-btn" type="button" id="host-export">Export settings</button>
                         <button class="control-btn" type="button" id="host-import">Import settings</button>
                     </div>
@@ -2806,13 +2858,17 @@
         })();
 
         // The start page logo is fetched from etlegacy.com. A deployment
-        // without internet access (or a blocked third-party request) simply
-        // shows the text title instead of a broken image icon.
+        // without internet access (or a blocked third-party request) shows the
+        // text title instead of a broken image icon - the title is hidden as
+        // long as the logo is there, because the logo already carries the name
+        // (see the #home-header.no-logo rules).
         (function () {
             var logo = document.getElementById('home-logo');
             if (logo) {
                 logo.addEventListener('error', function () {
                     logo.style.display = 'none';
+                    var header = document.getElementById('home-header');
+                    if (header) { header.classList.add('no-logo'); }
                 });
             }
         })();
