@@ -1974,15 +1974,44 @@
         }
 
         // Click on the canvas captures the mouse - but only a real click, never
-        // just moving the pointer over the game. On touch devices the on-screen
-        // controls drive the game instead, so pointer lock is not requested
-        // there at all (it does not exist on mobile browsers anyway).
-        document.getElementById('canvas').addEventListener('click', function () {
-            if (etlIsTouchDevice()) {
-                return;
+        // just moving the pointer over the game.
+        //
+        // What decides is the input that produced the click, not the device: a
+        // desktop PC with a touch monitor reports touch support, yet it is
+        // played with the mouse and must capture it like any other desktop.
+        // Only a finger tap skips pointer lock - it drives the on-screen
+        // controls instead, and pointer lock does not apply to touch input
+        // anyway.
+        (function () {
+            var canvas = document.getElementById('canvas');
+            // A click event does not carry the input type in every browser, so
+            // remember it from the press that preceded the click.
+            var lastPressType = '';
+
+            canvas.addEventListener('pointerdown', function (e) {
+                lastPressType = e.pointerType || 'mouse';
+            }, true);
+            canvas.addEventListener('touchstart', function () {
+                lastPressType = 'touch';
+            }, true);
+
+            function fromTouch(e) {
+                if (e && typeof e.pointerType === 'string' && e.pointerType !== '') {
+                    return e.pointerType === 'touch';
+                }
+                if (e && e.sourceCapabilities) {
+                    return !!e.sourceCapabilities.firesTouchEvents;
+                }
+                return lastPressType === 'touch';
             }
-            etlRequestPointerLock();
-        });
+
+            canvas.addEventListener('click', function (e) {
+                if (fromTouch(e)) {
+                    return;
+                }
+                etlRequestPointerLock();
+            });
+        })();
 
         // Escape releases the mouse. The browser already exits pointer lock on
         // Escape; this only makes sure the guard is disarmed, so the engine
@@ -2026,16 +2055,50 @@
         })();
 
         // --- Device / start page setup -------------------------------------
-        // "Mobile" here means a touch device: it gets the slim sidebar with the
-        // controls-bar actions as icons instead of the (unhoverable) bottom
-        // bar, and the on-screen controls. ?touch=0/1 forces it off/on, which
-        // makes the mobile layout testable on a desktop.
-        function etlIsTouchDevice() {
+        // ?touch=0/1 forces the touch handling off/on, which makes the mobile
+        // layout testable on a desktop. Returns null when it is not set.
+        function etlForcedTouchMode() {
             var forced = new URLSearchParams(window.location.search).get('touch');
+            if (forced === null) {
+                return null;
+            }
+            return forced !== '0';
+        }
+
+        // Whether the machine can produce touch events at all. A desktop PC
+        // with a touch monitor (or a laptop with a touchscreen) can - that
+        // makes the on-screen controls useful there, but it is NOT a mobile
+        // device (see etlIsTouchDevice).
+        function etlHasTouchInput() {
+            var forced = etlForcedTouchMode();
             if (forced !== null) {
-                return forced !== '0';
+                return forced;
             }
             return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        }
+
+        // "Mobile" here means a device that is *played* by touch: it gets the
+        // slim sidebar with the controls-bar actions as icons instead of the
+        // (unhoverable) bottom bar, and the on-screen controls.
+        //
+        // Touch support alone does not say that, and using it did break the
+        // desktop: a PC with a touch monitor reports touch, so it was treated
+        // like a phone and the mouse was never captured on a click into the
+        // game - the cursor simply wandered off the game window while looking
+        // around. The primary pointer decides instead: a finger is 'coarse',
+        // a mouse or trackpad is 'fine'.
+        function etlIsTouchDevice() {
+            var forced = etlForcedTouchMode();
+            if (forced !== null) {
+                return forced;
+            }
+            if (!etlHasTouchInput()) {
+                return false;
+            }
+            if (window.matchMedia) {
+                return window.matchMedia('(pointer: coarse)').matches;
+            }
+            return true;                        // no media queries: assume touch
         }
 
         (function () {
@@ -2610,8 +2673,10 @@
                 window.etlSetTouchControls(!etlTouchActive);
             };
 
-            // Show the toggle on touch devices (?touch=1 forces it, ?touch=0
-            // hides it).
+            // Show the toggle wherever the screen can be touched - that
+            // includes a desktop with a touch monitor, where the overlay is
+            // useful even though the machine keeps the desktop layout
+            // (?touch=1 forces it, ?touch=0 hides it).
             //
             // The overlay itself always starts OFF: it is a *in-game* control,
             // and it used to be restored from localStorage, which meant it came
@@ -2620,7 +2685,7 @@
             // A reload (F5) is therefore always a clean slate; the player turns
             // the overlay on from the sidebar once the game runs.
             document.addEventListener('DOMContentLoaded', function () {
-                if (!etlIsTouchDevice()) {
+                if (!etlHasTouchInput()) {
                     return;
                 }
 

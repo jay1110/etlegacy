@@ -260,13 +260,24 @@ the page never captures it, and `Esc` gives the pointer back and keeps it back
 until you click into the game again — so switching to another window or tab is
 always possible.
 
+A mouse click always captures, also on a PC with a touch monitor or a laptop
+with a touchscreen: what counts is the input that clicked, not whether the
+machine happens to support touch. Only a finger tap never captures — pointer
+lock does not apply to touch input, which drives the on-screen controls
+instead.
+
 ### Phones and tablets
 
-Touch devices are detected automatically (force it either way with `?touch=1`
-or `?touch=0`). There, the bottom controls bar is replaced by icons in the slim
+Devices that are *played* by touch (the primary pointer is a finger, not a
+mouse) are detected automatically; force it either way with `?touch=1` or
+`?touch=0`. There, the bottom controls bar is replaced by icons in the slim
 left sidebar — **⛶** fullscreen, **⇄** connect, **›_** console and **◎** touch
 controls — and the game area starts next to that sidebar instead of below it,
 so nothing covers the picture.
+
+A desktop with a touch screen keeps the desktop layout (and its mouse capture),
+but it can still switch the on-screen controls on with **Touch controls** in
+the controls bar.
 
 The touch controls are laid out on a fixed grid that keeps every button clear of
 its neighbours: a movement stick in the bottom left corner (with **RUN** above
