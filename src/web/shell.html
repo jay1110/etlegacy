@@ -1296,6 +1296,46 @@
         /* --- Confirm dialog --------------------------------------------
            Used for the "leave game" question. It sits above everything else
            (sidebar 960, host warning 970) because it must be answered. */
+        /* Shown to a joined player while the host's page is away (a reload):
+           the room - and the invite link - stay alive for a moment, so the
+           game is only held instead of being thrown away. */
+        #pause-overlay {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: var(--gap);
+            background-color: rgba(0, 0, 0, 0.72);
+            z-index: 999;
+        }
+
+        #pause-overlay.active {
+            display: flex;
+        }
+
+        #pause-box {
+            width: min(420px, 100%);
+            background-color: #2a2a4a;
+            border: 1px solid #555;
+            border-radius: 10px;
+            padding: clamp(12px, 2.4vmin, 20px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+            text-align: center;
+        }
+
+        #pause-title {
+            font-size: 1.1em;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        #pause-text {
+            color: #bbb;
+            font-size: 0.92em;
+            line-height: 1.45;
+        }
+
         #confirm-overlay {
             position: fixed;
             inset: 0;
@@ -2197,6 +2237,13 @@
     </div>
 
     <!-- Confirmation dialog (leaving a game) -->
+    <div id="pause-overlay" role="status" aria-live="polite">
+        <div id="pause-box">
+            <div id="pause-title">The host is away</div>
+            <div id="pause-text"></div>
+        </div>
+    </div>
+
     <div id="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
         <div id="confirm-box">
             <div id="confirm-title">Please confirm</div>
@@ -5743,7 +5790,11 @@
             // resolve with the engine arguments. A lobby that cannot be reached
             // is not fatal - the game then runs without other players being able
             // to find it, which is still better than not starting at all.
-            function startHosting(settings) {
+            // "reclaim" is the room this page hosted before it reloaded
+            // ({roomId, hostToken}); the same room - and therefore the same
+            // invite link - is then taken over again instead of a new one being
+            // opened, so the players in it can simply carry on.
+            function startHosting(settings, reclaim) {
                 showLoading('Preparing "' + settings.map + '"...');
 
                 var engineArgs = null;
@@ -5760,9 +5811,25 @@
                     if (!p2p) {
                         return null;           // no transport shipped
                     }
-                    Module.setStatus('Announcing the game in the lobby...');
+                    Module.setStatus(reclaim
+                        ? 'Putting your game back on the air...'
+                        : 'Announcing the game in the lobby...');
                     return p2p.connect().then(function () {
-                        return p2p.host(settings);
+                        if (!reclaim || !reclaim.roomId || !reclaim.hostToken) {
+                            return p2p.host(settings);
+                        }
+                        return p2p.reclaim(reclaim.roomId, reclaim.hostToken,
+                            settings).catch(function (err) {
+                            // The room is gone (nobody was left in it, or the
+                            // grace period ran out) or the lobby is an older
+                            // build: opening a new one is the next best thing.
+                            if (console && console.warn) {
+                                console.warn('Could not take the previous game back ' +
+                                    'over (' + (err && err.message || err) +
+                                    '); opening a new one.');
+                            }
+                            return p2p.host(settings);
+                        });
                     }).catch(function (err) {
                         if (console && console.warn) {
                             console.warn('Could not announce the game in the lobby: ' +
@@ -5785,7 +5852,8 @@
                     };
                     if (hosted) {
                         showInviteInAddressBar(hosted.inviteUrl);
-                        rememberHostSession(hosted.roomId, settings);
+                        rememberHostSession(hosted.roomId, settings,
+                            p2p.getHostToken && p2p.getHostToken());
                     }
                     return engineArgs;
                 });
@@ -5816,10 +5884,14 @@
             // same validation as an imported settings file.
             var HOST_SESSION_KEY = 'etl.hostSession';
 
-            function rememberHostSession(roomId, settings) {
+            function rememberHostSession(roomId, settings, hostToken) {
                 try {
                     sessionStorage.setItem(HOST_SESSION_KEY, JSON.stringify({
                         roomId: String(roomId || ''),
+                        // Proves to the lobby that this tab owns the room, so
+                        // the room id survives a reload. It never leaves this
+                        // tab (sessionStorage, same origin).
+                        hostToken: hostToken ? String(hostToken) : '',
                         settings: etlSettingsToJson(settings)
                     }));
                 } catch (e) { /* private mode / quota - hosting still works */ }
@@ -5829,9 +5901,10 @@
                 try { sessionStorage.removeItem(HOST_SESSION_KEY); } catch (e) { /* ignore */ }
             }
 
-            // The remembered settings, but only for the room the URL asks for -
+            // The remembered session, but only for the room the URL asks for -
             // so an invite link to somebody else's game is still a join.
-            function rememberedHostSettings(roomId) {
+            // Returns {settings, hostToken} or null.
+            function rememberedHostSession(roomId) {
                 var raw = null;
                 try { raw = sessionStorage.getItem(HOST_SESSION_KEY); } catch (e) { return null; }
                 if (!raw) { return null; }
@@ -5841,8 +5914,13 @@
                     return null;
                 }
                 var result = etlSettingsFromJson(JSON.stringify(stored.settings));
-                return result.settings && result.settings.rotation.length
-                    ? result.settings : null;
+                if (!result.settings || !result.settings.rotation.length) {
+                    return null;
+                }
+                return {
+                    settings: result.settings,
+                    hostToken: typeof stored.hostToken === 'string' ? stored.hostToken : ''
+                };
             }
 
             // Join a game hosted in someone else's browser: download its map
@@ -5850,7 +5928,9 @@
             // resolve with "+connect <peer address>".
             function joinRoom(room) {
                 showLoading('Joining "' + (room.name || room.roomId) + '"...');
-                return ensureMapInstalled(room.map).catch(function (err) {
+                return installJoinedMod(room).then(function () {
+                    return ensureMapInstalled(room.map);
+                }).catch(function (err) {
                     // Not fatal: the host serves the pk3 over the game
                     // connection as well (sv_allowDownload), it is just slower.
                     if (console && console.warn) {
@@ -5868,7 +5948,30 @@
                         room: joined.room || room,
                         inviteUrl: joined.inviteUrl || null
                     };
-                    return connectArgs(joined.address);
+                    // The room the lobby returns on the join is the current
+                    // one: a private game is not in the list, so this may be
+                    // the first time the mod of that game is known here.
+                    return installJoinedMod(joined.room).then(function () {
+                        return connectArgs(joined.address);
+                    });
+                });
+            }
+
+            // The mod of a game somebody else hosts. The server makes every
+            // client that connects switch to its fs_game, so the mod's game
+            // logic has to be in this browser as well - see installMod. A mod
+            // this build does not know, or one that cannot be fetched, is only
+            // a warning: the connect is still tried (the engine downloads the
+            // pk3 from the host), it just may not get past loading the mod.
+            function installJoinedMod(room) {
+                var modKey = room && room.mod;
+                if (!modKey || !HOST_MODS[modKey] || !HOST_MODS[modKey].available) {
+                    return Promise.resolve();
+                }
+                return installMod(modKey).catch(function (err) {
+                    if (console && console.warn) {
+                        console.warn(err && err.message || err);
+                    }
                 });
             }
 
@@ -6032,6 +6135,23 @@
                     document.exitPointerLock();
                 }
                 byId('confirm-cancel').focus();
+            }
+
+            // Banner over the game while the host's page is away, and again
+            // while the engine reconnects to it.
+            function hostAwayNotice(show, graceMs) {
+                var overlay = byId('pause-overlay');
+                if (!overlay) { return; }
+                if (!show) {
+                    overlay.classList.remove('active');
+                    return;
+                }
+                var seconds = Math.round((graceMs || 0) / 1000);
+                byId('pause-text').textContent =
+                    'The host is reloading the page. The game continues as soon ' +
+                    'as it is back' +
+                    (seconds > 0 ? ' (up to ' + seconds + ' seconds)' : '') + '.';
+                overlay.classList.add('active');
             }
 
             function closeConfirm() {
@@ -6412,11 +6532,27 @@
                     // browser tab. Everybody else is returned to the launcher.
                     p2p.on('closed', function () {
                         if (session.role !== 'client') { return; }
+                        hostAwayNotice(false);
                         try { etlSendCommand('disconnect'); } catch (e) { /* gone */ }
                         showLoading('The host has left the game.');
                         setTimeout(function () {
                             location.href = launcherUrl();
                         }, 1500);
+                    });
+                    // The host's page is away for a moment (a reload, e.g. for
+                    // a "vid_restart"). The room - and this game - stay alive,
+                    // so the player only waits instead of being thrown out.
+                    p2p.on('hostaway', function (ev) {
+                        if (session.role !== 'client') { return; }
+                        hostAwayNotice(true, ev && ev.grace);
+                    });
+                    // ...and it is back: the host is a new peer with a freshly
+                    // started server now, so the engine has to connect again.
+                    // The address is unchanged (the host is always peer 1).
+                    p2p.on('hostback', function () {
+                        if (session.role !== 'client') { return; }
+                        hostAwayNotice(false);
+                        try { etlSendCommand('reconnect'); } catch (e) { /* gone */ }
                     });
                     // The host changed a setting or switched the map.
                     p2p.on('roomupdate', function (ev) {
@@ -6432,12 +6568,14 @@
                 }, 5000);
                 window.addEventListener('beforeunload', function () {
                     if (sidebarTimer) { clearInterval(sidebarTimer); }
-                    // Closing the tab must not leave a dead game in the lobby.
-                    try {
-                        if (session && session.role === 'host' && p2p) {
-                            p2p.stopHosting();
-                        }
-                    } catch (e) { /* the page is going away anyway */ }
+                    // The room is deliberately *not* closed here: a reload is
+                    // indistinguishable from a tab being closed, and taking the
+                    // room down would invalidate the invite link and throw
+                    // everybody out on every F5 (which is what makes an in-game
+                    // "vid_restart" unusable for a host). Dropping the socket
+                    // pauses the room instead; the lobby closes it by itself if
+                    // nobody comes back within the grace period, and leaving
+                    // through the sidebar still closes it right away.
                 });
             }
 
@@ -6854,16 +6992,19 @@
                     // An invite link (?join=<roomId>) skips the menu entirely.
                     if (joinParam) {
                         // The host's own address bar carries that link too (see
-                        // showInviteInAddressBar), so a reload by the host must
-                        // put the game back on the air instead of trying to join
-                        // the room that died with the previous page. The lobby
-                        // hands out the room id, so the new room gets a new one
-                        // and the address bar is rewritten again.
-                        var restored = rememberedHostSettings(joinParam);
+                        // showInviteInAddressBar), so a reload by the host puts
+                        // the game back on the air instead of trying to join the
+                        // room that went away with the previous page. The room
+                        // is taken back over with the token stored for this tab,
+                        // which keeps the id - every invite link handed out so
+                        // far stays valid and the players in it are only paused.
+                        var restored = rememberedHostSession(joinParam);
                         if (restored) {
                             showLoading('Restarting your hosted game...');
-                            startFlow(startHosting(restored), 'launcher-host',
-                                'host-hint');
+                            startFlow(startHosting(restored.settings, {
+                                roomId: joinParam,
+                                hostToken: restored.hostToken
+                            }), 'launcher-host', 'host-hint');
                             return;
                         }
                         if (!p2p) {
