@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>ET: Legacy</title>
     <style>
         * {
@@ -11,13 +11,49 @@
             box-sizing: border-box;
         }
 
+        /* --- Layout metrics -------------------------------------------
+           Everything the page draws around the game is sized from these, so
+           one set of rules covers every window size, both orientations and
+           both desktop and mobile. The dynamic viewport units (dvh/dvw) are
+           what makes this correct on phones, where the browser UI grows and
+           shrinks: 100vh there is the *largest* possible viewport, so a panel
+           sized with it is partly under the address bar. A @supports guard
+           keeps older browsers on 100vh.
+
+           --vh / --vw   usable viewport
+           --gap         outer margin every floating panel keeps to the edges
+           --sidebar-w   width of the in-game sidebar; the game area, the
+                         controls bar, the console and the host banner are all
+                         inset by it so nothing ever lies on top of the game
+           --top-inset   height of the host banner while it is shown, so the
+                         panels below it start underneath instead of behind it
+        */
+        :root {
+            --vh: 100vh;
+            --vw: 100vw;
+            --gap: clamp(8px, 2.2vmin, 24px);
+            --sidebar-w: 56px;
+            --top-inset: 0px;
+        }
+
+        @supports (height: 100dvh) {
+            :root {
+                --vh: 100dvh;
+                --vw: 100dvw;
+            }
+        }
+
+        html {
+            height: 100%;
+        }
+
         body {
             background-color: #1a1a2e;
             color: #e0e0e0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             overflow: hidden;
-            width: 100vw;
-            height: 100vh;
+            width: 100%;
+            height: var(--vh);
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -64,15 +100,16 @@
 
         #loading-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            inset: 0;
             background-color: #1a1a2e;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
+            gap: clamp(4px, 1vh, 10px);
+            padding: var(--gap);
+            overflow-y: auto;
+            overscroll-behavior: contain;
             z-index: 100;
             transition: opacity 0.5s ease;
         }
@@ -83,26 +120,27 @@
         }
 
         #loading-title {
-            font-size: 2.5em;
+            font-size: clamp(1.4rem, 5vmin, 2.5rem);
             font-weight: bold;
             color: #c4a000;
-            margin-bottom: 10px;
             text-shadow: 0 0 20px rgba(196, 160, 0, 0.3);
+            text-align: center;
         }
 
         #loading-subtitle {
-            font-size: 1.1em;
+            font-size: clamp(0.75rem, 2.2vmin, 1.1rem);
             color: #888;
-            margin-bottom: 40px;
+            margin-bottom: clamp(10px, 4vh, 40px);
+            text-align: center;
         }
 
         #progress-container {
-            width: 400px;
-            max-width: 80%;
+            width: min(400px, 100%);
+            flex: none;
             background-color: #2a2a4a;
             border-radius: 8px;
             overflow: hidden;
-            height: 20px;
+            height: clamp(10px, 2.4vh, 20px);
             box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
         }
 
@@ -115,36 +153,47 @@
         }
 
         #progress-text {
-            margin-top: 15px;
-            font-size: 0.9em;
+            margin-top: clamp(4px, 1.5vh, 15px);
+            font-size: clamp(0.72rem, 1.8vmin, 0.9rem);
             color: #aaa;
+            text-align: center;
+            max-width: 100%;
+            overflow-wrap: anywhere;
         }
 
         #status-text {
             margin-top: 8px;
-            font-size: 0.8em;
+            font-size: clamp(0.66rem, 1.6vmin, 0.8rem);
             color: #666;
+            text-align: center;
         }
 
         #local-assets {
-            margin-top: 22px;
+            margin-top: clamp(8px, 2.4vh, 22px);
             display: flex;
             flex-direction: column;
             align-items: center;
             gap: 10px;
+            width: min(520px, 100%);
         }
 
         #local-assets .local-assets-buttons {
             display: flex;
             gap: 10px;
+            width: 100%;
+            justify-content: center;
         }
 
         #local-assets-hint {
             display: block;
             max-width: 420px;
-            font-size: 0.78em;
+            font-size: clamp(0.64rem, 1.6vmin, 0.78rem);
             color: #888;
             line-height: 1.5;
+            text-align: center;
+        }
+
+        #build-marker {
             text-align: center;
         }
 
@@ -155,29 +204,31 @@
             justify-content: center;
         }
 
-        /* Width of the in-game sidebar. The game canvas is inset by exactly
-           this much while the sidebar is shown, so the sidebar never covers
-           the game (see #canvas-container below). */
-        :root {
-            --sidebar-w: 56px;
-        }
-
         /* Phones/tablets get a slimmer sidebar - it holds the controls-bar
            actions as icons there (see body.etl-mobile rules further down). */
         body.etl-mobile {
             --sidebar-w: 48px;
         }
 
+        /* --- Controls bar ---------------------------------------------
+           The bottom bar of the desktop layout. It is invisible until the
+           mouse is over it and disappears again the instant the pointer
+           leaves (the fade only applies while appearing - a fade-out would
+           keep the bar on screen after the mouse is long gone). It never
+           overlaps the sidebar, and while a launcher page is open it is gone
+           completely: it lies above the launcher, so even an invisible bar
+           would swallow clicks meant for the buttons underneath. */
         #controls-bar {
             position: fixed;
             bottom: 0;
             left: 0;
             right: 0;
             background-color: rgba(26, 26, 46, 0.9);
-            padding: 8px 16px;
+            padding: clamp(4px, 1vh, 8px) clamp(6px, 1.4vw, 16px);
             display: flex;
             align-items: center;
             justify-content: space-between;
+            gap: clamp(6px, 1.2vw, 16px);
             /* Above #touch-overlay (900): the touch overlay's look area covers
                the whole viewport, so with a lower z-index the controls bar
                (including the button that turns the overlay back off) became
@@ -185,17 +236,41 @@
             z-index: 950;
             border-top: 1px solid #333;
             opacity: 0;
-            transition: opacity 0.3s ease;
+            transition: opacity 0s;
         }
 
         #controls-bar:hover {
             opacity: 1;
+            transition: opacity 0.25s ease;
+        }
+
+        body.sidebar-visible #controls-bar {
+            left: var(--sidebar-w);
+        }
+
+        /* The buttons share the space that is left over, so they shrink with
+           the window instead of pushing each other out of the bar. */
+        #controls-actions {
+            display: flex;
+            align-items: center;
+            gap: clamp(4px, 0.8vw, 10px);
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        #controls-actions .control-btn {
+            flex: 1 1 0;
+            min-width: 0;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
         }
 
         /* On mobile the bottom bar is gone entirely: it wastes screen space,
            sits under the touch controls and cannot be "hovered" on a
            touchscreen anyway. Its actions live in the sidebar instead. */
-        body.etl-mobile #controls-bar {
+        body.etl-mobile #controls-bar,
+        body.launcher-open #controls-bar {
             display: none;
         }
 
@@ -315,7 +390,7 @@
            can always be dismissed no matter what else is on screen. */
         #touch-overlay #touch-tools {
             position: absolute;
-            top: var(--tc-edge);
+            top: calc(var(--tc-edge) + var(--top-inset));
             right: var(--tc-edge);
             display: flex;
             gap: var(--tc-gap);
@@ -348,10 +423,11 @@
             background-color: #2a2a4a;
             color: #e0e0e0;
             border: 1px solid #444;
-            padding: 6px 14px;
+            padding: clamp(5px, 1vh, 7px) clamp(8px, 1.4vw, 14px);
             border-radius: 4px;
             cursor: pointer;
-            font-size: 0.85em;
+            font-size: clamp(0.68rem, 1.8vmin, 0.85rem);
+            line-height: 1.25;
             transition: background-color 0.2s;
         }
 
@@ -363,28 +439,39 @@
             background-color: #4a4a6a;
         }
 
+        .control-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
         #controls-info {
-            font-size: 0.8em;
+            font-size: clamp(0.62rem, 1.5vmin, 0.8rem);
             color: #888;
+            flex: 0 1 auto;
+            min-width: 0;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
         }
 
         #error-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            inset: 0;
             background-color: rgba(26, 26, 46, 0.95);
             display: none;
             flex-direction: column;
             align-items: center;
             justify-content: center;
+            padding: var(--gap);
             z-index: 400; /* above the launcher overlay (300) so errors are never hidden */
         }
 
         #error-message {
-            max-width: 600px;
-            padding: 30px;
+            width: min(600px, 100%);
+            max-height: calc(var(--vh) - 2 * var(--gap));
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            padding: clamp(14px, 3vmin, 30px);
             background-color: #2a2a4a;
             border-radius: 8px;
             border: 1px solid #c44;
@@ -399,22 +486,34 @@
         #error-message p {
             color: #ccc;
             line-height: 1.6;
+            overflow-wrap: anywhere;
         }
 
         /* Console output panel */
         #console-panel {
             position: fixed;
-            bottom: 40px;
+            bottom: 0;
             left: 0;
             right: 0;
-            height: 240px;
+            height: min(240px, 45vh);
+            max-height: calc(var(--vh) - var(--top-inset));
             background-color: rgba(0, 0, 0, 0.85);
             font-family: 'Courier New', monospace;
-            font-size: 12px;
+            font-size: clamp(10px, 1.6vmin, 12px);
             display: none;
             flex-direction: column;
-            z-index: 50;
+            z-index: 940;
             border-top: 1px solid #333;
+        }
+
+        /* Never under the sidebar, and never under the (hover-only) controls
+           bar on a desktop - the input line has to stay usable. */
+        body.sidebar-visible #console-panel {
+            left: var(--sidebar-w);
+        }
+
+        body:not(.etl-mobile) #console-panel {
+            bottom: 40px;
         }
 
         #console-output {
@@ -422,6 +521,8 @@
             color: #0f0;
             padding: 8px;
             overflow-y: auto;
+            overscroll-behavior: contain;
+            overflow-wrap: anywhere;
         }
 
         #console-input {
@@ -430,9 +531,10 @@
             background-color: rgba(0, 0, 0, 0.9);
             color: #fff;
             font-family: 'Courier New', monospace;
-            font-size: 12px;
+            font-size: inherit;
             padding: 6px 8px;
             outline: none;
+            width: 100%;
         }
 
         /* Connect / relay panel */
@@ -441,87 +543,143 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 420px;
-            max-width: 90%;
+            width: min(420px, calc(100% - 2 * var(--gap)));
+            max-height: calc(var(--vh) - 2 * var(--gap));
+            overflow-y: auto;
+            overscroll-behavior: contain;
             background-color: #2a2a4a;
             border: 1px solid #444;
             border-radius: 8px;
-            padding: 24px;
-            z-index: 150;
+            padding: clamp(14px, 3vmin, 24px);
+            z-index: 980;
             display: none;
             box-shadow: 0 8px 32px rgba(0,0,0,0.5);
         }
 
+        /* Centred in the space next to the sidebar, not over it: on a narrow
+           screen the panel would otherwise cover the sidebar buttons. */
+        body.sidebar-visible #connect-panel {
+            left: calc(var(--sidebar-w) + (100% - var(--sidebar-w)) / 2);
+            width: min(420px, calc(100% - var(--sidebar-w) - 2 * var(--gap)));
+        }
+
         #connect-panel h2 {
             color: #c4a000;
-            font-size: 1.3em;
+            font-size: clamp(1rem, 2.6vmin, 1.3rem);
             margin-bottom: 16px;
         }
 
         #connect-panel label {
             display: block;
-            font-size: 0.85em;
+            font-size: clamp(0.72rem, 1.7vmin, 0.85rem);
             color: #aaa;
             margin-bottom: 4px;
         }
 
         #connect-panel input {
             width: 100%;
+            max-width: 100%;
             padding: 8px 10px;
             margin-bottom: 14px;
             background-color: #1a1a2e;
             color: #e0e0e0;
             border: 1px solid #444;
             border-radius: 4px;
-            font-size: 0.9em;
+            font-size: clamp(0.78rem, 1.8vmin, 0.9rem);
         }
 
         #connect-panel .hint {
-            font-size: 0.75em;
+            font-size: clamp(0.66rem, 1.6vmin, 0.75rem);
             color: #777;
             margin: -10px 0 14px 0;
         }
 
         #connect-panel .panel-actions {
             display: flex;
-            gap: 10px;
+            gap: clamp(6px, 1.2vw, 10px);
             justify-content: flex-end;
         }
 
-        /* Launcher (game data setup + run-game menu) */
+        #connect-panel .panel-actions .control-btn {
+            flex: 1 1 0;
+            min-width: 0;
+            max-width: 50%;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        /* --- Launcher (game data setup + run-game menu) -----------------
+           Every launcher page is one panel: a fixed header, a scrolling body
+           and - where it has one - a footer with the page's actions that
+           stays put. That is what keeps "Back" and "Start hosting" reachable
+           no matter how long the map rotation grows, and it is what keeps the
+           whole page inside the window in every format: the panel is never
+           taller than the viewport, only its body scrolls. */
         #launcher-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            inset: 0;
             background-color: #1a1a2e;
             display: none;
             flex-direction: column;
             align-items: center;
             justify-content: center;
+            padding: var(--gap);
+            overflow: hidden;
             z-index: 300;
         }
 
         .launcher-panel {
-            width: 480px;
-            max-width: 92%;
+            --panel-pad: clamp(14px, 3vmin, 28px);
+            width: min(480px, 100%);
+            max-height: 100%;
             background-color: #2a2a4a;
             border: 1px solid #444;
             border-radius: 8px;
-            padding: 28px;
             box-shadow: 0 8px 32px rgba(0,0,0,0.5);
             display: none;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .launcher-panel.active {
+            display: flex;
+        }
+
+        .launcher-panel > h2 {
+            flex: none;
+            padding: var(--panel-pad) var(--panel-pad) 0;
+        }
+
+        /* The only part that scrolls. min-height:0 is what allows a flex item
+           to shrink below its content size - without it the body would push
+           the footer out of the panel again. */
+        .launcher-panel > .panel-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+            padding: clamp(8px, 1.6vmin, 14px) var(--panel-pad) var(--panel-pad);
+        }
+
+        /* The page's own actions: always visible under the scrolling body. */
+        .launcher-panel > .launcher-actions {
+            flex: none;
+            margin: 0;
+            padding: clamp(8px, 1.6vmin, 14px) var(--panel-pad);
+            border-top: 1px solid #3a3a5a;
+            background-color: #262648;
         }
 
         .launcher-panel h2 {
             color: #c4a000;
-            font-size: 1.4em;
+            font-size: clamp(1.05rem, 2.8vmin, 1.4rem);
             margin-bottom: 14px;
         }
 
         .launcher-panel p {
-            font-size: 0.9em;
+            font-size: clamp(0.78rem, 1.9vmin, 0.9rem);
             color: #ccc;
             line-height: 1.5;
             margin-bottom: 18px;
@@ -531,13 +689,13 @@
             display: block;
             width: 100%;
             margin-bottom: 10px;
-            padding: 12px 16px;
+            padding: clamp(9px, 1.8vmin, 12px) clamp(10px, 2vmin, 16px);
             background-color: #1a1a2e;
             color: #e0e0e0;
             border: 1px solid #555;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 0.95em;
+            font-size: clamp(0.82rem, 2vmin, 0.95rem);
             text-align: left;
             transition: background-color 0.2s, border-color 0.2s;
         }
@@ -551,15 +709,26 @@
             background-color: #4a4a6a;
         }
 
+        .launcher-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        .launcher-btn:disabled:hover {
+            background-color: #1a1a2e;
+            border-color: #555;
+        }
+
         .launcher-btn .launcher-btn-sub {
             display: block;
-            font-size: 0.8em;
+            font-size: clamp(0.68rem, 1.6vmin, 0.8rem);
             color: #888;
             margin-top: 3px;
+            overflow-wrap: anywhere;
         }
 
         .launcher-hint {
-            font-size: 0.78em;
+            font-size: clamp(0.66rem, 1.6vmin, 0.78rem);
             color: #888;
             line-height: 1.5;
             margin-top: 8px;
@@ -567,38 +736,40 @@
 
         .launcher-panel label {
             display: block;
-            font-size: 0.85em;
+            font-size: clamp(0.72rem, 1.7vmin, 0.85rem);
             color: #aaa;
             margin-bottom: 4px;
         }
 
-        .launcher-panel input {
+        .launcher-panel input,
+        .launcher-panel select {
             width: 100%;
-            padding: 8px 10px;
+            max-width: 100%;
+            padding: clamp(6px, 1.2vmin, 8px) 10px;
             margin-bottom: 14px;
             background-color: #1a1a2e;
             color: #e0e0e0;
             border: 1px solid #444;
             border-radius: 4px;
-            font-size: 0.9em;
+            font-size: clamp(0.78rem, 1.8vmin, 0.9rem);
         }
 
+        /* Buttons in an action row share the row and shrink with it, so a row
+           of actions never grows wider than the panel. */
         .launcher-actions {
             display: flex;
-            gap: 10px;
+            gap: clamp(6px, 1.2vw, 10px);
             justify-content: flex-end;
             margin-top: 6px;
         }
 
-        .launcher-panel select {
-            width: 100%;
-            padding: 8px 10px;
-            margin-bottom: 14px;
-            background-color: #1a1a2e;
-            color: #e0e0e0;
-            border: 1px solid #444;
-            border-radius: 4px;
-            font-size: 0.9em;
+        .launcher-actions .control-btn {
+            flex: 1 1 0;
+            min-width: 0;
+            max-width: 50%;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
         }
 
         /* A checkbox and its label on one line (e.g. "Private room"). */
@@ -606,14 +777,19 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            font-size: 0.85em;
+            font-size: clamp(0.72rem, 1.7vmin, 0.85rem);
             color: #ccc;
             margin-bottom: 14px;
         }
 
         .check-row input {
             width: auto;
+            flex: none;
             margin: 0;
+        }
+
+        .check-row label {
+            min-width: 0;
         }
 
         /* One hosted game in the "Join games" list. */
@@ -630,21 +806,32 @@
         }
 
         .room-row .room-info {
-            font-size: 0.9em;
+            flex: 1 1 auto;
+            min-width: 0;
+            font-size: clamp(0.76rem, 1.8vmin, 0.9rem);
             overflow: hidden;
-            text-overflow: ellipsis;
+            overflow-wrap: anywhere;
         }
 
         .room-row .room-sub {
             display: block;
-            font-size: 0.78em;
+            font-size: clamp(0.66rem, 1.6vmin, 0.78rem);
             color: #888;
             margin-top: 3px;
         }
 
+        /* The join button of a row keeps its own size instead of stretching
+           over the row like the full-width launcher buttons do. */
+        .room-row .launcher-btn {
+            flex: 0 0 auto;
+            width: auto;
+            margin: 0;
+            text-align: center;
+            white-space: nowrap;
+        }
+
         #join-list {
-            max-height: 46vh;
-            overflow-y: auto;
+            margin-bottom: 4px;
         }
 
         /* --- In-game sidebar ------------------------------------------
@@ -664,8 +851,10 @@
             display: none;
             flex-direction: column;
             align-items: center;
-            gap: 10px;
-            padding: 12px 0;
+            gap: clamp(5px, 1.2vh, 10px);
+            padding: clamp(6px, 1.4vh, 12px) 0;
+            overflow-y: auto;
+            overscroll-behavior: contain;
             z-index: 960;
         }
 
@@ -679,33 +868,35 @@
             display: none;
             flex-direction: column;
             align-items: center;
-            gap: 8px;
+            gap: clamp(4px, 1vh, 8px);
             margin-top: 6px;
             padding-top: 10px;
             border-top: 1px solid #3a3a5a;
             width: 100%;
+            flex: none;
         }
 
         body.etl-mobile #sidebar-tools {
             display: flex;
         }
 
-        /* Leave/settings/invite only make sense inside a game the launcher
-           started; on mobile the sidebar is also shown for a plain "Start
-           game", where it just carries the tool icons. */
+        /* Settings and invite only make sense inside a game the launcher
+           started (a plain "Start game" has no room to share); leaving the
+           game and going back to the start page always does. */
         body:not(.has-session) .session-only {
             display: none;
         }
 
         .sidebar-btn {
-            width: 40px;
-            height: 40px;
+            flex: none;
+            width: clamp(30px, 4.4vh, 40px);
+            height: clamp(30px, 4.4vh, 40px);
             background-color: #1a1a2e;
             color: #e0e0e0;
             border: 1px solid #555;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 1.2em;
+            font-size: clamp(0.85rem, 2vh, 1.2rem);
             line-height: 1;
             display: flex;
             align-items: center;
@@ -724,9 +915,9 @@
         }
 
         body.etl-mobile .sidebar-btn {
-            width: 36px;
-            height: 36px;
-            font-size: 1em;
+            width: clamp(28px, 4vh, 36px);
+            height: clamp(28px, 4vh, 36px);
+            font-size: clamp(0.8rem, 1.8vh, 1rem);
         }
 
         .sidebar-btn.on {
@@ -736,7 +927,8 @@
 
         #sidebar-status {
             margin-top: auto;
-            font-size: 0.62em;
+            padding-top: 6px;
+            font-size: clamp(0.5rem, 1.3vh, 0.62rem);
             color: #888;
             text-align: center;
             line-height: 1.4;
@@ -744,36 +936,65 @@
             word-break: break-word;
         }
 
-        /* Panel opened by the sidebar's gear button. */
+        /* Panel opened by the sidebar's gear button. Same construction as the
+           launcher pages: header, scrolling body, footer that stays put. */
         #game-panel {
             position: fixed;
-            top: 0;
+            top: var(--top-inset);
             left: var(--sidebar-w);
             bottom: 0;
-            width: 380px;
-            max-width: calc(100% - var(--sidebar-w));
+            width: min(380px, calc(100% - var(--sidebar-w)));
             background-color: #2a2a4a;
             border-right: 1px solid #444;
-            padding: 22px;
-            overflow-y: auto;
             display: none;
+            flex-direction: column;
+            overflow: hidden;
             z-index: 955;
             box-shadow: 8px 0 32px rgba(0,0,0,0.5);
         }
 
         #game-panel.active {
-            display: block;
+            display: flex;
+        }
+
+        /* Never over the (hover-only) controls bar on a desktop: both would be
+           reachable at the same time, and the bar would end up underneath. */
+        body:not(.etl-mobile) #game-panel {
+            bottom: 40px;
+        }
+
+        #game-panel > h2 {
+            flex: none;
+            padding: clamp(12px, 2.4vmin, 22px) clamp(12px, 2.4vmin, 22px) 0;
+        }
+
+        #game-panel > .panel-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+            padding: clamp(8px, 1.6vmin, 14px) clamp(12px, 2.4vmin, 22px)
+                     clamp(12px, 2.4vmin, 22px);
+        }
+
+        #game-panel > .launcher-actions {
+            flex: none;
+            margin: 0;
+            padding: clamp(8px, 1.6vmin, 14px) clamp(12px, 2.4vmin, 22px);
+            border-top: 1px solid #3a3a5a;
+            background-color: #262648;
         }
 
         #game-panel h2 {
             color: #c4a000;
-            font-size: 1.2em;
+            font-size: clamp(0.95rem, 2.4vmin, 1.2rem);
             margin-bottom: 14px;
         }
 
         #game-panel label {
             display: block;
-            font-size: 0.85em;
+            font-size: clamp(0.72rem, 1.7vmin, 0.85rem);
             color: #aaa;
             margin-bottom: 4px;
         }
@@ -781,24 +1002,25 @@
         #game-panel input,
         #game-panel select {
             width: 100%;
+            max-width: 100%;
             padding: 7px 9px;
             margin-bottom: 12px;
             background-color: #1a1a2e;
             color: #e0e0e0;
             border: 1px solid #444;
             border-radius: 4px;
-            font-size: 0.9em;
+            font-size: clamp(0.78rem, 1.8vmin, 0.9rem);
         }
 
         #game-panel .hint {
-            font-size: 0.75em;
+            font-size: clamp(0.66rem, 1.6vmin, 0.75rem);
             color: #888;
             line-height: 1.5;
             margin-bottom: 12px;
         }
 
         #game-status {
-            font-size: 0.85em;
+            font-size: clamp(0.72rem, 1.7vmin, 0.85rem);
             color: #ccc;
             line-height: 1.6;
             background-color: #1a1a2e;
@@ -806,6 +1028,7 @@
             border-radius: 6px;
             padding: 10px 12px;
             margin-bottom: 16px;
+            overflow-wrap: anywhere;
         }
 
         #game-status b {
@@ -813,15 +1036,16 @@
         }
 
         #invite-link {
-            font-size: 0.8em;
+            font-size: clamp(0.7rem, 1.6vmin, 0.8rem);
             word-break: break-all;
         }
 
         #game-message {
-            font-size: 0.8em;
+            font-size: clamp(0.7rem, 1.6vmin, 0.8rem);
             color: #c4a000;
             min-height: 1.2em;
             margin-top: 10px;
+            overflow-wrap: anywhere;
         }
 
         /* --- Host warning ---------------------------------------------
@@ -839,16 +1063,23 @@
             display: none;
             align-items: center;
             justify-content: center;
-            gap: 14px;
-            padding: 10px 16px;
+            gap: clamp(8px, 1.6vw, 14px);
+            padding: clamp(6px, 1.4vh, 10px) clamp(8px, 1.6vw, 16px);
             background: linear-gradient(90deg, #7a5a00, #c4a000);
             color: #1a1a2e;
-            font-size: 0.88em;
+            font-size: clamp(0.68rem, 1.7vmin, 0.88rem);
             font-weight: 600;
             line-height: 1.4;
             text-align: center;
+            max-height: 40vh;
+            overflow-y: auto;
+            overscroll-behavior: contain;
             box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
             z-index: 970;
+        }
+
+        #host-warning-text {
+            min-width: 0;
         }
 
         body.sidebar-visible #host-warning {
@@ -883,7 +1114,7 @@
 
         /* The same warning as a static note in the "Host game" panel. */
         .host-note {
-            font-size: 0.8em;
+            font-size: clamp(0.68rem, 1.7vmin, 0.8rem);
             line-height: 1.5;
             color: #ffd54f;
             background-color: rgba(196, 160, 0, 0.12);
@@ -903,6 +1134,8 @@
         }
 
         .map-picker select {
+            flex: 1 1 auto;
+            min-width: 0;
             margin-bottom: 0;
         }
 
@@ -918,22 +1151,24 @@
         .rotation-row {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: clamp(4px, 1vw, 8px);
             padding: 5px 8px;
             margin-bottom: 5px;
             background-color: #1a1a2e;
             border: 1px solid #444;
             border-radius: 4px;
-            font-size: 0.85em;
+            font-size: clamp(0.72rem, 1.7vmin, 0.85rem);
         }
 
         .rotation-row .rotation-index {
+            flex: none;
             color: #888;
             min-width: 1.6em;
         }
 
         .rotation-row .rotation-name {
-            flex: 1;
+            flex: 1 1 auto;
+            min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -962,9 +1197,118 @@
         }
 
         .rotation-empty {
-            font-size: 0.78em;
+            font-size: clamp(0.68rem, 1.6vmin, 0.78rem);
             color: #888;
             margin-bottom: 12px;
+        }
+
+        /* --- Host settings tabs ----------------------------------------
+           The host page shows only the handful of settings most games need
+           ("Basic"); everything else lives behind the "Advanced" tab so the
+           page stays short on small screens. */
+        .settings-tabs {
+            display: flex;
+            gap: 6px;
+            margin-bottom: clamp(8px, 1.6vh, 14px);
+            border-bottom: 1px solid #3a3a5a;
+        }
+
+        .settings-tab {
+            flex: 1 1 0;
+            min-width: 0;
+            padding: clamp(6px, 1.3vmin, 9px) 10px;
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: #9aa;
+            font-size: clamp(0.72rem, 1.7vmin, 0.85rem);
+            font-weight: 600;
+            cursor: pointer;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        .settings-tab:hover {
+            color: #e0e0e0;
+        }
+
+        .settings-tab.active {
+            color: #c4a000;
+            border-bottom-color: #c4a000;
+        }
+
+        .settings-group {
+            display: none;
+        }
+
+        .settings-group.active {
+            display: block;
+        }
+
+        /* A short explanation under an advanced setting, so players do not
+           have to look the cvar up elsewhere. */
+        .setting-hint {
+            font-size: clamp(0.62rem, 1.5vmin, 0.72rem);
+            color: #888;
+            line-height: 1.45;
+            margin: -10px 0 12px;
+            overflow-wrap: anywhere;
+        }
+
+        /* --- Confirm dialog --------------------------------------------
+           Used for the "leave game" question. It sits above everything else
+           (sidebar 960, host warning 970) because it must be answered. */
+        #confirm-overlay {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: var(--gap);
+            background-color: rgba(0, 0, 0, 0.72);
+            z-index: 1000;
+        }
+
+        #confirm-overlay.active {
+            display: flex;
+        }
+
+        #confirm-box {
+            display: flex;
+            flex-direction: column;
+            width: min(420px, 100%);
+            max-height: 100%;
+            overflow: hidden;
+            background-color: #2a2a4a;
+            border: 1px solid #555;
+            border-radius: 10px;
+            padding: clamp(12px, 2.4vmin, 20px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+        }
+
+        #confirm-title {
+            flex: none;
+            font-size: clamp(0.9rem, 2.2vmin, 1.1rem);
+            font-weight: 700;
+            color: #c4a000;
+            margin-bottom: 8px;
+        }
+
+        #confirm-text {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            font-size: clamp(0.76rem, 1.8vmin, 0.9rem);
+            color: #ddd;
+            line-height: 1.5;
+            margin-bottom: clamp(10px, 2vh, 16px);
+            overflow-wrap: anywhere;
+        }
+
+        #confirm-overlay .launcher-actions {
+            flex: none;
+            margin-top: 0;
         }
 
         /* --- Start page layouts ----------------------------------------
@@ -976,21 +1320,103 @@
 
         /* Shared header of the start page. */
         #home-header {
-            text-align: left;
-            margin-bottom: 18px;
+            text-align: center;
+            margin-bottom: clamp(10px, 2.4vh, 18px);
+        }
+
+        /* The logo is optional: if it cannot be loaded (offline deployment,
+           blocked third-party request) it hides itself and the text title
+           below carries the branding on its own. */
+        #home-logo {
+            display: block;
+            width: min(320px, 70%);
+            height: auto;
+            margin: 0 auto clamp(6px, 1.6vh, 14px);
         }
 
         #home-header .home-title {
-            font-size: 1.6em;
+            font-size: clamp(1.15rem, 4.2vmin, 1.6rem);
             font-weight: bold;
             color: #c4a000;
             letter-spacing: 1px;
         }
 
         #home-header .home-sub {
-            font-size: 0.85em;
+            font-size: clamp(0.7rem, 1.8vmin, 0.85rem);
             color: #9aa;
             margin-top: 4px;
+        }
+
+        /* A group of related start page buttons. The groups are what tells
+           players apart what runs where: offline in this tab, hosted in a
+           browser, or on a dedicated server somewhere else. */
+        .home-section {
+            border: 1px solid #3a3a5a;
+            border-radius: 10px;
+            padding: clamp(8px, 1.8vmin, 14px);
+            margin-bottom: clamp(8px, 1.6vh, 14px);
+            background-color: rgba(26, 26, 46, 0.35);
+        }
+
+        .home-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .home-section-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+
+        .home-section-title {
+            flex: 1 1 auto;
+            min-width: 0;
+            font-size: clamp(0.74rem, 1.8vmin, 0.88rem);
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #c4a000;
+            overflow-wrap: anywhere;
+        }
+
+        /* Live number of games currently hosted in a browser. */
+        .home-count {
+            flex: none;
+            font-size: clamp(0.64rem, 1.5vmin, 0.74rem);
+            color: #cfcfe6;
+            background-color: rgba(196, 160, 0, 0.16);
+            border: 1px solid #7a5a00;
+            border-radius: 999px;
+            padding: 2px 9px;
+            white-space: nowrap;
+        }
+
+        .home-section-desc {
+            font-size: clamp(0.66rem, 1.6vmin, 0.78rem);
+            color: #9aa;
+            line-height: 1.5;
+            margin-bottom: clamp(6px, 1.2vh, 10px);
+        }
+
+        /* Two buttons side by side inside a group. They share the row and
+           shrink with it instead of wrapping onto a second line. */
+        .home-actions {
+            display: flex;
+            gap: clamp(6px, 1.2vw, 10px);
+        }
+
+        .home-actions .launcher-btn {
+            flex: 1 1 0;
+            min-width: 0;
+            margin-bottom: 0;
+        }
+
+        /* The download link looks like a button but is a real link. */
+        a.launcher-btn {
+            display: block;
+            text-decoration: none;
         }
 
         .launcher-btn .launcher-btn-icon {
@@ -999,11 +1425,7 @@
 
         /* -- Concept 2: "cards" - a two-column grid of tiles with icons. */
         body[data-home-layout="cards"] #launcher-menu {
-            width: 760px;
-        }
-
-        body[data-home-layout="cards"] #home-header {
-            text-align: center;
+            width: min(760px, 100%);
         }
 
         body[data-home-layout="cards"] #launcher-menu .home-buttons {
@@ -1012,11 +1434,14 @@
             gap: 12px;
         }
 
+        body[data-home-layout="cards"] #launcher-menu .home-section {
+            margin-bottom: 0;
+        }
+
         body[data-home-layout="cards"] #launcher-menu .launcher-btn {
-            margin: 0;
+            margin: 0 0 8px;
             padding: 16px 16px 16px 58px;
             position: relative;
-            min-height: 96px;
             border-radius: 10px;
             background-color: #232342;
         }
@@ -1046,29 +1471,29 @@
         }
 
         body[data-home-layout="hero"] #launcher-menu {
-            width: 560px;
+            width: min(620px, 100%);
             background-color: transparent;
             border: none;
             box-shadow: none;
-            padding: 10px;
         }
 
         body[data-home-layout="hero"] #home-header {
-            text-align: center;
-            margin-bottom: 26px;
+            margin-bottom: clamp(12px, 3vh, 26px);
         }
 
         body[data-home-layout="hero"] #home-header .home-title {
-            font-size: 3em;
+            font-size: clamp(1.5rem, 6vmin, 3rem);
             text-shadow: 0 0 28px rgba(196, 160, 0, 0.35);
         }
 
-        body[data-home-layout="hero"] #launcher-menu h2 {
+        body[data-home-layout="hero"] #launcher-menu > h2 {
             display: none;
         }
 
-        body[data-home-layout="hero"] #launcher-menu > p {
-            display: none;
+        body[data-home-layout="hero"] #launcher-menu .home-section {
+            background-color: rgba(26, 26, 46, 0.42);
+            border-color: rgba(255, 255, 255, 0.12);
+            backdrop-filter: blur(2px);
         }
 
         body[data-home-layout="hero"] #launcher-menu .launcher-btn {
@@ -1076,22 +1501,123 @@
             background-color: rgba(42, 42, 74, 0.55);
             border-color: rgba(255, 255, 255, 0.12);
             border-radius: 8px;
-            padding: 12px 16px 12px 52px;
+            padding: clamp(8px, 1.8vmin, 12px) clamp(10px, 2vmin, 16px)
+                     clamp(8px, 1.8vmin, 12px) clamp(38px, 7vmin, 52px);
             backdrop-filter: blur(2px);
         }
 
         body[data-home-layout="hero"] #launcher-menu .launcher-btn-icon {
             display: block;
             position: absolute;
-            left: 16px;
+            left: clamp(10px, 2.2vmin, 16px);
             top: 50%;
             transform: translateY(-50%);
-            font-size: 1.3em;
+            font-size: clamp(0.95rem, 2.6vmin, 1.3rem);
             line-height: 1;
         }
 
         body[data-home-layout="hero"] #launcher-menu .launcher-btn-sub {
             display: none;
+        }
+
+        /* --- Responsive rules ------------------------------------------
+           Everything above already scales with clamp()/min(); these rules
+           handle the layout changes that scaling alone cannot do: on small
+           or short screens the launcher uses the whole viewport, the logo
+           and decorative text shrink away, and the fixed bars get smaller so
+           they never cover the content behind them. */
+
+        /* Narrow screens (phones in portrait, small windows). */
+        @media (max-width: 700px) {
+            :root {
+                --sidebar-w: 46px;
+            }
+
+            #launcher-overlay {
+                padding: 0;
+            }
+
+            .launcher-panel {
+                width: 100%;
+                max-width: 100%;
+                height: 100%;
+                max-height: 100%;
+                border-radius: 0;
+                border-left: none;
+                border-right: none;
+            }
+
+            body[data-home-layout="hero"] #launcher-menu,
+            body[data-home-layout="cards"] #launcher-menu {
+                width: 100%;
+            }
+
+            #game-panel {
+                width: calc(100% - var(--sidebar-w));
+            }
+
+            #host-warning {
+                flex-direction: column;
+                gap: 6px;
+            }
+        }
+
+        /* Short screens (phones in landscape, split-screen windows). The
+           header of the start page is the first thing to go: the buttons
+           matter more than the branding. */
+        @media (max-height: 560px) {
+            #home-logo {
+                width: min(190px, 45%);
+                margin-bottom: 6px;
+            }
+
+            #home-header .home-sub,
+            .home-section-desc {
+                display: none;
+            }
+
+            .launcher-btn .launcher-btn-sub {
+                display: none;
+            }
+
+            #loading-title {
+                margin-bottom: 6px;
+            }
+
+            #loading-subtitle,
+            #loading-hint {
+                display: none;
+            }
+        }
+
+        /* Very short screens: drop the remaining start page branding too. */
+        @media (max-height: 420px) {
+            #home-logo,
+            #home-header .home-title {
+                display: none;
+            }
+
+            .home-section {
+                padding: 8px;
+                margin-bottom: 8px;
+            }
+        }
+
+        /* Phone-sized landscape: the bottom controls bar would eat a third of
+           the picture, so the sidebar carries the same actions instead. */
+        @media (orientation: landscape) and (max-height: 480px) {
+            #controls-bar {
+                display: none;
+            }
+
+            #console-panel {
+                height: min(180px, 60vh);
+            }
+
+            body:not(.etl-mobile) #console-panel,
+            body:not(.etl-mobile) #game-panel {
+                bottom: 0;
+            }
         }
     </style>
 </head>
@@ -1108,7 +1634,7 @@
 
          See docs/web.md, "Start page layouts".
          ================================================================ -->
-    <script>window.ETL_HOME_LAYOUT = 'classic';</script>
+    <script>window.ETL_HOME_LAYOUT = 'hero';</script>
 
     <!-- Loading overlay -->
     <div id="loading-overlay">
@@ -1178,7 +1704,7 @@
 
     <!-- Controls bar -->
     <div id="controls-bar">
-        <div>
+        <div id="controls-actions">
             <button class="control-btn" onclick="etlRequestFullscreen()">Fullscreen</button>
             <button class="control-btn" onclick="etlRequestPointerLock()">Capture Mouse</button>
             <button class="control-btn" onclick="openConnectPanel()">Connect...</button>
@@ -1191,13 +1717,13 @@
         </div>
     </div>
 
-    <!-- In-game sidebar: shown once a game started from the launcher is
-         running (and, on mobile, for every running game). Narrow column on the
-         left with "leave game", the game settings (gear), the invite link and
-         - on mobile, where the bottom controls bar is hidden - the controls
-         bar actions as icons. -->
+    <!-- In-game sidebar: shown while a game is running. Narrow column on the
+         left with "leave game" (which always leads back to the start page),
+         the game settings (gear), the invite link and - on mobile, where the
+         bottom controls bar is hidden - the controls bar actions as icons.
+         Settings and invite only apply to games started from the launcher. -->
     <div id="game-sidebar">
-        <button type="button" class="sidebar-btn exit session-only" id="sidebar-exit"
+        <button type="button" class="sidebar-btn exit" id="sidebar-exit"
                 title="Leave the game">&#10005;</button>
         <button type="button" class="sidebar-btn session-only" id="sidebar-settings"
                 title="Game settings">&#9881;</button>
@@ -1225,6 +1751,7 @@
     <!-- Settings panel behind the sidebar's gear button -->
     <div id="game-panel">
         <h2 id="game-panel-title">Game settings</h2>
+        <div class="panel-body">
         <div id="game-status"></div>
         <div id="invite-link"></div>
 
@@ -1262,6 +1789,7 @@
         </div>
 
         <div id="game-message"></div>
+        </div>
         <div class="launcher-actions">
             <button class="control-btn" type="button" id="game-close">Close</button>
         </div>
@@ -1295,120 +1823,279 @@
         <!-- Step 1: how to provide pak0.pk3 (asked before anything downloads) -->
         <div class="launcher-panel" id="launcher-setup">
             <h2>Game data setup</h2>
-            <p>
-                ET: Legacy needs the game data (<b>pak0.pk3</b>) before it can
-                start. How do you want to provide it?
-            </p>
-            <button class="launcher-btn" type="button" id="setup-download-btn">
-                Download pak0.pk3 (included with the game)
-                <span class="launcher-btn-sub">Fetches pak0.pk3 (and pak1/pak2) automatically. ~250 MB, cached in the browser.</span>
-            </button>
-            <button class="launcher-btn" type="button" id="setup-local-btn">
-                Use my local pak0.pk3 (choose file)
-                <span class="launcher-btn-sub">Select pak0.pk3 (optionally pak1.pk3 and pak2.pk3) from your own Wolfenstein: Enemy Territory installation.</span>
-            </button>
-            <div class="launcher-hint">
-                The files are stored in the browser (IndexedDB), so this only has
-                to be done once.
+            <div class="panel-body">
+                <p>
+                    ET: Legacy needs the game data (<b>pak0.pk3</b>) before it can
+                    start. How do you want to provide it?
+                </p>
+                <button class="launcher-btn" type="button" id="setup-download-btn">
+                    Download pak0.pk3 (included with the game)
+                    <span class="launcher-btn-sub">Fetches pak0.pk3 (and pak1/pak2) automatically. ~250 MB, cached in the browser.</span>
+                </button>
+                <button class="launcher-btn" type="button" id="setup-local-btn">
+                    Use my local pak0.pk3 (choose file)
+                    <span class="launcher-btn-sub">Select pak0.pk3 (optionally pak1.pk3 and pak2.pk3) from your own Wolfenstein: Enemy Territory installation.</span>
+                </button>
+                <div class="launcher-hint">
+                    The files are stored in the browser (IndexedDB), so this only has
+                    to be done once.
+                </div>
             </div>
         </div>
 
         <!-- Step 2: pak0.pk3 is set - run game. This is the start page; its
              look is chosen with window.ETL_HOME_LAYOUT at the top of the file
-             (see the #launcher-menu layout rules in the stylesheet). -->
+             (see the #launcher-menu layout rules in the stylesheet).
+
+             The options are grouped by *where* the game runs, so it is obvious
+             which button leads to a dedicated server, which one hosts a game
+             in this browser and which one joins a game hosted in somebody
+             else's browser. -->
         <div class="launcher-panel" id="launcher-menu">
-            <div id="home-header">
-                <div class="home-title">ET: Legacy</div>
-                <div class="home-sub">WebAssembly Edition &ndash; play in the browser</div>
-            </div>
             <h2>Run game</h2>
-            <p>pak0.pk3 is set. Choose how you want to play:</p>
-            <div class="home-buttons">
-                <button class="launcher-btn" type="button" id="menu-start">
-                    <span class="launcher-btn-icon" aria-hidden="true">&#9654;</span>
-                    Start game
-                    <span class="launcher-btn-sub">Starts the game to the main menu without connecting anywhere.</span>
-                </button>
-                <button class="launcher-btn" type="button" id="menu-join-etc">
-                    <span class="launcher-btn-icon" aria-hidden="true">&#127760;</span>
-                    Join ETc server
-                    <span class="launcher-btn-sub">etclan.de:27966 &ndash; missing pk3 files are downloaded from the server.</span>
-                </button>
-                <button class="launcher-btn" type="button" id="menu-quick">
-                    <span class="launcher-btn-icon" aria-hidden="true">&#9889;</span>
-                    Quick single game
-                    <span class="launcher-btn-sub">Starts a local game on map oasis.</span>
-                </button>
-                <button class="launcher-btn" type="button" id="menu-servers">
-                    <span class="launcher-btn-icon" aria-hidden="true">&#128203;</span>
-                    Server list
-                    <span class="launcher-btn-sub">Pick from the list of compatible servers.</span>
-                </button>
-                <button class="launcher-btn" type="button" id="menu-host">
-                    <span class="launcher-btn-icon" aria-hidden="true">&#127917;</span>
-                    Host game
-                    <span class="launcher-btn-sub">Open your own game: map rotation, room name, player slots, bots and time limit of your choice - others can join it.</span>
-                </button>
-                <button class="launcher-btn" type="button" id="menu-join-games">
-                    <span class="launcher-btn-icon" aria-hidden="true">&#128101;</span>
-                    Join games
-                    <span class="launcher-btn-sub" id="menu-join-games-sub">Games hosted by other players &ndash; looking for running games...</span>
-                </button>
-                <button class="launcher-btn" type="button" id="menu-profile">
-                    <span class="launcher-btn-icon" aria-hidden="true">&#128100;</span>
-                    Player profile
-                    <span class="launcher-btn-sub">Create or change your in-game profile (player name) before starting.</span>
-                </button>
+            <div class="panel-body">
+                <div id="home-header">
+                    <img id="home-logo" src="https://www.etlegacy.com/images/logo.png"
+                         alt="ET: Legacy" referrerpolicy="no-referrer">
+                    <div class="home-title">ET: Legacy</div>
+                    <div class="home-sub">WebAssembly Edition &ndash; play in the browser</div>
+                </div>
+                <div class="home-buttons">
+                    <section class="home-section">
+                        <div class="home-section-head">
+                            <span class="home-section-title">Play on your own</span>
+                        </div>
+                        <div class="home-section-desc">
+                            Runs only in this browser tab. Nobody else can join.
+                        </div>
+                        <button class="launcher-btn" type="button" id="menu-quick">
+                            <span class="launcher-btn-icon" aria-hidden="true">&#9889;</span>
+                            Quick single game
+                            <span class="launcher-btn-sub">Pick a map and how many bots play against you.</span>
+                        </button>
+                        <button class="launcher-btn" type="button" id="menu-start">
+                            <span class="launcher-btn-icon" aria-hidden="true">&#9654;</span>
+                            Start game
+                            <span class="launcher-btn-sub">Starts the game to its main menu without connecting anywhere.</span>
+                        </button>
+                    </section>
+
+                    <section class="home-section">
+                        <div class="home-section-head">
+                            <span class="home-section-title">Games in the browser</span>
+                            <span class="home-count" id="home-room-count">checking...</span>
+                        </div>
+                        <div class="home-section-desc">
+                            Host a game directly from this browser - no server needed -
+                            and other players join it straight from theirs.
+                        </div>
+                        <div class="home-actions">
+                            <button class="launcher-btn" type="button" id="menu-host">
+                                <span class="launcher-btn-icon" aria-hidden="true">&#127917;</span>
+                                Host game
+                            </button>
+                            <button class="launcher-btn" type="button" id="menu-join-games">
+                                <span class="launcher-btn-icon" aria-hidden="true">&#128101;</span>
+                                Join games
+                            </button>
+                        </div>
+                    </section>
+
+                    <section class="home-section">
+                        <div class="home-section-head">
+                            <span class="home-section-title">Dedicated servers</span>
+                        </div>
+                        <div class="home-section-desc">
+                            The regular ET: Legacy servers, joined through a relay.
+                        </div>
+                        <button class="launcher-btn" type="button" id="menu-servers">
+                            <span class="launcher-btn-icon" aria-hidden="true">&#128203;</span>
+                            Dedicated serverlist
+                            <span class="launcher-btn-sub">Pick a server from the list or type an address yourself.</span>
+                        </button>
+                    </section>
+
+                    <section class="home-section">
+                        <div class="home-section-head">
+                            <span class="home-section-title">More</span>
+                        </div>
+                        <button class="launcher-btn" type="button" id="menu-profile">
+                            <span class="launcher-btn-icon" aria-hidden="true">&#128100;</span>
+                            Player profile
+                            <span class="launcher-btn-sub">Create or change your in-game profile (player name) before starting.</span>
+                        </button>
+                        <a class="launcher-btn" id="menu-download"
+                           href="https://www.etlegacy.com/download" target="_blank"
+                           rel="noopener noreferrer">
+                            <span class="launcher-btn-icon" aria-hidden="true">&#11015;</span>
+                            Download full game
+                            <span class="launcher-btn-sub">The native ET: Legacy client for Windows, macOS and Linux - more compatibility than the browser version.</span>
+                        </a>
+                    </section>
+                </div>
             </div>
         </div>
 
-        <!-- Server list (entries are maintained manually in SERVER_LIST below) -->
+        <!-- Quick single game: map and bots, then straight into the match -->
+        <div class="launcher-panel" id="launcher-quick">
+            <h2>Quick single game</h2>
+            <div class="panel-body">
+                <label for="quick-map">Map</label>
+                <select id="quick-map"></select>
+                <label for="quick-bots">Bots (0 - 31)</label>
+                <input id="quick-bots" type="number" value="4" min="0" max="31">
+                <div class="launcher-hint" id="quick-hint"></div>
+            </div>
+            <div class="launcher-actions">
+                <button class="control-btn" type="button" id="quick-back">Back</button>
+                <button class="control-btn" type="button" id="quick-start">Start game</button>
+            </div>
+        </div>
+
+        <!-- Dedicated server list (entries are maintained manually in
+             SERVER_LIST below) plus a field for any other address -->
         <div class="launcher-panel" id="launcher-servers">
-            <h2>Compatible servers</h2>
-            <div id="server-list"></div>
-            <div class="launcher-hint">
-                Missing pk3 files are downloaded from the server when joining.
+            <h2>Dedicated serverlist</h2>
+            <div class="panel-body">
+                <div id="server-list"></div>
+                <label for="servers-address">Other server (host:port)</label>
+                <input id="servers-address" type="text" placeholder="etclan.de:27966" autocomplete="off">
+                <div class="launcher-hint">
+                    Missing pk3 files are downloaded from the server when joining.
+                    Dedicated servers are reached through the WebSocket relay.
+                </div>
             </div>
             <div class="launcher-actions">
                 <button class="control-btn" type="button" id="servers-back">Back</button>
+                <button class="control-btn" type="button" id="servers-connect">Connect</button>
             </div>
         </div>
 
         <!-- Host game -->
         <div class="launcher-panel" id="launcher-host">
             <h2>Host game</h2>
-            <div class="host-note">
-                &#9888; Keep this browser tab open and in the foreground while
-                you host. A tab in the background (another tab, another window,
-                a minimized browser) is throttled by the browser: the game
-                stops running and everybody who joined loses the connection.
-            </div>
-            <label for="host-map">Map rotation (up to 10 maps)</label>
-            <div class="map-picker">
-                <select id="host-map"></select>
-                <button class="control-btn" type="button" id="host-map-add">Add</button>
-            </div>
-            <div id="host-rotation" class="rotation-list"></div>
-            <label for="host-name">Room name</label>
-            <input id="host-name" type="text" value="ET:Legacy Web Host" maxlength="64" autocomplete="off">
-            <label for="host-maxclients">Max players (2 - 32)</label>
-            <input id="host-maxclients" type="number" value="8" min="2" max="32">
-            <label for="host-bots">Bots (0 - 31)</label>
-            <input id="host-bots" type="number" value="4" min="0" max="31">
-            <label for="host-timelimit">Time limit in minutes (0 = the map's own time)</label>
-            <input id="host-timelimit" type="number" value="0" min="0" max="1440">
-            <div class="check-row">
-                <input id="host-private" type="checkbox">
-                <label for="host-private" style="margin:0">Private room (not listed, joinable with the invite link only)</label>
-            </div>
-            <div class="launcher-hint" id="host-hint">
-                The game runs inside your browser and is announced in the lobby,
-                so other players can join it from "Join games" or with your
-                invite link. Add up to 10 maps to play them one after another in
-                a rotation; with a single map that map simply restarts. Maps
-                that are not part of the stock game are downloaded automatically
-                - by you and by everyone who joins. More bots than free player
-                slots are not possible.
+            <div class="panel-body">
+                <div class="host-note">
+                    &#9888; Keep this browser tab open and in the foreground while
+                    you host. A tab in the background (another tab, another window,
+                    a minimized browser) is throttled by the browser: the game
+                    stops running and everybody who joined loses the connection.
+                </div>
+                <div class="settings-tabs" role="tablist">
+                    <button class="settings-tab active" type="button" id="host-tab-basic"
+                            role="tab" aria-selected="true" aria-controls="host-basic">Basic</button>
+                    <button class="settings-tab" type="button" id="host-tab-advanced"
+                            role="tab" aria-selected="false" aria-controls="host-advanced">Advanced</button>
+                </div>
+
+                <div class="settings-group active" id="host-basic" role="tabpanel"
+                     aria-labelledby="host-tab-basic">
+                    <label for="host-map">Map rotation (up to 10 maps)</label>
+                    <div class="map-picker">
+                        <select id="host-map"></select>
+                        <button class="control-btn" type="button" id="host-map-add">Add</button>
+                    </div>
+                    <div id="host-rotation" class="rotation-list"></div>
+                    <label for="host-name">Room name</label>
+                    <input id="host-name" type="text" value="ET:Legacy Web Host" maxlength="64" autocomplete="off">
+                    <label for="host-maxclients">Max players (2 - 32)</label>
+                    <input id="host-maxclients" type="number" value="8" min="2" max="32">
+                    <label for="host-bots">Bots (0 - 31)</label>
+                    <input id="host-bots" type="number" value="4" min="0" max="31">
+                    <label for="host-timelimit">Time limit in minutes (0 = the map's own time)</label>
+                    <input id="host-timelimit" type="number" value="0" min="0" max="1440">
+                    <div class="check-row">
+                        <input id="host-private" type="checkbox">
+                        <label for="host-private" style="margin:0">Private room (not listed, joinable with the invite link only)</label>
+                    </div>
+                    <div class="launcher-hint" id="host-hint">
+                        The game runs inside your browser and is announced in the lobby,
+                        so other players can join it from "Join games" or with your
+                        invite link. Add up to 10 maps to play them one after another in
+                        a rotation; with a single map that map simply restarts. Maps
+                        that are not part of the stock game are downloaded automatically
+                        - by you and by everyone who joins. More bots than free player
+                        slots are not possible.
+                    </div>
+                </div>
+
+                <div class="settings-group" id="host-advanced" role="tabpanel"
+                     aria-labelledby="host-tab-advanced">
+                    <label for="host-mod">Mod</label>
+                    <select id="host-mod">
+                        <option value="legacy" selected>Legacy Mod</option>
+                        <option value="xmod">XMod</option>
+                        <option value="etbloat" disabled>ETBloat (not available)</option>
+                        <option value="jaymod" disabled>Jaymod (not available)</option>
+                        <option value="noquarter" disabled>No Quarter (not available)</option>
+                        <option value="etpub" disabled>ETPub (not available)</option>
+                        <option value="etjump" disabled>ETJump (not available)</option>
+                    </select>
+                    <div class="setting-hint" id="host-mod-hint">
+                        The mod the hosted game runs. Only mods built for WebAssembly
+                        can be hosted in a browser; the greyed out ones have no
+                        WebAssembly build yet.
+                    </div>
+
+                    <div class="check-row">
+                        <input id="host-balancedteams" type="checkbox">
+                        <label for="host-balancedteams" style="margin:0">g_balancedTeams</label>
+                    </div>
+                    <div class="setting-hint">
+                        Default off. When enabled, players are prevented from joining
+                        the team with more players.
+                    </div>
+
+                    <div class="check-row">
+                        <input id="host-dowarmup" type="checkbox" checked>
+                        <label for="host-dowarmup" style="margin:0">g_doWarmup</label>
+                    </div>
+                    <div class="setting-hint">
+                        Default on. Whether the server should require players to be
+                        ready before a match can start.
+                    </div>
+
+                    <div class="check-row">
+                        <input id="host-friendlyfire" type="checkbox" checked>
+                        <label for="host-friendlyfire" style="margin:0">g_friendlyFire</label>
+                    </div>
+                    <div class="setting-hint">
+                        Default on. Enables teammates to hurt each other.
+                    </div>
+
+                    <label for="host-warmup">g_warmup</label>
+                    <input id="host-warmup" type="number" value="60" min="1" max="3600">
+                    <div class="setting-hint">
+                        Default 60. The length of time the warmup lasts prior to a
+                        match starting, in seconds.
+                    </div>
+
+                    <label for="host-alliedrespawn">g_userAlliedRespawnTime</label>
+                    <input id="host-alliedrespawn" type="number" value="0" min="0" max="300">
+                    <div class="setting-hint">
+                        Default 0 (the map's own time). Any higher value sets the
+                        Allied respawn time in seconds.
+                    </div>
+
+                    <label for="host-axisrespawn">g_userAxisRespawnTime</label>
+                    <input id="host-axisrespawn" type="number" value="0" min="0" max="300">
+                    <div class="setting-hint">
+                        Default 0 (the map's own time). Any higher value sets the Axis
+                        respawn time in seconds.
+                    </div>
+
+                    <div class="home-actions">
+                        <button class="control-btn" type="button" id="host-export">Export settings</button>
+                        <button class="control-btn" type="button" id="host-import">Import settings</button>
+                    </div>
+                    <input type="file" id="host-import-file" accept="application/json,.json"
+                           style="display:none">
+                    <div class="setting-hint" id="host-io-hint">
+                        Saves every setting on this page, including the map rotation,
+                        as a JSON file and reads it back. Values from a file are
+                        checked and clamped to the allowed range before they are used.
+                    </div>
+                </div>
             </div>
             <div class="launcher-actions">
                 <button class="control-btn" type="button" id="host-back">Back</button>
@@ -1419,10 +2106,12 @@
         <!-- Join games: the rooms other players are hosting right now -->
         <div class="launcher-panel" id="launcher-join">
             <h2>Join games</h2>
-            <div id="join-list"></div>
-            <div class="launcher-hint" id="join-hint">
-                These games run in other players' browsers. Maps that are not
-                part of the stock game are downloaded before you join.
+            <div class="panel-body">
+                <div id="join-list"></div>
+                <div class="launcher-hint" id="join-hint">
+                    These games run in other players' browsers. Maps that are not
+                    part of the stock game are downloaded before you join.
+                </div>
             </div>
             <div class="launcher-actions">
                 <button class="control-btn" type="button" id="join-back">Back</button>
@@ -1433,20 +2122,34 @@
         <!-- Player profile: create an in-game profile outside of the game -->
         <div class="launcher-panel" id="launcher-profile">
             <h2>Player profile</h2>
-            <label for="profile-name">Profile name</label>
-            <input id="profile-name" type="text" placeholder="MyProfile" maxlength="64" autocomplete="off">
-            <label for="profile-player">Player name (shown in game)</label>
-            <input id="profile-player" type="text" placeholder="defaults to the profile name" maxlength="36" autocomplete="off">
-            <div class="launcher-hint" id="profile-current"></div>
-            <div class="launcher-hint">
-                The profile is written to the browser filesystem (IndexedDB) and
-                the game starts with it as the default profile - exactly as if it
-                had been created in the in-game menu. In-game settings are saved
-                into the profile and persist across sessions.
+            <div class="panel-body">
+                <label for="profile-name">Profile name</label>
+                <input id="profile-name" type="text" placeholder="MyProfile" maxlength="64" autocomplete="off">
+                <label for="profile-player">Player name (shown in game)</label>
+                <input id="profile-player" type="text" placeholder="defaults to the profile name" maxlength="36" autocomplete="off">
+                <div class="launcher-hint" id="profile-current"></div>
+                <div class="launcher-hint">
+                    The profile is written to the browser filesystem (IndexedDB) and
+                    the game starts with it as the default profile - exactly as if it
+                    had been created in the in-game menu. In-game settings are saved
+                    into the profile and persist across sessions.
+                </div>
             </div>
             <div class="launcher-actions">
                 <button class="control-btn" type="button" id="profile-back">Back</button>
                 <button class="control-btn" type="button" id="profile-save">Save profile</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation dialog (leaving a game) -->
+    <div id="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div id="confirm-box">
+            <div id="confirm-title">Please confirm</div>
+            <div id="confirm-text"></div>
+            <div class="launcher-actions">
+                <button class="control-btn" type="button" id="confirm-cancel">Cancel</button>
+                <button class="control-btn" type="button" id="confirm-ok">OK</button>
             </div>
         </div>
     </div>
@@ -1756,6 +2459,25 @@
                 console.log('ET: Legacy WASM runtime initialized');
             },
 
+            // The engine has quit (the in-game "quit" command, the menu's
+            // "Exit game", or a fatal Com_Error). Without this the canvas is
+            // simply left frozen or black with no way out, so the page goes
+            // back to the start page - the same place leaving a game leads to.
+            onExit: function (status) {
+                console.log('ET: Legacy exited with status ' + status);
+                if (window.etlReturnToLauncher) {
+                    window.etlReturnToLauncher();
+                }
+            },
+
+            quit: function (status, toThrow) {
+                console.log('ET: Legacy quit with status ' + status);
+                if (window.etlReturnToLauncher) {
+                    window.etlReturnToLauncher();
+                }
+                if (toThrow) { throw toThrow; }
+            },
+
             onAbort: function(what) {
                 showError('The game has aborted: ' + what);
             },
@@ -2052,6 +2774,45 @@
             bind('sidebar-connect', function () { openConnectPanel(); });
             bind('sidebar-console', function () { toggleConsole(); });
             bind('sidebar-touch', function () { etlToggleTouchControls(); });
+        })();
+
+        // --- Confirm dialog buttons ----------------------------------------
+        // The dialog itself is opened by askConfirm() further down; the buttons
+        // and the Escape key are wired here, once, because the markup exists
+        // from the first paint.
+        (function () {
+            var overlay = document.getElementById('confirm-overlay');
+            if (!overlay) { return; }
+
+            function cancel() {
+                if (window.etlCloseConfirm) { window.etlCloseConfirm(); }
+            }
+            document.getElementById('confirm-cancel').onclick = cancel;
+            document.getElementById('confirm-ok').onclick = function () {
+                if (window.etlRunConfirm) { window.etlRunConfirm(); }
+            };
+            // A click next to the box is a "no", like closing any other dialog.
+            overlay.addEventListener('click', function (e) {
+                if (e.target === overlay) { cancel(); }
+            });
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && overlay.classList.contains('active')) {
+                    e.stopPropagation();
+                    cancel();
+                }
+            }, true);
+        })();
+
+        // The start page logo is fetched from etlegacy.com. A deployment
+        // without internet access (or a blocked third-party request) simply
+        // shows the text title instead of a broken image icon.
+        (function () {
+            var logo = document.getElementById('home-logo');
+            if (logo) {
+                logo.addEventListener('error', function () {
+                    logo.style.display = 'none';
+                });
+            }
         })();
 
         // --- Device / start page setup -------------------------------------
@@ -3169,20 +3930,32 @@
             }
 
             // --- Launcher server list -------------------------------------
-            // Compatible servers shown by the launcher's "Server list" button.
-            // Maintain this list manually: add one { name, address } entry per
-            // server. Missing pk3s (e.g. a different fs_game such as xmod) are
-            // downloaded from the server on connect (cl_allowDownload 1).
-            // Addresses may be given as a hostname (the relay resolves it, see
-            // tools/ws-relay), so a server that changes its IP keeps working.
+            // Compatible dedicated servers shown by the launcher's "Dedicated
+            // serverlist" button. Maintain this list manually: add one
+            // { name, address } entry per server. Missing pk3s (e.g. a
+            // different fs_game such as xmod) are downloaded from the server on
+            // connect (cl_allowDownload 1). Addresses may be given as a
+            // hostname (the relay resolves it, see tools/ws-relay), so a server
+            // that changes its IP keeps working.
             var SERVER_LIST = [
                 { name: 'ETc', address: 'etclan.de:27966' }
                 // Add more compatible servers here, e.g.:
                 // { name: 'My server', address: '203.0.113.10:27960' }
             ];
 
-            // Address + parameters of the dedicated "Join ETc server" button.
-            var ETC_SERVER = 'etclan.de:27966';
+            // Accept only what an address can be - a hostname or IP with an
+            // optional port - so a typed address cannot smuggle anything else
+            // onto the engine's command line.
+            function etlCleanServerAddress(value) {
+                var address = String(value || '').trim();
+                if (!/^[A-Za-z0-9.:_-]{1,255}$/.test(address)) { return ''; }
+                var m = /^([A-Za-z0-9._-]+)(?::(\d{1,5}))?$/.exec(address);
+                if (!m) { return ''; }
+                if (m[2] && !(parseInt(m[2], 10) >= 1 && parseInt(m[2], 10) <= 65535)) {
+                    return '';
+                }
+                return address;
+            }
 
             // --- Map list --------------------------------------------------
             // maplist.json sits next to this page (it is shipped in the root of
@@ -4096,16 +4869,27 @@
             // user, so the startup watchdog is told not to treat that as a
             // stall via window.etlLauncherWaiting.
             var LAUNCHER_PANELS = ['launcher-setup', 'launcher-menu',
-                'launcher-servers', 'launcher-host', 'launcher-join',
-                'launcher-profile'];
+                'launcher-quick', 'launcher-servers', 'launcher-host',
+                'launcher-join', 'launcher-profile'];
+
+            // Which panel is on screen right now ('' while the launcher is
+            // closed). Panels are switched with a class instead of an inline
+            // display value so the stylesheet stays in charge of *how* a panel
+            // is laid out (a flex column with its own scrolling body).
+            var launcherPanel = '';
 
             function showLauncherPanel(id) {
                 LAUNCHER_PANELS.forEach(function (p) {
                     var el = document.getElementById(p);
-                    if (el) { el.style.display = (p === id) ? 'block' : 'none'; }
+                    if (el) { el.classList.toggle('active', p === id); }
                 });
+                launcherPanel = id;
                 document.getElementById('launcher-overlay').style.display = 'flex';
                 document.getElementById('loading-overlay').style.display = 'none';
+                // The controls bar belongs to the running game; while a
+                // launcher panel is open it would sit on top of it (and its
+                // invisible buttons would swallow clicks).
+                document.body.classList.add('launcher-open');
                 window.etlLauncherWaiting = true;
                 // The touch overlay is an in-game control and its look area
                 // covers the whole viewport; leaving it on would make the
@@ -4117,6 +4901,8 @@
 
             function hideLauncher() {
                 document.getElementById('launcher-overlay').style.display = 'none';
+                document.body.classList.remove('launcher-open');
+                launcherPanel = '';
                 window.etlLauncherWaiting = false;
             }
             window.etlHideLauncher = hideLauncher;
@@ -4316,6 +5102,23 @@
             // src/web/etl-p2p.js); nothing here has to change for that, because
             // the engine treats a peer like any other address.
             //
+            // --- Mods -------------------------------------------------------
+            // A hosted game runs the mod selected on the host page. Only mods
+            // that are built for WebAssembly and shipped with this deployment
+            // can actually run in a browser, which is what "available" means
+            // here; the others are listed (and disabled in the drop-down) so it
+            // is clear that they are known but not usable yet.
+            var HOST_MODS = {
+                legacy:    { name: 'Legacy Mod', fsGame: 'legacy',    available: true },
+                xmod:      { name: 'XMod',       fsGame: 'xmod',      available: true },
+                etbloat:   { name: 'ETBloat',    fsGame: 'etbloat',   available: false },
+                jaymod:    { name: 'Jaymod',     fsGame: 'jaymod',    available: false },
+                noquarter: { name: 'No Quarter', fsGame: 'nq',        available: false },
+                etpub:     { name: 'ETPub',      fsGame: 'etpub',     available: false },
+                etjump:    { name: 'ETJump',     fsGame: 'etjump',    available: false }
+            };
+            var DEFAULT_MOD = 'legacy';
+
             // Resolves with the argument list, since installing Omni-bot needs
             // the network.
             function hostedGameArgs(settings) {
@@ -4326,6 +5129,24 @@
                             '+set', 'sv_pure', '0',
                             '+set', 'sv_allowDownload', '1',
                             '+set', 'g_userTimeLimit', String(settings.timeLimit)];
+
+                // Advanced settings. They are plain server cvars, so they are
+                // simply set on the command line like everything else; a value
+                // that was never picked keeps the engine's own default.
+                var mod = HOST_MODS[settings.mod];
+                if (mod && mod.available && settings.mod !== DEFAULT_MOD) {
+                    args.push('+set', 'fs_game', mod.fsGame);
+                }
+                args.push('+set', 'g_balancedteams', settings.balancedTeams ? '1' : '0');
+                args.push('+set', 'g_doWarmup', settings.doWarmup === false ? '0' : '1');
+                args.push('+set', 'g_friendlyFire', settings.friendlyFire === false ? '0' : '1');
+                if (settings.warmup > 0) {
+                    args.push('+set', 'g_warmup', String(settings.warmup));
+                }
+                args.push('+set', 'g_userAlliedRespawnTime',
+                          String(settings.alliedRespawn || 0));
+                args.push('+set', 'g_userAxisRespawnTime',
+                          String(settings.axisRespawn || 0));
 
                 return setupOmniBot(settings.bots).then(function (ready) {
                     if (!ready) {
@@ -4469,22 +5290,37 @@
             // list the host built; with an empty list the map picked in the
             // drop-down is used, so hosting a single map still works exactly as
             // before.
+            //
+            // The advanced settings only exist on the launcher's host page, so
+            // every one of them falls back to its documented default when the
+            // element is missing (the in-game settings panel uses the same
+            // function with its own, shorter form).
             function readHostSettings(prefix, rotation) {
                 function el(id) { return document.getElementById(prefix + id); }
 
-                var maxPlayers = parseInt(el('maxclients').value, 10);
-                if (!(maxPlayers >= 2 && maxPlayers <= 32)) { maxPlayers = 8; }
+                function num(id, def, min, max) {
+                    var input = el(id);
+                    if (!input) { return def; }
+                    var value = parseInt(input.value, 10);
+                    if (!(value >= min && value <= max)) { return def; }
+                    return value;
+                }
 
-                var bots = parseInt(el('bots').value, 10);
-                if (!(bots >= 0 && bots <= 31)) { bots = 0; }
-                bots = Math.min(bots, maxPlayers - 1);
+                function bool(id, def) {
+                    var input = el(id);
+                    return input ? !!input.checked : def;
+                }
 
-                var timeLimit = parseInt(el('timelimit').value, 10);
-                if (!(timeLimit >= 0 && timeLimit <= 1440)) { timeLimit = 0; }
+                var maxPlayers = num('maxclients', 8, 2, 32);
+                var bots = Math.min(num('bots', 0, 0, 31), maxPlayers - 1);
+                var timeLimit = num('timelimit', 0, 0, 1440);
 
                 var maps = sanitiseRotation(
                     (rotation && rotation.length) ? rotation : [el('map').value],
                     mapNames()[0]);
+
+                var mod = el('mod') ? el('mod').value : DEFAULT_MOD;
+                if (!HOST_MODS[mod] || !HOST_MODS[mod].available) { mod = DEFAULT_MOD; }
 
                 return {
                     name: (el('name').value.trim() || 'ET:Legacy Web Host').slice(0, 64),
@@ -4493,7 +5329,217 @@
                     maxPlayers: maxPlayers,
                     bots: bots,
                     timeLimit: timeLimit,
-                    private: !!el('private').checked
+                    private: !!el('private').checked,
+                    mod: mod,
+                    balancedTeams: bool('balancedteams', false),
+                    doWarmup: bool('dowarmup', true),
+                    friendlyFire: bool('friendlyfire', true),
+                    warmup: num('warmup', 60, 1, 3600),
+                    alliedRespawn: num('alliedrespawn', 0, 0, 300),
+                    axisRespawn: num('axisrespawn', 0, 0, 300)
+                };
+            }
+
+            // Put a settings object back into the host form (used by the
+            // import). Only the fields the form has are touched.
+            function writeHostSettings(prefix, settings) {
+                function el(id) { return document.getElementById(prefix + id); }
+
+                function setValue(id, value) {
+                    var input = el(id);
+                    if (input) { input.value = String(value); }
+                }
+
+                function setChecked(id, value) {
+                    var input = el(id);
+                    if (input) { input.checked = !!value; }
+                }
+
+                setValue('name', settings.name);
+                setValue('maxclients', settings.maxPlayers);
+                setValue('bots', settings.bots);
+                setValue('timelimit', settings.timeLimit);
+                setChecked('private', settings.private);
+                if (el('map') && settings.map) { el('map').value = settings.map; }
+                if (el('mod')) { el('mod').value = settings.mod; }
+                setChecked('balancedteams', settings.balancedTeams);
+                setChecked('dowarmup', settings.doWarmup);
+                setChecked('friendlyfire', settings.friendlyFire);
+                setValue('warmup', settings.warmup);
+                setValue('alliedrespawn', settings.alliedRespawn);
+                setValue('axisrespawn', settings.axisRespawn);
+            }
+
+            // --- Settings import / export ----------------------------------
+            // The host settings can be written to a JSON file and read back.
+            // Such a file travels between players and can be edited by hand, so
+            // it is treated exactly like any other untrusted input:
+            //
+            //   * the file size is capped before it is even parsed,
+            //   * only the keys listed here are ever read - the parsed object
+            //     is never iterated and never merged into anything, which is
+            //     what makes "__proto__" and friends a non-issue,
+            //   * every value must have the expected type and is clamped to the
+            //     same range the form enforces,
+            //   * map names must exist in the map list, so nothing but a known
+            //     map can reach the engine's command line,
+            //   * the room name is stripped of control characters and quotes
+            //     and cut to the length the input field allows.
+            //
+            // Anything that does not fit falls back to its default and is
+            // reported, so a bad file can never silently change what is hosted.
+            var MAX_SETTINGS_FILE_SIZE = 64 * 1024;
+            var SETTINGS_FILE_KIND = 'etlegacy-web-host-settings';
+            var SETTINGS_FILE_VERSION = 1;
+
+            function etlSettingsToJson(settings) {
+                return {
+                    kind: SETTINGS_FILE_KIND,
+                    version: SETTINGS_FILE_VERSION,
+                    name: settings.name,
+                    rotation: (settings.rotation || []).slice(),
+                    maxPlayers: settings.maxPlayers,
+                    bots: settings.bots,
+                    timeLimit: settings.timeLimit,
+                    private: !!settings.private,
+                    mod: settings.mod || DEFAULT_MOD,
+                    balancedTeams: !!settings.balancedTeams,
+                    doWarmup: settings.doWarmup !== false,
+                    friendlyFire: settings.friendlyFire !== false,
+                    warmup: settings.warmup,
+                    alliedRespawn: settings.alliedRespawn,
+                    axisRespawn: settings.axisRespawn
+                };
+            }
+
+            // Returns { settings, warnings, error }. settings is null when the
+            // file is not usable at all; otherwise every field is safe to use.
+            function etlSettingsFromJson(text) {
+                var warnings = [];
+                var raw;
+
+                if (String(text || '').length > MAX_SETTINGS_FILE_SIZE) {
+                    return { settings: null, warnings: warnings,
+                             error: 'the file is too large.' };
+                }
+                try {
+                    raw = JSON.parse(text);
+                } catch (e) {
+                    return { settings: null, warnings: warnings,
+                             error: 'it is not valid JSON.' };
+                }
+                if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+                    return { settings: null, warnings: warnings,
+                             error: 'it does not contain a settings object.' };
+                }
+
+                // Read a key without ever touching the prototype chain: a file
+                // that sets "__proto__" or "constructor" is simply ignored.
+                function own(key) {
+                    return Object.prototype.hasOwnProperty.call(raw, key)
+                        ? raw[key] : undefined;
+                }
+
+                if (own('kind') !== undefined && own('kind') !== SETTINGS_FILE_KIND) {
+                    return { settings: null, warnings: warnings,
+                             error: 'it is not an ET: Legacy host settings file.' };
+                }
+
+                function num(key, def, min, max) {
+                    var value = own(key);
+                    if (value === undefined) { return def; }
+                    if (typeof value !== 'number' || !isFinite(value)) {
+                        warnings.push('"' + key + '" is not a number; the default is used.');
+                        return def;
+                    }
+                    var rounded = Math.round(value);
+                    if (rounded < min || rounded > max) {
+                        warnings.push('"' + key + '" is outside ' + min + '-' + max +
+                            '; it was clamped.');
+                    }
+                    return Math.max(min, Math.min(max, rounded));
+                }
+
+                function bool(key, def) {
+                    var value = own(key);
+                    if (value === undefined) { return def; }
+                    if (typeof value !== 'boolean') {
+                        warnings.push('"' + key + '" is not true or false; the ' +
+                            'default is used.');
+                        return def;
+                    }
+                    return value;
+                }
+
+                var name = own('name');
+                if (name !== undefined && typeof name !== 'string') {
+                    warnings.push('"name" is not text; the default is used.');
+                    name = undefined;
+                }
+                // Control characters and quotes would end up in an sv_hostname
+                // command; ^ colour codes are harmless and stay.
+                name = String(name === undefined ? 'ET:Legacy Web Host' : name)
+                    .replace(/[\x00-\x1f\x7f"\\]/g, '').trim().slice(0, 64) ||
+                    'ET:Legacy Web Host';
+
+                var known = mapNames();
+                var rotation = [];
+                var rawRotation = own('rotation');
+                if (rawRotation !== undefined && !Array.isArray(rawRotation)) {
+                    warnings.push('"rotation" is not a list of maps; it was ignored.');
+                    rawRotation = null;
+                }
+                (rawRotation || []).forEach(function (entry) {
+                    if (rotation.length >= MAX_ROTATION_MAPS) { return; }
+                    if (typeof entry !== 'string' || known.indexOf(entry) === -1) {
+                        warnings.push('Map "' + String(entry).slice(0, 32) +
+                            '" is unknown and was skipped.');
+                        return;
+                    }
+                    rotation.push(entry);
+                });
+                if ((rawRotation || []).length > MAX_ROTATION_MAPS) {
+                    warnings.push('Only the first ' + MAX_ROTATION_MAPS +
+                        ' maps of the rotation were used.');
+                }
+
+                var mod = own('mod');
+                if (mod !== undefined &&
+                    (typeof mod !== 'string' ||
+                     !Object.prototype.hasOwnProperty.call(HOST_MODS, mod) ||
+                     !HOST_MODS[mod].available)) {
+                    warnings.push('The mod in the file cannot be hosted here; ' +
+                        HOST_MODS[DEFAULT_MOD].name + ' is used.');
+                    mod = undefined;
+                }
+
+                var maxPlayers = num('maxPlayers', 8, 2, 32);
+                var bots = num('bots', 0, 0, 31);
+                if (bots > maxPlayers - 1) {
+                    warnings.push('There are more bots than free player slots; ' +
+                        'the bot count was reduced.');
+                    bots = maxPlayers - 1;
+                }
+
+                return {
+                    settings: {
+                        name: name,
+                        map: rotation[0] || '',
+                        rotation: rotation,
+                        maxPlayers: maxPlayers,
+                        bots: bots,
+                        timeLimit: num('timeLimit', 0, 0, 1440),
+                        private: bool('private', false),
+                        mod: mod === undefined ? DEFAULT_MOD : mod,
+                        balancedTeams: bool('balancedTeams', false),
+                        doWarmup: bool('doWarmup', true),
+                        friendlyFire: bool('friendlyFire', true),
+                        warmup: num('warmup', 60, 1, 3600),
+                        alliedRespawn: num('alliedRespawn', 0, 0, 300),
+                        axisRespawn: num('axisRespawn', 0, 0, 300)
+                    },
+                    warnings: warnings,
+                    error: ''
                 };
             }
 
@@ -4565,8 +5611,66 @@
                         settings: settings,
                         roomId: null
                     };
+                    if (hosted) {
+                        showInviteInAddressBar(hosted.inviteUrl);
+                        rememberHostSession(hosted.roomId, settings);
+                    }
                     return engineArgs;
                 });
+            }
+
+            // --- Invite link in the address bar -----------------------------
+            // Once a game is hosted its invite link becomes the page's address.
+            // That makes it copyable straight from the browser, and - together
+            // with the remembered settings below - it survives a reload (F5),
+            // which is what makes an in-game "vid_restart" usable for a host:
+            // the page comes back up and puts the game back on the air instead
+            // of dropping the host on an empty start page.
+            //
+            // Only a same-origin link is ever put there; anything else is
+            // ignored rather than trusted.
+            function showInviteInAddressBar(inviteUrl) {
+                if (!inviteUrl || !history.replaceState) { return; }
+                try {
+                    var url = new URL(inviteUrl, location.href);
+                    if (url.origin !== location.origin) { return; }
+                    history.replaceState(null, '', url.pathname + url.search);
+                } catch (e) { /* the address bar is cosmetic */ }
+            }
+
+            // The settings of the game this tab hosts, kept for the length of
+            // the tab only (sessionStorage): a reload restores them, closing
+            // the tab forgets them. The stored JSON is read back through the
+            // same validation as an imported settings file.
+            var HOST_SESSION_KEY = 'etl.hostSession';
+
+            function rememberHostSession(roomId, settings) {
+                try {
+                    sessionStorage.setItem(HOST_SESSION_KEY, JSON.stringify({
+                        roomId: String(roomId || ''),
+                        settings: etlSettingsToJson(settings)
+                    }));
+                } catch (e) { /* private mode / quota - hosting still works */ }
+            }
+
+            function forgetHostSession() {
+                try { sessionStorage.removeItem(HOST_SESSION_KEY); } catch (e) { /* ignore */ }
+            }
+
+            // The remembered settings, but only for the room the URL asks for -
+            // so an invite link to somebody else's game is still a join.
+            function rememberedHostSettings(roomId) {
+                var raw = null;
+                try { raw = sessionStorage.getItem(HOST_SESSION_KEY); } catch (e) { return null; }
+                if (!raw) { return null; }
+                var stored;
+                try { stored = JSON.parse(raw); } catch (e) { return null; }
+                if (!stored || typeof stored !== 'object' || stored.roomId !== roomId) {
+                    return null;
+                }
+                var result = etlSettingsFromJson(JSON.stringify(stored.settings));
+                return result.settings && result.settings.rotation.length
+                    ? result.settings : null;
             }
 
             // Join a game hosted in someone else's browser: download its map
@@ -4601,7 +5705,6 @@
             // the settings (gear) and the invite link. It is shown once a game
             // has actually been started from the launcher.
             var sidebarTimer = null;
-            var exitArmed = false;
             var reportedSlots = -1;
 
             function byId(id) { return document.getElementById(id); }
@@ -4735,7 +5838,63 @@
                 return location.pathname + (query.toString() ? ('?' + query) : '');
             }
 
+            // --- Confirm dialog --------------------------------------------
+            // A yes/no question that has to be answered before something
+            // irreversible happens (leaving a game, which also ends it for
+            // everybody else when the player is the host). window.confirm() is
+            // not an option: it is blocked in fullscreen and while the pointer
+            // is locked, which is exactly the state a running game is in.
+            var confirmAction = null;
+
+            function askConfirm(title, text, okLabel, onOk) {
+                var overlay = byId('confirm-overlay');
+                if (!overlay) { onOk(); return; }         // never block the exit
+                byId('confirm-title').textContent = title;
+                byId('confirm-text').textContent = text;
+                byId('confirm-ok').textContent = okLabel || 'OK';
+                confirmAction = onOk;
+                overlay.classList.add('active');
+                // The pointer is locked while playing, so the dialog could not
+                // be clicked without releasing it first.
+                if (document.exitPointerLock && document.pointerLockElement) {
+                    document.exitPointerLock();
+                }
+                byId('confirm-cancel').focus();
+            }
+
+            function closeConfirm() {
+                confirmAction = null;
+                var overlay = byId('confirm-overlay');
+                if (overlay) { overlay.classList.remove('active'); }
+            }
+
+            // The dialog's buttons are wired at the top of this file, before
+            // this scope exists, so they reach the answer through these.
+            window.etlCloseConfirm = closeConfirm;
+            window.etlRunConfirm = function () {
+                var action = confirmAction;
+                closeConfirm();
+                if (action) { action(); }
+            };
+
+            // Ask before leaving. A host is warned that everybody else loses
+            // the connection, because that is what shutting the server down
+            // does to the players who joined.
+            function confirmLeaveGame() {
+                if (session && session.role === 'host') {
+                    askConfirm('Close host',
+                        'Are you sure you want to close your host? ' +
+                        'All players will lose the connection.',
+                        'Close host', leaveGame);
+                } else {
+                    askConfirm('Close game',
+                        'Are you sure you want to close the game?',
+                        'Close game', leaveGame);
+                }
+            }
+
             function leaveGame() {
+                closeConfirm();
                 var url = launcherUrl();
                 try {
                     if (session && session.role === 'client') {
@@ -4749,9 +5908,30 @@
                         etlSendCommand('killserver');
                     }
                     if (p2p) { p2p.disconnect(); }
+                    forgetHostSession();
                 } catch (e) { /* leaving must never throw */ }
                 setTimeout(function () { location.href = url || location.pathname; }, 150);
             }
+
+            // The engine has stopped on its own (the in-game "quit" command or
+            // a fatal error - see Module.onExit/quit at the top of this file).
+            // There is nothing left to show, so the page returns to the start
+            // page instead of leaving a dead canvas behind. Anything the game
+            // was hosting is taken down with it.
+            var returningToLauncher = false;
+            window.etlReturnToLauncher = function () {
+                if (returningToLauncher) { return; }
+                returningToLauncher = true;
+                var url = launcherUrl();
+                try {
+                    if (session && session.role === 'host' && p2p) {
+                        p2p.stopHosting();
+                    }
+                    if (p2p) { p2p.disconnect(); }
+                    forgetHostSession();
+                } catch (e) { /* the page is leaving anyway */ }
+                setTimeout(function () { location.href = url || location.pathname; }, 150);
+            };
 
             // Apply the settings from the gear panel to the running game.
             // sv_maxclients and the time limit only take effect when the match
@@ -4773,7 +5953,18 @@
                         parseInt(byId('game-bots').value, 10) || 0)),
                     timeLimit: Math.max(0, Math.min(1440,
                         parseInt(byId('game-timelimit').value, 10) || 0)),
-                    private: !!byId('game-private').checked
+                    private: !!byId('game-private').checked,
+                    // The advanced settings are not editable in-game (they are
+                    // command line cvars), but they must survive an "Apply" so
+                    // the settings object stays complete - the export written
+                    // later on reads them from here.
+                    mod: settings.mod || DEFAULT_MOD,
+                    balancedTeams: settings.balancedTeams,
+                    doWarmup: settings.doWarmup,
+                    friendlyFire: settings.friendlyFire,
+                    warmup: settings.warmup,
+                    alliedRespawn: settings.alliedRespawn,
+                    axisRespawn: settings.axisRespawn
                 };
                 next.bots = Math.min(next.bots, next.maxPlayers - 1);
 
@@ -4896,12 +6087,26 @@
             // it happens, and again when it has happened.
             var hostWarningTimer = null;
 
+            // The warning is a fixed bar at the top of the page, so everything
+            // that starts at the top edge (the settings panel, the touch tool
+            // buttons) has to start below it instead of behind it. Its real
+            // height depends on the text and the viewport width, so it is
+            // measured and published as a CSS variable.
+            function updateTopInset() {
+                var box = byId('host-warning');
+                var height = (box && box.classList.contains('active'))
+                    ? box.offsetHeight : 0;
+                document.documentElement.style.setProperty('--top-inset',
+                    height + 'px');
+            }
+
             function showHostWarning(text, isAlert, autoHideMs) {
                 var box = byId('host-warning');
                 if (!box) { return; }
                 byId('host-warning-text').textContent = text;
                 box.classList.add('active');
                 box.classList.toggle('alert', !!isAlert);
+                updateTopInset();
                 if (hostWarningTimer) {
                     clearTimeout(hostWarningTimer);
                     hostWarningTimer = null;
@@ -4916,11 +6121,15 @@
                 if (!box) { return; }
                 box.classList.remove('active');
                 box.classList.remove('alert');
+                updateTopInset();
                 if (hostWarningTimer) {
                     clearTimeout(hostWarningTimer);
                     hostWarningTimer = null;
                 }
             }
+
+            window.addEventListener('resize', updateTopInset);
+            window.addEventListener('orientationchange', updateTopInset);
 
             function setupHostWarning() {
                 // Only a game other players can be in can lose them: an offline
@@ -4955,14 +6164,23 @@
             }
 
             // Show the sidebar and keep it up to date for as long as the game
-            // runs. Called once, right after the player picked a game mode.
+            // runs. Called once, right after the player picked a game mode - for
+            // every game, including a plain "Start game" without a session: the
+            // exit button is the only way from a running game back to the start
+            // page, so it must always be there.
             function startGameSidebar() {
-                if (!session) { return; }
-                document.body.classList.add('has-session');
+                document.body.classList.toggle('has-session', !!session);
                 // Showing the sidebar also insets the canvas, so the column
                 // never covers the game (see etlShowSidebar).
                 window.etlShowSidebar(true);
                 updateGameStatus();
+
+                // One click asks, the answer does it: a stray click during a
+                // match cannot throw everybody out of the host's game, and
+                // leaving does not need a second click that is easy to miss.
+                byId('sidebar-exit').onclick = confirmLeaveGame;
+
+                if (!session) { return; }
 
                 byId('sidebar-settings').onclick = function () {
                     showGamePanel(!byId('game-panel').classList.contains('active'));
@@ -5007,18 +6225,6 @@
 
                 setupHostWarning();
 
-                // Leaving needs two clicks, so a stray click during a match
-                // cannot throw everybody out of the host's game.
-                byId('sidebar-exit').onclick = function () {
-                    if (exitArmed) { leaveGame(); return; }
-                    exitArmed = true;
-                    byId('sidebar-status').textContent = 'Leave?';
-                    setTimeout(function () {
-                        exitArmed = false;
-                        updateGameStatus();
-                    }, 4000);
-                };
-
                 if (p2p && session.roomId) {
                     // Keep the lobby (and therefore the "Join games" list) in
                     // sync with the number of players actually in the game.
@@ -5049,7 +6255,7 @@
                 }
 
                 sidebarTimer = setInterval(function () {
-                    if (!exitArmed) { updateGameStatus(); }
+                    updateGameStatus();
                     reportSlots();
                 }, 5000);
                 window.addEventListener('beforeunload', function () {
@@ -5091,47 +6297,79 @@
                     function pick(extra) {
                         hideLauncher();
                         showLoading('Starting ET: Legacy...');
-                        // Everything started from here except "just start the
-                        // game" and a plain server connect is a session the
-                        // sidebar can act on (leave / settings / invite).
+                        // The sidebar is shown for every game started from
+                        // here: without it a running game has no way back to
+                        // the start page. Its settings/invite buttons only
+                        // appear when there is a session to act on.
                         Promise.resolve(extra).then(function () {
-                            if (session) { startGameSidebar(); }
+                            startGameSidebar();
                         }, function () { /* reported by the caller */ });
                         resolve(extra);
                     }
 
-                    // Button 0: just start the game - boots to the main menu
-                    // without connecting anywhere.
+                    // Just start the game - boots to the main menu without
+                    // connecting anywhere.
                     document.getElementById('menu-start').onclick = function () {
                         pick([]);
                     };
 
-                    // Button 1: join the ETc xmod server. The server runs a
-                    // different fs_game (xmod); the client switches to it
-                    // automatically and downloads the missing pk3 files from
-                    // the server (cl_allowDownload 1).
-                    document.getElementById('menu-join-etc').onclick = function () {
-                        pick(connectArgs(ETC_SERVER));
+                    // Quick single game: the same listen server as "Host game",
+                    // but with only two questions (map and bots) and without
+                    // announcing it in the lobby.
+                    document.getElementById('menu-quick').onclick = function () {
+                        updateQuickHint();
+                        showLauncherPanel('launcher-quick');
+                    };
+                    document.getElementById('quick-back').onclick = function () {
+                        showLauncherPanel('launcher-menu');
                     };
 
-                    // Button 2: quick single game on map oasis - the same
-                    // listen server as "Host game", just without asking any
-                    // questions (and without announcing it in the lobby).
-                    document.getElementById('menu-quick').onclick = function () {
+                    var quickBots = document.getElementById('quick-bots');
+
+                    // The slots follow the bot count: every bot needs one and
+                    // the player needs one more (10 bots -> 11 slots).
+                    function quickMaxPlayers(bots) {
+                        return Math.max(2, Math.min(32, bots + 1));
+                    }
+
+                    function updateQuickHint() {
+                        var bots = parseInt(quickBots.value, 10);
+                        if (!(bots >= 0 && bots <= 31)) { bots = 0; }
+                        document.getElementById('quick-hint').textContent =
+                            'Runs in this browser only. ' + bots + ' bot' +
+                            (bots === 1 ? '' : 's') + ' need ' +
+                            quickMaxPlayers(bots) + ' player slots, so ' +
+                            'sv_maxclients is set to ' + quickMaxPlayers(bots) +
+                            '. Maps that are not part of the stock game are ' +
+                            'downloaded first.';
+                    }
+                    quickBots.oninput = updateQuickHint;
+
+                    document.getElementById('quick-start').onclick = function () {
+                        var map = document.getElementById('quick-map').value;
+                        if (map === RANDOM_MAP) { map = randomMapName(); }
+                        if (mapNames().indexOf(map) === -1) { map = 'oasis'; }
+                        var bots = parseInt(quickBots.value, 10);
+                        if (!(bots >= 0 && bots <= 31)) { bots = 0; }
+
                         var settings = {
                             name: 'ET:Legacy Web Game',
-                            map: 'oasis',
-                            rotation: ['oasis'],
-                            maxPlayers: 8,
-                            bots: 7,
+                            map: map,
+                            rotation: [map],
+                            maxPlayers: quickMaxPlayers(bots),
+                            bots: bots,
                             timeLimit: 0,
-                            private: true
+                            private: true,
+                            mod: DEFAULT_MOD
                         };
                         session = { role: 'local', settings: settings, roomId: null };
-                        pick(hostedGameArgs(settings));
+                        startFlow(ensureMapInstalled(map).then(function () {
+                            return hostedGameArgs(settings);
+                        }), 'launcher-quick', 'quick-hint');
                     };
 
-                    // Button 3: manually maintained list of compatible servers.
+                    // Dedicated servers: the manually maintained list plus a
+                    // field for any other address.
                     document.getElementById('menu-servers').onclick = function () {
                         var box = document.getElementById('server-list');
                         box.innerHTML = '';
@@ -5145,14 +6383,24 @@
                         });
                         if (!SERVER_LIST.length) {
                             var empty = document.createElement('p');
+                            empty.className = 'launcher-hint';
                             empty.textContent = 'No servers configured. Add entries ' +
-                                'to SERVER_LIST in this page.';
+                                'to SERVER_LIST in this page, or type an address below.';
                             box.appendChild(empty);
                         }
                         showLauncherPanel('launcher-servers');
                     };
                     document.getElementById('servers-back').onclick = function () {
                         showLauncherPanel('launcher-menu');
+                    };
+                    document.getElementById('servers-connect').onclick = function () {
+                        var input = document.getElementById('servers-address');
+                        var address = etlCleanServerAddress(input.value);
+                        if (!address) {
+                            document.getElementById('servers-address').focus();
+                            return;
+                        }
+                        pick(connectArgs(address));
                     };
 
                     // Button 4: host a game (listen server in the browser).
@@ -5207,6 +6455,84 @@
                     hostMaxPlayers.oninput = clampHostBots;
                     hostBots.oninput = clampHostBots;
 
+                    // Basic / Advanced switcher of the host page.
+                    var hostTabs = [
+                        ['host-tab-basic', 'host-basic'],
+                        ['host-tab-advanced', 'host-advanced']
+                    ];
+                    function showHostTab(tabId) {
+                        hostTabs.forEach(function (pair) {
+                            var on = pair[0] === tabId;
+                            var tab = document.getElementById(pair[0]);
+                            tab.classList.toggle('active', on);
+                            tab.setAttribute('aria-selected', on ? 'true' : 'false');
+                            document.getElementById(pair[1])
+                                .classList.toggle('active', on);
+                        });
+                    }
+                    hostTabs.forEach(function (pair) {
+                        document.getElementById(pair[0]).onclick = function () {
+                            showHostTab(pair[0]);
+                        };
+                    });
+
+                    // Export / import of everything on this page, map rotation
+                    // included. The file is plain JSON so it can be shared and
+                    // edited; because of that nothing in it is trusted - it is
+                    // put through the same validation as the form (see
+                    // etlSettingsFromJson) before a single field is filled in.
+                    document.getElementById('host-export').onclick = function () {
+                        var settings = readHostSettings('host-', hostRotation);
+                        var name = 'etlegacy-host-settings.json';
+                        var blob = new Blob(
+                            [JSON.stringify(etlSettingsToJson(settings), null, 2)],
+                            { type: 'application/json' });
+                        var url = URL.createObjectURL(blob);
+                        var a = document.createElement('a');
+                        a.href = url;
+                        a.download = name;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+                        document.getElementById('host-io-hint').textContent =
+                            'Settings written to ' + name + '.';
+                    };
+
+                    var hostImportFile = document.getElementById('host-import-file');
+                    document.getElementById('host-import').onclick = function () {
+                        hostImportFile.value = '';
+                        hostImportFile.click();
+                    };
+                    hostImportFile.onchange = function () {
+                        var file = hostImportFile.files && hostImportFile.files[0];
+                        if (!file) { return; }
+                        var hint = document.getElementById('host-io-hint');
+                        if (file.size > MAX_SETTINGS_FILE_SIZE) {
+                            hint.textContent = 'That file is too large to be a ' +
+                                'settings file.';
+                            return;
+                        }
+                        file.text().then(function (text) {
+                            var result = etlSettingsFromJson(text);
+                            if (!result.settings) {
+                                hint.textContent = 'The file could not be read: ' +
+                                    result.error;
+                                return;
+                            }
+                            hostRotation = result.settings.rotation.slice();
+                            renderHostRotation();
+                            writeHostSettings('host-', result.settings);
+                            clampHostBots();
+                            hint.textContent = result.warnings.length
+                                ? ('Settings imported. ' + result.warnings.join(' '))
+                                : 'Settings imported.';
+                        }).catch(function (err) {
+                            hint.textContent = 'The file could not be read: ' +
+                                (err && err.message || err);
+                        });
+                    };
+
                     // Button 5: games other players are hosting right now.
                     document.getElementById('menu-join-games').onclick = function () {
                         showLauncherPanel('launcher-join');
@@ -5222,7 +6548,6 @@
                     // --- Join games list --------------------------------------
                     var joinList = document.getElementById('join-list');
                     var joinHint = document.getElementById('join-hint');
-                    var joinCount = document.getElementById('menu-join-games-sub');
 
                     function renderRooms(rooms) {
                         joinList.innerHTML = '';
@@ -5291,23 +6616,23 @@
                         });
                     }
 
-                    // Keep the number of running games on the menu button up to
+                    // Keep the number of running games on the start page up to
                     // date, so the player sees whether joining is worth a click.
+                    var roomCount = document.getElementById('home-room-count');
+
                     function showRoomCount(rooms) {
                         var count = rooms.length;
-                        joinCount.textContent = 'Games hosted by other players \u2013 ' +
-                            (count
-                                ? (count + (count === 1 ? ' game is running' : ' games are running'))
-                                : 'none is running right now');
-                        if (document.getElementById('launcher-join').style.display === 'block') {
+                        roomCount.textContent = count
+                            ? (count + (count === 1 ? ' game hosted' : ' games hosted'))
+                            : 'none hosted';
+                        if (launcherPanel === 'launcher-join') {
                             renderRooms(rooms);
                         }
                     }
                     if (p2p) {
                         p2p.subscribeRooms(showRoomCount);
                     } else {
-                        joinCount.textContent = 'Games hosted by other players \u2013 ' +
-                            'not available in this deployment';
+                        roomCount.textContent = 'not available';
                     }
 
                     // Button 5: create/change the player profile before starting.
@@ -5345,11 +6670,25 @@
                     // been read they only offer the built-in (stock) maps.
                     loadMapList().then(function () {
                         fillMapSelect(document.getElementById('host-map'), 'oasis', true);
+                        fillMapSelect(document.getElementById('quick-map'), 'oasis', true);
                         fillMapSelect(document.getElementById('game-map'), null, true);
                     });
 
                     // An invite link (?join=<roomId>) skips the menu entirely.
                     if (joinParam) {
+                        // The host's own address bar carries that link too (see
+                        // showInviteInAddressBar), so a reload by the host must
+                        // put the game back on the air instead of trying to join
+                        // the room that died with the previous page. The lobby
+                        // hands out the room id, so the new room gets a new one
+                        // and the address bar is rewritten again.
+                        var restored = rememberedHostSettings(joinParam);
+                        if (restored) {
+                            showLoading('Restarting your hosted game...');
+                            startFlow(startHosting(restored), 'launcher-host',
+                                'host-hint');
+                            return;
+                        }
                         if (!p2p) {
                             showLauncherPanel('launcher-menu');
                         } else {
