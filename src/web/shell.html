@@ -1960,7 +1960,7 @@
                 <div id="server-list"></div>
                 <label for="servers-address">Other server (host:port)</label>
                 <input id="servers-address" type="text" placeholder="etclan.de:27966" autocomplete="off">
-                <div class="launcher-hint">
+                <div class="launcher-hint" id="servers-hint">
                     Missing pk3 files are downloaded from the server when joining.
                     Dedicated servers are reached through the WebSocket relay.
                 </div>
@@ -5223,8 +5223,9 @@
 
                     var name = document.createElement('span');
                     name.className = 'rotation-name';
-                    name.textContent = map +
-                        ((mapList && mapList[map]) ? ' (download)' : '');
+                    name.textContent = (map === RANDOM_MAP)
+                        ? 'Random map'
+                        : map + ((mapList && mapList[map]) ? ' (download)' : '');
 
                     row.appendChild(pos);
                     row.appendChild(name);
@@ -5495,7 +5496,10 @@
                 }
                 (rawRotation || []).forEach(function (entry) {
                     if (rotation.length >= MAX_ROTATION_MAPS) { return; }
-                    if (typeof entry !== 'string' || known.indexOf(entry) === -1) {
+                    // RANDOM_MAP is a valid entry of a rotation: it is resolved
+                    // to one of the known maps when the game starts.
+                    if (typeof entry !== 'string' ||
+                        (entry !== RANDOM_MAP && known.indexOf(entry) === -1)) {
                         warnings.push('Map "' + String(entry).slice(0, 32) +
                             '" is unknown and was skipped.');
                         return;
@@ -6400,10 +6404,15 @@
                     document.getElementById('servers-connect').onclick = function () {
                         var input = document.getElementById('servers-address');
                         var address = etlCleanServerAddress(input.value);
+                        var hint = document.getElementById('servers-hint');
                         if (!address) {
-                            document.getElementById('servers-address').focus();
+                            hint.textContent = 'Please enter the server as host:port, ' +
+                                'for example etclan.de:27966.';
+                            hint.style.color = '#ff9a6a';
+                            input.focus();
                             return;
                         }
+                        hint.style.color = '';
                         pick(connectArgs(address));
                     };
 
