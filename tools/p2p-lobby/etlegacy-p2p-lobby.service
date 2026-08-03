@@ -1,0 +1,87 @@
+# ET: Legacy peer-to-peer lobby / signalling / fallback-relay server.
+#
+# Copy to /etc/systemd/system/etlegacy-p2p-lobby.service, adjust the two paths
+# and the options, then:
+#
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now etlegacy-p2p-lobby
+#   systemctl status etlegacy-p2p-lobby
+#   journalctl -u etlegacy-p2p-lobby -f
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[Unit]
+Description=ET: Legacy p2p lobby / WebRTC signalling / fallback relay
+Documentation=https://github.com/etlegacy/etlegacy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# --- what to run -----------------------------------------------------------
+# WorkingDirectory must contain lobby.js and its node_modules (the `ws` dep).
+WorkingDirectory=/opt/etlegacy-p2p-lobby
+ExecStart=/usr/bin/node /opt/etlegacy-p2p-lobby/lobby.js --port 8081 --max-rooms 128
+
+# The server serves plain ws:// and http:// - terminate TLS in nginx in front
+# of it (see README), or run it directly with:
+#   ExecStart=/usr/bin/node /opt/etlegacy-p2p-lobby/lobby.js --port 8443 \
+#       --tls-cert /etc/letsencrypt/live/EXAMPLE/fullchain.pem \
+#       --tls-key  /etc/letsencrypt/live/EXAMPLE/privkey.pem
+# Advertise a TURN server so players behind symmetric NAT can still connect:
+#   ExecStart=... --ice stun:stun.l.google.com:19302,turn:turn.EXAMPLE:3478 \
+#                 --turn-user etl --turn-pass CHANGEME
+
+# The server exits non-zero if it cannot bind; restart it and it will retry.
+Restart=always
+RestartSec=2
+
+# --- run as an unprivileged, throwaway identity ----------------------------
+# DynamicUser gives the service a transient UID/GID with no home and no shell;
+# nothing on disk is owned by it. Swap this block for a fixed
+# `User=etl-lobby` / `Group=etl-lobby` if you prefer a dedicated account.
+DynamicUser=yes
+
+# --- hardening -------------------------------------------------------------
+# The process only needs to open one listening socket and talk to clients; it
+# never writes to disk, needs no privileges and touches nothing else on the box.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Only the address families the server actually uses (TCP/UDP over IP + local).
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# Binding to a privileged port (< 1024, e.g. 443) needs this; harmless on 8081.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+# Give the whole service read-only access to the game data dir if you ever add
+# one; by default it needs nothing writable at all.
+ReadOnlyPaths=/opt/etlegacy-p2p-lobby
+
+# --- resource limits -------------------------------------------------------
+LimitNOFILE=65536
+# A busy lobby with hundreds of connections is still light; cap memory anyway.
+MemoryMax=256M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

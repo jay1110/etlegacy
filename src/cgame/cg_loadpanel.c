@@ -322,6 +322,17 @@ void CG_DrawConnectScreen(qboolean interactive, qboolean forcerefresh)
 
 		bg_loadscreeninited = qtrue;
 	}
+	else if (!cgs.media.bg_loadscreenfont1.GetGlyph || !cgs.media.bg_loadscreenfont2.GetGlyph)
+	{
+		// CG_Init() clears cgs on every map change, which also clears the loading screen
+		// font copies, while bg_loadscreeninited and cgDC.Assets are module globals that
+		// only reset once the cgame library is unloaded. That does not happen on every
+		// platform - the Emscripten build keeps the side module loaded across map changes -
+		// so restore the copies here, otherwise the panel buttons and the text painted
+		// below run into a NULL glyph lookup. Only the fonts may be redone, the rest of
+		// the block above (C_PanelButtonsSetup() in particular) is not idempotent.
+		CG_RegisterFonts();
+	}
 
 	BG_PanelButtonsRender(loadpanelButtons);
 

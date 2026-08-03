@@ -127,6 +127,117 @@ if (pk3) {
     }
 }
 
+// 6. The launcher must APPEND the arguments of the chosen game mode to the
+//    array that was assigned to Module.arguments before etl.js was loaded, not
+//    replace Module.arguments. Emscripten copies Module.arguments into its
+//    internal `arguments_` variable while etl.js is loaded (see
+//    makeModuleReceive('arguments_', 'arguments') in emscripten's
+//    src/postlibrary.js) and run()/callMain() only ever read that local, so a
+//    later assignment is silently ignored. When that happened, every launcher
+//    button ("Join ETc server", "Quick single game", a server-list entry,
+//    "Host game") started the engine without its +connect/+map and the player
+//    was dropped in the main menu. This is invisible in a build, so guard it.
+if (exists('etl.html')) {
+    const html = fs.readFileSync(path.join(dir, 'etl.html'), 'utf8');
+    check(
+        /Array\.prototype\.push\.apply\(args, extra\)/.test(html),
+        'launcher appends the chosen game mode arguments in place (addEngineArgs)'
+    );
+    check(
+        !/Module\.arguments\s*=\s*args\.concat\(/.test(html),
+        'launcher does not replace Module.arguments after startup'
+    );
+}
+
+// 7. Omni-bot: the bot library is a side module of its own, dlopen()ed by
+//    qagame, and it locates its scripts/navigation data relative to itself.
+//    Both must therefore be shipped, in one and the same folder, or a game
+//    hosted in the browser has no opponents at all.
+const omniBotModule = path.join('legacy', 'omni-bot', 'omnibot_et.wasm32.so');
+const omniBotPresent = exists(omniBotModule);
+check(omniBotPresent, `Omni-bot module present: ${omniBotModule}`);
+if (omniBotPresent) {
+    const buf = fs.readFileSync(path.join(dir, omniBotModule));
+    check(
+        hasWasmMagic(buf),
+        `${omniBotModule} is valid WebAssembly (got ${firstBytes(buf)}, expected 00 61 73 6d)`
+    );
+}
+
+const omniBotData = path.join('legacy', 'omni-bot', 'omni-bot-data.zip');
+const omniBotDataPresent = exists(omniBotData);
+check(omniBotDataPresent, `Omni-bot data pack present: ${omniBotData}`);
+if (omniBotDataPresent) {
+    try {
+        const listing = execFileSync('unzip', ['-l', path.join(dir, omniBotData)], {
+            encoding: 'utf8'
+        });
+        // The bot mounts global_scripts/ and the per-game "et" folder (its
+        // scripts and the per-map navigation meshes) from next to the library.
+        for (const entry of ['global_scripts/', 'et/scripts/', 'et/nav/']) {
+            check(listing.includes(entry), `Omni-bot data pack contains ${entry}`);
+        }
+    } catch (e) {
+        check(false, `Omni-bot data pack is a readable zip (${e.message})`);
+    }
+}
+
+// 8. Hosting a game in the browser needs two more files next to etl.html: the
+//    peer-to-peer transport the page loads with a <script src="etl-p2p.js">
+//    tag, and the map list the host picks its map from (and every joining
+//    player downloads the map from). Both are fetched at runtime relative to
+//    the page, so they must sit in the root of the package.
+check(exists('etl-p2p.js'), 'P2P transport present: etl-p2p.js');
+if (exists('etl-p2p.js')) {
+    const js = fs.readFileSync(path.join(dir, 'etl-p2p.js'), 'utf8');
+    // The engine (src/qcommon/net_web.c) and the launcher both talk to the
+    // transport through window.ETLP2P; without these entry points a hosted
+    // game silently has no networking at all.
+    for (const api of ['send', 'receive', 'host', 'join', 'listRooms']) {
+        check(new RegExp(`\\b${api}\\s*[:=(]`).test(js),
+            `etl-p2p.js exposes ${api}()`);
+    }
+}
+
+const mapListPresent = exists('maplist.json');
+check(mapListPresent, 'map list present: maplist.json');
+if (mapListPresent) {
+    try {
+        const list = JSON.parse(fs.readFileSync(path.join(dir, 'maplist.json'), 'utf8'));
+        const names = Object.keys(list);
+        check(names.length > 0, 'maplist.json contains at least one map');
+        // An entry is either "" (a stock map, no download) or an http(s) link
+        // to the pk3 the map ships in.
+        const bad = names.filter((name) => {
+            const url = list[name];
+            if (typeof url !== 'string') return true;
+            if (!/^[A-Za-z0-9_-]+$/.test(name)) return true;
+            return url !== '' && !/^https?:\/\/.+\.pk3$/.test(url);
+        });
+        check(bad.length === 0,
+            `maplist.json entries are "<bsp name>": "" or a .pk3 URL${bad.length ? ` (bad: ${bad.join(', ')})` : ''}`);
+    } catch (e) {
+        check(false, `maplist.json is valid JSON (${e.message})`);
+    }
+}
+
+if (exists('etl.html')) {
+    const html = fs.readFileSync(path.join(dir, 'etl.html'), 'utf8');
+    check(/<script[^>]+src="etl-p2p\.js"/.test(html),
+        'etl.html loads etl-p2p.js');
+    // The controls of a running game: leave, settings, invite link.
+    for (const id of ['game-sidebar', 'sidebar-exit', 'sidebar-settings',
+                      'sidebar-invite', 'game-panel']) {
+        check(html.includes(`id="${id}"`), `etl.html contains the #${id} element`);
+    }
+    // The host settings and the "Join games" browser.
+    for (const id of ['host-map', 'host-name', 'host-maxclients', 'host-bots',
+                      'host-timelimit', 'host-private', 'menu-join-games',
+                      'join-list']) {
+        check(html.includes(`id="${id}"`), `etl.html contains the #${id} element`);
+    }
+}
+
 if (failures) {
     console.error(`\n${failures} check(s) failed.`);
     process.exit(1);

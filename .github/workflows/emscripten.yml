@@ -56,6 +56,16 @@ jobs:
           emcc --version
           em++ --version
 
+      # Omni-bot is compiled from vendor/omni-bot/source for the browser build
+      # (there is no prebuilt wasm binary on the mirror). With
+      # OMNIBOT_STD_FILESYSTEM the remaining Boost usage is header only and
+      # therefore architecture independent, so the host headers are enough -
+      # no cross-compiled Boost is required. See cmake/ETLOmniBotWasm.cmake.
+      - name: Install Omni-bot build dependencies (Boost headers)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libboost-dev
+
       - name: Configure with CMake
         run: |
           emcmake cmake -B build-wasm \
@@ -79,7 +89,7 @@ jobs:
             -DFEATURE_CURL=OFF \
             -DFEATURE_SSL=OFF \
             -DFEATURE_AUTH=OFF \
-            -DFEATURE_OMNIBOT=OFF \
+            -DFEATURE_OMNIBOT=ON \
             -DFEATURE_TRACKER=OFF \
             -DFEATURE_ANTICHEAT=OFF \
             -DFEATURE_OGG_VORBIS=OFF \
@@ -101,6 +111,13 @@ jobs:
           cp build-wasm/etl.html build-wasm/etl.js build-wasm/etl.wasm build-wasm/etl.data dist/etlegacy-web/
           # Serve the game at the site root as well
           cp build-wasm/etl.html dist/etlegacy-web/index.html
+          # Files the page loads from its own directory at runtime:
+          #   etl-p2p.js   lobby client + WebRTC data channels, used for games
+          #                hosted inside a browser (tools/p2p-lobby)
+          #   maplist.json the maps the host can pick from and where a
+          #                non-stock map is downloaded from
+          cp src/web/etl-p2p.js dist/etlegacy-web/
+          cp maplist.json dist/etlegacy-web/
           # The ET: Legacy mod data the client downloads at startup: the legacy
           # pk3 (game logic side modules cgame/ui/qagame + the ui menu files),
           # served
@@ -136,6 +153,20 @@ jobs:
               exit 1
             fi
           done
+          # Omni-bot: the bot library is a wasm side module too, plus its data
+          # (global_scripts/ + et/{scripts,nav}). Omni-bot resolves its data
+          # directory from the location of the loaded library, so both are
+          # served from legacy/omni-bot/. The ~1.4 MB data zip is downloaded by
+          # the shell only when the player actually hosts a game in the browser.
+          mkdir -p dist/etlegacy-web/legacy/omni-bot
+          for f in omnibot_et.wasm32.so omni-bot-data.zip; do
+            if [ -f "build-wasm/${f}" ]; then
+              cp "build-wasm/${f}" dist/etlegacy-web/legacy/omni-bot/
+            else
+              echo "ERROR: required Omni-bot artifact build-wasm/${f} not found" >&2
+              exit 1
+            fi
+          done
           # Placeholder for the retail assets the user must supply
           mkdir -p dist/etlegacy-web/etmain
           cat > dist/etlegacy-web/etmain/README.txt <<'EOF'
@@ -154,10 +185,17 @@ jobs:
             etl.wasm               - engine WebAssembly binary
             etl.data               - preloaded virtual-filesystem image
                                      (browser default config)
+            etl-p2p.js             - peer-to-peer transport (lobby + WebRTC)
+                                     for games hosted in a browser
+            maplist.json           - maps offered when hosting a game, with the
+                                     download link of every non-stock map
             legacy/                - ET: Legacy mod pk3 (cgame/ui/qagame + ui menus)
                                      plus the standalone cgame/ui/qagame side
                                      modules (required; the engine loads its game
                                      logic from these)
+            legacy/omni-bot/       - Omni-bot side module + its script/navigation
+                                     data zip, downloaded on demand when you host
+                                     a game in the browser (bots)
             etmain/                - put pak0.pk3, pak1.pk3, pak2.pk3 here
 
           How to run:
@@ -175,6 +213,17 @@ jobs:
                  ?mod=<a.pk3,b.pk3>    override which mod pk3(s) to download
                  ?relay=<ws-url>       WebSocket->UDP relay (tools/ws-relay)
                  ?connect=<host:port>  game server to join through the relay
+                 ?lobby=<ws-url>       lobby for browser-hosted games
+                                       (tools/p2p-lobby)
+                 ?join=<room-id>       join a browser-hosted game (invite link)
+                 ?maplist=<url>        use another maplist.json
+
+          Hosting games in the browser:
+            "Host game" announces the game on a lobby server so other players
+            can find it under "Join games" (or via the invite link the game's
+            sidebar offers). The lobby is a small Node service you run
+            yourself, see tools/p2p-lobby/README.md and docs/web.md. Edit
+            maplist.json to change which maps can be hosted.
           EOF
           (cd dist && zip -9 -r etlegacy-web.zip etlegacy-web)
           # GitHub Pages (actions/deploy-pages) serves the artifact verbatim, but
@@ -235,3 +284,38 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  # The WebSocket->UDP relay is what lets a browser client reach a native
+  # dedicated server. It needs no toolchain, so it is tested on its own and in
+  # parallel with the (long) wasm build.
+  relay-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Test the WebSocket relay end to end
+        run: |
+          npm --prefix tools/ws-relay install --no-audit --no-fund
+          node tools/ws-relay/test-relay.mjs
+
+  # The lobby/signalling server for games hosted inside a browser, and the
+  # browser-side transport that talks to it. Both are plain JavaScript, so they
+  # are tested next to the relay instead of waiting for the wasm build.
+  lobby-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Test the P2P lobby server and the browser transport
+        run: |
+          npm --prefix tools/p2p-lobby install --no-audit --no-fund
+          node tools/p2p-lobby/test-lobby.mjs
+          node tools/p2p-lobby/test-p2p-client.mjs

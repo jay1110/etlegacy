@@ -1,0 +1,111 @@
+# Omnibot common build
+
+file(GLOB COMMON_SRC CONFIGURE_DEPENDS
+    ${DEPENDENCIES_PATH}/gmscriptex/gmsrc_ex/src/gm/*.cpp
+    ${DEPENDENCIES_PATH}/gmscriptex/gmsrc_ex/src/platform/win32gcc/*.cpp
+    ${DEPENDENCIES_PATH}/gmscriptex/gmsrc_ex/src/binds/*.cpp
+    ${DEPENDENCIES_PATH}/gmscriptex/gmsrc_ex/src/binds/gmSqliteLib.cpp
+    ${DEPENDENCIES_PATH}/gmscriptex/gmsrc_ex/src/3rdParty/mathlib/*.cpp
+    ${DEPENDENCIES_PATH}/gmscriptex/gmsrc_ex/src/3rdParty/gmbinder2/*.cpp
+    ${DEPENDENCIES_PATH}/wildmagic/*.cpp
+    ${DEPENDENCIES_PATH}/physfs/*.c
+    ${DEPENDENCIES_PATH}/physfs/archivers/*.c
+    ${DEPENDENCIES_PATH}/physfs/archivers/*.c
+    ${DEPENDENCIES_PATH}/physfs/lzma/C/*.c
+    ${DEPENDENCIES_PATH}/physfs/lzma/C/Archive/7z/*.c
+    ${DEPENDENCIES_PATH}/physfs/lzma/C/Compress/Lzma/*.c
+    ${DEPENDENCIES_PATH}/physfs/lzma/C/Compress/Branch/*.c
+    ${DEPENDENCIES_PATH}/physfs/zlib123/*.c
+    ${DEPENDENCIES_PATH}/physfs/platform/*.c
+
+    # ${DEPENDENCIES_PATH}/Recast/Recast/Source/*.cpp
+    # ${DEPENDENCIES_PATH}/Recast/Detour/Source/*.cpp
+    # ${DEPENDENCIES_PATH}/Recast/DebugUtils/Source/*.cpp
+
+    # ${CMAKE_CURRENT_SOURCE_DIR}/RecastInterfaces.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/BatchBuild.cpp
+)
+
+list(FILTER COMMON_SRC EXCLUDE REGEX ".*gmSqliteLib\\.cpp$")
+# The LZMA SDK ships several mutually exclusive files in one directory, and the
+# glob above happily takes all of them:
+#   LzmaDecodeSize.c  - the size-optimised decoder, an *alternative* to
+#                       LzmaDecode.c; both define LzmaDecode/LzmaDecodeProperties
+#   LzmaTest.c        - a standalone test program (defines main())
+#   LzmaStateTest.c   - ditto for the state decoder
+# A native link never noticed: only the objects needed to resolve a symbol are
+# pulled out of a static archive, so the alternatives and the test programs were
+# silently dropped. A wasm SIDE_MODULE is linked with --whole-archive, which
+# pulls in every object, and the link then fails with
+#   wasm-ld: error: duplicate symbol: LzmaDecodeProperties
+#   wasm-ld: error: duplicate symbol: LzmaDecode
+# Keep only the decoder physfs actually uses (LzmaDecode.c, via
+# lzma/C/Archive/7z/7zDecode.c) and drop the test programs - a library must not
+# carry a main() in any case.
+list(FILTER COMMON_SRC EXCLUDE REGEX ".*/lzma/C/Compress/Lzma/(LzmaDecodeSize|LzmaTest|LzmaStateTest)\\.c$")
+
+add_library(omnibot-common STATIC ${COMMON_SRC})
+if (NOT OMNIBOT_STD_FILESYSTEM)
+    # std::filesystem/std::regex need C++17, see the top level CMakeLists.txt
+    set_property(TARGET omnibot-common PROPERTY CXX_STANDARD 11)
+endif ()
+set_property(TARGET omnibot-common PROPERTY C_STANDARD 99)
+
+target_include_directories(omnibot-common
+    PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}"
+
+    PUBLIC "${DEPENDENCIES_PATH}/gmscriptex/gmsrc_ex/src/3rdParty"
+    # PUBLIC "${DEPENDENCIES_PATH}/gmscriptex/gmsrc_ex/src/3rdParty/mathlib"
+    PUBLIC "${DEPENDENCIES_PATH}/gmscriptex/gmsrc_ex/src/gm"
+    PUBLIC "${DEPENDENCIES_PATH}/gmscriptex/gmsrc_ex/src/binds"
+    PUBLIC "${DEPENDENCIES_PATH}/gmscriptex/gmsrc_ex/src/3rdParty/gmbinder2"
+
+    PUBLIC "${DEPENDENCIES_PATH}/wildmagic"
+    PUBLIC "${DEPENDENCIES_PATH}/iprof"
+
+    # PUBLIC "${DEPENDENCIES_PATH}/Recast/Recast/Include"
+    # PUBLIC "${DEPENDENCIES_PATH}/Recast/DebugUtils/Include"
+    # PUBLIC "${DEPENDENCIES_PATH}/Recast/Detour/Include"
+    PUBLIC "${DEPENDENCIES_PATH}/physfs"
+    PUBLIC "${DEPENDENCIES_PATH}/physfs/lzma/C"
+    PUBLIC "${DEPENDENCIES_PATH}/physfs/zlib123"
+    PUBLIC "${DEPENDENCIES_PATH}/physfs/lzma/C/Archive/7z"
+    PUBLIC "${DEPENDENCIES_PATH}/physfs/lzma/C/Compress/Lzma"
+    PUBLIC "${DEPENDENCIES_PATH}/physfs/lzma/C/Compress/Branch"
+)
+
+if (WIN32)
+    if (MSVC)
+        target_include_directories(omnibot-common PUBLIC "${DEPENDENCIES_PATH}/gmscriptex/gmsrc_ex/src/platform/win32msvc")
+    else()
+        target_include_directories(omnibot-common PUBLIC "${DEPENDENCIES_PATH}/gmscriptex/gmsrc_ex/src/platform/win32gcc")
+    endif()
+elseif(APPLE)
+    target_include_directories(omnibot-common PUBLIC "${DEPENDENCIES_PATH}/gmscriptex/gmsrc_ex/src/platform/osx")
+else()
+    target_include_directories(omnibot-common PUBLIC "${DEPENDENCIES_PATH}/gmscriptex/gmsrc_ex/src/platform/win32gcc")
+endif()
+
+target_link_libraries(omnibot-common PUBLIC omni-shared)
+target_compile_definitions(omnibot-common PUBLIC PHYSFS_SUPPORTS_ZIP=1 PHYSFS_SUPPORTS_7Z=1 PHYSFS_NO_CDROM_SUPPORT)
+
+if (UNIX)
+    # NOTE: this used to be a set_target_properties(... COMPILE_FLAGS <a> <b> <c>)
+    # call, which takes property/value *pairs* - so only "-pthread" was ever
+    # passed to the compiler and "-ffriend-injection" silently became a bogus
+    # property name. The flag was removed from GCC 8 and clang never had it, so
+    # it is simply gone now; the tree builds without it.
+    target_compile_options(omnibot-common PRIVATE -fno-strict-aliasing)
+    if (NOT EMSCRIPTEN)
+        # Emscripten only accepts -pthread when built with thread support, and
+        # the bot library is single threaded (ENABLE_FILE_DOWNLOADER is off).
+        target_compile_options(omnibot-common PRIVATE -pthread)
+    endif ()
+endif ()
+
+if(APPLE)
+    find_library(CARBON_FW Carbon)
+    target_link_libraries(omnibot-common PUBLIC ${CARBON_FW})
+    find_library(IOKIT_FW IOKit)
+    target_link_libraries(omnibot-common PUBLIC ${IOKIT_FW})
+endif()

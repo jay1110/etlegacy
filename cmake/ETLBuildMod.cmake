@@ -143,6 +143,22 @@ if(EMSCRIPTEN AND BUILD_CLIENT_MOD AND TARGET etl)
 		OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/etl_web_pk3_name.txt"
 		CONTENT "${ETL_MOD_PK3_NAME}\n"
 	)
+	# Files the shell loads at runtime from its own directory. Copying them
+	# next to etl.html keeps a plain build directory playable (python3 -m
+	# http.server build-wasm) and matches the release layout, where both sit
+	# in the root of the package:
+	#   etl-p2p.js   lobby client + WebRTC data channels for hosted games
+	#   maplist.json map name -> pk3 download link
+	configure_file(
+		"${PROJECT_SOURCE_DIR}/src/web/etl-p2p.js"
+		"${CMAKE_CURRENT_BINARY_DIR}/etl-p2p.js"
+		COPYONLY
+	)
+	configure_file(
+		"${PROJECT_SOURCE_DIR}/maplist.json"
+		"${CMAKE_CURRENT_BINARY_DIR}/maplist.json"
+		COPYONLY
+	)
 endif()
 
 #

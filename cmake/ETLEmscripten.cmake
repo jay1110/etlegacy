@@ -43,7 +43,19 @@ set(FEATURE_DBMS OFF CACHE BOOL "Disable DBMS for Emscripten" FORCE)
 set(FEATURE_CURL OFF CACHE BOOL "Disable cURL for Emscripten" FORCE)
 set(FEATURE_SSL OFF CACHE BOOL "Disable SSL for Emscripten" FORCE)
 set(FEATURE_AUTH OFF CACHE BOOL "Disable auth for Emscripten" FORCE)
-set(FEATURE_OMNIBOT OFF CACHE BOOL "Disable Omnibot for Emscripten" FORCE)
+# Omni-bot is available in the browser: the vendored tree is compiled to a wasm
+# SIDE_MODULE (cmake/ETLOmniBotWasm.cmake) that the qagame side module loads via
+# dlopen(), exactly like the native build loads omnibot_et.<arch>.so. This only
+# matters for a game hosted inside the browser ("Host game" / "Quick single
+# game"); when joining a native dedicated server that server runs its own bots.
+# FEATURE_OMNIBOT is therefore enabled for Emscripten by the dependent option in
+# the top level CMakeLists.txt and can still be turned off with
+# -DFEATURE_OMNIBOT=OFF (it needs the header-only host Boost headers).
+#
+# The prebuilt bot archives on the mirror are native-only (Linux/macOS/Windows),
+# and Emscripten's toolchain file sets UNIX=1, so ETLInstallOmniBot.cmake would
+# happily download the *Linux* binaries into the browser build. Keep it off.
+set(INSTALL_OMNIBOT OFF CACHE BOOL "No prebuilt Omni-bot binaries for Emscripten" FORCE)
 set(FEATURE_TRACKER OFF CACHE BOOL "Disable tracker for Emscripten" FORCE)
 set(FEATURE_ANTICHEAT OFF CACHE BOOL "Disable anticheat for Emscripten" FORCE)
 set(FEATURE_PAKISOLATION OFF CACHE BOOL "Disable pak isolation for Emscripten" FORCE)
@@ -143,7 +155,18 @@ set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS TRUE)
 #   architectural maximum of 4 GiB so the engine can use as much memory as it
 #   needs.
 #-----------------------------------------------------------------
-set(EMSCRIPTEN_COMMON_FLAGS "-s USE_SDL=2")
+# -fPIC is REQUIRED, not optional: this build links the engine as a
+# -sMAIN_MODULE and the game logic as -sSIDE_MODULEs (dynamic linking, see
+# above and cmake/ETLBuildMod.cmake). Emscripten only sets the PIC ABI on the
+# *compile* command line when -sMAIN_MODULE/-sSIDE_MODULE (or -fPIC) is passed
+# to the compiler as well; passing them only at link time leaves every object
+# non-PIC and wasm-ld then aborts the link with hundreds of
+#   "relocation R_WASM_MEMORY_ADDR_LEB cannot be used against symbol `...`;
+#    recompile with -fPIC"
+# errors (first seen on src/qcommon/cm_load.c.o). Compiling everything - the
+# engine, the bundled libraries and the cgame/ui/qagame side modules - with
+# -fPIC produces the relocatable code the dynamic linker needs.
+set(EMSCRIPTEN_COMMON_FLAGS "-s USE_SDL=2 -fPIC")
 set(EMSCRIPTEN_LINK_FLAGS
 	"-s ALLOW_MEMORY_GROWTH=1"
 	"-s WASM=1"

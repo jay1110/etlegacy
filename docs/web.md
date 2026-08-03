@@ -30,20 +30,25 @@ open the page.
 ## 1. Build the web client
 
 Requires the [Emscripten SDK](https://emscripten.org/) (pinned to a version
-verified to work; see `.github/workflows/emscripten.yml`, currently `4.0.23`).
+verified to work; see `.github/workflows/emscripten.yml`, currently `4.0.23`)
+and the Boost headers (`libboost-dev`) for Omni-bot — header-only, so no
+cross-compiled Boost is needed.
 
 ```bash
 emcmake cmake -B build-wasm \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_CLIENT=ON -DBUILD_SERVER=OFF \
-  -DBUILD_MOD=ON -DBUILD_CLIENT_MOD=ON -DBUILD_SERVER_MOD=OFF \
-  -DFEATURE_RENDERER1=ON -DFEATURE_RENDERER2=OFF -DFEATURE_GL4ES=ON
+  -DBUILD_MOD=ON -DBUILD_CLIENT_MOD=ON -DBUILD_SERVER_MOD=ON \
+  -DFEATURE_RENDERER1=ON -DFEATURE_RENDERER2=OFF -DFEATURE_GL4ES=ON \
+  -DFEATURE_OMNIBOT=ON
 cmake --build build-wasm --parallel "$(nproc)"
 ```
 
-This produces `etl.html`, `etl.js`, `etl.wasm` and the side modules
-`cgame.mp.wasm32.so` / `ui.mp.wasm32.so` in `build-wasm/`. The exact CMake flags
-CI uses are in `.github/workflows/emscripten.yml` — copy them for an exact match.
+This produces `etl.html`, `etl.js`, `etl.wasm`, the side modules
+`cgame.mp.wasm32.so` / `ui.mp.wasm32.so` / `qagame.mp.wasm32.so`, and — with
+`FEATURE_OMNIBOT` — `omnibot_et.wasm32.so` plus `omni-bot-data.zip`, all in
+`build-wasm/`. The exact CMake flags CI uses are in
+`.github/workflows/emscripten.yml` — copy them for an exact match.
 
 ## 2. Lay out the web directory
 
@@ -57,11 +62,17 @@ etlegacy-web/
 ├── etl.js
 ├── etl.wasm
 ├── etl.data            # preloaded virtual-filesystem image (browser default config)
+├── etl-p2p.js          # lobby client + WebRTC transport (browser-hosted games)
+├── maplist.json        # maps offered when hosting, + download link per map
 ├── etmain/             # put pak0.pk3, pak1.pk3, pak2.pk3 here
 └── legacy/
     ├── legacy_<ver>.pk3        # mod pk3 (cgame/ui game logic + ui menus + media)
     ├── cgame.mp.wasm32.so      # standalone side module (fallback)
-    └── ui.mp.wasm32.so         # standalone side module (fallback)
+    ├── ui.mp.wasm32.so         # standalone side module (fallback)
+    ├── qagame.mp.wasm32.so     # standalone side module (fallback)
+    └── omni-bot/
+        ├── omnibot_et.wasm32.so   # bot library (loaded on demand)
+        └── omni-bot-data.zip      # bot scripts + navigation meshes
 ```
 
 The game logic (`cgame`/`ui`) is loaded from the mod pk3: the page reads the
@@ -74,6 +85,14 @@ paks), so a pk3 served under a name other than `legacy_<ver>.pk3` still works.
 The standalone `cgame.mp.wasm32.so` / `ui.mp.wasm32.so` next to it are only a
 fallback used when a module is missing from every pk3, so at least one pk3 that
 contains the modules must be present.
+
+`legacy/omni-bot/` holds the bot library and its data. Unlike the game logic it
+is fetched **on demand**, the first time a game is hosted in the browser
+("Quick single game" / "Host game"), so a player who only joins a dedicated
+server never downloads it. The library is compiled up front like the other side
+modules; the data pack is cached in IndexedDB and unpacked next to it, because
+Omni-bot resolves its data directory from the location of the loaded library.
+If either cannot be fetched the game still starts, just without bots.
 
 Copy `pak0.pk3`, `pak1.pk3`, `pak2.pk3` from a retail Wolfenstein: Enemy
 Territory install into `etmain/`. **These are not included and may not be
@@ -103,6 +122,15 @@ pthreads, the page must then be served with
 `Cross-Origin-Opener-Policy: same-origin` and
 `Cross-Origin-Embedder-Policy: require-corp`.)
 
+> **Serve the `.wasm` files compressed.** They are big on disk - the engine and
+> each side module carry a wasm *data* section of tens of megabytes, because a
+> wasm side module has no BSS and zero-initialised statics are emitted as literal
+> zero bytes. Those bytes compress away almost entirely (measured on a test
+> module: 32 MB → 30 KB with `gzip -9`), so any server that sends
+> `Content-Encoding: gzip` or `br` makes the download small. `python3 -m
+> http.server` does **not** compress and will transfer the full size; use it for
+> a quick local check only.
+
 > **Upload the `.pk3` and `.so` files in binary mode.** They are binary
 > WebAssembly data. If they are transferred over FTP/SFTP in *ASCII*/*text*
 > mode (or rewritten by a server content filter), their bytes get mangled and
@@ -123,8 +151,11 @@ with `?assets=` (that host must allow CORS).
 
 ## 4. Run a dedicated server
 
-Browsers cannot host a server. Run a normal native ET: Legacy dedicated server
-on a machine with a public UDP port (default `27960`):
+A browser cannot open a listening socket, so it cannot be reached by native
+clients. It *can* host a game for other browser players over WebRTC data
+channels (see [section 7](#7-host-games-in-the-browser-lobby--webrtc)); for
+native clients, run a normal native ET: Legacy dedicated server on a machine
+with a public UDP port (default `27960`):
 
 ```bash
 etlded +set dedicated 2 +set net_port 27960 +map oasis
@@ -147,6 +178,18 @@ A page served over `https://` (e.g. GitHub Pages) can only open `wss://`
 sockets, so the relay must be reachable over TLS — either terminate TLS in the
 relay (above) or behind an nginx reverse proxy (see the relay README).
 
+Targets may be hostnames (`?connect=etclan.de:27966`): the browser cannot
+resolve names, so the engine passes the name to the relay, which resolves it.
+The shell also has a **default relay** built in (`DEFAULT_RELAY_HOST` in
+`src/web/shell.html`, `ws://`/`wss://` chosen to match the page), so a share
+link only needs `?connect=`.
+
+The relay keeps running when a single connection fails (all connection errors
+are logged, never fatal) and drops dead peers via a WebSocket heartbeat. Idle
+timeout and connection limit are tunable with `--timeout <secs>` and
+`--max-connections <n>`. For unattended hosting still run it under a process
+manager (systemd with `Restart=always`, or pm2).
+
 ## 6. Open the game and connect
 
 On first load the page asks how to provide the game data: **download
@@ -156,8 +199,14 @@ set, a **Run game** menu offers: starting the game to the main menu without
 connecting anywhere, joining the preconfigured ETc server (a
 different `fs_game`, xmod — missing pk3s are downloaded from the server),
 a quick single game (`+map oasis`), a manually maintained server list
-(`SERVER_LIST` in `src/web/shell.html`), and hosting a listen server in the
-browser (other players join through the relay).
+(`SERVER_LIST` in `src/web/shell.html`), **hosting a game** in the browser and
+**joining a game** somebody else hosts (both described in section 7).
+
+Locally hosted games fill the server with Omni-bot bots. The bot count is the
+one chosen in the launcher; it is written to `omni-bot.cfg` in `fs_homepath`
+(persisted in the browser like the rest of the home directory) and can be
+changed at any time in the game's settings panel or in-game with
+`/bot minbots <n>` and `/bot maxbots <n>`.
 
 Alternatively, configure everything from the page URL (which skips the menu)
 or from the in-page **Connect…** panel (bottom controls bar):
@@ -170,6 +219,9 @@ or from the in-page **Connect…** panel (bottom controls bar):
 | `relay`   | WebSocket relay URL (`net_wsRelayServer`) | `?relay=wss://relay.example.com:8443` |
 | `connect` | Game server `host:port` to auto-join | `?connect=203.0.113.10:27960` |
 | `map`     | Start a local game on this map | `?map=oasis` |
+| `lobby`   | Lobby server for browser-hosted games | `?lobby=wss://lobby.example.com:8443` |
+| `join`    | Join a browser-hosted game (invite link) | `?join=7f3a91` |
+| `maplist` | Use another map list | `?maplist=https://example.com/maplist.json` |
 
 Full example:
 
@@ -180,13 +232,128 @@ https://your-page/etl.html?relay=wss://relay.example.com:8443&connect=203.0.113.
 Multiple browser players can open the same link and join the same server; each
 gets its own UDP socket on the relay side.
 
+## 7. Host games in the browser (lobby / WebRTC)
+
+**Host game** in the launcher starts a listen server inside the browser and
+announces it on a lobby server, so other players find it under **Join games**
+(the button shows how many games are running) or through the invite link the
+host can share. Players connect directly to the host's browser with a WebRTC
+data channel — the lobby only introduces them to each other, no game traffic
+passes through it.
+
+### What the host can set
+
+| Setting | Meaning |
+|---------|---------|
+| Room name | Name shown in the game list and as `sv_hostname` |
+| Map | One of the maps in `maplist.json`, or **Random map** |
+| Max players | 2 – 32 (`sv_maxclients`) |
+| Bots | 0 – 31, never more than the free slots (Omni-bot) |
+| Time limit | Minutes; `0` keeps the time the map itself sets (`g_userTimeLimit`) |
+| Private room | The game is not listed; it can only be joined with the invite link |
+
+Once the game runs, a narrow column on the left has an **✕** button (leave the
+game — if the host leaves, everybody is returned to the launcher), a **⚙**
+button (current map and player count; every setting above can be changed and
+the map can be switched while the game runs) and a **🔗** button that copies the
+invite link.
+
+### maplist.json
+
+`maplist.json` sits in the root of the web directory, next to `etl.html`, and
+decides which maps can be hosted:
+
+```json
+{
+    "oasis": "",
+    "etl_supply": "https://et.clan-etc.de/etmain/etl_supply_v14.pk3"
+}
+```
+
+The key is the map's bsp name, the value is the download link of the pk3 the
+map ships in. An **empty** link marks a stock map that needs no download.
+Everything else is downloaded — by the host when the game starts (or when the
+map is switched) and by every player who joins that game — into the browser's
+`etmain` and cached in IndexedDB, so it is fetched only once. The file the URL
+points at must be a `.pk3` and the server hosting it must allow CORS
+(`Access-Control-Allow-Origin`), otherwise the browser cannot read it. Use
+`?maplist=<url>` to point the page at a different list.
+
+### Run the lobby server
+
+The lobby is a small Node service (one dependency, `ws`) that keeps the list of
+open games and forwards the WebRTC offers/answers between the players. See
+`tools/p2p-lobby/README.md`. On a plain Ubuntu root server:
+
+```bash
+sudo apt install -y nodejs npm
+cd tools/p2p-lobby
+npm install
+npm start                       # plain ws:// on :8081
+# or, for an HTTPS page, serve wss:// directly:
+node lobby.js --tls-cert /etc/letsencrypt/live/example.com/fullchain.pem \
+              --tls-key  /etc/letsencrypt/live/example.com/privkey.pem \
+              --port 8443
+```
+
+A page served over `https://` (e.g. GitHub Pages) may only open `wss://`
+sockets, so terminate TLS in the lobby (above) or put it behind nginx, exactly
+like the relay. `tools/p2p-lobby/README.md` contains a ready-made systemd unit
+and an nginx location block. The shell has a default lobby built in
+(`DEFAULT_LOBBY_HOST` in `src/web/shell.html`); `?lobby=<ws-url>` overrides it.
+
+Open ports: **8081/tcp** (or 8443/tcp with TLS) for the lobby, plus the UDP
+range WebRTC uses if the host runs a TURN server (below).
+
+### When a direct connection is not possible (TURN)
+
+Most players connect directly once the lobby has introduced them (the lobby
+hands out a public STUN server for that). Behind a symmetric NAT or a strict
+firewall this fails, and a relay is needed — that is what TURN is. On the same
+Ubuntu machine:
+
+```bash
+sudo apt install -y coturn
+# /etc/turnserver.conf
+#   listening-port=3478
+#   fingerprint
+#   lt-cred-mech
+#   user=etl:<password>
+#   realm=example.com
+sudo systemctl enable --now coturn
+```
+
+Then start the lobby with the TURN server, which it passes on to the players:
+
+```bash
+node lobby.js --ice stun:stun.l.google.com:19302 \
+              --ice turn:example.com:3478 \
+              --turn-user etl --turn-pass <password>
+```
+
+Open **3478/tcp+udp** and coturn's relay range (`min-port`/`max-port`,
+49152–65535 by default).
+
+### Why not HumbleNet?
+
+HumbleNet solves the same problem, but it is a C++ library that has to be built
+into the engine *and* needs its own peer server; its Emscripten socket
+emulation also expects to own the whole socket layer, which collides with the
+WebSocket relay this port already uses for dedicated servers. The transport
+here is plain JavaScript (`src/web/etl-p2p.js`, `RTCPeerConnection` +
+`RTCDataChannel`) behind the same tiny interface the relay uses in
+`src/qcommon/net_web.c`: a peer becomes a synthetic address (`241.0.x.y:27960`)
+the engine treats like any other, so no engine subsystem had to change. It is
+also testable without a browser — `tools/p2p-lobby/test-p2p-client.mjs` runs the
+whole handshake in Node.
+
 ## Verification / smoke tests
 
 `tools/web-smoke/` contains two smoke tests (run in CI after the build):
 
 - `verify-dist.mjs <dir>` — structural check of the packaged build (engine files
-  present, valid wasm header, mod pk3 contains the side modules). No browser
-  needed.
+  present, valid wasm header, mod pk3 contains the side modules, Omni-bot module
+  and data pack shipped). No browser needed.
 - `boot-smoke.mjs <dir>` — boots the build in headless Chromium (Playwright) and
   confirms the wasm engine initializes and reaches its asset-bootstrap stage
   without a fatal error. Because the retail paks are not redistributable, it
@@ -199,17 +366,45 @@ node tools/web-smoke/verify-dist.mjs dist/etlegacy-web
 node tools/web-smoke/boot-smoke.mjs dist/etlegacy-web
 ```
 
+The relay has its own end-to-end test, which needs neither the build nor the
+game data and runs as a separate CI job:
+
+```bash
+npm --prefix tools/ws-relay install
+node tools/ws-relay/test-relay.mjs
+```
+
+It drives a real WebSocket client through `relay.js` to a stand-in UDP game
+server that answers ET's out-of-band `getinfo` query, covering both URL forms,
+hostname targets, packets sent before the UDP socket is bound, two clients on
+the same server at once (own UDP source port each, no cross-talk between them),
+datagrams from a foreign source, malformed targets, the connection limit, the
+idle-connection reaper and a failed bind.
+
 ## Known limitations
 
-- Latency is higher than native UDP (the relay uses TCP/WebSocket).
+- Latency is higher than native UDP (the relay uses TCP/WebSocket; Nagle is
+  disabled on the relay side, but TCP head-of-line blocking remains).
 - The retail paks must be supplied by the user; they are never redistributed.
-- WebRTC data channels (lower latency than WebSocket) are possible future work.
+- A browser-hosted game reaches other **browser** players only (WebRTC data
+  channels, section 7). Native clients cannot join it, because a browser has no
+  listening UDP socket — use a native dedicated server for that.
+- A browser-hosted game depends on the host's browser tab: closing it ends the
+  game for everybody (the players are returned to the launcher).
 - `vid_restart` (and the settings menu's "apply" that issues it) is disabled in
   the browser: a canvas WebGL context and gl4es cannot be torn down and
   re-created within the same page (the Wwasm reference port suppresses it the
   same way). Latched video cvar changes take effect on the next page reload.
   `etl.data` preloads `com_recommendedSet 1` so the first-run "apply
   recommended settings + vid_restart" path is never taken.
+- The cgame/ui/qagame side modules are never unloaded: Emscripten's `dlclose()`
+  is a no-op, so a later `dlopen()` of the same path hands back the instance that
+  is already loaded. A VM restart - which happens on every map change - therefore
+  reuses the module *with all of its globals still set*, unlike native platforms
+  where the library is genuinely reloaded. Mod code that keeps "already
+  initialised" flags in module globals while the matching state lives in
+  `cgs`/`cg` (wiped by `CG_Init()`) has to cope with that; see the loading screen
+  font restore in `CG_DrawConnectScreen()`.
 - The browser console logs `The ScriptProcessorNode is deprecated. Use
   AudioWorkletNode instead.` once at startup. This comes from Emscripten's
   bundled SDL2 audio backend, not from ET: Legacy, and is a harmless

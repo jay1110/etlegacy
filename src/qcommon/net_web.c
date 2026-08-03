@@ -28,6 +28,13 @@
  * - No raw UDP/TCP socket access
  * - All network traffic must go through WebSocket or WebRTC
  * - A relay server is required to bridge WebSocket ↔ UDP for game servers
+ *
+ * Two transports live side by side here:
+ * - the relay WebSockets described above, used for every ordinary server
+ *   address, and
+ * - a peer-to-peer transport (WebRTC data channels, src/web/etl-p2p.js) for the
+ *   synthetic 241.0.0.0/8 address block, which is how a game *hosted in a
+ *   browser* is reached. See the P2P section below.
  */
 
 #ifdef __EMSCRIPTEN__
@@ -35,25 +42,83 @@
 #include "q_shared.h"
 #include "qcommon.h"
 
+#include <emscripten.h>
 #include <emscripten/websocket.h>
 #include <string.h>
 #include <sys/select.h>
 
-// Maximum number of simultaneous WebSocket connections
-#define MAX_WS_CONNECTIONS 4
+// Maximum number of simultaneous WebSocket connections.
+//
+// One relay WebSocket is opened per remote address. The in-game server browser
+// alone talks to the master server plus every server it pings, so a handful of
+// slots is far too few: once they were all taken, WS_GetConnection() returned
+// NULL and *every* later address - including the game server the player
+// actually clicked "Join" on - could no longer be reached. The symptom was a
+// client that logged "WebSocket connected to ws://.../motd.etlegacy.com:27951"
+// and then sat in the main menu forever, because its getchallenge was never
+// sent. Give the browser enough slots for a full server-list refresh, and
+// recycle the least recently used one when they do run out (see
+// WS_GetConnection).
+#define MAX_WS_CONNECTIONS 64
+
+// A connection that has carried nothing but out-of-band traffic (server
+// browser pings, master server queries, getchallenge, ...) for this long is
+// closed again. One browser WebSocket - and one UDP socket on the relay - is
+// held per remote address, so without this every server-list refresh leaks the
+// sockets of every server it touched until the slots run out. Only never-
+// sequenced connections are reaped (see wsConnection_t::sequenced), so a game
+// connection is never dropped, not even while a long map load keeps the engine
+// from sending anything for a while.
+#define WS_IDLE_TIMEOUT 30000
 
 // Packet buffer for received data
 #define WS_RECV_BUFFER_SIZE (MAX_MSGLEN * 4)
 
-// Default WebSocket relay server URL (must match tools/ws-relay default port)
+// Default WebSocket relay server URL (must match tools/ws-relay default port).
+// The web shell (src/web/shell.html) normally passes an explicit relay via
+// "+set net_wsRelayServer" (?relay=), so this only applies to a client started
+// without one - e.g. from the in-game console.
 #define WS_DEFAULT_RELAY_URL "ws://localhost:8080"
+
+// Hostnames the browser cannot resolve itself are handed to the relay as-is
+// (the relay resolves them, see tools/ws-relay/relay.js). The engine still
+// needs a netadr_t for every server, so each hostname gets a synthetic address
+// from the reserved, never-routable 240.0.0.0/8 block, which is translated
+// back into the hostname when the relay URL is built and when an address is
+// printed. Without this the browser build could only ever connect to numeric
+// IPs, so a server that changes its IP (or is only published as a name) is
+// unreachable.
+#define WS_HOSTADDR_PREFIX 240
+#define WS_MAX_HOSTNAMES   128
+
+// Peer-to-peer (WebRTC) addresses.
+//
+// A game hosted *inside a browser* has no address anything can connect to: the
+// tab has no listening socket, and the relay above can only ever reach a real
+// UDP server. Such a host is instead reached through WebRTC data channels that
+// the page negotiates with a lobby/signalling server (src/web/etl-p2p.js,
+// tools/p2p-lobby). The engine still wants a netadr_t per remote end, so every
+// peer gets a synthetic address out of a second reserved, never-routable block,
+// 241.0.0.0/8:
+//
+//   241.0.<hi>.<lo>:27960  <->  peer index (hi << 8) | lo, 1..WS_MAX_P2P_PEERS
+//
+// On a joining client the host is always peer index 1 (241.0.0.1), which is the
+// address the launcher hands to "+connect". On a host every joining player gets
+// its own index, so the server tells them apart exactly as it would tell apart
+// two UDP clients. Sys_SendPacket routes these addresses to the data channels
+// instead of a relay WebSocket, and NET_GetPacket drains what arrives on them;
+// nothing else in the engine has to know that this is not a normal address.
+#define WS_P2PADDR_PREFIX 241
+#define WS_MAX_P2P_PEERS  250
+#define WS_P2P_PORT       27960
 
 // Outgoing packets queued while the WebSocket is still CONNECTING. The very
 // first packets of a connection handshake (getchallenge / getinfo) are sent
 // immediately after the socket is created, before the browser has finished
 // opening it; emscripten_websocket_send_binary() fails on a CONNECTING socket,
 // so buffer them and flush from the onopen callback instead of dropping them.
-#define WS_MAX_PENDING_SENDS 16
+#define WS_MAX_PENDING_SENDS 8
 
 typedef struct
 {
@@ -70,6 +135,8 @@ typedef struct
 	char url[MAX_STRING_CHARS];
 	wsPendingSend_t pending[WS_MAX_PENDING_SENDS];
 	int pendingCount;
+	int lastUsed;       ///< Sys_Milliseconds() of the last send/receive, for LRU reuse
+	qboolean sequenced; ///< a netchan (non out-of-band) packet passed through: this is a real game connection
 } wsConnection_t;
 
 typedef struct
@@ -79,7 +146,7 @@ typedef struct
 	netadr_t from;
 } wsPacket_t;
 
-#define WS_PACKET_QUEUE_SIZE 64
+#define WS_PACKET_QUEUE_SIZE 256
 
 static wsConnection_t wsConnections[MAX_WS_CONNECTIONS];
 static wsPacket_t     packetQueue[WS_PACKET_QUEUE_SIZE];
@@ -88,6 +155,121 @@ static int            packetQueueTail   = 0;
 static qboolean       networkingEnabled = qfalse;
 
 static cvar_t *net_wsRelayServer;
+
+static char wsHostnames[WS_MAX_HOSTNAMES][MAX_QPATH];
+static int  wsHostnameCount = 0;
+
+/**
+ * @brief Return the hostname a synthetic 240.0.0.0/8 address stands for
+ * @param[in] a address to look up
+ * @return the hostname, or NULL when @p a is a real address
+ */
+static const char *WS_HostnameForAdr(const netadr_t *a)
+{
+	int index;
+
+	if (!a || a->type != NA_IP || a->ip[0] != WS_HOSTADDR_PREFIX)
+	{
+		return NULL;
+	}
+
+	index = (a->ip[2] << 8) | a->ip[3];
+
+	if (index < 1 || index > wsHostnameCount)
+	{
+		return NULL;
+	}
+
+	return wsHostnames[index - 1];
+}
+
+/**
+ * @brief Check that a string is a syntactically valid DNS hostname
+ *
+ * The name ends up in the relay's WebSocket URL path, so anything that could
+ * change that URL's meaning (slashes, '@', '?', '#', whitespace, ...) must be
+ * rejected here.
+ *
+ * @param[in] name candidate hostname
+ * @return qtrue when @p name is a plausible hostname
+ */
+static qboolean WS_IsValidHostname(const char *name)
+{
+	size_t len = name ? strlen(name) : 0;
+	size_t i;
+	qboolean hasLetter = qfalse;
+
+	if (len < 1 || len >= MAX_QPATH || len > 253)
+	{
+		return qfalse;
+	}
+
+	if (name[0] == '-' || name[0] == '.' || name[len - 1] == '-' || name[len - 1] == '.')
+	{
+		return qfalse;
+	}
+
+	for (i = 0; i < len; i++)
+	{
+		char c = name[i];
+
+		if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))
+		{
+			hasLetter = qtrue;
+			continue;
+		}
+
+		if ((c >= '0' && c <= '9') || c == '-' || c == '.')
+		{
+			continue;
+		}
+
+		return qfalse;
+	}
+
+	// a purely numeric name is a malformed IP, not a hostname
+	return hasLetter;
+}
+
+/**
+ * @brief Assign (or reuse) a synthetic address for a hostname
+ * @param[in] name hostname to register
+ * @param[out] a receives the synthetic address (port is left untouched)
+ * @return qtrue when the hostname could be registered
+ */
+static qboolean WS_AdrForHostname(const char *name, netadr_t *a)
+{
+	int index;
+
+	for (index = 0; index < wsHostnameCount; index++)
+	{
+		if (!Q_stricmp(wsHostnames[index], name))
+		{
+			break;
+		}
+	}
+
+	if (index == wsHostnameCount)
+	{
+		if (wsHostnameCount >= WS_MAX_HOSTNAMES)
+		{
+			Com_Printf("WS_AdrForHostname: too many hostnames (max %d)\n", WS_MAX_HOSTNAMES);
+			return qfalse;
+		}
+
+		Q_strncpyz(wsHostnames[index], name, sizeof(wsHostnames[index]));
+		wsHostnameCount++;
+	}
+
+	// index + 1, so a hostname is never mapped to 240.0.0.0 itself
+	a->type  = NA_IP;
+	a->ip[0] = WS_HOSTADDR_PREFIX;
+	a->ip[1] = 0;
+	a->ip[2] = (byte)(((index + 1) >> 8) & 0xff);
+	a->ip[3] = (byte)((index + 1) & 0xff);
+
+	return qtrue;
+}
 
 /**
  * @brief Queue a received packet for later retrieval by NET_GetPacket
@@ -116,6 +298,152 @@ static void WS_QueuePacket(const byte *data, int length, const netadr_t *from)
 }
 
 /**
+ * @brief Is this one of the synthetic peer-to-peer addresses (241.0.0.0/8)?
+ * @param[in] a address to test
+ * @return qtrue when @p a addresses a WebRTC peer instead of a relayed server
+ */
+static qboolean WS_IsP2PAdr(const netadr_t *a)
+{
+	return (qboolean)(a && a->type == NA_IP && a->ip[0] == WS_P2PADDR_PREFIX);
+}
+
+/**
+ * @brief Peer index encoded in a synthetic peer-to-peer address
+ * @param[in] a a P2P address (see WS_IsP2PAdr)
+ * @return the peer index, or 0 when the address encodes no valid peer
+ */
+static int WS_P2PPeerForAdr(const netadr_t *a)
+{
+	int peer = (a->ip[2] << 8) | a->ip[3];
+
+	if (peer < 1 || peer > WS_MAX_P2P_PEERS)
+	{
+		return 0;
+	}
+
+	return peer;
+}
+
+/**
+ * @brief Build the synthetic address of a peer
+ * @param[in] peer peer index (1..WS_MAX_P2P_PEERS)
+ * @param[out] a receives the address
+ */
+static void WS_AdrForP2PPeer(int peer, netadr_t *a)
+{
+	Com_Memset(a, 0, sizeof(*a));
+
+	a->type  = NA_IP;
+	a->ip[0] = WS_P2PADDR_PREFIX;
+	a->ip[1] = 0;
+	a->ip[2] = (byte)((peer >> 8) & 0xff);
+	a->ip[3] = (byte)(peer & 0xff);
+	a->port  = BigShort(WS_P2P_PORT);
+}
+
+/**
+ * @brief Hand a packet to the page's peer-to-peer transport
+ *
+ * The transport itself (WebRTC data channel, with the lobby's WebSocket relay
+ * as fallback) lives in JavaScript, because only the page can drive
+ * RTCPeerConnection. The bytes are copied out of the wasm heap here (slice, not
+ * subarray): the heap can be detached or moved by a later allocation, and the
+ * data channel may well send asynchronously.
+ *
+ * @param[in] peer peer index
+ * @param[in] data packet
+ * @param[in] length packet size in bytes
+ * @return qtrue when the transport accepted the packet
+ */
+static qboolean WS_P2PSend(int peer, const void *data, int length)
+{
+	int sent = EM_ASM_INT({
+		var api = (typeof ETLP2P !== 'undefined') ? ETLP2P :
+		          ((typeof window !== 'undefined') ? window.ETLP2P : null);
+		if (!api || typeof api.send !== 'function')
+		{
+			return 0;
+		}
+		try {
+			return api.send($0, HEAPU8.slice($1, $1 + $2)) ? 1 : 0;
+		} catch (e) {
+			return 0;
+		}
+	}, peer, data, length);
+
+	return (qboolean)(sent != 0);
+}
+
+/**
+ * @brief Move everything the peer-to-peer transport has received into the
+ *        engine's packet queue
+ *
+ * Called once per NET_Event, i.e. once per frame, which is where the WebSocket
+ * transport's own callbacks have already put their packets. Doing it in one
+ * place keeps both transports on the single NET_GetPacket path.
+ */
+static void WS_P2PPump(void)
+{
+	byte     buf[MAX_MSGLEN];
+	netadr_t from;
+	int      peer;
+	int      length;
+	int      guard;
+
+	// Bounded so a peer that floods faster than the frame rate cannot keep the
+	// engine in this loop forever.
+	for (guard = 0; guard < WS_PACKET_QUEUE_SIZE; guard++)
+	{
+		peer   = 0;
+		length = EM_ASM_INT({
+			var api = (typeof ETLP2P !== 'undefined') ? ETLP2P :
+			          ((typeof window !== 'undefined') ? window.ETLP2P : null);
+			if (!api || typeof api.receive !== 'function')
+			{
+				return -1;              // no transport on this page at all
+			}
+			var pkt;
+			try {
+				pkt = api.receive();
+			} catch (e) {
+				return -1;
+			}
+			if (!pkt || !pkt.data)
+			{
+				return 0;               // nothing pending
+			}
+			if (pkt.data.length < 1 || pkt.data.length > $1)
+			{
+				return -2;              // unusable, but keep draining
+			}
+			HEAPU8.set(pkt.data, $0);
+			HEAP32[$2 >> 2] = pkt.peer | 0;
+			return pkt.data.length;
+		}, buf, (int)sizeof(buf), &peer);
+
+		if (length == -2)
+		{
+			Com_DPrintf("WS_P2PPump: dropped an oversized/empty peer packet\n");
+			continue;
+		}
+
+		if (length <= 0)
+		{
+			break;
+		}
+
+		if (peer < 1 || peer > WS_MAX_P2P_PEERS)
+		{
+			Com_DPrintf("WS_P2PPump: packet from out-of-range peer %d\n", peer);
+			continue;
+		}
+
+		WS_AdrForP2PPeer(peer, &from);
+		WS_QueuePacket(buf, length, &from);
+	}
+}
+
+/**
  * @brief WebSocket message callback
  */
 static EM_BOOL WS_OnMessage(int eventType, const EmscriptenWebSocketMessageEvent *wsEvent, void *userData)
@@ -129,6 +457,7 @@ static EM_BOOL WS_OnMessage(int eventType, const EmscriptenWebSocketMessageEvent
 
 	if (!wsEvent->isText && wsEvent->numBytes > 0)
 	{
+		conn->lastUsed = Sys_Milliseconds();
 		WS_QueuePacket(wsEvent->data, wsEvent->numBytes, &conn->remoteAddr);
 	}
 
@@ -188,9 +517,76 @@ static EM_BOOL WS_OnClose(int eventType, const EmscriptenWebSocketCloseEvent *ws
 		conn->active       = qfalse;
 		conn->open         = qfalse;
 		conn->pendingCount = 0;
+		// Release the browser-side socket object as well; without this the
+		// handle (and its buffers) leaked for every closed connection.
+		if (conn->socket > 0)
+		{
+			emscripten_websocket_delete(conn->socket);
+			conn->socket = 0;
+		}
 	}
 
 	return EM_TRUE;
+}
+
+/**
+ * @brief Close a connection slot and release its browser-side socket
+ *
+ * Used both when a slot is recycled (see WS_GetConnection) and at shutdown.
+ * The onclose callback still fires afterwards, but it is harmless: the slot is
+ * already marked inactive and its socket handle cleared.
+ */
+static void WS_CloseConnection(wsConnection_t *conn)
+{
+	if (!conn)
+	{
+		return;
+	}
+
+	if (conn->socket > 0)
+	{
+		emscripten_websocket_close(conn->socket, 1000, "recycled");
+		emscripten_websocket_delete(conn->socket);
+	}
+
+	conn->socket       = 0;
+	conn->active       = qfalse;
+	conn->open         = qfalse;
+	conn->pendingCount = 0;
+}
+
+/**
+ * @brief Close connections that only ever carried out-of-band traffic and have
+ *        been idle for WS_IDLE_TIMEOUT
+ *
+ * The engine opens one WebSocket per remote address, so a server-list refresh
+ * leaves one socket per pinged server (and one UDP socket per client on the
+ * relay) behind. Releasing them again keeps slots available for the address the
+ * player actually wants to reach. Connections that carried a sequenced netchan
+ * packet are never touched here: a long map load can keep the engine from
+ * sending anything for far longer than the timeout without the game connection
+ * being dead.
+ */
+static void WS_ReapIdleConnections(void)
+{
+	int now = Sys_Milliseconds();
+	int i;
+
+	for (i = 0; i < MAX_WS_CONNECTIONS; i++)
+	{
+		wsConnection_t *conn = &wsConnections[i];
+
+		if (!conn->active || conn->sequenced)
+		{
+			continue;
+		}
+
+		if (now - conn->lastUsed >= WS_IDLE_TIMEOUT)
+		{
+			Com_DPrintf("WS_ReapIdleConnections: closing idle %s\n", conn->url);
+			WS_CloseConnection(conn);
+		}
+	}
 }
 
 /**
@@ -206,6 +602,7 @@ static wsConnection_t *WS_GetConnection(const netadr_t *to)
 	{
 		if (wsConnections[i].active && NET_CompareAdr(&wsConnections[i].remoteAddr, to))
 		{
+			wsConnections[i].lastUsed = Sys_Milliseconds();
 			return &wsConnections[i];
 		}
 	}
@@ -221,23 +618,68 @@ static wsConnection_t *WS_GetConnection(const netadr_t *to)
 
 	if (i == MAX_WS_CONNECTIONS)
 	{
-		Com_Printf("WS_GetConnection: no free WebSocket slots\n");
-		return NULL;
+		// All slots are in use. Rather than refusing the new address - which
+		// used to make every connect after a server-list refresh fail - drop
+		// the least recently used connection and take its slot. Prefer a slot
+		// that only ever carried out-of-band traffic (a server-list ping, a
+		// master query): the browser's server list re-pings anything it still
+		// cares about, while dropping the game connection would disconnect the
+		// player mid-match. Only when every slot belongs to a real game
+		// connection is the global LRU used.
+		int oldest    = -1;
+		int oldestAge = 0;
+		int pass;
+
+		// pass 0: only slots that never carried netchan traffic
+		// pass 1: any slot (every slot is a game connection)
+		for (pass = 0; pass < 2 && oldest < 0; pass++)
+		{
+			for (i = 0; i < MAX_WS_CONNECTIONS; i++)
+			{
+				if (pass == 0 && wsConnections[i].sequenced)
+				{
+					continue;
+				}
+
+				if (oldest < 0 || wsConnections[i].lastUsed < oldestAge)
+				{
+					oldestAge = wsConnections[i].lastUsed;
+					oldest    = i;
+				}
+			}
+		}
+
+		if (oldest < 0)
+		{
+			Com_Printf("WS_GetConnection: no WebSocket slot available\n");
+			return NULL;
+		}
+
+		i = oldest;
+		Com_DPrintf("WS_GetConnection: recycling slot %d (%s)\n", i, wsConnections[i].url);
+		WS_CloseConnection(&wsConnections[i]);
 	}
 
-	// Build WebSocket URL using the relay server
-	if (net_wsRelayServer && net_wsRelayServer->string[0])
+	// Build WebSocket URL using the relay server. A synthetic 240.0.0.0/8
+	// address stands for a hostname the browser could not resolve; the relay
+	// is given the name and resolves it.
 	{
-		Com_sprintf(url, sizeof(url), "%s/%d.%d.%d.%d:%d",
-		            net_wsRelayServer->string,
-		            to->ip[0], to->ip[1], to->ip[2], to->ip[3],
-		            BigShort(to->port));
-	}
-	else
-	{
-		Com_sprintf(url, sizeof(url), WS_DEFAULT_RELAY_URL "/%d.%d.%d.%d:%d",
-		            to->ip[0], to->ip[1], to->ip[2], to->ip[3],
-		            BigShort(to->port));
+		const char *relay    = (net_wsRelayServer && net_wsRelayServer->string[0]) ?
+		                       net_wsRelayServer->string : WS_DEFAULT_RELAY_URL;
+		const char *hostname = WS_HostnameForAdr(to);
+		char       target[MAX_QPATH];
+
+		if (hostname)
+		{
+			Q_strncpyz(target, hostname, sizeof(target));
+		}
+		else
+		{
+			Com_sprintf(target, sizeof(target), "%d.%d.%d.%d",
+			            to->ip[0], to->ip[1], to->ip[2], to->ip[3]);
+		}
+
+		Com_sprintf(url, sizeof(url), "%s/%s:%d", relay, target, BigShort(to->port));
 	}
 
 	// Create WebSocket
@@ -260,6 +702,8 @@ static wsConnection_t *WS_GetConnection(const netadr_t *to)
 	wsConnections[i].active       = qtrue;
 	wsConnections[i].open         = qfalse;
 	wsConnections[i].pendingCount = 0;
+	wsConnections[i].lastUsed     = Sys_Milliseconds();
+	wsConnections[i].sequenced    = qfalse;
 	Com_Memcpy(&wsConnections[i].remoteAddr, to, sizeof(netadr_t));
 	Q_strncpyz(wsConnections[i].url, url, sizeof(wsConnections[i].url));
 
@@ -371,8 +815,17 @@ const char *NET_AdrToStringNoPort(const netadr_t *a)
 	}
 	else if (a->type == NA_IP)
 	{
-		Com_sprintf(s, sizeof(s), "%i.%i.%i.%i",
-		            a->ip[0], a->ip[1], a->ip[2], a->ip[3]);
+		const char *hostname = WS_HostnameForAdr(a);
+
+		if (hostname)
+		{
+			Com_sprintf(s, sizeof(s), "%s", hostname);
+		}
+		else
+		{
+			Com_sprintf(s, sizeof(s), "%i.%i.%i.%i",
+			            a->ip[0], a->ip[1], a->ip[2], a->ip[3]);
+		}
 	}
 	else
 	{
@@ -397,9 +850,18 @@ const char *NET_AdrToString(const netadr_t *a)
 	}
 	else if (a->type == NA_IP)
 	{
-		Com_sprintf(s, sizeof(s), "%i.%i.%i.%i:%hu",
-		            a->ip[0], a->ip[1], a->ip[2], a->ip[3],
-		            BigShort(a->port));
+		const char *hostname = WS_HostnameForAdr(a);
+
+		if (hostname)
+		{
+			Com_sprintf(s, sizeof(s), "%s:%hu", hostname, BigShort(a->port));
+		}
+		else
+		{
+			Com_sprintf(s, sizeof(s), "%i.%i.%i.%i:%hu",
+			            a->ip[0], a->ip[1], a->ip[2], a->ip[3],
+			            BigShort(a->port));
+		}
 	}
 	else
 	{
@@ -435,16 +897,21 @@ qboolean Sys_StringToAdr(const char *s, netadr_t *a, netadrtype_t family)
 		port++;
 	}
 
+	Com_Memset(a->ip, 0, sizeof(a->ip));
 	a->type = NA_IP;
 
 	if (sscanf(base, "%hhu.%hhu.%hhu.%hhu", &a->ip[0], &a->ip[1], &a->ip[2], &a->ip[3]) != 4)
 	{
-		// The browser has no DNS resolver for raw sockets; the relay is
-		// addressed by URL but game servers must be given as numeric IPs.
-		Com_Printf("Sys_StringToAdr: cannot resolve '%s' - the browser build "
-		           "cannot resolve hostnames, use a numeric IP (e.g. 203.0.113.10:27960)\n", base);
-		a->type = NA_BAD;
-		return qfalse;
+		// Not a numeric IP. The browser has no DNS resolver for raw sockets,
+		// but the relay does: give the hostname a synthetic address here and
+		// hand the name itself to the relay when the WebSocket URL is built
+		// (see WS_GetConnection). This is what makes "etclan.de:27966" work.
+		if (!WS_IsValidHostname(base) || !WS_AdrForHostname(base, a))
+		{
+			Com_Printf("Sys_StringToAdr: cannot resolve '%s' - not a valid IP or hostname\n", base);
+			a->type = NA_BAD;
+			return qfalse;
+		}
 	}
 
 	if (port)
@@ -590,11 +1057,48 @@ void Sys_SendPacket(int length, const void *data, const netadr_t *to)
 		return;
 	}
 
+	// A game hosted in a browser is reached over a WebRTC data channel, not
+	// through the relay - see the WS_P2PADDR_PREFIX block at the top.
+	if (WS_IsP2PAdr(to))
+	{
+		int peer = WS_P2PPeerForAdr(to);
+
+		if (!peer)
+		{
+			Com_DPrintf("Sys_SendPacket: bad peer address %s\n", NET_AdrToString(to));
+			return;
+		}
+
+		if (!WS_P2PSend(peer, data, length))
+		{
+			Com_DPrintf("Sys_SendPacket: peer %d unreachable, packet dropped\n", peer);
+		}
+		return;
+	}
+
 	conn = WS_GetConnection(to);
 	if (!conn)
 	{
 		return;
 	}
+
+	// Connectionless packets start with the -1 sequence marker (server browser
+	// pings, master queries, getchallenge/connect). Anything else is netchan
+	// traffic, i.e. this address is a game connection that must survive both
+	// the idle reaper and slot recycling - see WS_ReapIdleConnections and
+	// WS_GetConnection.
+	if (length >= 4)
+	{
+		int sequence;
+
+		Com_Memcpy(&sequence, data, sizeof(sequence));
+		if (sequence != -1)
+		{
+			conn->sequenced = qtrue;
+		}
+	}
+
+	conn->lastUsed = Sys_Milliseconds();
 
 	if (!conn->open)
 	{
@@ -652,9 +1156,7 @@ void NET_Shutdown(void)
 	{
 		if (wsConnections[i].active)
 		{
-			emscripten_websocket_close(wsConnections[i].socket, 1000, "shutdown");
-			emscripten_websocket_delete(wsConnections[i].socket);
-			wsConnections[i].active = qfalse;
+			WS_CloseConnection(&wsConnections[i]);
 		}
 	}
 
@@ -680,6 +1182,11 @@ void NET_Event(fd_set *fdr)
 	netadr_t from;
 	msg_t    netmsg;
 
+	// The WebSocket transport queues from its own callbacks; the peer-to-peer
+	// transport is a JavaScript object the engine has to poll, so drain it here
+	// before anything is dispatched.
+	WS_P2PPump();
+
 	while (1)
 	{
 		MSG_Init(&netmsg, bufData, sizeof(bufData));
@@ -700,6 +1207,8 @@ void NET_Event(fd_set *fdr)
 			break;
 		}
 	}
+
+	WS_ReapIdleConnections();
 }
 
 /*

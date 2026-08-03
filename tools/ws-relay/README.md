@@ -36,6 +36,15 @@ node relay.js --tls-cert /path/cert.pem --tls-key /path/key.pem
    ws://relay-server:8080/<game-server-ip>:<game-server-port>
    ```
 
+   The target may be a numeric IP **or a hostname** (`ws://relay:8080/etclan.de:27966`).
+   The browser cannot resolve names itself, so the relay does the DNS lookup.
+
+   The target can also be passed as a query parameter, which makes the relay a
+   drop-in replacement for simple UDP-gateway scripts:
+   ```
+   ws://relay-server:8080/?target=<game-server-ip>:<game-server-port>
+   ```
+
 2. The relay opens a UDP socket and forwards packets bidirectionally:
    - Browser → WebSocket → Relay → UDP → Game Server
    - Game Server → UDP → Relay → WebSocket → Browser
@@ -50,6 +59,8 @@ node relay.js --tls-cert /path/cert.pem --tls-key /path/key.pem
 | `--host` | 0.0.0.0 | WebSocket listen host |
 | `--tls-cert` | _(none)_ | TLS certificate (PEM); enables `wss://` |
 | `--tls-key` | _(none)_ | TLS private key (PEM); enables `wss://` |
+| `--timeout` | 120 | Idle timeout in seconds (no traffic in either direction) |
+| `--max-connections` | 128 | Maximum simultaneous connections |
 
 Provide **both** `--tls-cert` and `--tls-key` to accept secure `wss://`
 connections. With neither, the relay serves plain `ws://`.
@@ -102,12 +113,15 @@ shell (`src/web/shell.html`) reads these query parameters:
 |-----------|---------|---------|
 | `assets`  | Base URL to download `pak0-2.pk3` from | `?assets=https://et.clan-etc.de/etmain/` |
 | `relay`   | WebSocket relay URL (`net_wsRelayServer`) | `?relay=wss://relay.example.com` |
-| `connect` | Game server `host:port` to auto-join | `?connect=203.0.113.10:27960` |
+| `connect` | Game server `host:port` to auto-join | `?connect=etclan.de:27966` |
+| `touch`   | Force the on-screen touch controls off/on | `?touch=1` |
 
-Full example:
+`relay` is optional: the shell has a default relay built in (`DEFAULT_RELAY_HOST`
+in `src/web/shell.html`) and picks `ws://` or `wss://` to match the page, so a
+share link normally only needs the server:
 
 ```
-etl.html?relay=wss://relay.example.com&connect=203.0.113.10:27960
+etl.html?connect=etclan.de:27966
 ```
 
 ## Hosting a game others can join
@@ -127,13 +141,63 @@ relay.
    relay, and joins the server — multiple browser players can join the same
    server at once (each gets its own UDP socket on the relay side).
 
+## Reliability
+
+The relay is built to stay up: a broken client must never take down the other
+players.
+
+- Every connection is torn down exactly once (WebSocket close, WebSocket error,
+  UDP error, idle timeout and shutdown all share one idempotent teardown), so a
+  UDP socket is never closed twice (this used to crash the process with
+  `ERR_SOCKET_DGRAM_NOT_RUNNING`).
+- Uncaught exceptions and unhandled promise rejections are logged, not fatal.
+- A WebSocket ping/pong heartbeat (every 15s) drops half-open connections whose
+  peer vanished without sending a close frame.
+- UDP datagrams that do not come from the requested game server are ignored.
+- Packets arriving before the UDP socket finished binding are queued instead of
+  dropped, so the initial connection handshake is not lost.
+- `SIGINT`/`SIGTERM` shut down cleanly, with a 5s fallback so shutdown cannot
+  hang.
+- Startup is fail-fast: `Listening on …` is printed from the socket's
+  `listening` event, and a relay that cannot bind (`EADDRINUSE` after a restart
+  that was too quick, `EACCES` on a privileged port) exits with status 1
+  instead of staying up relaying nothing. A process manager restarts it, and
+  the banner in the log means the relay really is accepting connections.
+
+Raise `--timeout` if you want idle spectators to stay connected longer; lower it
+to reclaim sockets faster.
+
+## Tests
+
+`test-relay.mjs` exercises the whole path - WebSocket client → relay → UDP game
+server - against a stand-in server that answers ET's out-of-band `getinfo`
+query, which is the same exchange a client uses to ping a server:
+
+```bash
+npm --prefix tools/ws-relay install
+node tools/ws-relay/test-relay.mjs        # or: npm --prefix tools/ws-relay test
+```
+
+It covers both URL forms (`/<host>:<port>` and `/?target=<host>:<port>`), the
+hostname form that needs the relay's DNS lookup, a packet sent before the UDP
+socket has finished binding, several packets in a row on one connection, **two
+clients playing on the same server at once** (each gets its own UDP source
+port, a server push reaches only the client it is addressed to, and one player
+leaving does not disturb the other), the rejection of datagrams from anything
+but the target server, the rejection of malformed targets (close code 1008),
+the `--max-connections` limit (close code 1013), the idle-connection reaper and
+a failed bind. It needs no game data and no toolchain, takes about 11 seconds
+(most of it waiting for the idle timeout) and runs in CI as the `relay-test`
+job of `.github/workflows/emscripten.yml`.
+
 ## Deployment
 
 For production use, consider:
 
 - Running behind a reverse proxy (nginx) with TLS (`wss://`)
 - Setting up CORS headers if needed
-- Using a process manager (pm2, systemd) for reliability
+- Using a process manager (pm2, systemd) for reliability, e.g.
+  `pm2 start relay.js -- --port 8080` or a systemd unit with `Restart=always`
 - Deploying near your game servers to minimize latency
 
 ## Latency Considerations
@@ -141,7 +205,14 @@ For production use, consider:
 The WebSocket relay adds latency compared to native UDP:
 - WebSocket uses TCP, which adds ~10-30ms overhead from TCP handshake and head-of-line blocking
 - The relay itself adds minimal processing time (<1ms)
-- For lower latency, consider implementing WebRTC data channels (future work)
+- Nagle's algorithm is disabled on every accepted connection (`setNoDelay`), so
+  the small, frequent game packets are not held back to be coalesced
+- For lower latency, WebRTC data channels (unordered, `maxRetransmits: 0`) would
+  avoid TCP head-of-line blocking altogether. See the "WebRTC data channels"
+  entry in `plan.md` for why that is not implemented yet: it needs a DTLS/SCTP
+  endpoint here (a new native dependency), a hand-written WebRTC transport in
+  the engine (emscripten's own `SOCKET_WEBRTC` is deprecated upstream), and a
+  signalling channel - which would be this WebSocket anyway.
 
 ## License
 
