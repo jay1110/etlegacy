@@ -61,6 +61,13 @@ This produces `etl.html`, `etl.js`, `etl.wasm`, the side modules
 > `CI_ETL_DESCRIBE`/`CI_ETL_TAG` built from `VERSION.txt`, the commit count and
 > the commit hash, so the name is always unique.
 
+> **Editing `src/web/shell.html`:** `emcc` runs the file through its own
+> preprocessor, which treats every line *outside* a `<style>` block whose first
+> non-blank character is `#` as a directive. A comment, a piece of text or a
+> line of JavaScript that starts with `#` therefore fails the build with
+> `Unknown preprocessor directive`; indent or reword such a line (CSS inside
+> `<style>` is passed through untouched, so `#id { … }` rules are fine).
+
 ## 2. Lay out the web directory
 
 Serve a directory with this layout (the CI "Package web release" step builds
@@ -201,6 +208,9 @@ leaving the screen or covering something else:
   whole buttons, on small screens instead of wrapping into a second row or
   pushing itself off screen. In a landscape window shorter than 480 px it hides
   automatically.
+- Nothing ever lies on top of the picture: the game area starts next to the
+  in-game sidebar and below the controls bar and the host banner, all of which
+  publish their current size as a CSS variable the layout is built from.
 - Notches and rounded corners are respected (`viewport-fit=cover` plus the safe
   area insets).
 
@@ -279,7 +289,7 @@ changed at any time in the game's settings panel or in-game with
 `/bot minbots <n>` and `/bot maxbots <n>`.
 
 Alternatively, configure everything from the page URL (which skips the menu)
-or from the in-page **Connect…** panel (bottom controls bar):
+or from the in-page **Connect…** panel (controls bar at the top edge):
 
 | Parameter | Purpose | Example |
 |-----------|---------|---------|
@@ -304,6 +314,21 @@ https://your-page/etl.html?relay=wss://relay.example.com:8443&connect=203.0.113.
 Multiple browser players can open the same link and join the same server; each
 gets its own UDP socket on the relay side.
 
+### The controls bar (desktop)
+
+**Fullscreen**, **Capture Mouse**, **Connect…**, **Console** and (on a touch
+monitor) **Touch controls** live in a bar at the top edge of the page. It stays
+out of the way while you play:
+
+- Closed, all that is left of it is a flat indicator strip with a **▾** in the
+  middle.
+- Moving the pointer onto that strip opens the bar; moving the pointer off the
+  bar closes it again.
+- **✕** at the right end closes it without having to leave it first — useful
+  when a mouse was dragged out of the window and left the bar open.
+- The bar never covers the picture: the game area always starts underneath
+  whatever the bar currently needs.
+
 ### Mouse capture (desktop)
 
 The game only captures the mouse when you ask for it: click into the game area
@@ -322,7 +347,7 @@ instead.
 
 Devices that are *played* by touch (the primary pointer is a finger, not a
 mouse) are detected automatically; force it either way with `?touch=1` or
-`?touch=0`. There, the bottom controls bar is replaced by icons in the slim
+`?touch=0`. There, the controls bar is replaced by icons in the slim
 left sidebar — **⛶** fullscreen, **⇄** connect, **›_** console and **◎** touch
 controls — and the game area starts next to that sidebar instead of below it,
 so nothing covers the picture.
@@ -416,9 +441,21 @@ announced in the lobby together with the rest of the room.
 
 Once the game runs, a narrow column on the left has an **✕** button (leave the
 game — after a confirmation; if the host leaves, everybody is returned to the
-launcher), a **⚙** button (current map, player count and the map rotation; every
-setting above can be changed and any map of the rotation can be played
-immediately while the game runs) and a **🔗** button that copies the invite link.
+launcher), a **⚙** button (current map, player count and the map rotation) and a
+**🔗** button that copies the invite link.
+
+The **⚙** panel has the same **Basic** / **Advanced** split as the host form, so
+every setting listed above can be changed while the game runs, and any map of
+the rotation can be played immediately. Two things behave differently there:
+
+- The **mod** is only shown, not changed: `fs_game` is picked when the engine
+  starts, so another mod means closing the game and hosting a new one.
+- Changing the player slots, the time limit or one of the respawn times
+  restarts the match for everyone — the server reads those when a match starts.
+  Everything else takes effect right away.
+
+The applied values are remembered for the tab as well, so a map change (which
+reloads the page, see below) comes back up with exactly what was set here.
 
 The invite link is also written into the browser's address bar
 (`?join=<room>`), so it can be copied straight from there. It also means a host
