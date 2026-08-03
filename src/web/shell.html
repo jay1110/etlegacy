@@ -27,6 +27,14 @@
                          inset by it so nothing ever lies on top of the game
            --top-inset   height of the host banner while it is shown, so the
                          panels below it start underneath instead of behind it
+           --controls-tab-h  height of the flat indicator the closed controls
+                         bar leaves at the top edge
+           --controls-h  height the controls bar needs right now (0 while it is
+                         hidden, the indicator while it is closed, the whole bar
+                         while it is open). The game area and the panels under
+                         it start below that, so the bar never covers the game.
+                         It is measured and published by the page - see the
+                         controls-bar script.
         */
         :root {
             --vh: 100vh;
@@ -34,6 +42,8 @@
             --gap: clamp(8px, 2.2vmin, 24px);
             --sidebar-w: 56px;
             --top-inset: 0px;
+            --controls-tab-h: 14px;
+            --controls-h: 0px;
         }
 
         @supports (height: 100dvh) {
@@ -67,6 +77,9 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            /* The controls bar lies at the top edge; the game starts below it
+               so the bar (open or closed) never covers the picture. */
+            padding-top: var(--controls-h);
         }
 
         /* The sidebar must never lie on top of the game: while it is shown the
@@ -211,41 +224,100 @@
         }
 
         /* --- Controls bar ---------------------------------------------
-           The bottom bar of the desktop layout. It is invisible until the
-           mouse is over it and disappears again the instant the pointer
-           leaves (the fade only applies while appearing - a fade-out would
-           keep the bar on screen after the mouse is long gone). It never
-           overlaps the sidebar, and while a launcher page is open it is gone
-           completely: it lies above the launcher, so even an invisible bar
-           would swallow clicks meant for the buttons underneath. */
+           The control bar of the desktop layout. It sits at the top edge -
+           above the game, never on top of it: the game area starts below
+           whatever the bar currently needs (--controls-h).
+
+           Closed, the bar is nothing but a flat indicator strip. Moving the
+           pointer onto that strip opens the bar, leaving the bar closes it
+           again, and the X inside it closes it without having to leave it
+           first. It never overlaps the sidebar, and while a launcher page is
+           open it is gone completely: it lies above the launcher, so even an
+           invisible bar would swallow clicks meant for the buttons
+           underneath. */
         #controls-bar {
             position: fixed;
-            bottom: 0;
+            top: var(--top-inset);
             left: 0;
             right: 0;
-            background-color: rgba(26, 26, 46, 0.9);
-            padding: clamp(4px, 1vh, 8px) clamp(6px, 1.4vw, 16px);
             display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: clamp(6px, 1.2vw, 16px);
+            flex-direction: column;
             /* Above #touch-overlay (900): the touch overlay's look area covers
                the whole viewport, so with a lower z-index the controls bar
                (including the button that turns the overlay back off) became
                unclickable as soon as the overlay was switched on. */
             z-index: 950;
-            border-top: 1px solid #333;
-            opacity: 0;
-            transition: opacity 0s;
-        }
-
-        #controls-bar:hover {
-            opacity: 1;
-            transition: opacity 0.25s ease;
         }
 
         body.sidebar-visible #controls-bar {
             left: var(--sidebar-w);
+        }
+
+        /* The bar itself: only there while it is open. */
+        #controls-panel {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            gap: clamp(6px, 1.2vw, 16px);
+            padding: clamp(4px, 1vh, 8px) clamp(6px, 1.4vw, 16px);
+            background-color: rgba(26, 26, 46, 0.95);
+            border-bottom: 1px solid #333;
+        }
+
+        #controls-bar.open #controls-panel {
+            display: flex;
+        }
+
+        /* The flat indicator: all that is left of the bar while it is closed,
+           and what opens it again. */
+        #controls-handle {
+            flex: none;
+            height: var(--controls-tab-h);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            background: linear-gradient(180deg,
+                        rgba(26, 26, 46, 0.92), rgba(26, 26, 46, 0.45));
+            border: none;
+            border-bottom: 1px solid #333;
+            color: #8a8aa8;
+            font-size: 10px;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        #controls-handle:hover {
+            color: #c4a000;
+        }
+
+        #controls-handle span {
+            display: block;
+            transition: transform 0.2s ease;
+        }
+
+        #controls-bar.open #controls-handle span {
+            transform: rotate(180deg);
+        }
+
+        /* Closes the bar while the pointer is still on it. */
+        #controls-close {
+            flex: none;
+            width: 26px;
+            height: 26px;
+            padding: 0;
+            background: none;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #ccc;
+            font-size: 13px;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        #controls-close:hover {
+            border-color: #c4a000;
+            color: #fff;
         }
 
         /* The buttons share the space that is left over, so they shrink with
@@ -266,9 +338,9 @@
             text-overflow: ellipsis;
         }
 
-        /* On mobile the bottom bar is gone entirely: it wastes screen space,
-           sits under the touch controls and cannot be "hovered" on a
-           touchscreen anyway. Its actions live in the sidebar instead. */
+        /* On mobile the bar is gone entirely: it wastes screen space, sits
+           under the touch controls and cannot be "hovered" on a touchscreen
+           anyway. Its actions live in the sidebar instead. */
         body.etl-mobile #controls-bar,
         body.launcher-open #controls-bar {
             display: none;
@@ -496,7 +568,9 @@
             left: 0;
             right: 0;
             height: min(240px, 45vh);
-            max-height: calc(var(--vh) - var(--top-inset));
+            /* Never taller than the space under the host banner and the
+               controls bar at the top edge. */
+            max-height: calc(var(--vh) - var(--top-inset) - var(--controls-h));
             background-color: rgba(0, 0, 0, 0.85);
             font-family: 'Courier New', monospace;
             font-size: clamp(10px, 1.6vmin, 12px);
@@ -506,14 +580,9 @@
             border-top: 1px solid #333;
         }
 
-        /* Never under the sidebar, and never under the (hover-only) controls
-           bar on a desktop - the input line has to stay usable. */
+        /* Never under the sidebar - the input line has to stay usable. */
         body.sidebar-visible #console-panel {
             left: var(--sidebar-w);
-        }
-
-        body:not(.etl-mobile) #console-panel {
-            bottom: 40px;
         }
 
         #console-output {
@@ -790,6 +859,12 @@
 
         .check-row label {
             min-width: 0;
+            margin: 0;
+            /* Always a one-liner: a label that is allowed to wrap turns into a
+               column of single letters as soon as the row gets narrow. */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         /* One hosted game in the "Join games" list. */
@@ -957,7 +1032,10 @@
            launcher pages: header, scrolling body, footer that stays put. */
         #game-panel {
             position: fixed;
-            top: var(--top-inset);
+            /* Under the host banner and under the controls bar: both would be
+               reachable at the same time otherwise, and the bar would end up
+               underneath the panel. */
+            top: calc(var(--top-inset) + var(--controls-h));
             left: var(--sidebar-w);
             bottom: 0;
             width: min(380px, calc(100% - var(--sidebar-w)));
@@ -972,12 +1050,6 @@
 
         #game-panel.active {
             display: flex;
-        }
-
-        /* Never over the (hover-only) controls bar on a desktop: both would be
-           reachable at the same time, and the bar would end up underneath. */
-        body:not(.etl-mobile) #game-panel {
-            bottom: 40px;
         }
 
         #game-panel > h2 {
@@ -1027,6 +1099,25 @@
             border: 1px solid #444;
             border-radius: 4px;
             font-size: clamp(0.78rem, 1.8vmin, 0.9rem);
+        }
+
+        /* A checkbox is not a text field: the rule above would stretch it over
+           the whole row (id selectors beat the .check-row class), leaving the
+           label with almost no width - which is what printed "Private room..."
+           as a column of single letters at the right edge. It stays a box of
+           its own size so the row is one line: checkbox, label, done. */
+        #game-panel .check-row input {
+            width: auto;
+            flex: none;
+            margin: 0;
+        }
+
+        /* A setting that cannot be changed while the game runs (the mod). It is
+           shown rather than hidden, so the panel always says what is played. */
+        #game-panel input[readonly] {
+            color: #9a9ab0;
+            border-style: dashed;
+            cursor: default;
         }
 
         #game-panel .hint {
@@ -1701,8 +1792,10 @@
             }
         }
 
-        /* Phone-sized landscape: the bottom controls bar would eat a third of
-           the picture, so the sidebar carries the same actions instead. */
+        /* Phone-sized landscape: the controls bar would eat into the picture,
+           so the sidebar carries the same actions instead. The bar is hidden
+           here, so --controls-h is 0 and everything that is inset by it (the
+           game area, the settings panel, the console) uses the full height. */
         @media (orientation: landscape) and (max-height: 480px) {
             #controls-bar {
                 display: none;
@@ -1710,11 +1803,6 @@
 
             #console-panel {
                 height: min(180px, 60vh);
-            }
-
-            body:not(.etl-mobile) #console-panel,
-            body:not(.etl-mobile) #game-panel {
-                bottom: 0;
             }
         }
     </style>
@@ -1800,19 +1888,31 @@
                aria-label="Keyboard input">
     </div>
 
-    <!-- Controls bar -->
+    <!-- Controls bar: at the top edge, above the game. Closed it is only the
+         flat indicator at its bottom; the pointer touching that indicator
+         opens the bar, leaving the bar closes it and the X closes it without
+         leaving it (see the #controls-bar rules and the script below). -->
     <div id="controls-bar">
-        <div id="controls-actions">
-            <button class="control-btn" onclick="etlRequestFullscreen()">Fullscreen</button>
-            <button class="control-btn" onclick="etlRequestPointerLock()">Capture Mouse</button>
-            <button class="control-btn" onclick="openConnectPanel()">Connect...</button>
-            <button class="control-btn" onclick="toggleConsole()">Console</button>
-            <button class="control-btn" id="touch-toggle" style="display:none"
-                    onclick="etlToggleTouchControls()">Touch controls</button>
+        <div id="controls-panel">
+            <div id="controls-actions">
+                <button class="control-btn" onclick="etlRequestFullscreen()">Fullscreen</button>
+                <button class="control-btn" onclick="etlRequestPointerLock()">Capture Mouse</button>
+                <button class="control-btn" onclick="openConnectPanel()">Connect...</button>
+                <button class="control-btn" onclick="toggleConsole()">Console</button>
+                <button class="control-btn" id="touch-toggle" style="display:none"
+                        onclick="etlToggleTouchControls()">Touch controls</button>
+            </div>
+            <div id="controls-info">
+                Click the game to capture mouse | ESC to release
+            </div>
+            <button type="button" id="controls-close"
+                    title="Hide the controls">&#10005;</button>
         </div>
-        <div id="controls-info">
-            Click the game to capture mouse | ESC to release | Move mouse to show controls
-        </div>
+        <button type="button" id="controls-handle" aria-expanded="false"
+                aria-controls="controls-panel"
+                title="Controls - move the mouse here to show them">
+            <span aria-hidden="true">&#9662;</span>
+        </button>
     </div>
 
     <!-- In-game sidebar: shown while a game is running. Narrow column on the
@@ -1854,35 +1954,116 @@
         <div id="invite-link"></div>
 
         <div id="game-host-settings">
-            <label for="game-map">Map rotation (up to 10 maps)</label>
-            <div class="map-picker">
-                <select id="game-map"></select>
-                <button class="control-btn" type="button" id="game-map-add">Add</button>
+            <!-- Same Basic / Advanced split as the "Host game" page, so every
+                 setting that can be picked before a game starts can also be
+                 changed while it runs. -->
+            <div class="settings-tabs" role="tablist">
+                <button class="settings-tab active" type="button" id="game-tab-basic"
+                        role="tab" aria-selected="true" aria-controls="game-basic">Basic</button>
+                <button class="settings-tab" type="button" id="game-tab-advanced"
+                        role="tab" aria-selected="false" aria-controls="game-advanced">Advanced</button>
             </div>
-            <div id="game-rotation" class="rotation-list"></div>
-            <label for="game-name">Room name</label>
-            <input id="game-name" type="text" maxlength="64" autocomplete="off">
-            <label for="game-maxplayers">Max players (2 - 32)</label>
-            <input id="game-maxplayers" type="number" min="2" max="32">
-            <label for="game-bots">Bots (0 - 31)</label>
-            <input id="game-bots" type="number" min="0" max="31">
-            <label for="game-timelimit">Time limit in minutes (0 = map default)</label>
-            <input id="game-timelimit" type="number" min="0" max="1440">
-            <div class="check-row">
-                <input id="game-private" type="checkbox">
-                <label for="game-private" style="margin:0">Private room (not listed, invite link only)</label>
+
+            <div class="settings-group active" id="game-basic" role="tabpanel"
+                 aria-labelledby="game-tab-basic">
+                <label for="game-map">Map rotation (up to 10 maps)</label>
+                <div class="map-picker">
+                    <select id="game-map"></select>
+                    <button class="control-btn" type="button" id="game-map-add">Add</button>
+                </div>
+                <div id="game-rotation" class="rotation-list"></div>
+                <label for="game-name">Room name</label>
+                <input id="game-name" type="text" maxlength="64" autocomplete="off">
+                <label for="game-maxplayers">Max players (2 - 32)</label>
+                <input id="game-maxplayers" type="number" min="2" max="32">
+                <label for="game-bots">Bots (0 - 31)</label>
+                <input id="game-bots" type="number" min="0" max="31">
+                <label for="game-timelimit">Time limit in minutes (0 = map default)</label>
+                <input id="game-timelimit" type="number" min="0" max="1440">
+                <div class="check-row">
+                    <input id="game-private" type="checkbox">
+                    <label for="game-private"
+                           title="Private room: not listed in the game list, joinable with the invite link only">Private room (invite link only)</label>
+                </div>
+                <div class="hint">
+                    The maps are played in the order listed above and start over at
+                    the top when the last one is finished. "Play now" jumps straight
+                    to the map selected in the drop-down and continues the rotation
+                    from there. Changing the player slots or the time limit restarts
+                    the match for everyone. A map that is not a stock map is
+                    downloaded first.
+                </div>
             </div>
+
+            <div class="settings-group" id="game-advanced" role="tabpanel"
+                 aria-labelledby="game-tab-advanced">
+                <label for="game-mod">Mod</label>
+                <input id="game-mod" type="text" readonly tabindex="-1">
+                <div class="setting-hint">
+                    The mod is chosen when the game is started and cannot be
+                    swapped while it runs - close this game and host a new one to
+                    play another one.
+                </div>
+
+                <div class="check-row">
+                    <input id="game-balancedteams" type="checkbox">
+                    <label for="game-balancedteams">g_balancedTeams</label>
+                </div>
+                <div class="setting-hint">
+                    Default off. When enabled, players are prevented from joining
+                    the team with more players. (The game derives the read-only
+                    <code>g_balancedteams</code> from
+                    <code>g_teamForceBalance</code>, which is what this sets.)
+                </div>
+
+                <div class="check-row">
+                    <input id="game-dowarmup" type="checkbox">
+                    <label for="game-dowarmup">g_doWarmup</label>
+                </div>
+                <div class="setting-hint">
+                    Default on. Whether the server should require players to be
+                    ready before a match can start.
+                </div>
+
+                <div class="check-row">
+                    <input id="game-friendlyfire" type="checkbox">
+                    <label for="game-friendlyfire">g_friendlyFire</label>
+                </div>
+                <div class="setting-hint">
+                    Default on. Enables teammates to hurt each other.
+                </div>
+
+                <label for="game-warmup">g_warmup</label>
+                <input id="game-warmup" type="number" min="1" max="3600">
+                <div class="setting-hint">
+                    Default 60. The length of time the warmup lasts prior to a
+                    match starting, in seconds.
+                </div>
+
+                <label for="game-alliedrespawn">g_userAlliedRespawnTime</label>
+                <input id="game-alliedrespawn" type="number" min="0" max="300">
+                <div class="setting-hint">
+                    Default 0 (the map's own time). Any higher value sets the
+                    Allied respawn time in seconds.
+                </div>
+
+                <label for="game-axisrespawn">g_userAxisRespawnTime</label>
+                <input id="game-axisrespawn" type="number" min="0" max="300">
+                <div class="setting-hint">
+                    Default 0 (the map's own time). Any higher value sets the Axis
+                    respawn time in seconds.
+                </div>
+
+                <div class="hint">
+                    "Apply" hands these settings to the running game. The respawn
+                    times are read when a match starts, so changing one of them
+                    restarts the match for everyone.
+                </div>
+            </div>
+
             <div class="launcher-actions">
                 <button class="control-btn" type="button" id="game-apply">Apply</button>
                 <button class="control-btn" type="button" id="game-changemap">Play now</button>
-            </div>
-            <div class="hint">
-                The maps are played in the order listed above and start over at
-                the top when the last one is finished. "Play now" jumps straight
-                to the map selected in the drop-down and continues the rotation
-                from there. Changing the player slots or the time limit restarts
-                the match for everyone. A map that is not a stock map is
-                downloaded first.
             </div>
         </div>
 
@@ -1957,8 +2138,13 @@
                     <img id="home-logo" src="https://www.etlegacy.com/images/logo.png"
                          alt="ET: Legacy" referrerpolicy="no-referrer">
                     <!-- Only shown when the logo could not be loaded (see the
-                         #home-header.no-logo rules): the logo already carries
-                         the name, so repeating it under it is noise. -->
+                         no-logo rules of #home-header in the stylesheet): the
+                         logo already carries the name, so repeating it under
+                         it is noise.
+                         NOTE: no line outside the <style> block may start with
+                         "#" - Emscripten's shell preprocessor reads such a
+                         line as a preprocessor directive and the build fails
+                         with "Unknown preprocessor directive". -->
                     <div class="home-title">ET: Legacy</div>
                 </div>
                 <div class="home-buttons">
@@ -2098,7 +2284,8 @@
                     <input id="host-timelimit" type="number" value="0" min="0" max="1440">
                     <div class="check-row">
                         <input id="host-private" type="checkbox">
-                        <label for="host-private" style="margin:0">Private room (not listed, joinable with the invite link only)</label>
+                        <label for="host-private"
+                               title="Private room: not listed in the game list, joinable with the invite link only">Private room (not listed, invite link only)</label>
                     </div>
                     <div class="launcher-hint" id="host-hint">
                         The game runs inside your browser and is announced in the lobby,
@@ -2981,6 +3168,9 @@
                 }
                 document.body.setAttribute('data-home-layout', layout);
                 document.body.classList.toggle('etl-mobile', etlIsTouchDevice());
+                // The controls bar is hidden on mobile, so the space it insets
+                // at the top edge changes with this class.
+                if (window.etlUpdateControlsInset) { window.etlUpdateControlsInset(); }
             }
             if (document.body) {
                 apply();
@@ -3753,13 +3943,70 @@
         // is only scaled visually via CSS (max-width/max-height above) or the
         // browser Fullscreen API (the Fullscreen button).
 
-        // Show controls bar when mouse moves to bottom of screen
-        document.addEventListener('mousemove', function(e) {
-            var controlsBar = document.getElementById('controls-bar');
-            if (e.clientY > window.innerHeight - 60) {
-                controlsBar.style.opacity = '1';
+        // --- Controls bar --------------------------------------------------
+        // The bar lives at the top edge and is closed by default: all that is
+        // visible then is the flat indicator at its bottom. The pointer
+        // touching the indicator opens the bar, leaving the bar closes it
+        // again and the X closes it while the pointer is still on it (a mouse
+        // that is dragged out of the window, for instance, can leave the bar
+        // open otherwise).
+        //
+        // Whatever the bar needs right now is published as --controls-h. The
+        // game area and the panels underneath start below that, so the bar
+        // never lies on top of the picture - open or closed.
+        (function () {
+            var bar = document.getElementById('controls-bar');
+            if (!bar) { return; }
+            var handle = document.getElementById('controls-handle');
+            var closeBtn = document.getElementById('controls-close');
+
+            function publishHeight() {
+                // 0 while the bar is hidden (mobile, launcher, short landscape
+                // window) - which is exactly the inset the game needs then.
+                document.documentElement.style.setProperty('--controls-h',
+                    bar.offsetHeight + 'px');
             }
-        });
+
+            function setOpen(open) {
+                bar.classList.toggle('open', !!open);
+                if (handle) {
+                    handle.setAttribute('aria-expanded', open ? 'true' : 'false');
+                }
+                publishHeight();
+            }
+
+            bar.addEventListener('mouseenter', function () { setOpen(true); });
+            bar.addEventListener('mouseleave', function () { setOpen(false); });
+
+            // A tap or a click on the indicator opens the bar as well: a
+            // desktop with a touch monitor keeps this bar, and there is no
+            // hover on a touchscreen. Closing is what the X is for, so a click
+            // never toggles the bar shut right after the hover opened it.
+            if (handle) {
+                handle.addEventListener('click', function () {
+                    setOpen(true);
+                    handle.blur();          // never keep the keyboard in the bar
+                });
+            }
+            if (closeBtn) {
+                closeBtn.addEventListener('click', function () {
+                    setOpen(false);
+                    closeBtn.blur();
+                });
+            }
+
+            // The bar's height changes with the window, and it is hidden
+            // entirely by body classes (the launcher, mobile) and by a media
+            // query - all of which change its box, so the observer keeps the
+            // published height right without anything having to tell it.
+            window.addEventListener('resize', publishHeight);
+            window.addEventListener('orientationchange', publishHeight);
+            if (window.ResizeObserver) {
+                new ResizeObserver(publishHeight).observe(bar);
+            }
+            window.etlUpdateControlsInset = publishHeight;
+            publishHeight();
+        })();
     </script>
 
     <!--
@@ -5034,8 +5281,10 @@
                 document.getElementById('loading-overlay').style.display = 'none';
                 // The controls bar belongs to the running game; while a
                 // launcher panel is open it would sit on top of it (and its
-                // invisible buttons would swallow clicks).
+                // buttons would swallow clicks). Hiding it also frees the
+                // space it insets at the top edge.
                 document.body.classList.add('launcher-open');
+                if (window.etlUpdateControlsInset) { window.etlUpdateControlsInset(); }
                 window.etlLauncherWaiting = true;
                 // The touch overlay is an in-game control and its look area
                 // covers the whole viewport; leaving it on would make the
@@ -5048,6 +5297,7 @@
             function hideLauncher() {
                 document.getElementById('launcher-overlay').style.display = 'none';
                 document.body.classList.remove('launcher-open');
+                if (window.etlUpdateControlsInset) { window.etlUpdateControlsInset(); }
                 launcherPanel = '';
                 window.etlLauncherWaiting = false;
             }
@@ -6097,6 +6347,25 @@
                     });
             }
 
+            // Basic / Advanced switcher of the in-game settings panel - the
+            // same split the "Host game" page uses.
+            var gameTabs = [
+                ['game-tab-basic', 'game-basic'],
+                ['game-tab-advanced', 'game-advanced']
+            ];
+
+            function showGameTab(tabId) {
+                gameTabs.forEach(function (pair) {
+                    var on = pair[0] === tabId;
+                    var tab = byId(pair[0]);
+                    if (!tab) { return; }
+                    tab.classList.toggle('active', on);
+                    tab.setAttribute('aria-selected', on ? 'true' : 'false');
+                    var group = byId(pair[1]);
+                    if (group) { group.classList.toggle('active', on); }
+                });
+            }
+
             function showGamePanel(show) {
                 byId('game-panel').classList.toggle('active', !!show);
                 if (!show) { return; }
@@ -6113,6 +6382,20 @@
                     byId('game-bots').max = String(settings.maxPlayers - 1);
                     byId('game-timelimit').value = String(settings.timeLimit);
                     byId('game-private').checked = !!settings.private;
+
+                    // The advanced settings of the running game. They are the
+                    // ones the host page offers, minus the mod: that one is
+                    // decided by the command line the engine was started with,
+                    // so it is only shown.
+                    var mod = HOST_MODS[settings.mod || DEFAULT_MOD] ||
+                              HOST_MODS[DEFAULT_MOD];
+                    byId('game-mod').value = mod ? mod.name : String(settings.mod);
+                    byId('game-balancedteams').checked = !!settings.balancedTeams;
+                    byId('game-dowarmup').checked = settings.doWarmup !== false;
+                    byId('game-friendlyfire').checked = settings.friendlyFire !== false;
+                    byId('game-warmup').value = String(settings.warmup || 60);
+                    byId('game-alliedrespawn').value = String(settings.alliedRespawn || 0);
+                    byId('game-axisrespawn').value = String(settings.axisRespawn || 0);
                 }
                 updateGameStatus();
             }
@@ -6245,12 +6528,26 @@
             // Apply the settings from the gear panel to the running game.
             // sv_maxclients and the time limit only take effect when the match
             // (re)starts, so the map is restarted whenever one of them changed.
+            //
+            // The advanced settings are plain server cvars, so they are simply
+            // set on the running server - the very values the command line sets
+            // at startup (see hostedGameArgs). They are kept in the session as
+            // well, so a map change (which reloads the page and builds a new
+            // command line) comes back up with exactly what was applied here.
             function applyGameSettings() {
                 var settings = gameSettings();
                 if (!settings) { return; }
 
                 var rotation = sanitiseRotation(editedRotation || settings.rotation,
                     settings.map);
+
+                // A number field of the panel, clamped to the range the input
+                // allows; anything unusable keeps the value the game runs with.
+                function num(id, def, min, max) {
+                    var value = parseInt(byId(id).value, 10);
+                    if (!(value >= min && value <= max)) { return def; }
+                    return value;
+                }
 
                 var next = {
                     name: (byId('game-name').value.trim() || settings.name).slice(0, 64),
@@ -6263,26 +6560,39 @@
                     timeLimit: Math.max(0, Math.min(1440,
                         parseInt(byId('game-timelimit').value, 10) || 0)),
                     private: !!byId('game-private').checked,
-                    // The advanced settings are not editable in-game (they are
-                    // command line cvars), but they must survive an "Apply" so
-                    // the settings object stays complete - the export written
-                    // later on reads them from here.
+                    // The mod is the one exception: fs_game is picked when the
+                    // engine starts, so a running game keeps the one it has.
                     mod: settings.mod || DEFAULT_MOD,
-                    balancedTeams: settings.balancedTeams,
-                    doWarmup: settings.doWarmup,
-                    friendlyFire: settings.friendlyFire,
-                    warmup: settings.warmup,
-                    alliedRespawn: settings.alliedRespawn,
-                    axisRespawn: settings.axisRespawn
+                    balancedTeams: !!byId('game-balancedteams').checked,
+                    doWarmup: !!byId('game-dowarmup').checked,
+                    friendlyFire: !!byId('game-friendlyfire').checked,
+                    warmup: num('game-warmup', settings.warmup || 60, 1, 3600),
+                    alliedRespawn: num('game-alliedrespawn',
+                        settings.alliedRespawn || 0, 0, 300),
+                    axisRespawn: num('game-axisrespawn',
+                        settings.axisRespawn || 0, 0, 300)
                 };
                 next.bots = Math.min(next.bots, next.maxPlayers - 1);
 
+                // The respawn times are turned into the limbo times when a
+                // match starts, so they need a restart just like the player
+                // slots and the time limit.
                 var restart = next.maxPlayers !== settings.maxPlayers ||
-                              next.timeLimit !== settings.timeLimit;
+                              next.timeLimit !== settings.timeLimit ||
+                              next.alliedRespawn !== settings.alliedRespawn ||
+                              next.axisRespawn !== settings.axisRespawn;
 
                 etlSendCommand('sv_hostname "' + next.name.replace(/["\\]/g, '') + '"');
                 etlSendCommand('g_userTimeLimit ' + next.timeLimit);
                 etlSendCommand('sv_maxclients ' + next.maxPlayers);
+                // g_balancedteams itself is read-only (CVAR_ROM): the game
+                // derives it from g_teamForceBalance, so that is what is set.
+                etlSendCommand('g_teamForceBalance ' + (next.balancedTeams ? '1' : '0'));
+                etlSendCommand('g_doWarmup ' + (next.doWarmup ? '1' : '0'));
+                etlSendCommand('g_friendlyFire ' + (next.friendlyFire ? '1' : '0'));
+                etlSendCommand('g_warmup ' + next.warmup);
+                etlSendCommand('g_userAlliedRespawnTime ' + next.alliedRespawn);
+                etlSendCommand('g_userAxisRespawnTime ' + next.axisRespawn);
                 if (next.bots !== settings.bots) {
                     // Omni-bot's server manager keeps the bot count between
                     // these two bounds and adds/kicks bots accordingly.
@@ -6574,6 +6884,16 @@
                 byId('game-apply').onclick = applyGameSettings;
                 byId('game-changemap').onclick = changeGameMap;
                 byId('sidebar-invite').onclick = shareInvite;
+
+                // Basic / Advanced switcher of the settings panel. The panel
+                // always opens on "Basic", so the tab is reset here as well.
+                gameTabs.forEach(function (pair) {
+                    var tab = byId(pair[0]);
+                    if (tab) {
+                        tab.onclick = function () { showGameTab(pair[0]); };
+                    }
+                });
+                showGameTab('game-tab-basic');
 
                 byId('game-map-add').onclick = function () {
                     var map = byId('game-map').value;
