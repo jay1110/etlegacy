@@ -141,6 +141,26 @@ pthreads, the page must then be served with
 > see it: re-upload `legacy/*.pk3` and `legacy/*.so` (and `etmain/*.pk3`) in
 > **binary** mode and confirm each URL returns the raw file with HTTP 200.
 
+### Start page layout
+
+The start page ships with three layouts. Which one is used is decided by the
+operator of the page, not by the players: open `etl.html` (or `index.html`) in
+an editor and set the value near the top of `<body>`:
+
+```html
+<script>window.ETL_HOME_LAYOUT = 'classic';</script>
+```
+
+| Value | Layout |
+|-------|--------|
+| `classic` | The familiar single column of wide buttons with descriptions |
+| `cards` | A two-column grid of tiles with icons (one column on narrow screens) |
+| `hero` | A large title over a compact, borderless button column with icons |
+
+Anything else falls back to `classic`. For a quick look at the alternatives
+before editing the file, `?home=cards` / `?home=hero` switches the layout for
+one page load.
+
 ### Hosting on GitHub Pages
 
 The `emscripten.yml` workflow publishes the web client to GitHub Pages on pushes
@@ -232,6 +252,30 @@ https://your-page/etl.html?relay=wss://relay.example.com:8443&connect=203.0.113.
 Multiple browser players can open the same link and join the same server; each
 gets its own UDP socket on the relay side.
 
+### Mouse capture (desktop)
+
+The game only captures the mouse when you ask for it: click into the game area
+(or use **Capture Mouse** in the controls bar). Simply moving the pointer over
+the page never captures it, and `Esc` gives the pointer back and keeps it back
+until you click into the game again — so switching to another window or tab is
+always possible.
+
+### Phones and tablets
+
+Touch devices are detected automatically (force it either way with `?touch=1`
+or `?touch=0`). There, the bottom controls bar is replaced by icons in the slim
+left sidebar — **⛶** fullscreen, **⇄** connect, **›_** console and **◎** touch
+controls — and the game area starts next to that sidebar instead of below it,
+so nothing covers the picture.
+
+The touch controls are laid out on a fixed grid that keeps every button clear of
+its neighbours: a movement stick in the bottom left corner (with **RUN** above
+it), the fire button and the action cluster (jump, duck, prone, reload, weapon
+switch, use) in the bottom right corner, and chat/scores/menu as small buttons
+in the top left corner. Anywhere else on the screen is the look area: drag to
+aim, and the on-screen keyboard button (**⌨**, top right) types into the game
+(console, chat, name entry).
+
 ## 7. Host games in the browser (lobby / WebRTC)
 
 **Host game** in the launcher starts a listen server inside the browser and
@@ -246,17 +290,28 @@ passes through it.
 | Setting | Meaning |
 |---------|---------|
 | Room name | Name shown in the game list and as `sv_hostname` |
-| Map | One of the maps in `maplist.json`, or **Random map** |
+| Map rotation | Up to 10 maps from `maplist.json` (or **Random map**), played one after another; a single map simply restarts |
 | Max players | 2 – 32 (`sv_maxclients`) |
 | Bots | 0 – 31, never more than the free slots (Omni-bot) |
 | Time limit | Minutes; `0` keeps the time the map itself sets (`g_userTimeLimit`) |
 | Private room | The game is not listed; it can only be joined with the invite link |
 
+The rotation is programmed into the server as a chain of `nextmap` cvars, which
+ET runs when a match ends, and it wraps around to the first map after the last
+one. It can be changed while the game runs (**⚙** in the sidebar), and it is
+announced in the lobby together with the rest of the room.
+
 Once the game runs, a narrow column on the left has an **✕** button (leave the
 game — if the host leaves, everybody is returned to the launcher), a **⚙**
-button (current map and player count; every setting above can be changed and
-the map can be switched while the game runs) and a **🔗** button that copies the
-invite link.
+button (current map, player count and the map rotation; every setting above can
+be changed and any map of the rotation can be played immediately while the game
+runs) and a **🔗** button that copies the invite link.
+
+**A hosted game only lives as long as its tab is in the foreground.** Browsers
+throttle background tabs, which stops the server from stepping and disconnects
+everybody who joined, so the host is warned about this in the host form and
+again with a banner over the game — switching tabs, switching windows or
+minimizing the browser has to wait until the game is over.
 
 ### maplist.json
 

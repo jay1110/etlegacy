@@ -33,6 +33,14 @@
             justify-content: center;
         }
 
+        /* The sidebar must never lie on top of the game: while it is shown the
+           game area starts next to it. The canvas keeps its own pixel size and
+           is only scaled down by max-width/max-height, so this simply shrinks
+           the area it is fitted into. */
+        body.sidebar-visible #canvas-container {
+            padding-left: var(--sidebar-w);
+        }
+
         canvas#canvas {
             display: block;
             background-color: #000;
@@ -147,6 +155,19 @@
             justify-content: center;
         }
 
+        /* Width of the in-game sidebar. The game canvas is inset by exactly
+           this much while the sidebar is shown, so the sidebar never covers
+           the game (see #canvas-container below). */
+        :root {
+            --sidebar-w: 56px;
+        }
+
+        /* Phones/tablets get a slimmer sidebar - it holds the controls-bar
+           actions as icons there (see body.etl-mobile rules further down). */
+        body.etl-mobile {
+            --sidebar-w: 48px;
+        }
+
         #controls-bar {
             position: fixed;
             bottom: 0;
@@ -171,13 +192,29 @@
             opacity: 1;
         }
 
+        /* On mobile the bottom bar is gone entirely: it wastes screen space,
+           sits under the touch controls and cannot be "hovered" on a
+           touchscreen anyway. Its actions live in the sidebar instead. */
+        body.etl-mobile #controls-bar {
+            display: none;
+        }
+
         /* --- Touch controls -------------------------------------------
            An on-screen control overlay for phones/tablets, which have no
            keyboard and no mouse. It is off by default and toggled with the
-           "Touch controls" button in the controls bar; the toggle itself is
-           only shown on touch-capable devices (or with ?touch=1). The overlay
-           feeds the engine by dispatching the very same DOM events SDL
-           listens for, so no engine change is needed. */
+           touch-controls button in the sidebar (or the controls bar on a
+           desktop); the toggle itself is only shown on touch-capable devices
+           (or with ?touch=1). The overlay feeds the engine by dispatching the
+           very same DOM events SDL listens for, so no engine change is needed.
+
+           The layout follows what mainstream mobile shooters use: a movement
+           stick in the lower left corner, an action cluster around a large
+           fire button in the lower right corner, and small utility buttons in
+           the upper corners. Every size comes from one set of variables below,
+           so the controls scale with the screen (clamp() keeps them big enough
+           for a thumb on a phone and stops them growing absurdly on a tablet)
+           and, above all, never overlap each other: the cluster is laid out on
+           a strict grid of rows/columns derived from the button size. */
         #touch-overlay {
             display: none;
             position: fixed;
@@ -187,8 +224,28 @@
             touch-action: none;
             user-select: none;
             -webkit-user-select: none;
+
+            --tc-btn: clamp(44px, 8vmin, 62px);      /* action button */
+            --tc-small: clamp(34px, 6.2vmin, 48px);  /* utility button */
+            --tc-fire: clamp(66px, 12.5vmin, 96px);  /* fire button */
+            --tc-stick: clamp(104px, 23vmin, 168px); /* movement stick */
+            --tc-gap: clamp(8px, 1.6vmin, 16px);
+            --tc-edge: clamp(10px, 2.2vmin, 24px);
+
+            /* Columns (measured from the right edge) and rows (from the bottom
+               edge) of the action cluster. Column 0 is the fire button. */
+            --tc-col1: calc(var(--tc-edge) + var(--tc-fire) + var(--tc-gap));
+            --tc-col2: calc(var(--tc-col1) + var(--tc-btn) + var(--tc-gap));
+            --tc-row1: calc(var(--tc-edge) + var(--tc-btn) + var(--tc-gap));
+            --tc-row2: calc(var(--tc-row1) + var(--tc-btn) + var(--tc-gap));
+            --tc-above-fire: calc(var(--tc-edge) + var(--tc-fire) + var(--tc-gap));
         }
         #touch-overlay.active { display: block; }
+
+        /* The sidebar is not part of the game area, so the controls (and the
+           look area) start next to it - exactly like the canvas. */
+        body.sidebar-visible #touch-overlay { left: var(--sidebar-w); }
+
         #touch-overlay .touch-btn,
         #touch-overlay #touch-stick {
             position: absolute;
@@ -197,66 +254,85 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            border: 2px solid rgba(180, 190, 255, 0.55);
-            background: rgba(20, 22, 40, 0.42);
+            width: var(--tc-btn);
+            height: var(--tc-btn);
+            border: 2px solid rgba(180, 190, 255, 0.5);
+            background: rgba(20, 22, 40, 0.38);
             color: #dfe4ff;
             font-family: inherit;
-            font-size: 13px;
+            font-size: clamp(9px, 1.6vmin, 12px);
             font-weight: 600;
+            letter-spacing: 0.3px;
             text-align: center;
-            border-radius: 12px;
+            border-radius: 50%;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+        }
+        #touch-overlay .touch-btn.small {
+            width: var(--tc-small);
+            height: var(--tc-small);
+            font-size: clamp(8px, 1.4vmin, 11px);
+            opacity: 0.85;
+        }
+        #touch-overlay .touch-btn.fire {
+            width: var(--tc-fire);
+            height: var(--tc-fire);
+            font-size: clamp(11px, 2vmin, 15px);
+            border-color: rgba(255, 190, 120, 0.65);
+            background: rgba(60, 30, 20, 0.4);
         }
         #touch-overlay .touch-btn.pressed {
             background: rgba(90, 120, 255, 0.6);
         }
+        #touch-overlay .touch-btn.fire.pressed {
+            background: rgba(255, 140, 60, 0.65);
+        }
         #touch-overlay #touch-stick {
-            left: 4vh;
-            bottom: 4vh;
-            width: 34vh;
-            height: 34vh;
-            max-width: 45vw;
-            max-height: 45vw;
+            left: var(--tc-edge);
+            bottom: var(--tc-edge);
+            width: var(--tc-stick);
+            height: var(--tc-stick);
             border-radius: 50%;
+            background: rgba(20, 22, 40, 0.3);
         }
         #touch-overlay #touch-stick-knob {
-            width: 33%;
-            height: 33%;
+            width: 38%;
+            height: 38%;
             border-radius: 50%;
             background: rgba(140, 160, 255, 0.55);
             pointer-events: none;
         }
-        /* The look area covers the rest of the screen: dragging it moves the
-           view, a tap fires. It sits below the buttons so they keep priority. */
+        /* The look area covers the whole game area: dragging it turns the view,
+           a tap fires. It sits below the stick and the buttons (they come later
+           in the DOM and have their own hit areas), so they keep priority. */
         #touch-overlay #touch-look {
             position: absolute;
             inset: 0;
             pointer-events: auto;
             touch-action: none;
         }
-        #touch-overlay .touch-btn { min-width: 9vh; min-height: 9vh; }
         /* Overlay tool buttons (hide overlay / show keyboard). They live inside
            the overlay and sit above its full-screen look area, so the overlay
            can always be dismissed no matter what else is on screen. */
         #touch-overlay #touch-tools {
             position: absolute;
-            top: 8px;
-            right: 8px;
+            top: var(--tc-edge);
+            right: var(--tc-edge);
             display: flex;
-            gap: 8px;
+            gap: var(--tc-gap);
             pointer-events: auto;
             z-index: 10;
         }
         #touch-overlay .touch-tool {
             pointer-events: auto;
             touch-action: manipulation;
-            width: 44px;
-            height: 44px;
-            font-size: 20px;
+            width: var(--tc-small);
+            height: var(--tc-small);
+            font-size: clamp(14px, 2.6vmin, 20px);
             line-height: 1;
             cursor: pointer;
             color: #dfe4ff;
-            background: rgba(20, 22, 40, 0.75);
-            border: 2px solid rgba(180, 190, 255, 0.55);
+            background: rgba(20, 22, 40, 0.7);
+            border: 2px solid rgba(180, 190, 255, 0.5);
             border-radius: 10px;
         }
         /* Off-screen but focusable, so focusing it opens the mobile keyboard. */
@@ -582,7 +658,7 @@
             top: 0;
             left: 0;
             bottom: 0;
-            width: 56px;
+            width: var(--sidebar-w);
             background-color: rgba(26, 26, 46, 0.88);
             border-right: 1px solid #333;
             display: none;
@@ -597,9 +673,33 @@
             display: flex;
         }
 
+        /* The controls-bar actions as icons. They are the mobile replacement
+           for the bottom bar, so they only show there. */
+        #sidebar-tools {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            margin-top: 6px;
+            padding-top: 10px;
+            border-top: 1px solid #3a3a5a;
+            width: 100%;
+        }
+
+        body.etl-mobile #sidebar-tools {
+            display: flex;
+        }
+
+        /* Leave/settings/invite only make sense inside a game the launcher
+           started; on mobile the sidebar is also shown for a plain "Start
+           game", where it just carries the tool icons. */
+        body:not(.has-session) .session-only {
+            display: none;
+        }
+
         .sidebar-btn {
-            width: 42px;
-            height: 42px;
+            width: 40px;
+            height: 40px;
             background-color: #1a1a2e;
             color: #e0e0e0;
             border: 1px solid #555;
@@ -623,6 +723,17 @@
             border-color: #6a3a3a;
         }
 
+        body.etl-mobile .sidebar-btn {
+            width: 36px;
+            height: 36px;
+            font-size: 1em;
+        }
+
+        .sidebar-btn.on {
+            border-color: #c4a000;
+            background-color: #3a3a5a;
+        }
+
         #sidebar-status {
             margin-top: auto;
             font-size: 0.62em;
@@ -637,10 +748,10 @@
         #game-panel {
             position: fixed;
             top: 0;
-            left: 56px;
+            left: var(--sidebar-w);
             bottom: 0;
             width: 380px;
-            max-width: calc(100% - 56px);
+            max-width: calc(100% - var(--sidebar-w));
             background-color: #2a2a4a;
             border-right: 1px solid #444;
             padding: 22px;
@@ -712,9 +823,293 @@
             min-height: 1.2em;
             margin-top: 10px;
         }
+
+        /* --- Host warning ---------------------------------------------
+           A game hosted in the browser only runs while its tab is in the
+           foreground: a hidden or minimized tab is throttled by the browser
+           (requestAnimationFrame stops), the server stops answering and every
+           other player drops out. The host is therefore warned prominently -
+           once when the game starts, and again (in red) after the tab really
+           was in the background. */
+        #host-warning {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            padding: 10px 16px;
+            background: linear-gradient(90deg, #7a5a00, #c4a000);
+            color: #1a1a2e;
+            font-size: 0.88em;
+            font-weight: 600;
+            line-height: 1.4;
+            text-align: center;
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+            z-index: 970;
+        }
+
+        body.sidebar-visible #host-warning {
+            left: var(--sidebar-w);
+        }
+
+        #host-warning.active {
+            display: flex;
+        }
+
+        #host-warning.alert {
+            background: linear-gradient(90deg, #8a1c1c, #d32f2f);
+            color: #fff;
+            animation: host-warning-blink 1.2s ease-in-out 4;
+        }
+
+        @keyframes host-warning-blink {
+            0%, 100% { opacity: 1; }
+            50%      { opacity: 0.45; }
+        }
+
+        #host-warning button {
+            flex: none;
+            background: rgba(0, 0, 0, 0.25);
+            color: inherit;
+            border: 1px solid rgba(0, 0, 0, 0.35);
+            border-radius: 4px;
+            padding: 4px 10px;
+            font: inherit;
+            cursor: pointer;
+        }
+
+        /* The same warning as a static note in the "Host game" panel. */
+        .host-note {
+            font-size: 0.8em;
+            line-height: 1.5;
+            color: #ffd54f;
+            background-color: rgba(196, 160, 0, 0.12);
+            border: 1px solid #7a5a00;
+            border-radius: 6px;
+            padding: 8px 10px;
+            margin-bottom: 14px;
+        }
+
+        /* --- Map rotation ---------------------------------------------
+           The list of maps a hosted game cycles through (up to 10). */
+        .map-picker {
+            display: flex;
+            gap: 8px;
+            align-items: flex-start;
+            margin-bottom: 10px;
+        }
+
+        .map-picker select {
+            margin-bottom: 0;
+        }
+
+        .map-picker .control-btn {
+            flex: none;
+            white-space: nowrap;
+        }
+
+        .rotation-list {
+            margin-bottom: 12px;
+        }
+
+        .rotation-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 8px;
+            margin-bottom: 5px;
+            background-color: #1a1a2e;
+            border: 1px solid #444;
+            border-radius: 4px;
+            font-size: 0.85em;
+        }
+
+        .rotation-row .rotation-index {
+            color: #888;
+            min-width: 1.6em;
+        }
+
+        .rotation-row .rotation-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .rotation-row.current .rotation-name {
+            color: #c4a000;
+            font-weight: 600;
+        }
+
+        .rotation-row button {
+            flex: none;
+            background: none;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #ccc;
+            cursor: pointer;
+            width: 24px;
+            height: 24px;
+            line-height: 1;
+        }
+
+        .rotation-row button:hover {
+            border-color: #c4a000;
+            color: #fff;
+        }
+
+        .rotation-empty {
+            font-size: 0.78em;
+            color: #888;
+            margin-bottom: 12px;
+        }
+
+        /* --- Start page layouts ----------------------------------------
+           Three interchangeable designs of the "Run game" start page. Which
+           one is used is decided once, at the top of this file, by setting
+           window.ETL_HOME_LAYOUT to 'classic', 'cards' or 'hero'; it is put
+           on <body data-home-layout="..."> and only styles the start page
+           (#launcher-menu). Players cannot switch it. */
+
+        /* Shared header of the start page. */
+        #home-header {
+            text-align: left;
+            margin-bottom: 18px;
+        }
+
+        #home-header .home-title {
+            font-size: 1.6em;
+            font-weight: bold;
+            color: #c4a000;
+            letter-spacing: 1px;
+        }
+
+        #home-header .home-sub {
+            font-size: 0.85em;
+            color: #9aa;
+            margin-top: 4px;
+        }
+
+        .launcher-btn .launcher-btn-icon {
+            display: none;
+        }
+
+        /* -- Concept 2: "cards" - a two-column grid of tiles with icons. */
+        body[data-home-layout="cards"] #launcher-menu {
+            width: 760px;
+        }
+
+        body[data-home-layout="cards"] #home-header {
+            text-align: center;
+        }
+
+        body[data-home-layout="cards"] #launcher-menu .home-buttons {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        body[data-home-layout="cards"] #launcher-menu .launcher-btn {
+            margin: 0;
+            padding: 16px 16px 16px 58px;
+            position: relative;
+            min-height: 96px;
+            border-radius: 10px;
+            background-color: #232342;
+        }
+
+        body[data-home-layout="cards"] #launcher-menu .launcher-btn-icon {
+            display: block;
+            position: absolute;
+            left: 16px;
+            top: 16px;
+            font-size: 1.6em;
+            line-height: 1;
+        }
+
+        @media (max-width: 820px) {
+            body[data-home-layout="cards"] #launcher-menu .home-buttons {
+                grid-template-columns: minmax(0, 1fr);
+            }
+        }
+
+        /* -- Concept 3: "hero" - a full-bleed page with a big title and a
+              compact, borderless button column. */
+        body[data-home-layout="hero"] #launcher-overlay {
+            background:
+                radial-gradient(circle at 20% 20%, rgba(196, 160, 0, 0.16), transparent 55%),
+                radial-gradient(circle at 80% 70%, rgba(60, 80, 200, 0.18), transparent 55%),
+                #12121f;
+        }
+
+        body[data-home-layout="hero"] #launcher-menu {
+            width: 560px;
+            background-color: transparent;
+            border: none;
+            box-shadow: none;
+            padding: 10px;
+        }
+
+        body[data-home-layout="hero"] #home-header {
+            text-align: center;
+            margin-bottom: 26px;
+        }
+
+        body[data-home-layout="hero"] #home-header .home-title {
+            font-size: 3em;
+            text-shadow: 0 0 28px rgba(196, 160, 0, 0.35);
+        }
+
+        body[data-home-layout="hero"] #launcher-menu h2 {
+            display: none;
+        }
+
+        body[data-home-layout="hero"] #launcher-menu > p {
+            display: none;
+        }
+
+        body[data-home-layout="hero"] #launcher-menu .launcher-btn {
+            position: relative;
+            background-color: rgba(42, 42, 74, 0.55);
+            border-color: rgba(255, 255, 255, 0.12);
+            border-radius: 8px;
+            padding: 12px 16px 12px 52px;
+            backdrop-filter: blur(2px);
+        }
+
+        body[data-home-layout="hero"] #launcher-menu .launcher-btn-icon {
+            display: block;
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 1.3em;
+            line-height: 1;
+        }
+
+        body[data-home-layout="hero"] #launcher-menu .launcher-btn-sub {
+            display: none;
+        }
     </style>
 </head>
 <body>
+    <!-- ================================================================
+         START PAGE LAYOUT
+         Three designs of the start page ("Run game" menu) ship with this
+         page. Pick one here by editing the value below; this is a
+         deployment setting, players cannot change it.
+
+             'classic'  the compact panel with a list of options (default)
+             'cards'    a two-column grid of tiles with icons
+             'hero'     a full-bleed page with a big title and slim buttons
+
+         See docs/web.md, "Start page layouts".
+         ================================================================ -->
+    <script>window.ETL_HOME_LAYOUT = 'classic';</script>
+
     <!-- Loading overlay -->
     <div id="loading-overlay">
         <div id="loading-title">ET: Legacy</div>
@@ -797,16 +1192,34 @@
     </div>
 
     <!-- In-game sidebar: shown once a game started from the launcher is
-         running. Narrow column on the left with "leave game", the game
-         settings (gear) and the invite link. -->
+         running (and, on mobile, for every running game). Narrow column on the
+         left with "leave game", the game settings (gear), the invite link and
+         - on mobile, where the bottom controls bar is hidden - the controls
+         bar actions as icons. -->
     <div id="game-sidebar">
-        <button type="button" class="sidebar-btn exit" id="sidebar-exit"
+        <button type="button" class="sidebar-btn exit session-only" id="sidebar-exit"
                 title="Leave the game">&#10005;</button>
-        <button type="button" class="sidebar-btn" id="sidebar-settings"
+        <button type="button" class="sidebar-btn session-only" id="sidebar-settings"
                 title="Game settings">&#9881;</button>
-        <button type="button" class="sidebar-btn" id="sidebar-invite"
+        <button type="button" class="sidebar-btn session-only" id="sidebar-invite"
                 title="Share the invite link">&#128279;</button>
+        <div id="sidebar-tools">
+            <button type="button" class="sidebar-btn" id="sidebar-fullscreen"
+                    title="Fullscreen">&#9974;</button>
+            <button type="button" class="sidebar-btn" id="sidebar-connect"
+                    title="Connect to a server">&#8644;</button>
+            <button type="button" class="sidebar-btn" id="sidebar-console"
+                    title="Console">&#8250;_</button>
+            <button type="button" class="sidebar-btn" id="sidebar-touch"
+                    title="Touch controls">&#9678;</button>
+        </div>
         <div id="sidebar-status"></div>
+    </div>
+
+    <!-- Warning for the host of a browser-hosted game (see #host-warning CSS) -->
+    <div id="host-warning" role="alert">
+        <span id="host-warning-text"></span>
+        <button type="button" id="host-warning-close">Got it</button>
     </div>
 
     <!-- Settings panel behind the sidebar's gear button -->
@@ -816,8 +1229,12 @@
         <div id="invite-link"></div>
 
         <div id="game-host-settings">
-            <label for="game-map">Map</label>
-            <select id="game-map"></select>
+            <label for="game-map">Map rotation (up to 10 maps)</label>
+            <div class="map-picker">
+                <select id="game-map"></select>
+                <button class="control-btn" type="button" id="game-map-add">Add</button>
+            </div>
+            <div id="game-rotation" class="rotation-list"></div>
             <label for="game-name">Room name</label>
             <input id="game-name" type="text" maxlength="64" autocomplete="off">
             <label for="game-maxplayers">Max players (2 - 32)</label>
@@ -832,11 +1249,15 @@
             </div>
             <div class="launcher-actions">
                 <button class="control-btn" type="button" id="game-apply">Apply</button>
-                <button class="control-btn" type="button" id="game-changemap">Change map</button>
+                <button class="control-btn" type="button" id="game-changemap">Play now</button>
             </div>
             <div class="hint">
-                Changing the map or the player slots restarts the match for
-                everyone. A map that is not a stock map is downloaded first.
+                The maps are played in the order listed above and start over at
+                the top when the last one is finished. "Play now" jumps straight
+                to the map selected in the drop-down and continues the rotation
+                from there. Changing the player slots or the time limit restarts
+                the match for everyone. A map that is not a stock map is
+                downloaded first.
             </div>
         </div>
 
@@ -892,38 +1313,53 @@
             </div>
         </div>
 
-        <!-- Step 2: pak0.pk3 is set - run game -->
+        <!-- Step 2: pak0.pk3 is set - run game. This is the start page; its
+             look is chosen with window.ETL_HOME_LAYOUT at the top of the file
+             (see the #launcher-menu layout rules in the stylesheet). -->
         <div class="launcher-panel" id="launcher-menu">
+            <div id="home-header">
+                <div class="home-title">ET: Legacy</div>
+                <div class="home-sub">WebAssembly Edition &ndash; play in the browser</div>
+            </div>
             <h2>Run game</h2>
             <p>pak0.pk3 is set. Choose how you want to play:</p>
-            <button class="launcher-btn" type="button" id="menu-start">
-                Start game
-                <span class="launcher-btn-sub">Starts the game to the main menu without connecting anywhere.</span>
-            </button>
-            <button class="launcher-btn" type="button" id="menu-join-etc">
-                Join ETc server
-                <span class="launcher-btn-sub">etclan.de:27966 &ndash; missing pk3 files are downloaded from the server.</span>
-            </button>
-            <button class="launcher-btn" type="button" id="menu-quick">
-                Quick single game
-                <span class="launcher-btn-sub">Starts a local game on map oasis.</span>
-            </button>
-            <button class="launcher-btn" type="button" id="menu-servers">
-                Server list
-                <span class="launcher-btn-sub">Pick from the list of compatible servers.</span>
-            </button>
-            <button class="launcher-btn" type="button" id="menu-host">
-                Host game
-                <span class="launcher-btn-sub">Open your own game: map, room name, player slots, bots and time limit of your choice - others can join it.</span>
-            </button>
-            <button class="launcher-btn" type="button" id="menu-join-games">
-                Join games
-                <span class="launcher-btn-sub" id="menu-join-games-sub">Games hosted by other players &ndash; looking for running games...</span>
-            </button>
-            <button class="launcher-btn" type="button" id="menu-profile">
-                Player profile
-                <span class="launcher-btn-sub">Create or change your in-game profile (player name) before starting.</span>
-            </button>
+            <div class="home-buttons">
+                <button class="launcher-btn" type="button" id="menu-start">
+                    <span class="launcher-btn-icon" aria-hidden="true">&#9654;</span>
+                    Start game
+                    <span class="launcher-btn-sub">Starts the game to the main menu without connecting anywhere.</span>
+                </button>
+                <button class="launcher-btn" type="button" id="menu-join-etc">
+                    <span class="launcher-btn-icon" aria-hidden="true">&#127760;</span>
+                    Join ETc server
+                    <span class="launcher-btn-sub">etclan.de:27966 &ndash; missing pk3 files are downloaded from the server.</span>
+                </button>
+                <button class="launcher-btn" type="button" id="menu-quick">
+                    <span class="launcher-btn-icon" aria-hidden="true">&#9889;</span>
+                    Quick single game
+                    <span class="launcher-btn-sub">Starts a local game on map oasis.</span>
+                </button>
+                <button class="launcher-btn" type="button" id="menu-servers">
+                    <span class="launcher-btn-icon" aria-hidden="true">&#128203;</span>
+                    Server list
+                    <span class="launcher-btn-sub">Pick from the list of compatible servers.</span>
+                </button>
+                <button class="launcher-btn" type="button" id="menu-host">
+                    <span class="launcher-btn-icon" aria-hidden="true">&#127917;</span>
+                    Host game
+                    <span class="launcher-btn-sub">Open your own game: map rotation, room name, player slots, bots and time limit of your choice - others can join it.</span>
+                </button>
+                <button class="launcher-btn" type="button" id="menu-join-games">
+                    <span class="launcher-btn-icon" aria-hidden="true">&#128101;</span>
+                    Join games
+                    <span class="launcher-btn-sub" id="menu-join-games-sub">Games hosted by other players &ndash; looking for running games...</span>
+                </button>
+                <button class="launcher-btn" type="button" id="menu-profile">
+                    <span class="launcher-btn-icon" aria-hidden="true">&#128100;</span>
+                    Player profile
+                    <span class="launcher-btn-sub">Create or change your in-game profile (player name) before starting.</span>
+                </button>
+            </div>
         </div>
 
         <!-- Server list (entries are maintained manually in SERVER_LIST below) -->
@@ -941,8 +1377,18 @@
         <!-- Host game -->
         <div class="launcher-panel" id="launcher-host">
             <h2>Host game</h2>
-            <label for="host-map">Map</label>
-            <select id="host-map"></select>
+            <div class="host-note">
+                &#9888; Keep this browser tab open and in the foreground while
+                you host. A tab in the background (another tab, another window,
+                a minimized browser) is throttled by the browser: the game
+                stops running and everybody who joined loses the connection.
+            </div>
+            <label for="host-map">Map rotation (up to 10 maps)</label>
+            <div class="map-picker">
+                <select id="host-map"></select>
+                <button class="control-btn" type="button" id="host-map-add">Add</button>
+            </div>
+            <div id="host-rotation" class="rotation-list"></div>
             <label for="host-name">Room name</label>
             <input id="host-name" type="text" value="ET:Legacy Web Host" maxlength="64" autocomplete="off">
             <label for="host-maxclients">Max players (2 - 32)</label>
@@ -958,9 +1404,11 @@
             <div class="launcher-hint" id="host-hint">
                 The game runs inside your browser and is announced in the lobby,
                 so other players can join it from "Join games" or with your
-                invite link. Maps that are not part of the stock game are
-                downloaded automatically - by you and by everyone who joins.
-                More bots than free player slots are not possible.
+                invite link. Add up to 10 maps to play them one after another in
+                a rotation; with a single map that map simply restarts. Maps
+                that are not part of the stock game are downloaded automatically
+                - by you and by everyone who joins. More bots than free player
+                slots are not possible.
             </div>
             <div class="launcher-actions">
                 <button class="control-btn" type="button" id="host-back">Back</button>
@@ -1056,6 +1504,17 @@
         // game keeps running fine. Patch requestPointerLock (before etl.js loads)
         // so the returned promise is always consumed and such benign failures are
         // swallowed with a console warning instead of crashing the UI.
+        //
+        // The same patch also makes the capture *deliberate*. The engine asks
+        // for pointer lock whenever the mouse is (re)activated, which happens
+        // as soon as the canvas sees the mouse again - so on a desktop simply
+        // moving the pointer over the game window re-captured the mouse and
+        // there was no way to get the cursor back out. Pointer lock is
+        // therefore only passed through to the browser after an explicit user
+        // action on the game (a click on the canvas or the "Capture Mouse"
+        // button, tracked by window.etlArmPointerLock below); losing the lock
+        // - Escape, tab switch - disarms it again, so the mouse stays free
+        // until the player clicks the game once more.
         (function () {
             if (typeof Element === 'undefined' || !Element.prototype) return;
             var proto = Element.prototype;
@@ -1063,7 +1522,39 @@
                            proto.mozRequestPointerLock ||
                            proto.webkitRequestPointerLock;
             if (typeof original !== 'function') return;
+
+            var armed = false;
+
+            // Called from the canvas click handler / the capture button.
+            window.etlArmPointerLock = function () {
+                armed = true;
+            };
+            window.etlDisarmPointerLock = function () {
+                armed = false;
+            };
+            window.etlPointerLockArmed = function () {
+                return armed;
+            };
+
+            document.addEventListener('pointerlockchange', function () {
+                // Losing the lock is always the user's doing (Escape, or the
+                // browser handing focus somewhere else): do not let the engine
+                // grab the mouse again on its own.
+                if (!document.pointerLockElement) {
+                    armed = false;
+                }
+            });
+            document.addEventListener('pointerlockerror', function () {
+                armed = false;
+            });
+
             proto.requestPointerLock = function () {
+                var canvas = document.getElementById('canvas');
+                if (this === canvas && !armed) {
+                    // An automatic request from the engine while the player has
+                    // not asked for the mouse to be captured.
+                    return Promise.resolve ? Promise.resolve() : undefined;
+                }
                 var result;
                 try {
                     result = original.apply(this, arguments);
@@ -1250,6 +1741,13 @@
                         setTimeout(function() {
                             loadingOverlay.style.display = 'none';
                         }, 500);
+                        // On mobile the sidebar carries the controls-bar
+                        // actions (fullscreen, connect, console, touch
+                        // controls), so it is shown for every running game -
+                        // not only for the ones started from the launcher.
+                        if (document.body.classList.contains('etl-mobile')) {
+                            etlShowSidebar(true);
+                        }
                     }
                 }
             },
@@ -1459,9 +1957,14 @@
             }
         }
 
-        // Pointer lock support
+        // Pointer lock support. Only ever called for a deliberate capture (a
+        // click on the game, or the "Capture Mouse" button), which is what arms
+        // the guard above - the engine's own automatic requests stay blocked.
         function etlRequestPointerLock() {
             var canvas = document.getElementById('canvas');
+            if (window.etlArmPointerLock) {
+                window.etlArmPointerLock();
+            }
             canvas.requestPointerLock = canvas.requestPointerLock ||
                                         canvas.mozRequestPointerLock ||
                                         canvas.webkitRequestPointerLock;
@@ -1470,11 +1973,92 @@
             }
         }
 
-        // Click on canvas to capture mouse
-        document.getElementById('canvas').addEventListener('click', function() {
+        // Click on the canvas captures the mouse - but only a real click, never
+        // just moving the pointer over the game. On touch devices the on-screen
+        // controls drive the game instead, so pointer lock is not requested
+        // there at all (it does not exist on mobile browsers anyway).
+        document.getElementById('canvas').addEventListener('click', function () {
+            if (etlIsTouchDevice()) {
+                return;
+            }
             etlRequestPointerLock();
         });
 
+        // Escape releases the mouse. The browser already exits pointer lock on
+        // Escape; this only makes sure the guard is disarmed, so the engine
+        // cannot immediately grab it back.
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && window.etlDisarmPointerLock) {
+                window.etlDisarmPointerLock();
+            }
+        }, true);
+
+
+        // --- In-game sidebar ----------------------------------------------
+        // The sidebar is the game's own control column. It must never lie on
+        // top of the game, so showing it also insets the canvas (the
+        // .sidebar-visible rules in the stylesheet).
+        function etlShowSidebar(show) {
+            var sidebar = document.getElementById('game-sidebar');
+            if (!sidebar) {
+                return;
+            }
+            sidebar.classList.toggle('active', !!show);
+            document.body.classList.toggle('sidebar-visible', !!show);
+        }
+        window.etlShowSidebar = etlShowSidebar;
+
+        // The controls-bar actions as sidebar icons. They are only visible on
+        // mobile (see #sidebar-tools), where the bottom bar is hidden, but they
+        // are wired unconditionally - the bar and the icons share these
+        // handlers.
+        (function () {
+            function bind(id, handler) {
+                var el = document.getElementById(id);
+                if (el) {
+                    el.onclick = handler;
+                }
+            }
+            bind('sidebar-fullscreen', function () { etlRequestFullscreen(); });
+            bind('sidebar-connect', function () { openConnectPanel(); });
+            bind('sidebar-console', function () { toggleConsole(); });
+            bind('sidebar-touch', function () { etlToggleTouchControls(); });
+        })();
+
+        // --- Device / start page setup -------------------------------------
+        // "Mobile" here means a touch device: it gets the slim sidebar with the
+        // controls-bar actions as icons instead of the (unhoverable) bottom
+        // bar, and the on-screen controls. ?touch=0/1 forces it off/on, which
+        // makes the mobile layout testable on a desktop.
+        function etlIsTouchDevice() {
+            var forced = new URLSearchParams(window.location.search).get('touch');
+            if (forced !== null) {
+                return forced !== '0';
+            }
+            return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        }
+
+        (function () {
+            function apply() {
+                // The start page design is a deployment setting (see the
+                // ETL_HOME_LAYOUT block at the top of this file). ?home=<name>
+                // overrides it for a single page load, so the operator can
+                // compare the designs before editing the file.
+                var layout = String(
+                    new URLSearchParams(window.location.search).get('home') ||
+                    window.ETL_HOME_LAYOUT || 'classic');
+                if (['classic', 'cards', 'hero'].indexOf(layout) === -1) {
+                    layout = 'classic';
+                }
+                document.body.setAttribute('data-home-layout', layout);
+                document.body.classList.toggle('etl-mobile', etlIsTouchDevice());
+            }
+            if (document.body) {
+                apply();
+            } else {
+                document.addEventListener('DOMContentLoaded', apply);
+            }
+        })();
 
         // --- Touch controls -----------------------------------------------
         // Phones and tablets have neither a keyboard nor a mouse, so the game
@@ -1482,7 +2066,8 @@
         // the engine at all: it dispatches the same DOM keyboard/mouse events
         // that SDL's Emscripten backend already listens for, so a virtual key
         // is indistinguishable from a real one. It can be switched on and off
-        // at any time with the "Touch controls" button.
+        // at any time with the touch-controls button (sidebar on mobile,
+        // controls bar on a desktop).
         var etlTouchActive = false;
 
         (function () {
@@ -1503,23 +2088,48 @@
                 tab:   { key: 'Tab', code: 'Tab', keyCode: 9 }
             };
 
-            // Buttons on the right half of the screen: label, key, position.
+            // The on-screen buttons. Everything is positioned from the CSS
+            // variables of #touch-overlay (--tc-*), which lay the lower-right
+            // action cluster out on a fixed grid of columns and rows: no two
+            // controls can overlap, and they scale together with the screen.
+            //
+            //   lower left   movement stick, sprint above it
+            //   lower right  fire (big, in the corner), and around it the
+            //                actions a thumb has to reach during a fight
+            //   upper left   the "rarely, but on purpose" buttons
+            //   upper right  the overlay's own tools (keyboard / hide)
             var BUTTONS = [
-                { id: 'fire',   label: 'FIRE',  mouse: 0, css: 'right:4vh;bottom:5vh;width:16vh;height:16vh;border-radius:50%;font-size:16px;' },
-                { id: 'jump',   label: 'JUMP',  key: 'jump',   css: 'right:22vh;bottom:16vh;' },
-                { id: 'crouch', label: 'CROUCH',key: 'crouch', css: 'right:22vh;bottom:5vh;' },
-                { id: 'prone',  label: 'PRONE', key: 'prone',  css: 'right:33vh;bottom:5vh;' },
-                { id: 'sprint', label: 'SPRINT',key: 'sprint', css: 'left:4vh;top:16vh;' },
-                { id: 'reload', label: 'RELOAD',key: 'reload', css: 'right:4vh;top:16vh;' },
-                { id: 'use',    label: 'USE',   key: 'use',    css: 'right:15vh;top:16vh;' },
-                { id: 'next',   label: 'WEAP',  key: 'next',   css: 'right:26vh;top:16vh;' },
-                { id: 'chat',   label: 'CHAT',  key: 'chat',   css: 'left:4vh;top:5vh;' },
-                { id: 'tab',    label: 'SCORE', key: 'tab',    css: 'left:15vh;top:5vh;' },
-                { id: 'esc',    label: 'MENU',  key: 'esc',    css: 'right:4vh;top:5vh;' }
+                { id: 'fire',   label: 'FIRE',  mouse: 0, cls: 'fire',
+                  css: 'right:var(--tc-edge);bottom:var(--tc-edge);' },
+                { id: 'jump',   label: 'JUMP',  key: 'jump',
+                  css: 'right:var(--tc-col1);bottom:var(--tc-edge);' },
+                { id: 'crouch', label: 'DUCK',  key: 'crouch',
+                  css: 'right:var(--tc-col1);bottom:var(--tc-row1);' },
+                { id: 'prone',  label: 'PRONE', key: 'prone',
+                  css: 'right:var(--tc-col2);bottom:var(--tc-edge);' },
+                { id: 'reload', label: 'RELOAD', key: 'reload',
+                  css: 'right:var(--tc-col2);bottom:var(--tc-row1);' },
+                { id: 'next',   label: 'WEAP',  key: 'next',
+                  css: 'right:var(--tc-col1);bottom:var(--tc-row2);' },
+                { id: 'use',    label: 'USE',   key: 'use',
+                  css: 'right:var(--tc-edge);bottom:var(--tc-above-fire);' },
+                { id: 'sprint', label: 'RUN',   key: 'sprint',
+                  css: 'left:var(--tc-edge);bottom:calc(var(--tc-edge) + var(--tc-stick) + var(--tc-gap));' },
+                { id: 'chat',   label: 'CHAT',  key: 'chat', cls: 'small',
+                  css: 'left:var(--tc-edge);top:var(--tc-edge);' },
+                { id: 'tab',    label: 'SCORE', key: 'tab', cls: 'small',
+                  css: 'left:calc(var(--tc-edge) + var(--tc-small) + var(--tc-gap));top:var(--tc-edge);' },
+                { id: 'esc',    label: 'MENU',  key: 'esc', cls: 'small',
+                  css: 'left:calc(var(--tc-edge) + 2 * (var(--tc-small) + var(--tc-gap)));top:var(--tc-edge);' }
             ];
 
-            var LOOK_SENSITIVITY = 1.4;
-            var STICK_DEADZONE = 0.28;
+            // Pixels of view movement per pixel of finger movement.
+            var LOOK_SENSITIVITY = 1.1;
+            // How far the stick has to be pushed before a direction counts.
+            var STICK_DEADZONE = 0.3;
+            // A tap (short, without dragging) on the look area fires.
+            var TAP_MOVE_LIMIT = 14;
+            var TAP_TIME_LIMIT = 300;
 
             function target() {
                 return document.getElementById('canvas') || window;
@@ -1542,28 +2152,134 @@
                 target().dispatchEvent(ev);
             }
 
+            // --- Looking around -------------------------------------------
+            // SDL's Emscripten backend only reads movementX/movementY - the
+            // relative motion an FPS needs - while the document reports a
+            // pointer lock; otherwise it uses the absolute cursor position on
+            // the canvas. Mobile browsers have no pointer lock at all, which is
+            // why dragging used to move nothing at all: the events carried a
+            // relative delta the engine never looked at.
+            //
+            // While the overlay is on, the page therefore reports a "virtual"
+            // pointer lock on the canvas: document.pointerLockElement is
+            // shadowed and a pointerlockchange event is fired, so SDL switches
+            // to the relative path and our movementX/movementY are used
+            // verbatim. The property is only shadowed on the document object
+            // (never on the prototype) and is restored the moment the overlay
+            // is switched off, and a real pointer lock always wins.
+            var virtualLock = false;
+            var lockPatched = false;
+            var lockDescriptor = null;
+
+            function patchPointerLockElement() {
+                if (lockPatched) {
+                    return true;
+                }
+                try {
+                    lockDescriptor =
+                        Object.getOwnPropertyDescriptor(Document.prototype, 'pointerLockElement');
+                    if (!lockDescriptor || typeof lockDescriptor.get !== 'function') {
+                        return false;
+                    }
+                    Object.defineProperty(document, 'pointerLockElement', {
+                        configurable: true,
+                        get: function () {
+                            var real = lockDescriptor.get.call(document);
+                            if (real) {
+                                return real;
+                            }
+                            return virtualLock ? document.getElementById('canvas') : null;
+                        }
+                    });
+                    lockPatched = true;
+                    return true;
+                } catch (e) {
+                    console.warn('Virtual pointer lock unavailable:', e);
+                    return false;
+                }
+            }
+
+            function setVirtualPointerLock(on) {
+                on = !!on;
+                if (on === virtualLock) {
+                    return;
+                }
+                if (on && !patchPointerLockElement()) {
+                    return;                     // fall back to absolute motion
+                }
+                virtualLock = on;
+                if (!on && lockPatched) {
+                    try {
+                        delete document.pointerLockElement;
+                        lockPatched = false;
+                    } catch (e) { /* keep the shadow, it reports null anyway */ }
+                }
+                try {
+                    document.dispatchEvent(new Event('pointerlockchange', {
+                        bubbles: true
+                    }));
+                } catch (e) { /* the overlay still works, just less smoothly */ }
+            }
+
+            // The absolute position the engine sees for the mouse. It is only
+            // used when the virtual pointer lock could not be established (then
+            // SDL derives the view movement from the cursor position); it is
+            // kept inside the canvas so the position never gets stuck at an
+            // edge, and every event carries the relative delta as well.
+            var cursor = null;
+
+            function canvasRect() {
+                var el = document.getElementById('canvas');
+                return el ? el.getBoundingClientRect() : null;
+            }
+
+            function resetCursor() {
+                var rect = canvasRect();
+                cursor = rect
+                    ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+                    : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+            }
+
             function sendMouseButton(button, down) {
-                var el = target();
+                if (!cursor) { resetCursor(); }
                 var ev = new MouseEvent(down ? 'mousedown' : 'mouseup', {
                     button: button,
                     buttons: down ? (button === 0 ? 1 : 2) : 0,
+                    clientX: cursor.x,
+                    clientY: cursor.y,
                     bubbles: true,
                     cancelable: true,
                     composed: true
                 });
-                el.dispatchEvent(ev);
+                target().dispatchEvent(ev);
             }
 
             function sendMouseMove(dx, dy) {
-                var el = target();
+                if (!cursor) { resetCursor(); }
+                var rect = canvasRect();
+                var margin = 8;
+                cursor.x += dx;
+                cursor.y += dy;
+                if (rect) {
+                    // Keep the virtual cursor inside the canvas. With the
+                    // virtual pointer lock in place this is irrelevant (only
+                    // the delta counts); without it, it keeps the engine's
+                    // cursor from being pinned to a border.
+                    cursor.x = Math.max(rect.left + margin,
+                        Math.min(rect.right - margin, cursor.x));
+                    cursor.y = Math.max(rect.top + margin,
+                        Math.min(rect.bottom - margin, cursor.y));
+                }
                 var ev = new MouseEvent('mousemove', {
                     movementX: dx,
                     movementY: dy,
+                    clientX: cursor.x,
+                    clientY: cursor.y,
                     bubbles: true,
                     cancelable: true,
                     composed: true
                 });
-                el.dispatchEvent(ev);
+                target().dispatchEvent(ev);
             }
 
             // Keys currently held down by the overlay, so switching the overlay
@@ -1580,6 +2296,7 @@
 
             function releaseAll() {
                 Object.keys(held).forEach(function (name) {
+                    if (name === '__fire') { return; }
                     if (held[name]) {
                         held[name] = false;
                         sendKey(KEYS[name], false);
@@ -1589,12 +2306,18 @@
                     held.__fire = false;
                     sendMouseButton(0, false);
                 }
+                var overlay = document.getElementById('touch-overlay');
+                if (overlay) {
+                    Array.prototype.forEach.call(
+                        overlay.querySelectorAll('.touch-btn.pressed'),
+                        function (el) { el.classList.remove('pressed'); });
+                }
             }
 
             function buildButtons(overlay) {
                 BUTTONS.forEach(function (def) {
                     var el = document.createElement('div');
-                    el.className = 'touch-btn';
+                    el.className = 'touch-btn' + (def.cls ? (' ' + def.cls) : '');
                     el.id = 'touch-btn-' + def.id;
                     el.textContent = def.label;
                     el.setAttribute('style', def.css);
@@ -1611,14 +2334,25 @@
                         }
                     }
 
+                    // Every button tracks its own finger, so several buttons
+                    // (and the stick, and looking around) can be used at the
+                    // same time - a touch started on an element keeps getting
+                    // that element's events until it is lifted.
                     el.addEventListener('touchstart', function (e) {
                         e.preventDefault();
+                        e.stopPropagation();
                         press(true);
                     }, { passive: false });
                     ['touchend', 'touchcancel'].forEach(function (type) {
                         el.addEventListener(type, function (e) {
                             e.preventDefault();
-                            press(false);
+                            e.stopPropagation();
+                            // Only release once the last finger on this button
+                            // is gone (targetTouches no longer contains the
+                            // finger that has just been lifted).
+                            if (!e.targetTouches.length) {
+                                press(false);
+                            }
                         }, { passive: false });
                     });
                     // Mouse fallback so the overlay can be tried on a desktop.
@@ -1671,6 +2405,7 @@
 
                 stick.addEventListener('touchstart', function (e) {
                     e.preventDefault();
+                    e.stopPropagation();
                     var rect = stick.getBoundingClientRect();
                     centre.x = rect.left + rect.width / 2;
                     centre.y = rect.top + rect.height / 2;
@@ -1681,6 +2416,7 @@
 
                 stick.addEventListener('touchmove', function (e) {
                     e.preventDefault();
+                    e.stopPropagation();
                     for (var i = 0; i < e.changedTouches.length; i++) {
                         if (e.changedTouches[i].identifier === stickTouch) {
                             update(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
@@ -1691,6 +2427,7 @@
                 ['touchend', 'touchcancel'].forEach(function (type) {
                     stick.addEventListener(type, function (e) {
                         e.preventDefault();
+                        e.stopPropagation();
                         for (var i = 0; i < e.changedTouches.length; i++) {
                             if (e.changedTouches[i].identifier === stickTouch) {
                                 reset();
@@ -1709,10 +2446,10 @@
                 var startedAt = 0;
 
                 area.addEventListener('touchstart', function (e) {
-                    if (lookTouch !== null) {
-                        return;
-                    }
                     e.preventDefault();
+                    if (lookTouch !== null) {
+                        return;             // one finger looks, the others act
+                    }
                     var t = e.changedTouches[0];
                     lookTouch = t.identifier;
                     last.x = t.clientX;
@@ -1746,8 +2483,8 @@
                             e.preventDefault();
                             lookTouch = null;
                             // A short tap without dragging fires the weapon.
-                            if (type === 'touchend' && moved < 12 &&
-                                (Date.now() - startedAt) < 300) {
+                            if (type === 'touchend' && moved < TAP_MOVE_LIMIT &&
+                                (Date.now() - startedAt) < TAP_TIME_LIMIT) {
                                 sendMouseButton(0, true);
                                 setTimeout(function () { sendMouseButton(0, false); }, 60);
                             }
@@ -1835,6 +2572,7 @@
 
                 if (on) {
                     build();
+                    resetCursor();
                 }
 
                 etlTouchActive = on;
@@ -1849,6 +2587,14 @@
                 if (toggle) {
                     toggle.textContent = on ? 'Touch controls: on' : 'Touch controls';
                 }
+                var sidebarToggle = document.getElementById('sidebar-touch');
+                if (sidebarToggle) {
+                    sidebarToggle.classList.toggle('on', on);
+                }
+
+                // Relative view movement needs the engine to believe the mouse
+                // is captured (see setVirtualPointerLock).
+                setVirtualPointerLock(on);
 
                 if (!on) {
                     var input = document.getElementById('touch-keyboard-input');
@@ -1872,14 +2618,9 @@
             // back on every page load (and, because its look area covers the
             // whole viewport, blocked the launcher and the menus underneath).
             // A reload (F5) is therefore always a clean slate; the player turns
-            // the overlay on from the controls bar once the game runs.
+            // the overlay on from the sidebar once the game runs.
             document.addEventListener('DOMContentLoaded', function () {
-                var forced = new URLSearchParams(window.location.search).get('touch');
-                var isTouch = ('ontouchstart' in window) ||
-                    (navigator.maxTouchPoints > 0);
-                var show = (forced === null) ? isTouch : (forced !== '0');
-
-                if (!show) {
+                if (!etlIsTouchDevice()) {
                     return;
                 }
 
@@ -2052,6 +2793,14 @@
         });
 
         function appendConsole(text) {
+            // Let the game UI follow the engine's output (the map rotation
+            // watches for the map the server just spawned).
+            if (typeof window.etlOnConsoleLine === 'function') {
+                try {
+                    window.etlOnConsoleLine(String(text));
+                } catch (e) { /* never let the UI break the console */ }
+            }
+
             var panel = document.getElementById('console-output');
             var line = document.createElement('div');
             line.textContent = text;
@@ -3532,10 +4281,130 @@
             // Value of the "Random map" entry in both map pickers.
             var RANDOM_MAP = '__random__';
 
+            // --- Map rotation ---------------------------------------------
+            // A hosted game plays a list of up to ten maps one after another
+            // and starts over at the top. The engine already has everything
+            // that is needed for this: when a match ends it runs "vstr nextmap"
+            // (G_LogExit in src/game/g_main.c), so a chain of cvars - each one
+            // loading its own map and pointing "nextmap" at the next entry - is
+            // a complete rotation. The page only has to write that chain once
+            // and keep it in sync when the host edits the list.
+            var MAX_ROTATION_MAPS = 10;
+
+            // Keep only maps that really exist in the map list, resolve the
+            // "Random map" entry and cap the length.
+            function sanitiseRotation(list, fallback) {
+                var names = mapNames();
+                var clean = [];
+                (list || []).forEach(function (entry) {
+                    if (clean.length >= MAX_ROTATION_MAPS) { return; }
+                    var map = (entry === RANDOM_MAP) ? randomMapName() : entry;
+                    if (names.indexOf(map) === -1) { return; }
+                    clean.push(map);
+                });
+                if (!clean.length && fallback && names.indexOf(fallback) !== -1) {
+                    clean.push(fallback);
+                }
+                return clean;
+            }
+
+            // Render the rotation editor into a container. onChange gets the
+            // new list whenever an entry is removed or moved.
+            function renderRotation(container, rotation, currentMap, onChange) {
+                container.innerHTML = '';
+
+                if (!rotation.length) {
+                    var empty = document.createElement('div');
+                    empty.className = 'rotation-empty';
+                    empty.textContent = 'No map added yet - pick one above and ' +
+                        'press "Add".';
+                    container.appendChild(empty);
+                    return;
+                }
+
+                rotation.forEach(function (map, index) {
+                    var row = document.createElement('div');
+                    row.className = 'rotation-row' +
+                        (map === currentMap ? ' current' : '');
+
+                    var pos = document.createElement('span');
+                    pos.className = 'rotation-index';
+                    pos.textContent = (index + 1) + '.';
+
+                    var name = document.createElement('span');
+                    name.className = 'rotation-name';
+                    name.textContent = map +
+                        ((mapList && mapList[map]) ? ' (download)' : '');
+
+                    row.appendChild(pos);
+                    row.appendChild(name);
+
+                    [['\u2191', -1, 'Move up'], ['\u2193', 1, 'Move down']].forEach(function (spec) {
+                        var move = document.createElement('button');
+                        move.type = 'button';
+                        move.textContent = spec[0];
+                        move.title = spec[2];
+                        var to = index + spec[1];
+                        move.disabled = to < 0 || to >= rotation.length;
+                        move.onclick = function () {
+                            var next = rotation.slice();
+                            var moved = next.splice(index, 1)[0];
+                            next.splice(to, 0, moved);
+                            onChange(next);
+                        };
+                        row.appendChild(move);
+                    });
+
+                    var remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.textContent = '\u2715';
+                    remove.title = 'Remove from the rotation';
+                    remove.onclick = function () {
+                        var next = rotation.slice();
+                        next.splice(index, 1);
+                        onChange(next);
+                    };
+                    row.appendChild(remove);
+
+                    container.appendChild(row);
+                });
+            }
+
+            // Write the rotation into the engine. startIndex is the entry that
+            // is being played right now, so the *next* match continues with the
+            // one after it.
+            function applyRotationToEngine(rotation, startIndex) {
+                if (!rotation || !rotation.length) { return; }
+
+                rotation.forEach(function (map, index) {
+                    var next = 'vstr etl_rot' + ((index + 1) % rotation.length);
+                    etlSendCommand('set etl_rot' + index +
+                        ' "map ' + map + '; set nextmap ' + next + '"');
+                });
+
+                var from = (startIndex >= 0 && startIndex < rotation.length) ? startIndex : 0;
+                etlSendCommand('set nextmap vstr etl_rot' +
+                    ((from + 1) % rotation.length));
+            }
+
+            // Download every map of a rotation before the game starts, so a
+            // rotation never stalls on a map nobody has.
+            function installRotation(rotation) {
+                return rotation.reduce(function (chain, map) {
+                    return chain.then(function () {
+                        showLoading('Preparing "' + map + '"...');
+                        return ensureMapInstalled(map);
+                    });
+                }, Promise.resolve());
+            }
+
             // Read + clamp the "Host game" form. Bots can never take more than
             // the free slots (the player holds one), which is what the launcher
-            // and the in-game settings panel both enforce.
-            function readHostSettings(prefix) {
+            // and the in-game settings panel both enforce. The rotation is the
+            // list the host built; with an empty list the map picked in the
+            // drop-down is used, so hosting a single map still works exactly as
+            // before.
+            function readHostSettings(prefix, rotation) {
                 function el(id) { return document.getElementById(prefix + id); }
 
                 var maxPlayers = parseInt(el('maxclients').value, 10);
@@ -3548,13 +4417,14 @@
                 var timeLimit = parseInt(el('timelimit').value, 10);
                 if (!(timeLimit >= 0 && timeLimit <= 1440)) { timeLimit = 0; }
 
-                var map = el('map').value;
-                if (map === RANDOM_MAP) { map = randomMapName(); }
-                if (mapNames().indexOf(map) === -1) { map = mapNames()[0]; }
+                var maps = sanitiseRotation(
+                    (rotation && rotation.length) ? rotation : [el('map').value],
+                    mapNames()[0]);
 
                 return {
                     name: (el('name').value.trim() || 'ET:Legacy Web Host').slice(0, 64),
-                    map: map,
+                    map: maps[0],
+                    rotation: maps,
                     maxPlayers: maxPlayers,
                     bots: bots,
                     timeLimit: timeLimit,
@@ -3594,7 +4464,9 @@
                 showLoading('Preparing "' + settings.map + '"...');
 
                 var engineArgs = null;
-                return ensureMapInstalled(settings.map).then(function () {
+                // Every map of the rotation is fetched up front: a match that
+                // ends must be able to load the next one right away.
+                return installRotation(settings.rotation || [settings.map]).then(function () {
                     // Builds the command line and installs Omni-bot, which may
                     // still turn the bot count down to zero - the room is only
                     // announced afterwards, so the game list never promises
@@ -3726,9 +4598,15 @@
                 var bots = settings ? settings.bots : (room.bots || 0);
                 var players = humanPlayers();
 
+                var rotation = (settings && settings.rotation) || room.rotation || [];
+
                 byId('sidebar-status').textContent = players + '/' + max;
                 byId('game-status').innerHTML =
-                    'Map: <b>' + escapeHtml(map) + '</b><br>' +
+                    'Map: <b>' + escapeHtml(map) + '</b>' +
+                    (rotation.length > 1
+                        ? (' (' + (rotation.indexOf(map) + 1 || 1) + '/' +
+                           rotation.length + ' of the rotation)')
+                        : '') + '<br>' +
                     'Players: <b>' + players + '/' + max + '</b>' +
                     (bots ? (' (+' + bots + ' bots)') : '') + '<br>' +
                     'Game: <b>' + escapeHtml(settings ? settings.name : (room.name || 'unnamed')) + '</b>' +
@@ -3746,6 +4624,19 @@
                 byId('game-message').textContent = text || '';
             }
 
+            // The rotation currently being edited in the in-game panel. It is
+            // only written back to the running game by "Apply".
+            var editedRotation = null;
+
+            function renderEditedRotation() {
+                var settings = gameSettings();
+                renderRotation(byId('game-rotation'), editedRotation || [],
+                    settings ? settings.map : null, function (next) {
+                        editedRotation = next;
+                        renderEditedRotation();
+                    });
+            }
+
             function showGamePanel(show) {
                 byId('game-panel').classList.toggle('active', !!show);
                 if (!show) { return; }
@@ -3754,6 +4645,8 @@
                 byId('game-host-settings').style.display = host ? 'block' : 'none';
                 if (host && settings) {
                     fillMapSelect(byId('game-map'), settings.map, true);
+                    editedRotation = (settings.rotation || [settings.map]).slice();
+                    renderEditedRotation();
                     byId('game-name').value = settings.name;
                     byId('game-maxplayers').value = String(settings.maxPlayers);
                     byId('game-bots').value = String(settings.bots);
@@ -3802,9 +4695,13 @@
                 var settings = gameSettings();
                 if (!settings) { return; }
 
+                var rotation = sanitiseRotation(editedRotation || settings.rotation,
+                    settings.map);
+
                 var next = {
                     name: (byId('game-name').value.trim() || settings.name).slice(0, 64),
                     map: settings.map,
+                    rotation: rotation,
                     maxPlayers: Math.max(2, Math.min(32,
                         parseInt(byId('game-maxplayers').value, 10) || settings.maxPlayers)),
                     bots: Math.max(0, Math.min(31,
@@ -3832,11 +4729,17 @@
                     etlSendCommand('map_restart');
                 }
 
+                // Re-program the rotation, continuing after the map that is
+                // being played right now (or at the top when it is not part of
+                // the rotation any more).
+                applyRotationToEngine(next.rotation, next.rotation.indexOf(next.map));
+
                 session.settings = next;
                 reportedSlots = humanPlayers() + next.bots;
                 if (p2p && session.roomId) {
                     updateRoomQuietly({
                         name: next.name,
+                        rotation: next.rotation,
                         maxPlayers: next.maxPlayers,
                         bots: next.bots,
                         timeLimit: next.timeLimit,
@@ -3850,8 +4753,10 @@
                     : 'Settings applied.');
             }
 
-            // Switch to another map: it is downloaded first (players get it from
-            // the map list as well) and then loaded, which restarts the match.
+            // Jump straight to the map selected in the drop-down: it is
+            // downloaded first (players get it from the map list as well) and
+            // then loaded, which restarts the match. The rotation carries on
+            // from that map when it is part of it.
             function changeGameMap() {
                 var settings = gameSettings();
                 if (!settings) { return; }
@@ -3861,17 +4766,34 @@
 
                 gameMessage('Downloading "' + map + '"...');
                 ensureMapInstalled(map).then(function () {
-                    settings.map = map;
-                    if (p2p && session.roomId) {
-                        updateRoomQuietly({ map: map });
-                    }
+                    setCurrentMap(map);
                     etlSendCommand('map ' + map);
-                    updateGameStatus();
+                    applyRotationToEngine(settings.rotation || [map],
+                        (settings.rotation || [map]).indexOf(map));
                     gameMessage('Changing the map to "' + map + '"...');
                 }).catch(function (err) {
                     gameMessage('Could not load "' + map + '": ' +
                         (err && err.message || err));
                 });
+            }
+
+            // The map the hosted game is playing right now. It is set both when
+            // the host switches the map by hand and when the engine moves on to
+            // the next map of the rotation on its own (see the console hook in
+            // startGameSidebar), so the game list and the settings panel always
+            // show what is really being played.
+            function setCurrentMap(map) {
+                if (!session || !session.settings || session.settings.map === map) {
+                    return;
+                }
+                session.settings.map = map;
+                if (p2p && session.roomId) {
+                    updateRoomQuietly({ map: map });
+                }
+                updateGameStatus();
+                if (byId('game-panel').classList.contains('active')) {
+                    renderEditedRotation();
+                }
             }
 
             function shareInvite() {
@@ -3900,12 +4822,81 @@
                 }
             }
 
+            // --- Host warning ---------------------------------------------
+            // A game hosted in the browser only exists while its tab runs. As
+            // soon as the tab is hidden (another tab, another window, a
+            // minimized browser) the browser throttles it: the server stops
+            // stepping, and everybody who joined times out. There is nothing
+            // the page can do about that - so the host is told, clearly, before
+            // it happens, and again when it has happened.
+            var hostWarningTimer = null;
+
+            function showHostWarning(text, isAlert, autoHideMs) {
+                var box = byId('host-warning');
+                if (!box) { return; }
+                byId('host-warning-text').textContent = text;
+                box.classList.add('active');
+                box.classList.toggle('alert', !!isAlert);
+                if (hostWarningTimer) {
+                    clearTimeout(hostWarningTimer);
+                    hostWarningTimer = null;
+                }
+                if (autoHideMs) {
+                    hostWarningTimer = setTimeout(hideHostWarning, autoHideMs);
+                }
+            }
+
+            function hideHostWarning() {
+                var box = byId('host-warning');
+                if (!box) { return; }
+                box.classList.remove('active');
+                box.classList.remove('alert');
+                if (hostWarningTimer) {
+                    clearTimeout(hostWarningTimer);
+                    hostWarningTimer = null;
+                }
+            }
+
+            function setupHostWarning() {
+                // Only a game other players can be in can lose them: an offline
+                // game (role "local") has nobody to disconnect, and a client is
+                // not responsible for the server at all.
+                if (!session || session.role !== 'host') { return; }
+
+                var close = byId('host-warning-close');
+                if (close) { close.onclick = hideHostWarning; }
+
+                showHostWarning('\u26a0 You are hosting this game - keep this ' +
+                    'tab open and in the foreground! If you switch tabs or ' +
+                    'minimize the browser, the game stops and all other ' +
+                    'players lose the connection.', false, 20000);
+
+                document.addEventListener('visibilitychange', function () {
+                    if (!session || session.role !== 'host') { return; }
+                    if (document.hidden) {
+                        // Nothing is drawn while hidden; the message is there
+                        // the moment the host comes back.
+                        showHostWarning('\u26a0 The game was paused because this ' +
+                            'tab was in the background. Other players may have ' +
+                            'been disconnected - keep this tab in the ' +
+                            'foreground while you host.', true);
+                    } else {
+                        showHostWarning('\u26a0 The game was paused because this ' +
+                            'tab was in the background. Other players may have ' +
+                            'been disconnected - keep this tab in the ' +
+                            'foreground while you host.', true, 15000);
+                    }
+                });
+            }
+
             // Show the sidebar and keep it up to date for as long as the game
             // runs. Called once, right after the player picked a game mode.
             function startGameSidebar() {
                 if (!session) { return; }
-                var sidebar = byId('game-sidebar');
-                sidebar.classList.add('active');
+                document.body.classList.add('has-session');
+                // Showing the sidebar also insets the canvas, so the column
+                // never covers the game (see etlShowSidebar).
+                window.etlShowSidebar(true);
                 updateGameStatus();
 
                 byId('sidebar-settings').onclick = function () {
@@ -3916,6 +4907,40 @@
                 byId('game-apply').onclick = applyGameSettings;
                 byId('game-changemap').onclick = changeGameMap;
                 byId('sidebar-invite').onclick = shareInvite;
+
+                byId('game-map-add').onclick = function () {
+                    var map = byId('game-map').value;
+                    if (map === RANDOM_MAP) { map = randomMapName(); }
+                    if (mapNames().indexOf(map) === -1) { return; }
+                    editedRotation = editedRotation || [];
+                    if (editedRotation.length >= MAX_ROTATION_MAPS) {
+                        gameMessage('A rotation holds at most ' +
+                            MAX_ROTATION_MAPS + ' maps.');
+                        return;
+                    }
+                    editedRotation.push(map);
+                    renderEditedRotation();
+                    gameMessage('Press "Apply" to use the new rotation.');
+                };
+
+                // Program the rotation into the running game (a single map
+                // simply restarts, exactly as before) and follow the engine
+                // when it moves on to the next map on its own.
+                var settings = gameSettings();
+                if (settings && session.role !== 'client') {
+                    settings.rotation = sanitiseRotation(settings.rotation, settings.map);
+                    applyRotationToEngine(settings.rotation,
+                        settings.rotation.indexOf(settings.map));
+
+                    // "Server: <map>" is printed by SV_SpawnServer for every
+                    // map the server starts (src/server/sv_init.c).
+                    window.etlOnConsoleLine = function (line) {
+                        var m = /^Server:\s*([A-Za-z0-9_-]{1,64})\s*$/.exec(line || '');
+                        if (m) { setCurrentMap(m[1]); }
+                    };
+                }
+
+                setupHostWarning();
 
                 // Leaving needs two clicks, so a stray click during a match
                 // cannot throw everybody out of the host's game.
@@ -4031,6 +5056,7 @@
                         var settings = {
                             name: 'ET:Legacy Web Game',
                             map: 'oasis',
+                            rotation: ['oasis'],
                             maxPlayers: 8,
                             bots: 7,
                             timeLimit: 0,
@@ -4065,7 +5091,35 @@
                     };
 
                     // Button 4: host a game (listen server in the browser).
+                    // The host builds a rotation of up to ten maps here; an
+                    // empty list means "just the map in the drop-down".
+                    var hostRotation = [];
+
+                    function renderHostRotation() {
+                        renderRotation(document.getElementById('host-rotation'),
+                            hostRotation, hostRotation[0], function (next) {
+                                hostRotation = next;
+                                renderHostRotation();
+                            });
+                    }
+
+                    document.getElementById('host-map-add').onclick = function () {
+                        var select = document.getElementById('host-map');
+                        var map = select.value;
+                        if (map === RANDOM_MAP) { map = randomMapName(); }
+                        if (mapNames().indexOf(map) === -1) { return; }
+                        if (hostRotation.length >= MAX_ROTATION_MAPS) {
+                            document.getElementById('host-hint').textContent =
+                                'A rotation holds at most ' + MAX_ROTATION_MAPS +
+                                ' maps.';
+                            return;
+                        }
+                        hostRotation.push(map);
+                        renderHostRotation();
+                    };
+
                     document.getElementById('menu-host').onclick = function () {
+                        renderHostRotation();
                         showLauncherPanel('launcher-host');
                         document.getElementById('host-name').focus();
                     };
@@ -4218,7 +5272,7 @@
                         }
                     };
                     document.getElementById('host-start').onclick = function () {
-                        startFlow(startHosting(readHostSettings('host-')),
+                        startFlow(startHosting(readHostSettings('host-', hostRotation)),
                             'launcher-host', 'host-hint');
                     };
 
