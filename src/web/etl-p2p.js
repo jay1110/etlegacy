@@ -545,7 +545,11 @@
 		// Reject whatever one-shot request is most likely waiting.
 		var err = new Error(msg.message || msg.code || 'lobby error');
 		err.code = msg.code;
-		if (msg.code === 'noroom' || msg.code === 'full' || msg.code === 'self' || msg.code === 'badrequest') {
+		if (msg.code === 'noroom' || msg.code === 'full' || msg.code === 'self' ||
+			msg.code === 'badrequest' || msg.code === 'hostaway' ||
+			msg.code === 'badtoken') {
+			// 'hostaway': the room is paused because its host is reloading.
+			// 'badtoken': a reclaim of a room this page does not own (any more).
 			this.rejectPending('join', err);
 			this.rejectPending('host', err);
 		}
@@ -802,6 +806,7 @@
 	};
 
 	P.handleHostAway = function (msg) {
+		if (this.role !== 'client') { return; }
 		// Drop the transport to the host - its page is gone - but keep the room
 		// id, so the game can be picked up again when the host is back.
 		this.teardownAllPeers();
@@ -811,7 +816,7 @@
 
 	P.handleHostBack = function (msg) {
 		var self = this;
-		if (!self.roomId || self.roomId !== msg.roomId) {
+		if (self.role !== 'client' || !self.roomId || self.roomId !== msg.roomId) {
 			return;
 		}
 		// The host is a new peer now, so the room has to be joined again. The
