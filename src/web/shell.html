@@ -2476,6 +2476,12 @@
                         return persist();
                     }).then(function () {
                         return true;
+                    }, function (err) {
+                        throw new Error('The map "' + map + '" could not be ' +
+                            'downloaded from ' + url + ': ' +
+                            (err && err.message || err) + '. The server that ' +
+                            'hosts the pk3 must allow cross-origin (CORS) ' +
+                            'downloads.');
                     });
                 });
             }
@@ -3508,6 +3514,12 @@
                             '+set', 'g_userTimeLimit', String(settings.timeLimit)];
 
                 return setupOmniBot(settings.bots).then(function (ready) {
+                    if (!ready) {
+                        // Omni-bot could not be installed: the game starts
+                        // without bots, so the settings (and the game list, and
+                        // the free slots) must say so too.
+                        settings.bots = 0;
+                    }
                     args.push('+set', 'omnibot_enable', (ready && settings.bots > 0) ? '1' : '0');
                     if (ready) {
                         args.push('+set', 'omnibot_path', OMNIBOT_DIR);
@@ -3570,7 +3582,7 @@
             }
 
             // What the player is currently playing: used by the in-game sidebar
-            // (see setupGameSidebar) to know whether the settings/invite
+            // (see startGameSidebar) to know whether the settings/invite
             // controls apply, and to shut the room down when the host leaves.
             var session = null;
 
@@ -3580,9 +3592,18 @@
             // to find it, which is still better than not starting at all.
             function startHosting(settings) {
                 showLoading('Preparing "' + settings.map + '"...');
+
+                var engineArgs = null;
                 return ensureMapInstalled(settings.map).then(function () {
+                    // Builds the command line and installs Omni-bot, which may
+                    // still turn the bot count down to zero - the room is only
+                    // announced afterwards, so the game list never promises
+                    // bots (or occupied slots) that are not there.
+                    return hostedGameArgs(settings);
+                }).then(function (args) {
+                    engineArgs = args;
                     if (!p2p) {
-                        return null;           // no transport shipped: local game
+                        return null;           // no transport shipped
                     }
                     Module.setStatus('Announcing the game in the lobby...');
                     return p2p.connect().then(function () {
@@ -3595,13 +3616,19 @@
                         return null;
                     });
                 }).then(function (hosted) {
-                    session = {
+                    // Without a room in the lobby the game is still perfectly
+                    // playable - it is simply one nobody else can find or join.
+                    session = hosted ? {
                         role: 'host',
                         settings: settings,
-                        roomId: hosted ? hosted.roomId : null,
-                        inviteUrl: hosted ? hosted.inviteUrl : null
+                        roomId: hosted.roomId,
+                        inviteUrl: hosted.inviteUrl
+                    } : {
+                        role: 'local',
+                        settings: settings,
+                        roomId: null
                     };
-                    return hostedGameArgs(settings);
+                    return engineArgs;
                 });
             }
 
@@ -3638,6 +3665,7 @@
             // has actually been started from the launcher.
             var sidebarTimer = null;
             var exitArmed = false;
+            var reportedSlots = -1;
 
             function byId(id) { return document.getElementById(id); }
 
@@ -3653,6 +3681,40 @@
 
             function gameSettings() {
                 return (session && session.settings) || null;
+            }
+
+            // Slots taken in the game: the players plus the bots. This is what
+            // the lobby counts against the room's maximum (and what decides
+            // whether the game list shows it as full), so bots must be in it.
+            function occupiedSlots() {
+                var settings = gameSettings();
+                return humanPlayers() + (settings ? settings.bots : 0);
+            }
+
+            // Publish the occupancy of the hosted game, but only when it really
+            // changed: every update pushes a new room list to everyone browsing
+            // the game list.
+            function reportSlots() {
+                if (!session || session.role !== 'host' || !p2p || !session.roomId) {
+                    return;
+                }
+                var slots = occupiedSlots();
+                if (slots === reportedSlots) { return; }
+                reportedSlots = slots;
+                updateRoomQuietly({ players: slots });
+            }
+
+            // Tell the lobby about a change of the hosted room. This is pure
+            // bookkeeping for the game list, so a lobby that is gone (or a
+            // room that has just been closed) must never break the game or
+            // produce an unhandled rejection.
+            function updateRoomQuietly(partial) {
+                try {
+                    var result = p2p.updateRoom(partial);
+                    if (result && result.catch) {
+                        result.catch(function () { /* the game keeps running */ });
+                    }
+                } catch (e) { /* the game keeps running */ }
             }
 
             function updateGameStatus() {
@@ -3691,7 +3753,7 @@
                 var host = session && session.role !== 'client';
                 byId('game-host-settings').style.display = host ? 'block' : 'none';
                 if (host && settings) {
-                    fillMapSelect(byId('game-map'), settings.map, false);
+                    fillMapSelect(byId('game-map'), settings.map, true);
                     byId('game-name').value = settings.name;
                     byId('game-maxplayers').value = String(settings.maxPlayers);
                     byId('game-bots').value = String(settings.bots);
@@ -3706,12 +3768,17 @@
             // back to a clean "no game" state from the browser shell, so the
             // page is reloaded - without the invite parameter, which would
             // otherwise rejoin the game that was just left.
-            function leaveGame() {
-                // Back to the launcher without the invite parameter, which
-                // would otherwise rejoin the game that was just left.
+            // The launcher URL without the invite parameter, which would
+            // otherwise rejoin the game that was just left. Every other
+            // parameter (a custom lobby for instance) is kept.
+            function launcherUrl() {
                 var query = new URLSearchParams(location.search);
                 query.delete('join');
-                var url = location.pathname + (query.toString() ? ('?' + query) : '');
+                return location.pathname + (query.toString() ? ('?' + query) : '');
+            }
+
+            function leaveGame() {
+                var url = launcherUrl();
                 try {
                     if (session && session.role === 'client') {
                         etlSendCommand('disconnect');
@@ -3766,14 +3833,15 @@
                 }
 
                 session.settings = next;
+                reportedSlots = humanPlayers() + next.bots;
                 if (p2p && session.roomId) {
-                    p2p.updateRoom({
+                    updateRoomQuietly({
                         name: next.name,
                         maxPlayers: next.maxPlayers,
                         bots: next.bots,
                         timeLimit: next.timeLimit,
                         private: next.private,
-                        players: humanPlayers()
+                        players: humanPlayers() + next.bots
                     });
                 }
                 updateGameStatus();
@@ -3795,7 +3863,7 @@
                 ensureMapInstalled(map).then(function () {
                     settings.map = map;
                     if (p2p && session.roomId) {
-                        p2p.updateRoom({ map: map });
+                        updateRoomQuietly({ map: map });
                     }
                     etlSendCommand('map ' + map);
                     updateGameStatus();
@@ -3866,15 +3934,11 @@
                     // sync with the number of players actually in the game.
                     p2p.on('peerjoin', function () {
                         updateGameStatus();
-                        if (session.role === 'host') {
-                            p2p.updateRoom({ players: humanPlayers() });
-                        }
+                        reportSlots();
                     });
                     p2p.on('peerleave', function () {
                         updateGameStatus();
-                        if (session.role === 'host') {
-                            p2p.updateRoom({ players: humanPlayers() });
-                        }
+                        reportSlots();
                     });
                     // The room is gone: the host left the game or closed its
                     // browser tab. Everybody else is returned to the launcher.
@@ -3883,7 +3947,7 @@
                         try { etlSendCommand('disconnect'); } catch (e) { /* gone */ }
                         showLoading('The host has left the game.');
                         setTimeout(function () {
-                            location.href = location.pathname;
+                            location.href = launcherUrl();
                         }, 1500);
                     });
                     // The host changed a setting or switched the map.
@@ -3896,6 +3960,7 @@
 
                 sidebarTimer = setInterval(function () {
                     if (!exitArmed) { updateGameStatus(); }
+                    reportSlots();
                 }, 5000);
                 window.addEventListener('beforeunload', function () {
                     if (sidebarTimer) { clearInterval(sidebarTimer); }
@@ -3914,6 +3979,25 @@
                 }
 
                 return new Promise(function (resolve) {
+                    // Start a mode that can still fail before the engine runs
+                    // (a map download, the lobby). On failure the player is
+                    // taken back to the panel they came from with the reason -
+                    // the generic "could not load game data" error screen would
+                    // be plain wrong for these.
+                    function startFlow(promise, panel, hintId) {
+                        hideLauncher();
+                        showLoading();
+                        promise.then(function (extra) {
+                            pick(extra);
+                        }, function (err) {
+                            session = null;
+                            showLauncherPanel(panel);
+                            document.getElementById(hintId).textContent =
+                                'Could not start the game: ' +
+                                (err && err.message || err);
+                        });
+                    }
+
                     function pick(extra) {
                         hideLauncher();
                         showLoading('Starting ET: Legacy...');
@@ -4056,7 +4140,9 @@
                                 btn.disabled = true;
                                 btn.textContent = 'Full';
                             } else {
-                                btn.onclick = function () { pick(joinRoom(room)); };
+                                btn.onclick = function () {
+                                    startFlow(joinRoom(room), 'launcher-join', 'join-hint');
+                                };
                             }
 
                             row.appendChild(info);
@@ -4132,7 +4218,8 @@
                         }
                     };
                     document.getElementById('host-start').onclick = function () {
-                        pick(startHosting(readHostSettings('host-')));
+                        startFlow(startHosting(readHostSettings('host-')),
+                            'launcher-host', 'host-hint');
                     };
 
                     // The map pickers are filled from maplist.json; until it has
@@ -4156,7 +4243,8 @@
                                 // A private game is not listed, but it can still
                                 // be joined with its id - that is what the invite
                                 // link is for.
-                                pick(joinRoom(room || { roomId: joinParam, map: 'oasis' }));
+                                startFlow(joinRoom(room || { roomId: joinParam, map: 'oasis' }),
+                                    'launcher-join', 'join-hint');
                             }).catch(function (err) {
                                 showLauncherPanel('launcher-menu');
                                 document.getElementById('join-hint').textContent =
