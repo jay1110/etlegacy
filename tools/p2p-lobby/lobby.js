@@ -1099,10 +1099,19 @@ function rateLimited(conn) {
 function handleHttpRequest(req, res) {
 	// Only the two documented read-only endpoints exist; everything else is a
 	// 404 so the server never doubles as an open proxy or file server.
+	//
+	// The endpoint is the last path segment, so the lobby answers behind a
+	// reverse proxy that keeps its own location prefix in the forwarded path
+	// as well (nginx's `proxy_pass http://127.0.0.1:8081;` without a trailing
+	// slash forwards "/p2p-lobby/rooms" unchanged). WebSocket upgrades are not
+	// affected by this - they are accepted on any path.
 	const url = req.url || '/';
 	const pathOnly = url.split('?')[0];
+	const endpoint = pathOnly.split('/').filter(function (part) {
+		return part.length > 0;
+	}).pop() || '';
 
-	if (req.method === 'GET' && pathOnly === '/rooms') {
+	if (req.method === 'GET' && endpoint === 'rooms') {
 		const list = publicRoomList();
 		const body = JSON.stringify({ count: list.length, rooms: list });
 		res.writeHead(200, {
@@ -1114,7 +1123,7 @@ function handleHttpRequest(req, res) {
 		return;
 	}
 
-	if (req.method === 'GET' && pathOnly === '/health') {
+	if (req.method === 'GET' && endpoint === 'health') {
 		res.writeHead(200, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
 		res.end('ok');
 		return;

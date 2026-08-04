@@ -13,6 +13,10 @@
  *   ws://host:port/<server-ip>:<server-port>    (plain)
  *   wss://host:port/<server-ip>:<server-port>   (with --tls-cert/--tls-key)
  *
+ * A reverse proxy may prefix that path with its own location
+ * (wss://host/ws-relay/<server-ip>:<server-port>); only the last path segment
+ * is read as the target.
+ *
  * The target may also be given as a query parameter, so the relay is a
  * drop-in replacement for simple "full UDP gateway" scripts:
  *   ws://host:port/?target=<server-ip>:<server-port>
@@ -175,12 +179,21 @@ function isValidHostname(name) {
 /**
  * Parse the target server address from the WebSocket URL path.
  * Expected format: /<ip-or-hostname>:<port>
+ *
+ * Only the last path segment is looked at, so the relay also works behind a
+ * reverse proxy that keeps its own location prefix in the forwarded path -
+ * nginx's `proxy_pass http://127.0.0.1:8080;` (no trailing slash) hands
+ * "/ws-relay/1.2.3.4:27960" through unchanged, while the trailing-slash form
+ * strips the prefix. A target is "<host>:<port>" and never contains a slash,
+ * so nothing valid is lost: an empty path still yields no target at all, and
+ * every segment is validated by parseTargetSpec() below.
  */
 function parseTargetAddress(pathname) {
-    // Remove leading slash
-    const addr = pathname.replace(/^\//, '');
+    const segments = pathname.split('/').filter(function (part) {
+        return part.length > 0;
+    });
 
-    return parseTargetSpec(addr);
+    return parseTargetSpec(segments.length ? segments[segments.length - 1] : '');
 }
 
 /**

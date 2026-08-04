@@ -9,11 +9,11 @@
  *   WebSocket client  ->  relay.js  ->  UDP "game server"
  *                     <-           <-
  *
- * Covered: both URL forms, hostname targets (the relay's DNS lookup), packets
- * sent before the UDP socket is bound, several packets in a row, two clients
- * on one server at the same time (own UDP port each, no cross-talk), the
- * "only the target may answer" filter, malformed targets, the connection
- * limit, the idle-connection reaper and a failed bind.
+ * Covered: both URL forms, a proxied path prefix, hostname targets (the relay's
+ * DNS lookup), packets sent before the UDP socket is bound, several packets in
+ * a row, two clients on one server at the same time (own UDP port each, no
+ * cross-talk), the "only the target may answer" filter, malformed targets, the
+ * connection limit, the idle-connection reaper and a failed bind.
  *
  * Run with:  npm --prefix tools/ws-relay install && node tools/ws-relay/test-relay.mjs
  *
@@ -367,6 +367,10 @@ async function main() {
 	await roundTrip(relay.port, '/?target=127.0.0.1:' + server.port, 'bbb222', 'query form');
 	// The browser build cannot resolve names itself and passes them here.
 	await roundTrip(relay.port, '/localhost:' + server.port, 'ccc333', 'hostname form');
+	// Behind a reverse proxy that does not strip its own location prefix
+	// (nginx "proxy_pass http://127.0.0.1:8080;" without a trailing slash),
+	// the target arrives as the last segment of a longer path.
+	await roundTrip(relay.port, '/ws-relay/127.0.0.1:' + server.port, 'ddd444', 'proxied path form');
 
 	// Several sequential packets on one connection keep working (the UDP
 	// socket and its queue are reused).

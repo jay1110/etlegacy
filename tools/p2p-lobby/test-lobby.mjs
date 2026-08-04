@@ -297,6 +297,12 @@ async function testHostListAndHttp(port) {
 
 	const health = await fetch('http://127.0.0.1:' + port + '/health');
 	check(health.status === 200 && (await health.text()) === 'ok', 'GET /health returns ok');
+	// Behind a reverse proxy that keeps its own location prefix the endpoint
+	// arrives as the last path segment (nginx "proxy_pass http://127.0.0.1:8081;"
+	// without a trailing slash).
+	const proxied = await fetch('http://127.0.0.1:' + port + '/p2p-lobby/health');
+	check(proxied.status === 200 && (await proxied.text()) === 'ok',
+		'GET /health behind a proxy path prefix returns ok');
 	const nope = await fetch('http://127.0.0.1:' + port + '/nope');
 	check(nope.status === 404, 'unknown HTTP path is 404');
 

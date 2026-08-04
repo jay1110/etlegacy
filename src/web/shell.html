@@ -2313,7 +2313,7 @@
                         <option value="legacy" selected>Legacy Mod</option>
                         <option value="xmod">XMod</option>
                         <option value="etbloat" disabled>ETBloat (not available)</option>
-                        <option value="jaymod" disabled>Jaymod (not available)</option>
+                        <option value="jaymod">Jaymod</option>
                         <option value="noquarter" disabled>No Quarter (not available)</option>
                         <option value="etpub" disabled>ETPub (not available)</option>
                         <option value="etjump" disabled>ETJump (not available)</option>
@@ -4229,35 +4229,54 @@
             // directory on each visit is fast.
             var OMNIBOT_DIR = INSTALL_DIR + '/omni-bot';
 
-            // --- Relay / server defaults ---------------------------------
-            // The community relay that serves this deployment. It is built in
-            // so a share link only has to name the server
+            // --- Relay / lobby defaults ----------------------------------
+            // The two services that serve this deployment:
+            //
+            //   ws-relay   (tools/ws-relay)   bridges the browser's WebSocket
+            //                                 to a dedicated server's UDP port
+            //   p2p-lobby  (tools/p2p-lobby)  introduces browsers to each other
+            //                                 for games hosted in a browser and
+            //                                 holds the list of running games
+            //
+            // Both are built in, so a share link only has to name the server
             // (?connect=etclan.de:27966) - or nothing at all - instead of
-            // spelling out a URL-encoded ?relay= every time. Override with
-            // ?relay=<ws-url>.
-            var DEFAULT_RELAY_HOST = '135.125.189.21:8080';
+            // spelling out a URL-encoded ?relay=/?lobby= every time. Override
+            // them with ?relay=<ws-url> and ?lobby=<ws-url>.
+            //
+            // Each one is given as *both* a secure and a plain URL, and the
+            // page picks the one that matches how it was opened: a page served
+            // over https:// may only open wss:// sockets (mixed content is
+            // blocked), while a page served over http:// can use either. The
+            // secure URLs go through the site's own web server, which already
+            // has the certificate for this domain (Plesk/nginx terminates TLS
+            // and proxies these two paths through to the services - see
+            // docs/web.md); the plain ones talk to the services' own ports
+            // directly, so they keep working even where no proxy is set up.
+            //
+            // The relay URL must not end in a slash: the engine appends
+            // "/<host>:<port>" to it (WS_GetConnection in src/qcommon/net_web.c).
+            // The lobby URL is used as it stands, and its trailing slash is
+            // what makes an "location /p2p-lobby/" proxy rule match.
+            var DEFAULT_RELAY = {
+                secure: 'wss://et.clan-etc.de/ws-relay',
+                plain:  'ws://et.clan-etc.de:8080'
+            };
+            var DEFAULT_LOBBY = {
+                secure: 'wss://et.clan-etc.de/p2p-lobby/',
+                plain:  'ws://et.clan-etc.de:8081/'
+            };
 
-            // A page served over https:// may only open wss:// sockets, so the
-            // scheme follows the page. Run the relay with --tls-cert/--tls-key
-            // (or behind an nginx TLS proxy) when the page is HTTPS.
-            function defaultRelayUrl() {
-                var scheme = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
-                return scheme + DEFAULT_RELAY_HOST;
+            function defaultServiceUrl(service) {
+                return (window.location.protocol === 'https:')
+                    ? service.secure : service.plain;
             }
 
-            // --- Peer-to-peer lobby ---------------------------------------
-            // "Host game" runs the server inside the browser. A browser has no
-            // listening socket, so other players cannot be reached through the
-            // ws-relay above; they are connected over WebRTC data channels
-            // instead, negotiated through the lobby/signalling server
-            // (tools/p2p-lobby, run next to the relay on the same machine).
-            // The lobby also holds the list of running games shown by the
-            // "Join games" button. Override with ?lobby=<ws-url>.
-            var DEFAULT_LOBBY_HOST = '135.125.189.21:8081';
+            function defaultRelayUrl() {
+                return defaultServiceUrl(DEFAULT_RELAY);
+            }
 
             function defaultLobbyUrl() {
-                var scheme = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
-                return scheme + DEFAULT_LOBBY_HOST;
+                return defaultServiceUrl(DEFAULT_LOBBY);
             }
 
             // src/web/etl-p2p.js is loaded by a plain script tag before this
@@ -5526,7 +5545,8 @@
                 xmod:      { name: 'XMod',       fsGame: 'xmod',      available: true,
                              pk3s: ['xmod-2.0.3.pk3'] },
                 etbloat:   { name: 'ETBloat',    fsGame: 'etbloat',   available: false },
-                jaymod:    { name: 'Jaymod',     fsGame: 'jaymod',    available: false },
+                jaymod:    { name: 'Jaymod',     fsGame: 'jaymod',    available: true,
+                             pk3s: ['jaymod-2.2.0.pk3'] },
                 noquarter: { name: 'No Quarter', fsGame: 'nq',        available: false },
                 etpub:     { name: 'ETPub',      fsGame: 'etpub',     available: false },
                 etjump:    { name: 'ETJump',     fsGame: 'etjump',    available: false }
