@@ -326,7 +326,16 @@ Notes:
   serves the page over HTTPS can firewall them off and bind the services to
   localhost (`--host 127.0.0.1`).
 - The services themselves need no TLS options in this setup; `--tls-cert` /
-  `--tls-key` are only for running them *without* a proxy.
+  `--tls-key` are only for running them *without* a proxy — and under Plesk that
+  would mean handing the panel's certificate store to a Node process and
+  re-reading it after every renewal, which the proxy avoids entirely.
+- A Plesk "Permanent SEO-safe 301 redirect from HTTP to HTTPS" does not get in
+  the way: an `http://` page uses the direct ports, not the proxied paths.
+- Check the result with `curl -i --http1.1 -H 'Connection: Upgrade'
+  -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13'
+  -H 'Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==' https://et.clan-etc.de/p2p-lobby/`
+  — a working proxy answers `101 Switching Protocols`. `https://et.clan-etc.de/p2p-lobby/health`
+  answers `ok` in a browser as well.
 
 ## 6. Open the game and connect
 
