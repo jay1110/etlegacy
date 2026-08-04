@@ -170,6 +170,40 @@
 #define Q_EXPORT
 #endif
 
+#ifdef __EMSCRIPTEN__
+/**
+ * @def VM_WASM_ABI_VERSION
+ * @brief ABI contract between the engine and a game logic side module (cgame/ui/qagame)
+ * in the browser build.
+ *
+ * On WebAssembly every indirect call is type checked against the callee, and there is
+ * no way to recover from a mismatch: it takes the whole page down with
+ * "indirect call signature mismatch". The two directions of the VM ABI are
+ * function pointers - the engine calls the module's vmMain (VM_EntryPoint_t) and the
+ * module calls back through the syscall pointer it is handed in dllEntry - so a module
+ * built against a *different* engine revision (for example one that still used the
+ * variadic syscall of the native builds) kills the browser tab as soon as it makes its
+ * first trap call, before anything can report the real problem.
+ *
+ * Every module of this build therefore exports VM_WASM_ABI_SYMBOL, and the engine
+ * refuses to run a module that does not (see Sys_LoadGameDll); the web shell checks the
+ * same symbol before it compiles a module (see src/web/shell.html). Bump the version -
+ * in the symbol name as well, that is what makes an old module detectable - whenever the
+ * engine/module calling convention changes.
+ */
+#define VM_WASM_ABI_VERSION 1
+#define VM_WASM_ABI_SYMBOL  "vmWasmAbi1"
+
+/**
+ * @def VM_WASM_ABI_EXPORT
+ * @brief Defines the marker function VM_WASM_ABI_SYMBOL names. Used once per game logic
+ * module, next to its dllEntry.
+ */
+#define VM_WASM_ABI_EXPORT \
+	Q_EXPORT int vmWasmAbi1(void); \
+	Q_EXPORT int vmWasmAbi1(void) { return VM_WASM_ABI_VERSION; }
+#endif
+
 // FIXME: required for MinGW. Find a better way to handle this (<float.h>?)
 #ifdef __MINGW32__
 #   ifndef FLT_EPSILON

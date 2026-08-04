@@ -2319,10 +2319,13 @@
                         <option value="etjump" disabled>ETJump (not available)</option>
                     </select>
                     <div class="setting-hint" id="host-mod-hint">
-                        The mod the hosted game runs. Only mods built for WebAssembly
-                        can be hosted in a browser; the greyed out ones have no
-                        WebAssembly build yet. A mod other than Legacy is downloaded
-                        the first time it is used, by you and by everyone who joins.
+                        The mod the hosted game runs. It is downloaded the first
+                        time it is used, by you and by everyone who joins. Mods
+                        that do not come with game code built for WebAssembly -
+                        closed-source ones such as Jaymod never will - are played
+                        with ET: Legacy's game code, using their own maps, media
+                        and server settings; the greyed out ones are not served
+                        with this page at all.
                     </div>
 
                     <div class="check-row">
@@ -4077,11 +4080,47 @@
                 ASSET_BASE = 'etmain/';
             }
 
+            // Resolve a download link against this page and align its protocol
+            // with the page's own. Deployments that are reachable over both
+            // http:// and https:// otherwise only work over one of them: the
+            // links in maplist.json (and in ?assets=/?legacy= overrides) are
+            // usually written as absolute https:// URLs, and the scheme is part
+            // of the origin - so fetching such a link from a page that was
+            // opened over http:// is a cross-origin request that fails unless
+            // the web space also sends CORS headers. Following the page's
+            // scheme for links that point at the very same web space keeps
+            // those downloads same-origin either way. Links to a *foreign* host
+            // are only upgraded to https:// on an https:// page, where the
+            // browser would block plain http:// downloads as mixed content.
+            function resolveDownloadUrl(url) {
+                var page = window.location;
+                var resolved;
+
+                if (typeof url !== 'string' || !url) { return url; }
+
+                try {
+                    resolved = new URL(url, page.href);
+                } catch (e) {
+                    return url;             // nothing we can reason about
+                }
+
+                if (resolved.protocol !== page.protocol &&
+                    (resolved.protocol === 'http:' || resolved.protocol === 'https:')) {
+                    if (resolved.host === page.host) {
+                        resolved.protocol = page.protocol;
+                    } else if (page.protocol === 'https:') {
+                        resolved.protocol = 'https:';
+                    }
+                }
+
+                return resolved.href;
+            }
+
             // True when ASSET_BASE resolves to a different origin than this page,
             // in which case the remote server must send CORS headers.
             function assetsAreCrossOrigin() {
                 try {
-                    return new URL(ASSET_BASE, window.location.href).origin !==
+                    return new URL(resolveDownloadUrl(ASSET_BASE), window.location.href).origin !==
                         window.location.origin;
                 } catch (e) {
                     return false;
@@ -4397,7 +4436,12 @@
             var mapList = null;
 
             // Accept only what can safely become a map name / a download: a bsp
-            // name the engine would accept, and an http(s) URL.
+            // name the engine would accept, and a link that is either an
+            // http(s) URL, a protocol relative "//host/path" one or relative to
+            // this page. Anything with another scheme (javascript:, data: ...)
+            // is dropped. The link's protocol is aligned with the page's when it
+            // is fetched (resolveDownloadUrl), so an https:// entry also works
+            // on a page that was opened over http://.
             function sanitiseMapList(raw) {
                 var clean = {};
                 var count = 0;
@@ -4406,7 +4450,8 @@
                     if (!/^[A-Za-z0-9_-]{1,64}$/.test(name)) { return; }
                     if (typeof url !== 'string') { return; }
                     url = url.trim();
-                    if (url && !/^https?:\/\//i.test(url)) { return; }
+                    if (url && /^[A-Za-z][A-Za-z0-9+.-]*:/.test(url) &&
+                        !/^https?:/i.test(url)) { return; }
                     clean[name] = url;
                     count++;
                 });
@@ -4415,7 +4460,7 @@
 
             function loadMapList() {
                 if (mapList) { return Promise.resolve(mapList); }
-                return fetch(MAPLIST_URL, { cache: 'no-cache' }).then(function (response) {
+                return fetch(resolveDownloadUrl(MAPLIST_URL), { cache: 'no-cache' }).then(function (response) {
                     if (!response.ok) {
                         throw new Error('HTTP ' + response.status);
                     }
@@ -4514,7 +4559,7 @@
                     return Promise.resolve();
                 }
 
-                return fetch(sourceUrl, fetchOpts).then(function (response) {
+                return fetch(resolveDownloadUrl(sourceUrl), fetchOpts).then(function (response) {
                     if (!response.ok) {
                         throw new Error('Failed to download ' + label + ': HTTP ' + response.status);
                     }
@@ -4778,6 +4823,16 @@
                 } catch (e) { /* dir missing/unreadable - nothing to clean */ }
             }
 
+            // True when at least one of the mod's pk3s is in its directory, i.e.
+            // the mod's own maps, media and menus are really there.
+            function modPk3Installed(assets) {
+                return listModPk3s(assets).some(function (name) {
+                    try {
+                        return Module.FS.analyzePath(assets.dir + '/' + name).exists;
+                    } catch (e) { return false; }
+                });
+            }
+
             // Extract a side module (cgame/ui/qagame) from one of the
             // already-downloaded pk3s in the mod's directory. Returns the module
             // bytes, or null if none of the pk3s contains it. The pk3 is the
@@ -4877,7 +4932,7 @@
             // browser-cached copy from a previous deployment is not silently
             // reused.
             function fetchStandaloneSideModule(name, assets) {
-                return fetch(assets.base + name, { cache: 'no-cache' }).then(function (response) {
+                return fetch(resolveDownloadUrl(assets.base + name), { cache: 'no-cache' }).then(function (response) {
                     if (!response.ok) {
                         throw new Error('HTTP ' + response.status + ' for ' +
                             assets.base + name);
@@ -4926,38 +4981,157 @@
                     'mode instead of binary) or altered by the web server';
             }
 
-            function preloadSideModule(name, assets) {
-                Module.setStatus('Loading ' + name);
-                // Obtain the module bytes once - preferably straight from the mod
-                // pk3 the shell downloaded (the reliable, always-present source),
-                // otherwise from the standalone .so served next to the pk3. Bytes
-                // that are not a valid wasm module (a corrupt or mis-served file)
-                // are rejected so the other source still gets a chance.
-                function describeProblem(bytes) {
-                    return describeNonWasm(bytes);
+            // Marker every game-logic module of this build exports to state which
+            // engine ABI it speaks (VM_WASM_ABI_SYMBOL, see src/qcommon/q_shared.h).
+            // A module from another ET: Legacy version calls back into the engine
+            // through a function pointer of a different signature, and WebAssembly
+            // type checks every indirect call: the mismatch is an unrecoverable
+            // trap ("indirect call signature mismatch") that takes the whole page
+            // down - no error handler runs, the launcher cannot report anything and
+            // the tab has to be reloaded. Such a module must therefore never be
+            // handed to the engine in the first place, and the export makes it
+            // detectable before it is compiled. The engine checks it as well
+            // (Sys_TryLibraryLoad) for modules the shell never saw.
+            var VM_ABI_SYMBOL = 'vmWasmAbi1';
+
+            // Read a WebAssembly module's export section and report whether it
+            // exports "want". Only the section headers are walked (each is a
+            // one-byte id plus its LEB128 size), so this is cheap even for a
+            // multi-megabyte module. A leading underscore is accepted as well,
+            // the form some toolchains give C symbols.
+            function wasmExportsInclude(bytes, want) {
+                var wanted = [want, '_' + want];
+                var pos = 8;                        // magic + version
+                var id, size, end, count, len, i, j, w, match;
+
+                function uleb() {
+                    var result = 0, shift = 0, b;
+                    do {
+                        if (pos >= bytes.length) { throw new Error('truncated'); }
+                        b = bytes[pos++];
+                        result += (b & 0x7f) * Math.pow(2, shift);
+                        shift += 7;
+                    } while (b & 0x80);
+                    return result;
                 }
-                function usable(bytes) {
-                    return hasWasmMagic(bytes);
-                }
-                return extractSideModuleFromPk3(name, assets).then(function (bytes) {
-                    if (bytes && usable(bytes)) { return bytes; }
-                    if (bytes && console && console.warn) {
-                        console.warn('Ignoring ' + name + ' from the mod pk3: ' +
-                            describeProblem(bytes) + '. Trying the standalone copy.');
+
+                if (!hasWasmMagic(bytes) || bytes.length < 8) { return false; }
+
+                try {
+                    while (pos < bytes.length) {
+                        id = bytes[pos++];
+                        size = uleb();
+                        end = pos + size;
+                        if (end > bytes.length) { return false; }
+                        if (id !== 7) {             // not the export section
+                            pos = end;
+                            continue;
+                        }
+                        count = uleb();
+                        for (i = 0; i < count; i++) {
+                            len = uleb();
+                            for (w = 0; w < wanted.length; w++) {
+                                if (len !== wanted[w].length) { continue; }
+                                match = true;
+                                for (j = 0; j < len; j++) {
+                                    if (bytes[pos + j] !== wanted[w].charCodeAt(j)) {
+                                        match = false;
+                                        break;
+                                    }
+                                }
+                                if (match) { return true; }
+                            }
+                            pos += len;
+                            pos++;                  // export kind
+                            uleb();                 // index
+                        }
+                        return false;               // section read, name not in it
                     }
-                    var pk3Problem = bytes ?
+                } catch (e) { /* malformed - treat as "not exported" */ }
+
+                return false;
+            }
+
+            // Why a module cannot be used, or null when it can be.
+            function describeModuleProblem(bytes) {
+                if (!hasWasmMagic(bytes)) { return describeNonWasm(bytes); }
+                if (!wasmExportsInclude(bytes, VM_ABI_SYMBOL)) {
+                    return 'it was built for a different ET: Legacy version (it does ' +
+                        'not export ' + VM_ABI_SYMBOL + ') - the engine and its game ' +
+                        'logic modules must come from the same build';
+                }
+                return null;
+            }
+
+            // Mods whose own game logic could not be used, so this build's own
+            // modules run their game instead (see preloadSideModule). Keyed by
+            // fs_game directory, because the engine is what has to be told about
+            // it - with "+set fs_basegame legacy", see legacyLogicArgs().
+            var modFallbackLogic = {};
+
+            // Extra engine arguments for a mod that is run with this build's game
+            // logic: mount the legacy pk3 underneath the mod's own directory, so
+            // the modules find the ui .menu files and the other media they expect
+            // (FS_Startup mounts etmain, then fs_basegame, then fs_game).
+            function legacyLogicArgs(fsGame) {
+                return (fsGame && modFallbackLogic[fsGame]) ?
+                    ['+set', 'fs_basegame', LEGACY_ASSETS.fsGame] : [];
+            }
+
+            // Obtain the bytes of one game-logic side module of a mod: preferably
+            // straight from the mod pk3 the shell downloaded (the reliable,
+            // always-present source), otherwise from a standalone .so served next
+            // to the pk3. Rejects with a message naming what is wrong with each
+            // source, so a deployment problem can actually be fixed.
+            function sideModuleBytes(name, assets) {
+                return extractSideModuleFromPk3(name, assets).then(function (bytes) {
+                    var pk3Problem = bytes ? describeModuleProblem(bytes) : null;
+                    if (bytes && !pk3Problem) { return bytes; }
+                    if (bytes && console && console.warn) {
+                        console.warn('Ignoring ' + name + ' from the ' + assets.fsGame +
+                            ' pk3: ' + pk3Problem + '. Trying the standalone copy.');
+                    }
+                    var pk3Note = bytes ?
                         ' (its copy inside the mod pk3 is not usable: ' +
-                        describeProblem(bytes) + ')' : '';
+                        pk3Problem + ')' : '';
                     return fetchStandaloneSideModule(name, assets).catch(function (err) {
                         throw new Error('it is not usable from the mod pk3 and the ' +
                             'standalone copy at ' + assets.base + name +
                             ' could not be loaded (' +
-                            (err && err.message || err) + ')' + pk3Problem);
-                    }).then(function (bytes) {
-                        if (usable(bytes)) { return bytes; }
+                            (err && err.message || err) + ')' + pk3Note);
+                    }).then(function (standalone) {
+                        var problem = describeModuleProblem(standalone);
+                        if (!problem) { return standalone; }
                         throw new Error('the standalone copy at ' + assets.base +
-                            name + ' is not usable: ' +
-                            describeProblem(bytes) + pk3Problem);
+                            name + ' is not usable: ' + problem + pk3Note);
+                    });
+                });
+            }
+
+            function preloadSideModule(name, assets) {
+                Module.setStatus('Loading ' + name);
+                return sideModuleBytes(name, assets).catch(function (err) {
+                    // No game logic that this engine can run. For a mod that is
+                    // not the one shipped here that is the normal case rather
+                    // than a broken deployment: mods like Jaymod are closed
+                    // source and only ship native/QVM game code, which a browser
+                    // cannot execute at all. Run their game with this build's own
+                    // modules instead - the mod's maps, pk3 media and server
+                    // settings are still used, and everything that lives in the
+                    // engine and in this game logic (Omni-bot in particular)
+                    // works for them exactly as it does for legacy.
+                    if (assets.fsGame === LEGACY_ASSETS.fsGame) { throw err; }
+                    return sideModuleBytes(name, LEGACY_ASSETS).then(function (bytes) {
+                        if (!modFallbackLogic[assets.fsGame] && console && console.warn) {
+                            console.warn(assets.fsGame + ' does not come with game ' +
+                                'logic this build can run (' + name + ': ' +
+                                (err && err.message || err) + '); using the game ' +
+                                'logic of ' + LEGACY_ASSETS.fsGame + ' instead.');
+                        }
+                        modFallbackLogic[assets.fsGame] = true;
+                        return bytes;
+                    }, function () {
+                        throw err;                  // report the mod's own problem
                     });
                 }).then(function (bytes) {
                     // Precompile the module into every directory the engine may
@@ -5007,11 +5181,23 @@
                 }, Promise.resolve());
 
                 // 2) cgame/ui side modules - precompiled so dlopen() works. Taken
-                //    from the pk3 above, falling back to the standalone .so. Old
-                //    versioned pk3s cached from a previous deployment are removed
-                //    first so their stale side modules can never be picked up.
+                //    from the pk3 above, falling back to the standalone .so and
+                //    then to this build's own modules. Old versioned pk3s cached
+                //    from a previous deployment are removed first so their stale
+                //    side modules can never be picked up.
+                //
+                //    Since the modules can fall back to legacy's, the mod's pk3
+                //    is what really has to be there for the mod to be its own
+                //    game: without it the engine would run under the mod's
+                //    fs_game with none of the mod's content in it.
                 return pk3Chain.then(function () {
-                    if (assets === LEGACY_ASSETS) { removeStaleModPk3s(); }
+                    if (assets === LEGACY_ASSETS) {
+                        removeStaleModPk3s();
+                    } else if (assets.pk3s.length && !modPk3Installed(assets)) {
+                        throw new Error('none of its data packages (' +
+                            assets.pk3s.join(', ') + ') could be downloaded from ' +
+                            assets.base);
+                    }
                     return MOD_FILES.reduce(function (chain, name) {
                         return chain.then(function () {
                             return preloadSideModule(name, assets);
@@ -5099,7 +5285,7 @@
                     // dlopen()s it (Omnibot_LoadLibrary), and on Emscripten that
                     // can only ever succeed for a module already compiled into
                     // the preloadedWasm cache under exactly this path.
-                    return fetch(moduleUrl, { cache: 'no-cache' });
+                    return fetch(resolveDownloadUrl(moduleUrl), { cache: 'no-cache' });
                 }).then(function (response) {
                     if (!response.ok) {
                         throw new Error('HTTP ' + response.status + ' for ' + moduleUrl);
@@ -5491,10 +5677,15 @@
             // Step 2: pak0.pk3 is set - show the "Run game" menu and resolve
             // with the extra engine arguments for the chosen mode. Skipped when
             // the URL already dictates what to do (?connect= or ?map=).
-            function connectArgs(address) {
+            // fsGame: the mod the game runs, when it is known up front (a game
+            // joined from the lobby). The server makes the client switch to it on
+            // connect, so a mod that is run with this build's game logic needs the
+            // same fs_basegame as the host.
+            function connectArgs(address, fsGame) {
                 return ['+set', 'cl_allowDownload', '1',
-                        '+set', 'cl_wwwDownload', '1',
-                        '+connect', address];
+                        '+set', 'cl_wwwDownload', '1']
+                    .concat(legacyLogicArgs(fsGame))
+                    .concat(['+connect', address]);
             }
 
             // Arguments for a game hosted inside the browser (a listen server).
@@ -5527,11 +5718,16 @@
             // the engine treats a peer like any other address.
             //
             // --- Mods -------------------------------------------------------
-            // A hosted game runs the mod selected on the host page. Only mods
-            // that are built for WebAssembly and shipped with this deployment
-            // can actually run in a browser, which is what "available" means
-            // here; the others are listed (and disabled in the drop-down) so it
-            // is clear that they are known but not usable yet.
+            // A hosted game runs the mod selected on the host page. "available"
+            // means the mod's files are served with this deployment and can be
+            // installed on demand; the others are listed (and disabled in the
+            // drop-down) so it is clear that they are known but not usable yet.
+            //
+            // A mod does not have to bring game logic built for WebAssembly:
+            // when it does not (Jaymod and the other closed-source mods never
+            // will - a browser cannot run their native/QVM game code), the game
+            // is run with this build's own cgame/ui/qagame on top of the mod's
+            // pk3, see preloadSideModule.
             //
             // "pk3s" names the mod's data package(s) as served in its folder
             // (see modAssets): unlike the legacy pk3, whose name this page gets
@@ -5546,7 +5742,7 @@
                 xmod:      { name: 'XMod',       fsGame: 'xmod',      available: true,
                              pk3s: ['xmod-2.0.3.pk3'] },
                 jaymod:    { name: 'Jaymod',     fsGame: 'jaymod',    available: true,
-                             pk3s: ['jaymod-2.2.0.pk3'] },
+                             pk3s: ['jaymod-2.2.1.pk3'] },
                 etbloat:   { name: 'ETBloat',    fsGame: 'etbloat',   available: false },
                 noquarter: { name: 'No Quarter', fsGame: 'nq',        available: false },
                 etpub:     { name: 'ETPub',      fsGame: 'etpub',     available: false },
@@ -5601,8 +5797,8 @@
                     if (modInstalls[modKey] === install) { modInstalls[modKey] = null; }
                     throw new Error(mod.name + ' could not be loaded: ' +
                         (err && err.message || err) + '. Serve ' +
-                        (assets.pk3s.length ? assets.pk3s.join(', ') + ' and ' : '') +
-                        MOD_FILES.join(', ') + ' in the "' +
+                        (assets.pk3s.length ? assets.pk3s.join(', ') :
+                            'its pk3') + ' in the "' +
                         assets.base.replace(/\/$/, '') + '" folder next to this page.');
                 });
                 modInstalls[modKey] = install;
@@ -5644,6 +5840,10 @@
                 // starts with "+set fs_game <mod>", and the bot library before
                 // the first map is loaded.
                 return installMod(settings.mod).then(function () {
+                    // Only known once the mod is installed: a mod that brings no
+                    // game logic for the browser is run with this build's own,
+                    // which needs the legacy pk3 mounted underneath it.
+                    args.push.apply(args, legacyLogicArgs(mod && mod.fsGame));
                     return setupOmniBot(settings.bots);
                 }).then(function (ready) {
                     if (!ready) {
@@ -6247,8 +6447,8 @@
                     // The room the lobby returns on the join is the current
                     // one: a private game is not in the list, so this may be
                     // the first time the mod of that game is known here.
-                    return installJoinedMod(joined.room).then(function () {
-                        return connectArgs(joined.address);
+                    return installJoinedMod(joined.room).then(function (fsGame) {
+                        return connectArgs(joined.address, fsGame);
                     });
                 });
             }
@@ -6259,15 +6459,20 @@
             // this build does not know, or one that cannot be fetched, is only
             // a warning: the connect is still tried (the engine downloads the
             // pk3 from the host), it just may not get past loading the mod.
+            // Resolves with the mod's fs_game directory (null when there is
+            // none, or when it could not be installed).
             function installJoinedMod(room) {
                 var modKey = room && room.mod;
                 if (!modKey || !HOST_MODS[modKey] || !HOST_MODS[modKey].available) {
-                    return Promise.resolve();
+                    return Promise.resolve(null);
                 }
-                return installMod(modKey).catch(function (err) {
+                return installMod(modKey).then(function () {
+                    return HOST_MODS[modKey].fsGame;
+                }, function (err) {
                     if (console && console.warn) {
                         console.warn(err && err.message || err);
                     }
+                    return null;
                 });
             }
 

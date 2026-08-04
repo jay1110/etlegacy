@@ -46,6 +46,10 @@ Q_EXPORT void dllEntry(intptr_t(QDECL *syscallptr)(intptr_t *args))
 {
 	syscall = syscallptr;
 }
+
+// Tells the engine and the web shell that this module speaks the VM ABI of the
+// build it is loaded into - see VM_WASM_ABI_VERSION in src/qcommon/q_shared.h.
+VM_WASM_ABI_EXPORT
 #else
 static intptr_t(QDECL * syscall)(intptr_t arg, ...) = (intptr_t(QDECL *)(intptr_t, ...)) - 1;
 
