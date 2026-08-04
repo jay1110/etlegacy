@@ -898,8 +898,9 @@ static void *Sys_TryLibraryLoad(const char *base, const char *gamedir, const cha
 	// search path (and, for the ui module, with the legacy mod fallback).
 	if (libHandle && !Sys_LoadFunction(libHandle, VM_WASM_ABI_SYMBOL))
 	{
-		Com_Printf("Sys_LoadDll(%s): skipped, this module was built for a different "
-		           "engine version (no %s export)\n", fname, VM_WASM_ABI_SYMBOL);
+		Com_Printf("Sys_LoadDll(%s/%s/%s): skipped, this module was built for a "
+		           "different engine version (no %s export)\n",
+		           base, gamedir, fname, VM_WASM_ABI_SYMBOL);
 		Sys_UnloadLibrary(libHandle);
 
 		return NULL;
