@@ -360,7 +360,13 @@ Locally hosted games fill the server with Omni-bot bots. The bot count is the
 one chosen in the launcher; it is written to `omni-bot.cfg` in `fs_homepath`
 (persisted in the browser like the rest of the home directory) and can be
 changed at any time in the game's settings panel or in-game with
-`/bot minbots <n>` and `/bot maxbots <n>`.
+`/bot minbots <n>` and `/bot maxbots <n>`. Bots work for **every** mod that can
+be hosted here, not just Legacy: the bot library is loaded by the server game
+logic (`qagame`), and a mod that brings no WebAssembly game logic of its own is
+run with this build's — which does load it (see
+[section 7](#7-host-games-in-the-browser-lobby--webrtc)). The library and its
+data are found through the absolute `omnibot_path` the page passes, so they do
+not depend on the mod's directory either.
 
 Alternatively, configure everything from the page URL (which skips the menu)
 or from the in-page **Connect…** panel (controls bar at the top edge):
@@ -464,7 +470,7 @@ The host form has two tabs. **Basic** holds everything a game needs:
 
 | Setting | Cvar | Default | Meaning |
 |---------|------|---------|---------|
-| Mod | `fs_game` | `legacy` | Legacy mod, XMod or Jaymod. ETBloat, No Quarter, ETPub and ETJump are listed but disabled — they have no WebAssembly game logic, so they cannot run in the browser |
+| Mod | `fs_game` | `legacy` | Legacy mod, XMod or Jaymod. A mod that brings no WebAssembly game logic of its own is played with ET: Legacy's game code on top of its pk3 (see below). ETBloat, No Quarter, ETPub and ETJump are listed but disabled — they are not served with the page |
 | Balanced teams | `g_teamForceBalance` | `0` | Players cannot join the team that already has more players (the read-only `g_balancedteams` the server advertises is derived from it) |
 | Warmup | `g_doWarmup` | `1` | Players have to be ready before a match starts |
 | Friendly fire | `g_friendlyFire` | `1` | Teammates can hurt each other |
@@ -482,28 +488,46 @@ in a folder named after its `fs_game`:
 
 ```
 xmod/
-├── xmod-2.0.3.pk3            # the mod's data package(s)
-├── qagame.mp.wasm32.so       # server game logic
-├── cgame.mp.wasm32.so        # client game logic
-└── ui.mp.wasm32.so           # menus
+├── xmod-2.0.3.pk3            # the mod's data package(s)   (required)
+├── qagame.mp.wasm32.so       # server game logic           (optional)
+├── cgame.mp.wasm32.so        # client game logic           (optional)
+└── ui.mp.wasm32.so           # menus                       (optional)
 
 jaymod/
-├── jaymod-2.2.0.pk3
-├── qagame.mp.wasm32.so
-├── cgame.mp.wasm32.so
-└── ui.mp.wasm32.so
+└── jaymod-2.2.1.pk3
 ```
 
-The standalone `.so` files are what the page compiles; the pk3 is only read as a
-fallback if one of them is missing. Unlike the Legacy folder, the name of a
-mod's pk3 cannot be guessed (a folder cannot be listed over HTTP), so the page
-uses the name in its mod table (`HOST_MODS` in `src/web/shell.html` — currently
-`xmod-2.0.3.pk3` and `jaymod-2.2.0.pk3`). Point it at a different name or
-version with `?modpk3=<a.pk3,b.pk3>`, and at a different location with
-`?modbase=<url>`. A missing pk3 is only a warning; missing modules are an error
-that names the files and the folder they belong in — that message is also what a
-deployment sees when it offers Jaymod or XMod without having built their
-WebAssembly modules yet.
+Only the pk3 is required. The three `.so` files are the mod's own game logic
+built for WebAssembly, and most mods will never have them: Jaymod, No Quarter
+and the other closed-source mods only ship native `.so`/`.qvm` game code, which
+a browser cannot execute at all. When a mod brings no module this engine can
+run, the page falls back to **this build's** `cgame`/`ui`/`qagame` and starts
+the game with `+set fs_basegame legacy`, so the mod's own pk3 (its maps, media
+and menus) is mounted on top of the Legacy pk3 the modules need. The game then
+plays with ET: Legacy's rules and everything that lives in the engine and in
+this game logic — Omni-bot in particular — works for that mod exactly as it does
+for Legacy. Only the mod's *own* gameplay features are missing, which is the
+best a browser can do without a WebAssembly build of that mod.
+
+A mod's own modules are preferred whenever they exist and were built for this
+engine version. That is checked before they are compiled: every game logic
+module of a build exports a marker symbol (`vmWasmAbi1`, `VM_WASM_ABI_VERSION`
+in `src/qcommon/q_shared.h`), and a module without it is ignored by the page and
+refused by the engine (`Sys_TryLibraryLoad`). Without that check a module of
+another ET: Legacy version — an old copy left in a mod folder, say — would load,
+call back into the engine through a syscall pointer of a different shape and
+kill the whole tab with `RuntimeError: indirect call signature mismatch`, a trap
+no error handler can catch.
+
+The pk3 inside the mod folder is also where the page reads the modules from
+first; a standalone `.so` next to it is used when the pk3 does not contain one.
+Unlike the Legacy folder, the name of a mod's pk3 cannot be guessed (a folder
+cannot be listed over HTTP), so the page uses the name in its mod table
+(`HOST_MODS` in `src/web/shell.html` — currently `xmod-2.0.3.pk3` and
+`jaymod-2.2.1.pk3`). Point it at a different name or version with
+`?modpk3=<a.pk3,b.pk3>`, and at a different location with `?modbase=<url>`. If
+none of the mod's pk3s can be downloaded the game is not started: the error
+names the files and the folder they belong in.
 
 Only `etmain/`, `legacy/` and the home directory are stored persistently, so
 another mod's files are downloaded once per browser session.
@@ -580,10 +604,22 @@ The key is the map's bsp name, the value is the download link of the pk3 the
 map ships in. An **empty** link marks a stock map that needs no download.
 Everything else is downloaded — by the host when the game starts (or when the
 map is switched) and by every player who joins that game — into the browser's
-`etmain` and cached in IndexedDB, so it is fetched only once. The file the URL
-points at must be a `.pk3` and the server hosting it must allow CORS
-(`Access-Control-Allow-Origin`), otherwise the browser cannot read it. Use
-`?maplist=<url>` to point the page at a different list.
+`etmain` and cached in IndexedDB, so it is fetched only once. The file the link
+points at must be a `.pk3`. Use `?maplist=<url>` to point the page at a
+different list.
+
+A link may be an absolute `http(s)://` URL, protocol relative (`//host/path`) or
+relative to the page (`etmain/etl_supply_v14.pk3`); any other scheme is dropped.
+Only a link that ends up on **another origin** needs CORS
+(`Access-Control-Allow-Origin`) on the server that hosts the pk3 — and the
+scheme is part of the origin, so an `https://` link fetched from a page opened
+over `http://` would be a cross-origin request even on the very same web space.
+The page therefore rewrites a link that points at its own host to the scheme it
+was itself opened with (`resolveDownloadUrl` in `src/web/shell.html`), which
+keeps a deployment that is reachable over both `http://` and `https://` working
+either way; the same is done for `?assets=`, `?legacy=` and `?modbase=`. Links
+to a foreign host are only ever upgraded to `https://`, never downgraded, so an
+`https://` page never asks the browser for blocked mixed content.
 
 ### Run the lobby server
 
@@ -663,8 +699,9 @@ whole handshake in Node.
 `tools/web-smoke/` contains two smoke tests (run in CI after the build):
 
 - `verify-dist.mjs <dir>` — structural check of the packaged build (engine files
-  present, valid wasm header, mod pk3 contains the side modules, Omni-bot module
-  and data pack shipped). No browser needed.
+  present, valid wasm header, mod pk3 contains the side modules and they export
+  the VM ABI marker the engine requires, Omni-bot module and data pack shipped,
+  `maplist.json` well-formed). No browser needed.
 - `boot-smoke.mjs <dir>` — boots the build in headless Chromium (Playwright) and
   confirms the wasm engine initializes and reaches its asset-bootstrap stage
   without a fatal error. Because the retail paks are not redistributable, it
@@ -841,6 +878,22 @@ idle-connection reaper and a failed bind.
      INITIAL_MEMORY`) and raises the cap to the wasm32 maximum (`-s
      MAXIMUM_MEMORY=4gb`, growing on demand); large maps plus downloaded pk3s
      overflow the 2 GiB Emscripten default cap.
+- **`RuntimeError: indirect call signature mismatch` right after
+  `Sys_LoadDll(<mod>/ui) found vmMain function at 0x…`, the page is dead** — the
+  module that was loaded is game logic of a *different* ET: Legacy build. It
+  calls back into the engine through a syscall pointer whose signature no longer
+  matches (this build passes one argument array, `intptr_t (*)(intptr_t *)`,
+  where older ones passed a variadic list), and WebAssembly type checks every
+  indirect call: the mismatch is a trap that no error handler can catch, so the
+  whole tab dies instead of showing an error. The usual source is an old
+  `cgame`/`ui`/`qagame.mp.wasm32.so` copied into a mod folder (`jaymod/`,
+  `xmod/`, …) when the site was still on an older build. Such a module is now
+  detected before it runs — it lacks the `vmWasmAbi1` export every module of a
+  build has (`VM_WASM_ABI_VERSION`, `src/qcommon/q_shared.h`) — and is ignored
+  by the page and refused by the engine (`Sys_TryLibraryLoad`), which falls back
+  to this build's own game logic. Delete those stale `.so` files from the mod
+  folder; only the mod's pk3 is needed (see
+  [section 7](#7-host-games-in-the-browser-lobby--webrtc)).
 - **`Bad cgame system trap: 24` (or another unimplemented trap) right after
   connecting to a third-party mod server (xmod, …)** — trap 24 is **not** a
   cgame trap in any ET engine (`CG_CM_LOADMODEL` is an unused enum slot that
