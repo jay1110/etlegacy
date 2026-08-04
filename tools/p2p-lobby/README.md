@@ -96,6 +96,10 @@ count without opening a WebSocket:
 | `GET /health` | `ok` (200) — use for load-balancer / systemd health checks |
 | anything else | `404` |
 
+The endpoint is taken from the last path segment, so both endpoints also answer
+behind a reverse proxy that keeps its own location prefix
+(`GET /p2p-lobby/health`).
+
 ## Pointing the browser at it
 
 The web shell (`src/web/shell.html`) loads `src/web/etl-p2p.js`, which is
@@ -110,15 +114,19 @@ ETLP2P.configure({
 ```
 
 The shell exposes it through the page URL, e.g. `?lobby=wss://lobby.example.com`
-to override the built-in default, and `?join=<id>` on an invite link to join a
-specific host. A joining player is handed a synthetic address
+to override the built-in default (`DEFAULT_LOBBY` in `src/web/shell.html`: a
+secure and a plain URL, of which the one matching the page's own scheme is
+used), and `?join=<id>` on an invite link to join a specific host. A joining
+player is handed a synthetic address
 (`241.0.0.1:27960`) that the engine (`src/qcommon/net_web.c`) connects to; the
 `241.0.0.0/8` block is reserved, so it can never collide with a real server.
 
 ## Wire protocol reference
 
-WebSocket, default port **8081**, default path `/`. **Text** frames are JSON
-control messages; **binary** frames are game packets (the fallback relay path).
+WebSocket, default port **8081**, default path `/` (any path is accepted, so a
+reverse proxy may serve the lobby under a location of its own). **Text** frames
+are JSON control messages; **binary** frames are game packets (the fallback
+relay path).
 
 ### Client → server (JSON)
 
@@ -303,6 +311,45 @@ server {
 ```
 
 Point the client at `wss://lobby.example.com/`.
+
+**A2. One domain for the page, the relay and the lobby** — the usual setup when
+the page is served by an existing web server (Plesk, cPanel, plain nginx) that
+already has a certificate for that domain. Instead of a lobby-only vhost, add
+two proxied paths to the site:
+
+```nginx
+# wss://et.example.com/p2p-lobby/            ->  ws://127.0.0.1:8081/
+location /p2p-lobby/ {
+    proxy_pass http://127.0.0.1:8081/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade    $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host       $host;
+    proxy_read_timeout 3600s;                    # keep idle lobbies open
+}
+
+# wss://et.example.com/ws-relay/<host>:<port> ->  ws://127.0.0.1:8080/<host>:<port>
+location /ws-relay/ {
+    proxy_pass http://127.0.0.1:8080/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade    $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host       $host;
+    proxy_read_timeout 3600s;
+}
+```
+
+In **Plesk** these go into *Websites & Domains → the domain → Apache & nginx
+Settings → Additional nginx directives*, which Plesk applies to the HTTP and the
+HTTPS server block alike — so the same host answers `ws://` and `wss://` and the
+page can pick the scheme it was opened with. Point the client at
+`?lobby=wss://et.example.com/p2p-lobby/` (this is the shell's built-in default,
+see `DEFAULT_LOBBY` in `src/web/shell.html` and section 5a of `docs/web.md`).
+
+WebSocket upgrades are accepted on **any** path, and the `/rooms` and `/health`
+status endpoints are matched on the last path segment, so the slash-less
+`proxy_pass http://127.0.0.1:8081;` (which forwards the `/p2p-lobby` prefix
+unchanged) works just as well as the form above.
 
 **B. Terminate TLS in the lobby itself** (no proxy):
 

@@ -249,19 +249,84 @@ node relay.js --tls-cert cert.pem --tls-key key.pem --port 8443
 
 A page served over `https://` (e.g. GitHub Pages) can only open `wss://`
 sockets, so the relay must be reachable over TLS — either terminate TLS in the
-relay (above) or behind an nginx reverse proxy (see the relay README).
+relay (above) or behind an nginx reverse proxy (see the relay README and
+[section 5a](#5a-serve-both-ws-and-wss-behind-plesk--nginx)).
 
 Targets may be hostnames (`?connect=etclan.de:27966`): the browser cannot
 resolve names, so the engine passes the name to the relay, which resolves it.
-The shell also has a **default relay** built in (`DEFAULT_RELAY_HOST` in
-`src/web/shell.html`, `ws://`/`wss://` chosen to match the page), so a share
-link only needs `?connect=`.
+The shell also has a **default relay** built in (`DEFAULT_RELAY` in
+`src/web/shell.html`, the secure or the plain URL chosen to match the page), so
+a share link only needs `?connect=`.
 
 The relay keeps running when a single connection fails (all connection errors
 are logged, never fatal) and drops dead peers via a WebSocket heartbeat. Idle
 timeout and connection limit are tunable with `--timeout <secs>` and
 `--max-connections <n>`. For unattended hosting still run it under a process
 manager (systemd with `Restart=always`, or pm2).
+
+## 5a. Serve both `ws://` and `wss://` behind Plesk / nginx
+
+The site this deployment is served from (`et.clan-etc.de`) already has a
+certificate, and a certificate is issued for a *name* — never for a bare IP.
+The simplest way to reach the relay and the lobby over TLS is therefore to let
+the web server that holds that certificate terminate TLS and proxy two paths
+through to the services, which keep listening on plain `ws://` on localhost:
+
+| Page opened as | Relay | Lobby |
+|----------------|-------|-------|
+| `https://…`    | `wss://et.clan-etc.de/ws-relay`  | `wss://et.clan-etc.de/p2p-lobby/` |
+| `http://…`     | `ws://et.clan-etc.de:8080`       | `ws://et.clan-etc.de:8081/`       |
+
+That pair is what the shell has built in (`DEFAULT_RELAY` / `DEFAULT_LOBBY` in
+`src/web/shell.html`); `defaultServiceUrl()` picks the secure URL when
+`location.protocol` is `https:` and the plain one otherwise, because a
+`https://` page may not open a `ws://` socket (mixed content). Both are
+overridable per visit with `?relay=` / `?lobby=`.
+
+In **Plesk**: *Websites & Domains → the domain → Apache & nginx Settings →
+Additional nginx directives* (they apply to the HTTP and the HTTPS server block
+alike), then *SSL/TLS Certificates* for the certificate itself:
+
+```nginx
+# wss://et.clan-etc.de/ws-relay/<host>:<port>  ->  ws://127.0.0.1:8080/<host>:<port>
+location /ws-relay/ {
+    proxy_pass http://127.0.0.1:8080/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade    $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host       $host;
+    proxy_read_timeout 3600s;
+}
+
+# wss://et.clan-etc.de/p2p-lobby/  ->  ws://127.0.0.1:8081/
+location /p2p-lobby/ {
+    proxy_pass http://127.0.0.1:8081/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade    $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host       $host;
+    proxy_read_timeout 3600s;   # keep idle lobby connections open
+}
+```
+
+Notes:
+
+- `proxy_http_version 1.1` plus the two `Upgrade`/`Connection` headers are what
+  makes the WebSocket handshake pass through; without them the browser sees the
+  connection close right after opening it.
+- `proxy_read_timeout` must be well above nginx's 60 s default, otherwise a
+  lobby connection that waits for players is cut every minute.
+- The trailing slash in `proxy_pass http://127.0.0.1:8080/;` strips the
+  location prefix. Both services also accept the path *with* the prefix (the
+  relay reads the last path segment as its target, the lobby accepts WebSocket
+  upgrades on any path), so the slash-less `proxy_pass http://127.0.0.1:8080;`
+  works as well.
+- Keep **8080/tcp** and **8081/tcp** open if `http://` pages should keep
+  working; they are what the plain URLs above use. A deployment that only ever
+  serves the page over HTTPS can firewall them off and bind the services to
+  localhost (`--host 127.0.0.1`).
+- The services themselves need no TLS options in this setup; `--tls-cert` /
+  `--tls-key` are only for running them *without* a proxy.
 
 ## 6. Open the game and connect
 
@@ -296,7 +361,7 @@ or from the in-page **Connect…** panel (controls bar at the top edge):
 | `assets`  | Base URL for `pak0-2.pk3` | `?assets=https://example.com/etmain/` |
 | `legacy`  | Base URL for the mod pk3 | `?legacy=https://example.com/legacy/` |
 | `mod`     | Override which mod pk3(s) to fetch | `?mod=legacy_2.84.0.pk3` |
-| `modpk3`  | Override the pk3(s) of a *hosted* mod (XMod) | `?modpk3=xmod-2.0.4.pk3` |
+| `modpk3`  | Override the pk3(s) of a *hosted* mod (XMod, Jaymod) | `?modpk3=xmod-2.0.4.pk3` |
 | `modbase` | Base URL for that mod's folder | `?modbase=https://example.com/xmod/` |
 | `relay`   | WebSocket relay URL (`net_wsRelayServer`) | `?relay=wss://relay.example.com:8443` |
 | `connect` | Game server `host:port` to auto-join | `?connect=203.0.113.10:27960` |
@@ -390,7 +455,7 @@ The host form has two tabs. **Basic** holds everything a game needs:
 
 | Setting | Cvar | Default | Meaning |
 |---------|------|---------|---------|
-| Mod | `fs_game` | `legacy` | Legacy mod, or XMod. ETBloat, Jaymod, No Quarter, ETPub and ETJump are listed but disabled — they have no WebAssembly game logic, so they cannot run in the browser |
+| Mod | `fs_game` | `legacy` | Legacy mod, XMod or Jaymod. ETBloat, No Quarter, ETPub and ETJump are listed but disabled — they have no WebAssembly game logic, so they cannot run in the browser |
 | Balanced teams | `g_teamForceBalance` | `0` | Players cannot join the team that already has more players (the read-only `g_balancedteams` the server advertises is derived from it) |
 | Warmup | `g_doWarmup` | `1` | Players have to be ready before a match starts |
 | Friendly fire | `g_friendlyFire` | `1` | Teammates can hurt each other |
@@ -412,15 +477,24 @@ xmod/
 ├── qagame.mp.wasm32.so       # server game logic
 ├── cgame.mp.wasm32.so        # client game logic
 └── ui.mp.wasm32.so           # menus
+
+jaymod/
+├── jaymod-2.2.0.pk3
+├── qagame.mp.wasm32.so
+├── cgame.mp.wasm32.so
+└── ui.mp.wasm32.so
 ```
 
 The standalone `.so` files are what the page compiles; the pk3 is only read as a
 fallback if one of them is missing. Unlike the Legacy folder, the name of a
 mod's pk3 cannot be guessed (a folder cannot be listed over HTTP), so the page
-uses the name in its mod table (`HOST_MODS` in `src/web/shell.html`). Point it
-at a different name or version with `?modpk3=<a.pk3,b.pk3>`, and at a different
-location with `?modbase=<url>`. A missing pk3 is only a warning; missing
-modules are an error that names the files and the folder they belong in.
+uses the name in its mod table (`HOST_MODS` in `src/web/shell.html` — currently
+`xmod-2.0.3.pk3` and `jaymod-2.2.0.pk3`). Point it at a different name or
+version with `?modpk3=<a.pk3,b.pk3>`, and at a different location with
+`?modbase=<url>`. A missing pk3 is only a warning; missing modules are an error
+that names the files and the folder they belong in — that message is also what a
+deployment sees when it offers Jaymod or XMod without having built their
+WebAssembly modules yet.
 
 Only `etmain/`, `legacy/` and the home directory are stored persistently, so
 another mod's files are downloaded once per browser session.
@@ -521,12 +595,17 @@ node lobby.js --tls-cert /etc/letsencrypt/live/example.com/fullchain.pem \
 
 A page served over `https://` (e.g. GitHub Pages) may only open `wss://`
 sockets, so terminate TLS in the lobby (above) or put it behind nginx, exactly
-like the relay. `tools/p2p-lobby/README.md` contains a ready-made systemd unit
-and an nginx location block. The shell has a default lobby built in
-(`DEFAULT_LOBBY_HOST` in `src/web/shell.html`); `?lobby=<ws-url>` overrides it.
+like the relay — [section 5a](#5a-serve-both-ws-and-wss-behind-plesk--nginx)
+shows the Plesk/nginx directives that serve the lobby and the relay over the
+site's own certificate. `tools/p2p-lobby/README.md` contains a ready-made
+systemd unit and an nginx location block. The shell has a default lobby built in
+(`DEFAULT_LOBBY` in `src/web/shell.html`, a secure and a plain URL of which the
+one matching the page is used); `?lobby=<ws-url>` overrides it.
 
 Open ports: **8081/tcp** (or 8443/tcp with TLS) for the lobby, plus the UDP
-range WebRTC uses if the host runs a TURN server (below).
+range WebRTC uses if the host runs a TURN server (below). Behind the reverse
+proxy of section 5a the port is only needed for `http://` visitors; the lobby
+may otherwise listen on `--host 127.0.0.1` alone.
 
 ### When a direct connection is not possible (TURN)
 
