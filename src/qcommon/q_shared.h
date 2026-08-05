@@ -185,11 +185,19 @@
  * variadic syscall of the native builds) kills the browser tab as soon as it makes its
  * first trap call, before anything can report the real problem.
  *
- * Every module of this build therefore exports VM_WASM_ABI_SYMBOL, and the engine
- * refuses to run a module that does not (see Sys_LoadGameDll); the web shell checks the
- * same symbol before it compiles a module (see src/web/shell.html). Bump the version -
- * in the symbol name as well, that is what makes an old module detectable - whenever the
- * engine/module calling convention changes.
+ * Every module of this build therefore declares the ABI it speaks by exporting
+ * VM_WASM_ABI_SYMBOL. The version is part of the symbol name, which is what makes the
+ * declaration readable from the binary: the web shell reads the export section of a
+ * module before it compiles it and refuses one that declares a *different* version
+ * (see src/web/shell.html). Bump the version - in the symbol name as well - whenever
+ * the engine/module calling convention changes; that is what makes the modules of
+ * earlier builds detectable.
+ *
+ * A module that declares no version at all is not refused: a mod's own game logic
+ * (xmod, Jaymod, ... built from their own sources for wasm) knows nothing about this
+ * marker, and requiring it would mean no mod could ever run its own cgame/ui/qagame in
+ * the browser. Such a module is loaded as it is, with a note in the log naming it
+ * (see Sys_TryLibraryLoad).
  */
 #define VM_WASM_ABI_VERSION 1
 #define VM_WASM_ABI_SYMBOL  "vmWasmAbi1"

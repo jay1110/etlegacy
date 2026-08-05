@@ -4982,26 +4982,34 @@
 
             // Marker every game-logic module of this build exports to state which
             // engine ABI it speaks (VM_WASM_ABI_SYMBOL, see src/qcommon/q_shared.h).
-            // A module from another ET: Legacy version calls back into the engine
-            // through a function pointer of a different signature, and WebAssembly
-            // type checks every indirect call: the mismatch is an unrecoverable
-            // trap ("indirect call signature mismatch") that takes the whole page
-            // down - no error handler runs, the launcher cannot report anything and
-            // the tab has to be reloaded. Such a module must therefore never be
-            // handed to the engine in the first place, and the export makes it
-            // detectable before it is compiled. The engine checks it as well
-            // (Sys_TryLibraryLoad) for modules the shell never saw.
-            var VM_ABI_SYMBOL = 'vmWasmAbi1';
+            // The version is part of the symbol name, which is what makes the ABI a
+            // module was built for readable from the binary: a module of an older
+            // build still carries the marker of *its* version, and one that speaks a
+            // different ABI must never be handed to the engine. It calls back into
+            // the engine through a function pointer of another signature, and
+            // WebAssembly type checks every indirect call: the mismatch is an
+            // unrecoverable trap ("indirect call signature mismatch") that takes the
+            // whole page down - no error handler runs, the launcher cannot report
+            // anything and the tab has to be reloaded.
+            //
+            // A module that declares no version at all is a different case: a mod's
+            // own game logic (xmod, Jaymod, ... built from their sources for wasm)
+            // knows nothing about this marker, so requiring it would mean no mod
+            // could ever run its own cgame/ui/qagame here. Such a module is used as
+            // it is and only warned about - whether it matches is up to whoever
+            // built and deployed it (see docs/web.md).
+            var VM_ABI_VERSION = 1;
+            var VM_ABI_SYMBOL = 'vmWasmAbi' + VM_ABI_VERSION;
+            var VM_ABI_SYMBOL_RE = /^_?vmWasmAbi(\d+)$/;
 
-            // Read a WebAssembly module's export section and report whether it
-            // exports "want". Only the section headers are walked (each is a
-            // one-byte id plus its LEB128 size), so this is cheap even for a
-            // multi-megabyte module. A leading underscore is accepted as well,
-            // the form some toolchains give C symbols.
-            function wasmExportsInclude(bytes, want) {
-                var wanted = [want, '_' + want];
+            // Walk a WebAssembly module's export section and hand every export name
+            // to "visit"; the first non-undefined result it returns is the result of
+            // the walk (undefined when no export matched). Only the section headers
+            // are walked (each is a one-byte id plus its LEB128 size), so this is
+            // cheap even for a multi-megabyte module.
+            function wasmVisitExports(bytes, visit) {
                 var pos = 8;                        // magic + version
-                var id, size, end, count, len, i, j, w, match;
+                var id, size, end, count, len, i, j, name, hit;
 
                 function uleb() {
                     var result = 0, shift = 0, b;
@@ -5014,14 +5022,14 @@
                     return result;
                 }
 
-                if (!hasWasmMagic(bytes) || bytes.length < 8) { return false; }
+                if (!hasWasmMagic(bytes) || bytes.length < 8) { return undefined; }
 
                 try {
                     while (pos < bytes.length) {
                         id = bytes[pos++];
                         size = uleb();
                         end = pos + size;
-                        if (end > bytes.length) { return false; }
+                        if (end > bytes.length) { return undefined; }
                         if (id !== 7) {             // not the export section
                             pos = end;
                             continue;
@@ -5029,37 +5037,67 @@
                         count = uleb();
                         for (i = 0; i < count; i++) {
                             len = uleb();
-                            for (w = 0; w < wanted.length; w++) {
-                                if (len !== wanted[w].length) { continue; }
-                                match = true;
-                                for (j = 0; j < len; j++) {
-                                    if (bytes[pos + j] !== wanted[w].charCodeAt(j)) {
-                                        match = false;
-                                        break;
-                                    }
-                                }
-                                if (match) { return true; }
+                            name = '';
+                            for (j = 0; j < len; j++) {
+                                name += String.fromCharCode(bytes[pos + j]);
                             }
                             pos += len;
                             pos++;                  // export kind
                             uleb();                 // index
+                            hit = visit(name);
+                            if (hit !== undefined) { return hit; }
                         }
-                        return false;               // section read, name not in it
+                        return undefined;           // section read, nothing matched
                     }
-                } catch (e) { /* malformed - treat as "not exported" */ }
+                } catch (e) { /* malformed - treat as "nothing matched" */ }
 
-                return false;
+                return undefined;
+            }
+
+            // The VM ABI version a module declares, or null when it declares none.
+            // A leading underscore is accepted as well, the form some toolchains
+            // give C symbols.
+            function declaredVmAbiVersion(bytes) {
+                var found = wasmVisitExports(bytes, function (name) {
+                    var match = VM_ABI_SYMBOL_RE.exec(name);
+                    return match ? parseInt(match[1], 10) : undefined;
+                });
+                return (found === undefined) ? null : found;
             }
 
             // Why a module cannot be used, or null when it can be.
             function describeModuleProblem(bytes) {
                 if (!hasWasmMagic(bytes)) { return describeNonWasm(bytes); }
-                if (!wasmExportsInclude(bytes, VM_ABI_SYMBOL)) {
-                    return 'it does not speak this engine\'s WebAssembly VM ABI ' +
-                        '(no ' + VM_ABI_SYMBOL + ' export) - game logic has to be ' +
-                        'built for this engine, see docs/web.md';
+                var abi = declaredVmAbiVersion(bytes);
+                if (abi !== null && abi !== VM_ABI_VERSION) {
+                    return 'it was built for version ' + abi + ' of this engine\'s ' +
+                        'WebAssembly VM ABI (it exports vmWasmAbi' + abi + '), this ' +
+                        'build speaks version ' + VM_ABI_VERSION + ' - engine and ' +
+                        'game logic of one build belong together';
                 }
                 return null;
+            }
+
+            // A module that declares no VM ABI at all is loaded on trust: say so
+            // once per module and source, so the log names what to look at if the
+            // tab dies in an "indirect call signature mismatch" trap later on -
+            // that trap cannot be caught and reported by the page itself.
+            var undeclaredAbiNoted = {};
+
+            function noteUndeclaredVmAbi(name, assets, source, bytes) {
+                var key = assets.fsGame + '/' + name + '/' + source;
+                if (undeclaredAbiNoted[key] || declaredVmAbiVersion(bytes) !== null) {
+                    return;
+                }
+                undeclaredAbiNoted[key] = true;
+                if (console && console.warn) {
+                    console.warn(name + ' from the ' + assets.fsGame + ' ' + source +
+                        ' does not declare this engine\'s WebAssembly VM ABI (no ' +
+                        VM_ABI_SYMBOL + ' export) and is used as it is. Game logic ' +
+                        'of another source tree has to be built as an Emscripten ' +
+                        'SIDE_MODULE using the array-based dllEntry syscall, see ' +
+                        'docs/web.md.');
+                }
             }
 
             // Mods whose own game logic could not be used, so this build's own
@@ -5085,7 +5123,10 @@
             function sideModuleBytes(name, assets) {
                 return extractSideModuleFromPk3(name, assets).then(function (bytes) {
                     var pk3Problem = bytes ? describeModuleProblem(bytes) : null;
-                    if (bytes && !pk3Problem) { return bytes; }
+                    if (bytes && !pk3Problem) {
+                        noteUndeclaredVmAbi(name, assets, 'pk3', bytes);
+                        return bytes;
+                    }
                     if (bytes && console && console.warn) {
                         console.warn('Ignoring ' + name + ' from the ' + assets.fsGame +
                             ' pk3: ' + pk3Problem + '. Trying the standalone copy.');
@@ -5100,7 +5141,10 @@
                             (err && err.message || err) + ')' + pk3Note);
                     }).then(function (standalone) {
                         var problem = describeModuleProblem(standalone);
-                        if (!problem) { return standalone; }
+                        if (!problem) {
+                            noteUndeclaredVmAbi(name, assets, 'folder', standalone);
+                            return standalone;
+                        }
                         throw new Error('the standalone copy at ' + assets.base +
                             name + ' is not usable: ' + problem + pk3Note);
                     });

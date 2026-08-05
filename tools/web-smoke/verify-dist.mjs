@@ -79,12 +79,14 @@ function hasWasmMagic(buf) {
     return buf.length >= 4 && buf.subarray(0, 4).equals(WASM_MAGIC);
 }
 
-// Every game logic module of a build exports this marker (VM_WASM_ABI_SYMBOL in
-// src/qcommon/q_shared.h). It is how the engine (Sys_TryLibraryLoad) and the
-// launcher (src/web/shell.html) tell a module of *this* build apart from one of
-// another version, whose differently shaped syscall pointer would trap the whole
-// browser tab with "indirect call signature mismatch". A build that lost the
-// export would therefore have its own modules refused, so verify it here.
+// Every game logic module of a build declares the VM ABI it speaks with this
+// export (VM_WASM_ABI_SYMBOL in src/qcommon/q_shared.h), the version being part
+// of the symbol name. It is how the launcher (src/web/shell.html) recognises a
+// module of *another* version, whose differently shaped syscall pointer would
+// trap the whole browser tab with "indirect call signature mismatch". A build
+// that lost the export would silently give that detection up - the modules of
+// this build would look like a third-party mod's, which are loaded as they are -
+// so verify it here.
 const VM_ABI_SYMBOL = 'vmWasmAbi1';
 
 function exportsAbiMarker(buf) {
