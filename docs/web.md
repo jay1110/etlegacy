@@ -88,6 +88,7 @@ etlegacy-web/
     ├── cgame.mp.wasm32.so      # standalone side module (fallback)
     ├── ui.mp.wasm32.so         # standalone side module (fallback)
     ├── qagame.mp.wasm32.so     # standalone side module (fallback)
+    ├── etl-host.cfg            # optional preset config for hosted games
     └── omni-bot/
         ├── omnibot_et.wasm32.so   # bot library (loaded on demand)
         └── omni-bot-data.zip      # bot scripts + navigation meshes
@@ -111,6 +112,9 @@ server never downloads it. The library is compiled up front like the other side
 modules; the data pack is cached in IndexedDB and unpacked next to it, because
 Omni-bot resolves its data directory from the location of the loaded library.
 If either cannot be fetched the game still starts, just without bots.
+
+`legacy/etl-host.cfg` is optional and only used when a game is hosted in the
+browser — see [Preset server configs](#preset-server-configs).
 
 Copy `pak0.pk3`, `pak1.pk3`, `pak2.pk3` from a retail Wolfenstein: Enemy
 Territory install into `etmain/`. **These are not included and may not be
@@ -480,6 +484,23 @@ The host form has two tabs. **Basic** holds everything a game needs:
 | Allied respawn time | `g_userAlliedRespawnTime` | `0` | `0` keeps the map's own time, any higher value sets the respawn time in seconds |
 | Axis respawn time | `g_userAxisRespawnTime` | `0` | Same for the Axis team |
 
+Below those, **Advanced** lists **every server cvar the selected mod knows** —
+149 for Legacy, 176 for XMod, 149 for Jaymod — taken from the mods' own cvar
+tables (`gameCvarTable[]` in `src/game/g_cvars.c` here, `src/game/g_main.cpp` in
+the XMod and Jaymod trees). They are grouped by topic (match, teams, weapons,
+XP, voting, chat, admin, anti-cheat, …), each row shows the mod's default, and a
+search box filters the whole list. Switching the mod rebuilds the list and keeps
+every value the new mod knows as well.
+
+Only the settings that were actually changed are handed to the server; the rest
+keeps what the mod — or the preset config below — sets. Settings marked
+**restart** are `CVAR_LATCH`: the game only reads them when a match starts, so
+changing one of those in a running game restarts the match.
+
+Cvars the launcher manages itself (`sv_hostname`, `sv_maxclients`, `fs_game`,
+`g_gametype`, the ones in the tables above, the Omni-bot ones) are not part of
+that list, and neither are passwords, cheat and debug cvars.
+
 A mod other than Legacy is fetched on demand, the first time a game that uses
 it is hosted **or joined**, and its game logic is compiled up front exactly like
 the Legacy modules — without that the engine stops with `VM_Create on game
@@ -523,6 +544,42 @@ ET: Legacy's rules and everything that lives in the engine and in this game
 logic — Omni-bot in particular — works for that mod exactly as it does for
 Legacy. Only the mod's *own* gameplay features are missing, which is the best a
 browser can do without a WebAssembly build of that mod.
+
+### Preset server configs
+
+A deployment can put a config file next to the mod it belongs to:
+
+```
+legacy/etl-host.cfg
+xmod/etl-host.cfg
+jaymod/etl-host.cfg
+```
+
+Every game hosted with that mod executes it before the settings picked in the
+panel. It is a normal ET config — one command per line — so it can set anything
+the mod understands: rules, banners, admin levels, ban lists, `exec`s of further
+configs. Because it lives on the web space, only whoever maintains the
+deployment (FTP) can change it, and a change is picked up by the next game that
+is hosted: the file is revalidated on every start, and an unreachable server
+falls back to the copy of the last visit. It is entirely optional — without one,
+hosting uses the mod's defaults.
+
+The order a hosted game starts with is:
+
+1. the mod's own defaults,
+2. `<mod>/etl-host.cfg`, the deployment's preset,
+3. the settings picked in **Host game** (written to `<mod>/etl-hostui.cfg` and
+   execed after the preset),
+4. `+map <first map of the rotation>`.
+
+So the panel always wins over the preset, and the preset wins over the mod's
+defaults. Everything nobody touched in the panel keeps the preset's value. The
+settings are written to a config instead of more `+set` arguments because the
+engine's command line is a single string of at most `MAX_STRING_CHARS` (1024)
+characters, which a hundred settings would not fit into.
+
+A preset is only fetched for a game hosted **in the browser**; joining a
+dedicated server never reads it.
 
 ### Building a mod's game logic for this engine
 
@@ -583,14 +640,16 @@ names the files and the folder they belong in.
 Only `etmain/`, `legacy/` and the home directory are stored persistently, so
 another mod's files are downloaded once per browser session.
 
-**Export settings** writes everything above — including the map rotation — to a
-`.json` file, **Import settings** reads such a file back. Import is deliberately
-strict: the file must be smaller than 64 KB, only known keys are read (an
-attacker cannot inject additional cvars or command-line arguments through it),
-every value is type-checked and clamped to its allowed range, map names must
-exist in `maplist.json`, and the room name is stripped of quotes, backslashes
-and control characters. Anything that does not fit is dropped and reported
-instead of being applied.
+**Export settings** writes everything above — including the map rotation and the
+mod settings that were changed — to a `.json` file, **Import settings** reads
+such a file back. Import is deliberately strict: the file must be smaller than
+64 KB, only known keys are read (an attacker cannot inject additional cvars or
+command-line arguments through it), every value is type-checked and clamped to
+its allowed range, map names must exist in `maplist.json`, mod settings must be
+in the selected mod's own cvar table, their values are stripped of the
+characters that could end a console command, and the room name is stripped of
+quotes, backslashes and control characters. Anything that does not fit is
+dropped and reported instead of being applied.
 
 The rotation is programmed into the server as a chain of `nextmap` cvars, which
 ET runs when a match ends, and it wraps around to the first map after the last
@@ -603,17 +662,36 @@ launcher), a **⚙** button (current map, player count and the map rotation) and
 **🔗** button that copies the invite link.
 
 The **⚙** panel has the same **Basic** / **Advanced** split as the host form, so
-every setting listed above can be changed while the game runs, and any map of
-the rotation can be played immediately. Two things behave differently there:
+every setting listed above — including the mod's own server settings — can be
+changed while the game runs, and any map of the rotation can be played
+immediately. Two quick actions sit above the tabs:
+
+- **⏭ Next map** ends the running map and loads the next one of the rotation.
+  It is only available with more than one map in the rotation; with a single map
+  it would be the restart next to it.
+- **↻ Restart map** restarts the match on the same map (`map_restart`), which
+  needs no reload of the page.
+
+The two buttons at the bottom do different things, and that difference matters
+most with a rotation:
+
+| Button | What it does |
+|--------|--------------|
+| **Apply** | Writes everything on the page to the running server — room name, slots, bots, time limit, the rotation you edited and every mod setting you changed. It **never changes the map**: the running match carries on (unless a restart is needed, see below) and the rotation continues from where it stands. |
+| **Play now** | Loads the map selected in the drop-down straight away, ending the running match. If that map is **not** part of the rotation, the rotation is left where it was and carries on with its next map once the one-off map is over — so a map somebody asked for can be squeezed in without losing the rotation's place. |
+
+Two more things behave differently in the panel than in the host form:
 
 - The **mod** is only shown, not changed: `fs_game` is picked when the engine
   starts, so another mod means closing the game and hosting a new one.
-- Changing the player slots, the time limit or one of the respawn times
-  restarts the match for everyone — the server reads those when a match starts.
-  Everything else takes effect right away.
+- Changing the player slots, the time limit or one of the respawn times restarts
+  the match for everyone, and so does a mod setting marked **restart**
+  (`CVAR_LATCH`) — the server only reads those when a match starts. Everything
+  else takes effect right away.
 
 The applied values are remembered for the tab as well, so a map change (which
-reloads the page, see below) comes back up with exactly what was set here.
+reloads the page, see below) comes back up with exactly what was set here —
+including the place the rotation has reached.
 
 The invite link is also written into the browser's address bar
 (`?join=<room>`), so it can be copied straight from there. It also means a host
