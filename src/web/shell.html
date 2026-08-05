@@ -5796,6 +5796,694 @@
             };
             var DEFAULT_MOD = 'legacy';
 
+            // --- The server settings of a mod ---------------------------------
+            // Everything the "Advanced" tab offers for the mod a game runs. The
+            // engine has no way to list a mod's cvars over the network - the
+            // table lives inside the game logic - so the tables the mods
+            // themselves ship are reproduced here:
+            //
+            //   * Legacy  src/game/g_cvars.c        (gameCvarTable)
+            //   * XMod    src/game/g_main.cpp       (gameCvarTable, jay1110/xmod)
+            //   * Jaymod  src/game/g_main.cpp       (gameCvarTable, jay1110/jaymod)
+            //
+            // Only settings a host can usefully change are listed: read-only
+            // (CVAR_ROM) and cheat cvars, the passwords (they would end up in
+            // the exported settings file and in this tab's session storage),
+            // the debug/development switches and the handful of cvars the shell
+            // manages itself (fs_game, g_gametype, sv_maxclients, sv_hostname,
+            // the two respawn times, g_warmup, g_doWarmup, g_friendlyFire,
+            // g_teamForceBalance and the Omni-bot switches) are left out.
+            //
+            // One row is [name, type, default, category, latched]:
+            //   type      'b' on/off, 'i' whole number, 'f' number, 's' text
+            //   default   what the mod uses when nothing is set - a value that
+            //             equals it is never written anywhere
+            //   category  which group of the panel the row is shown in
+            //   latched   1 = CVAR_LATCH: the game only picks the new value up
+            //             when the match restarts, so changing it in a running
+            //             game restarts it
+            var CVARS_LEGACY = [
+                ['sv_fps', 'i', '20', 'server'],
+                ['g_redlimbotime', 'i', '30000', 'lives', 1],
+                ['g_bluelimbotime', 'i', '30000', 'lives', 1],
+                ['g_medicChargeTime', 'i', '45000', 'support', 1],
+                ['g_engineerChargeTime', 'i', '30000', 'support', 1],
+                ['g_fieldopsChargeTime', 'i', '40000', 'support', 1],
+                ['g_soldierChargeTime', 'i', '20000', 'support', 1],
+                ['g_covertopsChargeTime', 'i', '30000', 'support', 1],
+                ['g_landminetimeout', 'i', '1', 'weapons'],
+                ['g_maxGameClients', 'i', '0', 'teams', 1],
+                ['g_minGameClients', 'i', '8', 'teams'],
+                ['g_altStopwatchMode', 'b', '0', 'match'],
+                ['g_noTeamSwitching', 'b', '0', 'match'],
+                ['g_logTimestamp', 'b', '1', 'admin'],
+                ['g_filterBan', 'b', '1', 'admin'],
+                ['g_speed', 'i', '320', 'match'],
+                ['g_gravity', 'i', '800', 'match'],
+                ['g_knockback', 'i', '1000', 'match'],
+                ['g_forcerespawn', 'i', '0', 'match'],
+                ['g_inactivity', 'i', '0', 'match'],
+                ['g_motd', 's', '', 'chat'],
+                ['g_complaintlimit', 'i', '0', 'chat'],
+                ['g_teambleedComplaint', 'i', '50', 'admin'],
+                ['g_ipcomplaintlimit', 'i', '3', 'chat'],
+                ['g_filtercams', 'b', '0', 'chat'],
+                ['g_maxlives', 'i', '0', 'lives', 1],
+                ['g_maxlivesRespawnPenalty', 'i', '0', 'lives', 1],
+                ['g_voiceChatsAllowed', 'i', '5', 'chat'],
+                ['g_alliedmaxlives', 'i', '0', 'lives', 1],
+                ['g_axismaxlives', 'i', '0', 'lives', 1],
+                ['g_fastres', 'b', '0', 'lives'],
+                ['g_syringeHealing', 'b', '0', 'support'],
+                ['g_legacyRevives', 'b', '1', 'support'],
+                ['g_enforcemaxlives', 'b', '1', 'lives'],
+                ['pmove_fixed', 'b', '0', 'server'],
+                ['pmove_msec', 'i', '8', 'server'],
+                ['g_spectatorInactivity', 'i', '0', 'match'],
+                ['match_latejoin', 'b', '1', 'match'],
+                ['match_minplayers', 'i', '4', 'match'],
+                ['match_mutespecs', 'b', '0', 'match'],
+                ['match_readypercent', 'i', '100', 'match'],
+                ['match_timeoutcount', 'i', '3', 'match'],
+                ['match_timeoutlength', 'i', '180', 'match'],
+                ['match_warmupDamage', 'b', '1', 'match'],
+                ['server_motd0', 's', ' ^NEnemy Territory ^7MOTD ', 'chat'],
+                ['server_motd1', 's', '', 'chat'],
+                ['server_motd2', 's', '', 'chat'],
+                ['server_motd3', 's', '', 'chat'],
+                ['server_motd4', 's', '', 'chat'],
+                ['server_motd5', 's', '', 'chat'],
+                ['team_maxplayers', 'i', '0', 'teams'],
+                ['team_nocontrols', 'b', '1', 'teams'],
+                ['vote_allow_config', 'b', '1', 'vote'],
+                ['vote_allow_gametype', 'b', '1', 'vote'],
+                ['vote_allow_kick', 'b', '1', 'vote'],
+                ['vote_allow_map', 'b', '1', 'vote'],
+                ['vote_allow_matchreset', 'b', '1', 'vote'],
+                ['vote_allow_mutespecs', 'b', '1', 'vote'],
+                ['vote_allow_nextmap', 'b', '1', 'vote'],
+                ['vote_allow_referee', 'b', '0', 'vote'],
+                ['vote_allow_shuffleteams', 'b', '1', 'vote'],
+                ['vote_allow_shuffleteams_norestart', 'b', '1', 'vote'],
+                ['vote_allow_swapteams', 'b', '1', 'vote'],
+                ['vote_allow_friendlyfire', 'b', '1', 'vote'],
+                ['vote_allow_timelimit', 'b', '0', 'vote'],
+                ['vote_allow_warmupdamage', 'b', '1', 'vote'],
+                ['vote_allow_antilag', 'b', '1', 'vote'],
+                ['vote_allow_balancedteams', 'b', '1', 'vote'],
+                ['vote_allow_muting', 'b', '1', 'vote'],
+                ['vote_limit', 'i', '5', 'vote'],
+                ['vote_percent', 'i', '50', 'vote'],
+                ['vote_allow_surrender', 'b', '1', 'vote'],
+                ['vote_allow_restartcampaign', 'b', '1', 'vote'],
+                ['vote_allow_nextcampaign', 'b', '1', 'vote'],
+                ['vote_allow_poll', 'b', '1', 'vote'],
+                ['vote_allow_maprestart', 'b', '1', 'vote'],
+                ['vote_allow_cointoss', 'b', '1', 'vote'],
+                ['g_voting', 'b', '0', 'vote'],
+                ['omnibot_flags', 'i', '0', 'bots'],
+                ['g_allowBotSwap', 'b', '0', 'bots'],
+                ['g_lms_teamForceBalance', 'b', '1', 'lms'],
+                ['g_lms_roundlimit', 'i', '3', 'lms'],
+                ['g_lms_matchlimit', 'i', '2', 'lms'],
+                ['g_lms_lockTeams', 'b', '0', 'lms'],
+                ['g_lms_followTeamOnly', 'b', '1', 'lms'],
+                ['URL', 's', '', 'server'],
+                ['g_heavyWeaponRestriction', 'i', '100', 'teams'],
+                ['g_autoFireteams', 'b', '1', 'teams'],
+                ['g_teamInfoUpdateRate', 'i', '1000', 'server'],
+                ['g_disableComplaints', 'b', '0', 'chat'],
+                ['g_maxWarp', 'i', '4', 'admin'],
+                ['g_antiwarp', 'b', '1', 'admin'],
+                ['lua_modules', 's', '', 'server'],
+                ['lua_allowedModules', 's', '', 'server'],
+                ['g_luaModuleList', 's', '', 'server'],
+                ['g_guidCheck', 'b', '1', 'admin'],
+                ['g_protect', 'b', '0', 'admin'],
+                ['g_dropHealth', 'b', '0', 'support'],
+                ['g_dropAmmo', 'b', '0', 'support'],
+                ['g_shove', 'i', '60', 'support'],
+                ['g_shoveNoZ', 'b', '0', 'support'],
+                ['g_mapVoteFlags', 'i', '0', 'vote'],
+                ['g_maxMapsVotedFor', 'i', '6', 'vote'],
+                ['g_minMapAge', 'i', '3', 'vote'],
+                ['g_excludedMaps', 's', '', 'vote'],
+                ['g_resetXPMapCount', 'b', '0', 'vote'],
+                ['g_countryflags', 'b', '1', 'admin', 1],
+                ['team_maxAirstrikes', 'f', '0.0', 'teams'],
+                ['team_maxArtillery', 'f', '0.0', 'teams'],
+                ['team_maxSoldiers', 'i', '-1', 'teams'],
+                ['team_maxMedics', 'i', '-1', 'teams'],
+                ['team_maxEngineers', 'i', '-1', 'teams'],
+                ['team_maxFieldops', 'i', '-1', 'teams'],
+                ['team_maxCovertops', 'i', '-1', 'teams'],
+                ['team_maxMortars', 'i', '-1', 'teams'],
+                ['team_maxFlamers', 'i', '-1', 'teams'],
+                ['team_maxMachineguns', 'i', '-1', 'teams'],
+                ['team_maxRockets', 'i', '-1', 'teams'],
+                ['team_maxRiflegrenades', 'i', '-1', 'teams'],
+                ['team_maxLandmines', 'i', '10', 'teams'],
+                ['team_riflegrenades', 'b', '1', 'teams'],
+                ['skill_soldier', 's', '20 50 90 140', 'xp'],
+                ['skill_medic', 's', '20 50 90 140', 'xp'],
+                ['skill_fieldops', 's', '20 50 90 140', 'xp'],
+                ['skill_engineer', 's', '20 50 90 140', 'xp'],
+                ['skill_covertops', 's', '20 50 90 140', 'xp'],
+                ['skill_battlesense', 's', '20 50 90 140', 'xp'],
+                ['skill_lightweapons', 's', '20 50 90 140', 'xp'],
+                ['g_intermissionTime', 'i', '60', 'match'],
+                ['g_intermissionReadyPercent', 'i', '100', 'match'],
+                ['g_moverScale', 'f', '1.0', 'match'],
+                ['g_fixedphysics', 'b', '1', 'server'],
+                ['g_fixedphysicsfps', 'i', '125', 'server'],
+                ['g_pronedelay', 'b', '0', 'server'],
+                ['g_corpses', 'b', '0', 'server', 1],
+                ['g_realHead', 'b', '1', 'match'],
+                ['g_skipCorrection', 'b', '1', 'match'],
+                ['g_skillRating', 'i', '2', 'xp', 1],
+                ['g_prestige', 'b', '1', 'xp', 1],
+                ['g_multiview', 'b', '0', 'server', 1],
+                ['g_stickyCharge', 'b', '0', 'support'],
+                ['g_xpSaver', 'b', '0', 'xp'],
+                ['g_xpSaverMaxAge', 'i', '86400', 'xp'],
+                ['g_suddenDeath', 'b', '0', 'server'],
+                ['g_dropObjDelay', 'i', '3000', 'support'],
+                ['g_floodProtection', 'b', '1', 'chat'],
+                ['g_floodLimit', 'i', '5', 'chat'],
+                ['g_floodWait', 'i', '1000', 'chat'],
+                ['g_etltv_flags', 'i', '3', 'server'],
+            ];
+
+            // XMod and Jaymod share most of their table (both descend from the
+            // same lineage), so the common part is listed once and each mod
+            // adds what is only in it - or what it defaults differently.
+            var CVARS_XMOD_JAYMOD = [
+                ['g_moverScale', 'f', '1.0', 'match'],
+                ['g_privateMessages', 'b', '0', 'chat'],
+                ['g_playDead', 'b', '0', 'support'],
+                ['g_dragCorpse', 'b', '0', 'support'],
+                ['g_shove', 'i', '0', 'support'],
+                ['g_classChange', 'b', '0', 'support'],
+                ['team_maxArtillery', 'i', '6', 'teams'],
+                ['g_xpSave', 'i', '0', 'xp', 1],
+                ['g_xpSaveTimeout', 's', '1h', 'xp'],
+                ['g_xpMax', 'i', '0', 'xp'],
+                ['g_xpCap', 'i', '0', 'xp'],
+                ['g_ammoRechargeTime', 'i', '60000', 'support'],
+                ['g_healthRechargeTime', 'i', '10000', 'support'],
+                ['g_packDistance', 'i', '1', 'support'],
+                ['g_dropHealth', 'b', '0', 'support'],
+                ['g_dropAmmo', 'b', '0', 'support'],
+                ['g_saveCampaignStats', 'b', '1', 'xp'],
+                ['g_intermissionTime', 'i', '60', 'match'],
+                ['g_intermissionReadyPercent', 'i', '100', 'match'],
+                ['g_spectator', 'b', '0', 'chat'],
+                ['g_spawnInvul', 'i', '3', 'lives'],
+                ['g_shoveNoZ', 'b', '0', 'support'],
+                ['g_slashKill', 'b', '0', 'chat'],
+                ['g_fear', 'b', '0', 'weapons'],
+                ['g_reflectFriendlyFire', 'i', '100', 'weapons'],
+                ['g_teamDamageRestriction', 'b', '0', 'weapons'],
+                ['g_teamDamageMinHits', 'i', '6', 'weapons'],
+                ['vote_voteBased', 'b', '0', 'vote'],
+                ['vote_minPercent', 'i', '0', 'vote'],
+                ['g_censor', 'b', '0', 'chat'],
+                ['g_censorPenalty', 'i', '0', 'chat'],
+                ['g_watermarkFadeAfter', 'i', '60', 'chat'],
+                ['g_watermarkFadeTime', 'i', '60', 'chat'],
+                ['g_goomba', 'b', '0', 'weapons'],
+                ['g_headshot', 'b', '0', 'weapons'],
+                ['g_shortcuts', 'b', '0', 'chat'],
+                ['g_truePing', 'i', '1', 'server'],
+                ['sv_fps', 'i', '20', 'server'],
+                ['g_damagexp', 'b', '0', 'xp'],
+                ['g_logOptions', 'i', '0', 'admin'],
+                ['g_muteTime', 'i', '0', 'chat'],
+                ['g_antiwarp', 'b', '1', 'admin'],
+                ['g_engineers', 'i', '0', 'teams'],
+                ['g_soldiers', 'i', '0', 'teams'],
+                ['g_medicSelfHealDelay', 'i', '0', 'support'],
+                ['g_medics', 'i', '0', 'teams'],
+                ['g_levels_battlesense', 's', '', 'xp'],
+                ['g_levels_covertops', 's', '', 'xp'],
+                ['g_levels_engineer', 's', '', 'xp'],
+                ['g_levels_fieldops', 's', '', 'xp'],
+                ['g_levels_lightweapons', 's', '', 'xp'],
+                ['g_levels_medic', 's', '', 'xp'],
+                ['g_levels_soldier', 's', '', 'xp'],
+                ['g_defaultSkills', 's', '', 'xp'],
+                ['g_killingSpree', 'i', '0', 'xp', 1],
+                ['g_killSpreeLevels', 's', '', 'xp'],
+                ['g_loseSpreeLevels', 's', '', 'xp'],
+                ['g_bannerTime', 'i', '5', 'chat'],
+                ['g_bannerLocation', 'i', '0', 'chat'],
+                ['g_banners', 'b', '0', 'chat'],
+                ['g_warnDecay', 'i', '1', 'admin'],
+                ['g_warnMuteLevel', 'i', '50', 'admin'],
+                ['g_warnBanLevel', 'i', '100', 'admin'],
+                ['g_redlimbotime', 'i', '30000', 'lives', 1],
+                ['g_bluelimbotime', 'i', '30000', 'lives', 1],
+                ['g_medicChargeTime', 'i', '45000', 'support', 1],
+                ['g_engineerChargeTime', 'i', '30000', 'support', 1],
+                ['g_LTChargeTime', 'i', '40000', 'support', 1],
+                ['g_soldierChargeTime', 'i', '20000', 'support', 1],
+                ['g_covertopsChargeTime', 'i', '30000', 'support', 1],
+                ['g_landminetimeout', 'i', '1', 'weapons'],
+                ['g_maxGameClients', 'i', '0', 'teams', 1],
+                ['g_minGameClients', 'i', '8', 'teams'],
+                ['fraglimit', 'i', '0', 'match'],
+                ['g_altStopwatchMode', 'b', '0', 'match'],
+                ['g_noTeamSwitching', 'b', '0', 'match'],
+                ['g_filterBan', 'b', '1', 'admin'],
+                ['g_speed', 'i', '320', 'match'],
+                ['g_gravity', 'i', '800', 'match'],
+                ['g_knockback', 'i', '1000', 'match'],
+                ['g_forcerespawn', 'i', '0', 'match'],
+                ['g_inactivity', 'i', '0', 'match'],
+                ['g_complaintlimit', 'i', '6', 'chat'],
+                ['g_ipcomplaintlimit', 'i', '3', 'chat'],
+                ['g_filtercams', 'b', '0', 'chat'],
+                ['g_maxlives', 'i', '0', 'lives', 1],
+                ['g_maxlivesRespawnPenalty', 'i', '0', 'lives', 1],
+                ['g_voiceChatsAllowed', 'i', '4', 'chat'],
+                ['g_alliedmaxlives', 'i', '0', 'lives', 1],
+                ['g_axismaxlives', 'i', '0', 'lives', 1],
+                ['g_fastres', 'b', '0', 'lives'],
+                ['g_knifeonly', 'b', '0', 'match'],
+                ['g_enforcemaxlives', 'b', '1', 'lives'],
+                ['g_smoothClients', 'i', '1', 'server'],
+                ['pmove_fixed', 'b', '0', 'server'],
+                ['pmove_msec', 'i', '8', 'server'],
+                ['g_spectatorInactivity', 'i', '0', 'match'],
+                ['match_latejoin', 'b', '1', 'match'],
+                ['match_minplayers', 'i', '4', 'match'],
+                ['match_mutespecs', 'b', '0', 'match'],
+                ['match_readypercent', 'i', '100', 'match'],
+                ['match_timeoutcount', 'i', '3', 'match'],
+                ['match_timeoutlength', 'i', '180', 'match'],
+                ['match_warmupDamage', 'b', '1', 'match'],
+                ['server_autoconfig', 'b', '0', 'match'],
+                ['server_motd0', 's', ' ^NEnemy Territory ^7MOTD ', 'chat'],
+                ['server_motd1', 's', '', 'chat'],
+                ['server_motd2', 's', '', 'chat'],
+                ['server_motd3', 's', '', 'chat'],
+                ['server_motd4', 's', '', 'chat'],
+                ['server_motd5', 's', '', 'chat'],
+                ['team_maxplayers', 'i', '0', 'teams'],
+                ['team_nocontrols', 'b', '1', 'teams'],
+                ['vote_allow_comp', 'b', '1', 'vote'],
+                ['vote_allow_gametype', 'b', '1', 'vote'],
+                ['vote_allow_generic', 'b', '1', 'vote'],
+                ['vote_allow_kick', 'b', '1', 'vote'],
+                ['vote_allow_map', 'b', '1', 'vote'],
+                ['vote_allow_matchreset', 'b', '1', 'vote'],
+                ['vote_allow_matchrestart', 'b', '1', 'vote'],
+                ['vote_allow_mutespecs', 'b', '1', 'vote'],
+                ['vote_allow_nextmap', 'b', '1', 'vote'],
+                ['vote_allow_pub', 'b', '1', 'vote'],
+                ['vote_allow_referee', 'b', '0', 'vote'],
+                ['vote_allow_shuffleteamsxp', 'b', '1', 'vote'],
+                ['vote_allow_startmatch', 'b', '1', 'vote'],
+                ['vote_allow_swapteams', 'b', '1', 'vote'],
+                ['vote_allow_friendlyfire', 'b', '1', 'vote'],
+                ['vote_allow_timelimit', 'b', '0', 'vote'],
+                ['vote_allow_warmupdamage', 'b', '1', 'vote'],
+                ['vote_allow_balancedteams', 'b', '1', 'vote'],
+                ['vote_allow_muting', 'b', '1', 'vote'],
+                ['vote_limit', 'i', '5', 'vote'],
+                ['vote_percent', 'i', '50', 'vote'],
+                ['z_serverflags', 'i', '0', 'match'],
+                ['g_lms_teamForceBalance', 'b', '1', 'lms'],
+                ['g_lms_roundlimit', 'i', '3', 'lms'],
+                ['g_lms_matchlimit', 'i', '2', 'lms'],
+                ['g_lms_lockTeams', 'b', '0', 'lms'],
+                ['g_lms_followTeamOnly', 'b', '1', 'lms'],
+                ['URL', 's', '', 'server'],
+                ['bot_enable', 'b', '0', 'bots'],
+                ['g_heavyWeaponRestriction', 'i', '100', 'teams'],
+                ['g_autoFireteams', 'b', '1', 'teams'],
+                ['g_disableComplaints', 'b', '0', 'chat'],
+                ['omnibot_flags', 'i', '0', 'bots'],
+            ];
+
+            var CVARS_XMOD = [
+                ['g_artilleryHints', 'b', '1', 'weapons'],
+                ['g_watermark', 's', 'xmod', 'chat'],
+                ['g_antirush', 'b', '0', 'admin'],
+                ['g_antirushTime', 'i', '30', 'admin'],
+                ['g_countryflags', 'b', '1', 'admin'],
+                ['sv_maxRate', 'i', '90000', 'server'],
+                ['g_classesMaxHP', 's', '0 0 0 0 0', 'weapons'],
+                ['g_canisterKick', 'b', '0', 'weapons'],
+                ['g_canisterKickOwner', 'b', '0', 'weapons'],
+                ['g_canisterKickDistance', 'i', '250', 'weapons'],
+                ['g_dualSMG', 'b', '0', 'weapons'],
+                ['g_pickAnyWeapon', 'b', '0', 'weapons'],
+                ['g_damageweapons', 'b', '0', 'weapons'],
+                ['g_noAttackInvul', 'b', '0', 'lives'],
+                ['g_spectatorNames', 'b', '1', 'chat'],
+                ['g_teamChangeDelay', 'i', '0', 'teams'],
+                ['g_revenge', 'b', '0', 'xp'],
+                ['g_noReload', 'b', '0', 'weapons'],
+                ['g_noCharge', 'b', '0', 'weapons'],
+                ['g_instantSpawn', 'b', '0', 'lives'],
+                ['g_instantJoinTeam', 'i', '0', 'lives'],
+                ['g_spawnInvulNoClip', 'b', '0', 'lives'],
+                ['g_killAssistances', 'b', '1', 'xp'],
+                ['g_reviveSpreeOptions', 'i', '1', 'xp'],
+                ['g_multiReviveTime', 'i', '2000', 'xp'],
+                ['g_adminChat', 'b', '1', 'chat'],
+                ['g_missileCams', 'i', '0', 'weapons'],
+                ['g_dropObj', 'i', '0', 'support'],
+                ['g_allowDropWeapon', 'b', '0', 'support'],
+                ['g_inactivityOptions', 'i', '0', 'match'],
+            ];
+
+            var CVARS_JAYMOD = [
+                ['g_watermark', 's', 'jaymod', 'chat'],
+                ['g_vulnerableWeapons', 'i', '0', 'weapons'],
+                ['sv_maxRate', 'i', '25000', 'server'],
+            ];
+
+            var MOD_CVARS = {
+                legacy: CVARS_LEGACY,
+                xmod:   CVARS_XMOD_JAYMOD.concat(CVARS_XMOD),
+                jaymod: CVARS_XMOD_JAYMOD.concat(CVARS_JAYMOD)
+            };
+
+            // The groups the settings are shown in, in this order. A category
+            // no mod uses is simply not rendered.
+            var CVAR_CATEGORIES = [
+                ['match',    'Match & rounds'],
+                ['teams',    'Teams, classes & limits'],
+                ['lives',    'Spawning & lives'],
+                ['weapons',  'Weapons & damage'],
+                ['support',  'Medic, ammo & bodies'],
+                ['xp',       'XP, skills & stats'],
+                ['vote',     'Voting'],
+                ['chat',     'Chat, messages & banners'],
+                ['admin',    'Moderation & protection'],
+                ['lms',      'Last man standing'],
+                ['bots',     'Bots'],
+                ['server',   'Server, network & physics']
+            ];
+
+            // A text setting is short on purpose: it is written into a config
+            // file and into the settings JSON, and a server cvar has no use for
+            // more than a line of text.
+            var MAX_CVAR_TEXT = 96;
+            // How many settings a game (or an imported settings file) may carry
+            // at once. Even the largest mod here has fewer than 200 rows.
+            var MAX_CVAR_SETTINGS = 200;
+
+            // The table of the mod a game runs; an unknown mod falls back to
+            // the one this page ships.
+            function modCvarList(modKey) {
+                return Object.prototype.hasOwnProperty.call(MOD_CVARS, modKey)
+                    ? MOD_CVARS[modKey] : MOD_CVARS[DEFAULT_MOD];
+            }
+
+            // name -> row, built once per mod.
+            var modCvarIndexes = {};
+
+            function modCvarIndex(modKey) {
+                var key = Object.prototype.hasOwnProperty.call(MOD_CVARS, modKey)
+                    ? modKey : DEFAULT_MOD;
+                if (!modCvarIndexes[key]) {
+                    var index = {};
+                    modCvarList(key).forEach(function (entry) {
+                        index[entry[0]] = entry;
+                    });
+                    modCvarIndexes[key] = index;
+                }
+                return modCvarIndexes[key];
+            }
+
+            function modCvarEntry(modKey, name) {
+                var index = modCvarIndex(modKey);
+                return Object.prototype.hasOwnProperty.call(index, name)
+                    ? index[name] : null;
+            }
+
+            // Turn what is in a field into a value that is safe to hand to the
+            // engine. The cvar names always come from the table above and never
+            // from the page, and a value can only ever be a number or a short
+            // piece of text without quotes, backslashes, semicolons, dollar
+            // signs or control characters - so nothing that reaches the console
+            // can end the "set" command and start another one. Returns null
+            // when there is no usable value at all.
+            function cleanCvarValue(entry, raw) {
+                var type = entry[1];
+                var text = String(raw === undefined || raw === null ? '' : raw);
+                if (type === 'b') {
+                    return (text === '1' || text === 'true') ? '1' : '0';
+                }
+                if (type === 'i' || type === 'f') {
+                    var value = (type === 'i') ? parseInt(text, 10) : parseFloat(text);
+                    if (!isFinite(value)) { return null; }
+                    value = Math.max(-1000000000, Math.min(1000000000, value));
+                    // Three decimals are as fine as any of these settings get,
+                    // and they keep a text field's rounding noise out.
+                    return String(type === 'f' ? (Math.round(value * 1000) / 1000) : value);
+                }
+                return text.replace(/[\x00-\x1f\x7f"\\;$]/g, '').trim().slice(0, MAX_CVAR_TEXT);
+            }
+
+            // Whether a value is the mod's own default. Numbers are compared as
+            // numbers, so "1" and "1.0" are the same value.
+            function isDefaultCvarValue(entry, value) {
+                if (entry[1] === 's') { return value === entry[2]; }
+                var current = parseFloat(value);
+                var def = parseFloat(entry[2]);
+                return current === def || (isNaN(current) && isNaN(def));
+            }
+
+            // Read a set of cvars from a settings file or from this tab's
+            // session storage: an object of name -> value, checked against the
+            // table of the mod it belongs to. Unknown names, values of the
+            // wrong type and anything that is the default anyway are dropped,
+            // so a file can only ever carry settings this page could have
+            // produced itself.
+            function cleanCvarSet(raw, modKey, warnings) {
+                var out = {};
+                if (raw === undefined || raw === null) { return out; }
+                if (typeof raw !== 'object' || Array.isArray(raw)) {
+                    if (warnings) {
+                        warnings.push('"cvars" is not a list of server settings; ' +
+                            'it was ignored.');
+                    }
+                    return out;
+                }
+                var count = 0;
+                // Own keys only, and every one of them has to be in the table:
+                // "__proto__" and friends never get past that.
+                Object.keys(raw).forEach(function (name) {
+                    if (count >= MAX_CVAR_SETTINGS) { return; }
+                    var entry = modCvarEntry(modKey, name);
+                    if (!entry) {
+                        if (warnings) {
+                            warnings.push('"' + String(name).slice(0, 32) + '" is not ' +
+                                'a setting of this mod and was skipped.');
+                        }
+                        return;
+                    }
+                    var value = raw[name];
+                    if (typeof value === 'boolean') { value = value ? '1' : '0'; }
+                    if (typeof value !== 'string' && typeof value !== 'number') {
+                        if (warnings) {
+                            warnings.push('"' + entry[0] + '" has no usable value ' +
+                                'and was skipped.');
+                        }
+                        return;
+                    }
+                    var clean = cleanCvarValue(entry, value);
+                    if (clean === null || isDefaultCvarValue(entry, clean)) { return; }
+                    out[entry[0]] = clean;
+                    count++;
+                });
+                return out;
+            }
+
+            // "set <cvar> "<value>"" for everything that differs from the mod's
+            // default, in the order of the table.
+            function cvarCommands(modKey, values) {
+                var lines = [];
+                if (!values) { return lines; }
+                modCvarList(modKey).forEach(function (entry) {
+                    if (!Object.prototype.hasOwnProperty.call(values, entry[0])) { return; }
+                    var value = cleanCvarValue(entry, values[entry[0]]);
+                    if (value === null) { return; }
+                    lines.push('set ' + entry[0] + ' "' + value + '"');
+                });
+                return lines;
+            }
+
+            // --- The mod settings in the panels -------------------------------
+            // Both host panels (the launcher's "Host game" page and the gear
+            // panel of a running game) show the same list, so it is built here
+            // once: a <details> section per category, one row per cvar, and
+            // the cvar's name on the row itself - reading the values back then
+            // needs nothing but the container.
+            function cvarRow(entry, values, idPrefix) {
+                var name = entry[0];
+                var type = entry[1];
+                var def = entry[2];
+                var set = values &&
+                    Object.prototype.hasOwnProperty.call(values, name);
+                var current = set ? String(values[name]) : def;
+
+                var row = document.createElement('div');
+                row.className = 'cvar-row';
+                row.setAttribute('data-cvar', name);
+
+                var label = document.createElement('label');
+                label.className = 'cvar-name';
+                label.setAttribute('for', idPrefix + name);
+                label.appendChild(document.createTextNode(name));
+                if (entry[4]) {
+                    var latch = document.createElement('span');
+                    latch.className = 'cvar-latch';
+                    latch.textContent = 'restart';
+                    latch.title = 'The game only reads this one when a match ' +
+                        'starts, so changing it restarts the match.';
+                    label.appendChild(latch);
+                }
+
+                var input = document.createElement('input');
+                input.id = idPrefix + name;
+                input.className = 'cvar-input';
+                if (type === 'b') {
+                    input.type = 'checkbox';
+                    input.checked = parseFloat(current) > 0;
+                } else if (type === 's') {
+                    input.type = 'text';
+                    input.maxLength = MAX_CVAR_TEXT;
+                    input.value = current;
+                } else {
+                    input.type = 'number';
+                    input.step = (type === 'f') ? 'any' : '1';
+                    input.value = current;
+                }
+
+                var hint = document.createElement('span');
+                hint.className = 'cvar-default';
+                hint.textContent = 'default ' + (def === '' ? '(empty)' : def);
+
+                function markChanged() {
+                    var value = cleanCvarValue(entry,
+                        type === 'b' ? (input.checked ? '1' : '0') : input.value);
+                    row.classList.toggle('changed',
+                        value !== null && !isDefaultCvarValue(entry, value));
+                }
+                input.addEventListener('input', markChanged);
+                input.addEventListener('change', markChanged);
+                markChanged();
+
+                row.appendChild(label);
+                row.appendChild(input);
+                row.appendChild(hint);
+                return row;
+            }
+
+            function renderModCvars(container, modKey, values, idPrefix) {
+                if (!container) { return; }
+                container.innerHTML = '';
+
+                var byCategory = {};
+                modCvarList(modKey).forEach(function (entry) {
+                    var category = entry[3] || 'server';
+                    if (!byCategory[category]) { byCategory[category] = []; }
+                    byCategory[category].push(entry);
+                });
+
+                CVAR_CATEGORIES.forEach(function (spec) {
+                    var entries = byCategory[spec[0]];
+                    if (!entries || !entries.length) { return; }
+                    entries = entries.slice().sort(function (a, b) {
+                        return a[0].toLowerCase() < b[0].toLowerCase() ? -1 : 1;
+                    });
+
+                    var group = document.createElement('details');
+                    group.className = 'cvar-group';
+                    var title = document.createElement('summary');
+                    title.textContent = spec[1] + ' (' + entries.length + ')';
+                    group.appendChild(title);
+                    entries.forEach(function (entry) {
+                        group.appendChild(cvarRow(entry, values, idPrefix));
+                    });
+                    container.appendChild(group);
+                });
+            }
+
+            // Everything the panel has that is not the mod's default.
+            function readModCvars(container, modKey) {
+                var values = {};
+                if (!container) { return values; }
+                var rows = container.querySelectorAll('.cvar-row[data-cvar]');
+                for (var i = 0; i < rows.length; i++) {
+                    var entry = modCvarEntry(modKey, rows[i].getAttribute('data-cvar'));
+                    var input = rows[i].querySelector('.cvar-input');
+                    if (!entry || !input) { continue; }
+                    var value = cleanCvarValue(entry,
+                        entry[1] === 'b' ? (input.checked ? '1' : '0') : input.value);
+                    if (value === null || isDefaultCvarValue(entry, value)) { continue; }
+                    if (Object.keys(values).length >= MAX_CVAR_SETTINGS) { break; }
+                    values[entry[0]] = value;
+                }
+                return values;
+            }
+
+            // Type a few letters to find a setting: rows whose cvar name does
+            // not contain them are hidden, and a category that has nothing left
+            // disappears with them. An empty box shows everything again.
+            function filterModCvars(container, query) {
+                if (!container) { return; }
+                var needle = String(query || '').trim().toLowerCase();
+                var groups = container.querySelectorAll('.cvar-group');
+                for (var g = 0; g < groups.length; g++) {
+                    var rows = groups[g].querySelectorAll('.cvar-row[data-cvar]');
+                    var shown = 0;
+                    for (var i = 0; i < rows.length; i++) {
+                        var name = rows[i].getAttribute('data-cvar').toLowerCase();
+                        var hit = !needle || name.indexOf(needle) !== -1;
+                        rows[i].style.display = hit ? '' : 'none';
+                        if (hit) { shown++; }
+                    }
+                    groups[g].style.display = shown ? '' : 'none';
+                    // While searching, every section with a hit is open; without
+                    // a search they are closed again so the list stays short.
+                    groups[g].open = !!needle && shown > 0;
+                }
+            }
+
+            // The settings that have to be written to the running server to get
+            // from one set of values to another: everything that changed, plus
+            // everything that was dropped - a value that is back at the default
+            // still has to be written out, because the server is running with
+            // the old one. Also reports whether a restart is needed for any of
+            // them (CVAR_LATCH).
+            function cvarChanges(modKey, before, after) {
+                var commands = [];
+                var latched = false;
+                before = before || {};
+                after = after || {};
+
+                modCvarList(modKey).forEach(function (entry) {
+                    var name = entry[0];
+                    var had = Object.prototype.hasOwnProperty.call(before, name);
+                    var has = Object.prototype.hasOwnProperty.call(after, name);
+                    if (!had && !has) { return; }
+                    var value = has ? String(after[name]) : entry[2];
+                    if (had && has && String(before[name]) === value) { return; }
+                    var clean = cleanCvarValue(entry, value);
+                    if (clean === null) { return; }
+                    commands.push('set ' + name + ' "' + clean + '"');
+                    if (entry[4]) { latched = true; }
+                });
+
+                return { commands: commands, latched: latched };
+            }
+
             // --- Installing another mod --------------------------------------
             // The mod of this deployment (legacy) is installed during the
             // bootstrap, before main() runs. Any other mod is only needed once a
@@ -5851,6 +6539,85 @@
                 return install;
             }
 
+            // Where the files of the mod a hosted game runs are served and
+            // installed - the mod this page ships needs no install and has its
+            // own descriptor.
+            function hostAssetsFor(modKey) {
+                var mod = HOST_MODS[modKey];
+                if (!mod || !mod.available || mod.fsGame === LEGACY_ASSETS.fsGame) {
+                    return LEGACY_ASSETS;
+                }
+                return hostModAssets(mod);
+            }
+
+            // --- Preset server config ----------------------------------------
+            // A config file served in a mod's folder next to this page, e.g.
+            // "xmod/etl-host.cfg". Every game hosted with that mod executes it
+            // before anything else, so whoever maintains the deployment (the
+            // files on the web space / FTP) decides how their server is set up
+            // without anybody having to touch this page: rules, banners, admin
+            // levels, whatever the mod understands. It is optional - a
+            // deployment that does not ship one simply hosts with the mod's
+            // defaults.
+            //
+            // It is fetched from the same folder the mod's own pk3 and game
+            // modules come from, which is where the trust for a hosted game
+            // already lies, and it is revalidated on every start so a change on
+            // the server is picked up by the next game (an unreachable server
+            // falls back to the copy of the last visit).
+            var HOST_PRESET_CFG = 'etl-host.cfg';
+
+            // The settings picked in the panel, written out as a config of
+            // their own. They are execed after the preset above, so what the
+            // host chooses here wins over it - and since only values that
+            // differ from the mod's default are written, everything the host
+            // did not touch keeps what the preset set.
+            var HOST_UI_CFG = 'etl-hostui.cfg';
+
+            // Resolves with true when the mod's preset config is in place.
+            function fetchPresetConfig(assets) {
+                try {
+                    Module.FS.mkdirTree(assets.dir);
+                } catch (e) { /* exists */ }
+                return downloadInto(assets.base + HOST_PRESET_CFG,
+                    assets.dir + '/' + HOST_PRESET_CFG, HOST_PRESET_CFG,
+                    { refresh: true }).then(function () {
+                        return true;
+                    }, function (err) {
+                        // Most deployments do not ship one, so this is a note
+                        // and not an error.
+                        if (console && console.info) {
+                            console.info('No preset config for ' + assets.fsGame +
+                                ' (' + assets.base + HOST_PRESET_CFG + '): ' +
+                                (err && err.message || err));
+                        }
+                        return false;
+                    });
+            }
+
+            // Write the panel's settings into the mod's folder. Returns true
+            // when there is something to exec.
+            function writeHostCvarConfig(assets, lines) {
+                var path = assets.dir + '/' + HOST_UI_CFG;
+                try {
+                    Module.FS.mkdirTree(assets.dir);
+                    // Always written, even when it is empty: it must never be
+                    // left over from an earlier game of this browser.
+                    Module.FS.writeFile(path,
+                        '// Written by the ET: Legacy web launcher - do not edit.\n' +
+                        '// These are the server settings picked in "Host game";\n' +
+                        '// they are applied after ' + HOST_PRESET_CFG + '.\n' +
+                        lines.join('\n') + (lines.length ? '\n' : ''));
+                    return lines.length > 0;
+                } catch (e) {
+                    if (console && console.warn) {
+                        console.warn('Could not write ' + path + ': ' +
+                            (e && e.message || e));
+                    }
+                    return false;
+                }
+            }
+
             // Resolves with the argument list, since installing the mod and
             // Omni-bot needs the network.
             function hostedGameArgs(settings) {
@@ -5868,6 +6635,7 @@
                 // g_balancedteams itself is read-only (CVAR_ROM): the game
                 // derives it from g_teamForceBalance, so that is what is set.
                 var mod = HOST_MODS[settings.mod];
+                var assets = hostAssetsFor(settings.mod);
                 if (mod && mod.available && settings.mod !== DEFAULT_MOD) {
                     args.push('+set', 'fs_game', mod.fsGame);
                 }
@@ -5902,6 +6670,26 @@
                     if (ready) {
                         args.push('+set', 'omnibot_path', OMNIBOT_DIR);
                     }
+                    // The mod's own settings: the preset the deployment serves
+                    // first, then the ones picked in the panel. Both are config
+                    // files rather than more "+set" arguments, because the
+                    // engine's command line is a single string of at most
+                    // MAX_STRING_CHARS (1024) - a hundred settings would not fit
+                    // in it, while a config file has no such limit.
+                    return fetchPresetConfig(assets);
+                }).then(function (hasPreset) {
+                    var mine = writeHostCvarConfig(assets,
+                        cvarCommands(settings.mod, settings.cvars));
+                    // In front of everything else: the preset is the baseline a
+                    // deployment sets up, and the "+set"s above - like the
+                    // settings config below - are executed after it, so what is
+                    // picked in the panel wins over it.
+                    if (hasPreset) {
+                        args.unshift('+exec', HOST_PRESET_CFG);
+                    }
+                    if (mine) {
+                        args.push('+exec', HOST_UI_CFG);
+                    }
                     args.push('+map', settings.map);
                     return args;
                 });
@@ -5935,6 +6723,19 @@
                     clean.push(fallback);
                 }
                 return clean;
+            }
+
+            // Where the rotation stands right now: the position of the map that
+            // is being played, or - while a map that is not part of the
+            // rotation is being played ("Play now") - the last rotation entry
+            // that was, so the rotation carries on where it left off instead of
+            // starting over.
+            function rotationIndexFor(rotation, map, kept) {
+                if (!rotation || !rotation.length) { return 0; }
+                var index = rotation.indexOf(map);
+                if (index !== -1) { return index; }
+                index = parseInt(kept, 10);
+                return (index >= 0 && index < rotation.length) ? index : 0;
             }
 
             // Render the rotation editor into a container. onChange gets the
@@ -6070,6 +6871,7 @@
                     name: (el('name').value.trim() || 'ET:Legacy Web Host').slice(0, 64),
                     map: maps[0],
                     rotation: maps,
+                    rotationIndex: 0,
                     maxPlayers: maxPlayers,
                     bots: bots,
                     timeLimit: timeLimit,
@@ -6080,7 +6882,12 @@
                     friendlyFire: bool('friendlyfire', true),
                     warmup: num('warmup', 60, 1, 3600),
                     alliedRespawn: num('alliedrespawn', 0, 0, 300),
-                    axisRespawn: num('axisrespawn', 0, 0, 300)
+                    axisRespawn: num('axisrespawn', 0, 0, 300),
+                    // The mod's own server settings, everything that is not its
+                    // default (see renderModCvars). The in-game panel has a list
+                    // of its own, so the container is looked up by prefix here
+                    // as well.
+                    cvars: readModCvars(document.getElementById(prefix + 'cvars'), mod)
                 };
             }
 
@@ -6112,6 +6919,10 @@
                 setValue('warmup', settings.warmup);
                 setValue('alliedrespawn', settings.alliedRespawn);
                 setValue('axisrespawn', settings.axisRespawn);
+                // The whole list is rebuilt: an imported file may bring another
+                // mod with it, and with it a different set of settings.
+                renderModCvars(el('cvars'), settings.mod || DEFAULT_MOD,
+                    settings.cvars, prefix + 'cvar-');
             }
 
             // --- Settings import / export ----------------------------------
@@ -6142,6 +6953,7 @@
                     version: SETTINGS_FILE_VERSION,
                     name: settings.name,
                     rotation: (settings.rotation || []).slice(),
+                    rotationIndex: settings.rotationIndex || 0,
                     maxPlayers: settings.maxPlayers,
                     bots: settings.bots,
                     timeLimit: settings.timeLimit,
@@ -6152,7 +6964,8 @@
                     friendlyFire: settings.friendlyFire !== false,
                     warmup: settings.warmup,
                     alliedRespawn: settings.alliedRespawn,
-                    axisRespawn: settings.axisRespawn
+                    axisRespawn: settings.axisRespawn,
+                    cvars: cleanCvarSet(settings.cvars, settings.mod || DEFAULT_MOD)
                 };
             }
 
@@ -6259,6 +7072,7 @@
                         HOST_MODS[DEFAULT_MOD].name + ' is used.');
                     mod = undefined;
                 }
+                var modKey = mod === undefined ? DEFAULT_MOD : mod;
 
                 var maxPlayers = num('maxPlayers', 8, 2, 32);
                 var bots = num('bots', 0, 0, 31);
@@ -6273,17 +7087,26 @@
                         name: name,
                         map: rotation[0] || '',
                         rotation: rotation,
+                        // Where the rotation stands. It is clamped to the list
+                        // that was actually accepted above, so it can never
+                        // point past its end.
+                        rotationIndex: Math.min(num('rotationIndex', 0, 0,
+                            MAX_ROTATION_MAPS - 1), Math.max(0, rotation.length - 1)),
                         maxPlayers: maxPlayers,
                         bots: bots,
                         timeLimit: num('timeLimit', 0, 0, 1440),
                         private: bool('private', false),
-                        mod: mod === undefined ? DEFAULT_MOD : mod,
+                        mod: modKey,
                         balancedTeams: bool('balancedTeams', false),
                         doWarmup: bool('doWarmup', true),
                         friendlyFire: bool('friendlyFire', true),
                         warmup: num('warmup', 60, 1, 3600),
                         alliedRespawn: num('alliedRespawn', 0, 0, 300),
-                        axisRespawn: num('axisRespawn', 0, 0, 300)
+                        axisRespawn: num('axisRespawn', 0, 0, 300),
+                        // Checked against the table of that mod: a name that is
+                        // not in it, or a value that is not a number or a short
+                        // piece of text, never reaches the engine.
+                        cvars: cleanCvarSet(own('cvars'), modKey, warnings)
                     },
                     warnings: warnings,
                     error: ''
