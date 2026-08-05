@@ -2321,11 +2321,10 @@
                     <div class="setting-hint" id="host-mod-hint">
                         The mod the hosted game runs. It is downloaded the first
                         time it is used, by you and by everyone who joins. Mods
-                        that do not come with game code built for WebAssembly -
-                        closed-source ones such as Jaymod never will - are played
-                        with ET: Legacy's game code, using their own maps, media
-                        and server settings; the greyed out ones are not served
-                        with this page at all.
+                        that do not come with game code built for WebAssembly
+                        are played with ET: Legacy's game code, using their own
+                        maps, media and server settings; the greyed out ones are
+                        not served with this page at all.
                     </div>
 
                     <div class="check-row">
@@ -5056,9 +5055,9 @@
             function describeModuleProblem(bytes) {
                 if (!hasWasmMagic(bytes)) { return describeNonWasm(bytes); }
                 if (!wasmExportsInclude(bytes, VM_ABI_SYMBOL)) {
-                    return 'it was built for a different ET: Legacy version (it does ' +
-                        'not export ' + VM_ABI_SYMBOL + ') - the engine and its game ' +
-                        'logic modules must come from the same build';
+                    return 'it does not speak this engine\'s WebAssembly VM ABI ' +
+                        '(no ' + VM_ABI_SYMBOL + ' export) - game logic has to be ' +
+                        'built for this engine, see docs/web.md';
                 }
                 return null;
             }
@@ -5112,14 +5111,15 @@
                 Module.setStatus('Loading ' + name);
                 return sideModuleBytes(name, assets).catch(function (err) {
                     // No game logic that this engine can run. For a mod that is
-                    // not the one shipped here that is the normal case rather
-                    // than a broken deployment: mods like Jaymod are closed
-                    // source and only ship native/QVM game code, which a browser
-                    // cannot execute at all. Run their game with this build's own
-                    // modules instead - the mod's maps, pk3 media and server
-                    // settings are still used, and everything that lives in the
-                    // engine and in this game logic (Omni-bot in particular)
-                    // works for them exactly as it does for legacy.
+                    // not the one shipped here that is a normal case rather
+                    // than a broken deployment: a mod only ships game logic the
+                    // browser can run when someone built its (open) sources for
+                    // WebAssembly - native/QVM game code cannot be executed
+                    // here at all. Run their game with this build's own modules
+                    // instead - the mod's maps, pk3 media and server settings
+                    // are still used, and everything that lives in the engine
+                    // and in this game logic (Omni-bot in particular) works for
+                    // them exactly as it does for legacy.
                     if (assets.fsGame === LEGACY_ASSETS.fsGame) { throw err; }
                     return sideModuleBytes(name, LEGACY_ASSETS).then(function (bytes) {
                         if (!modFallbackLogic[assets.fsGame] && console && console.warn) {
@@ -5724,10 +5724,12 @@
             // drop-down) so it is clear that they are known but not usable yet.
             //
             // A mod does not have to bring game logic built for WebAssembly:
-            // when it does not (Jaymod and the other closed-source mods never
-            // will - a browser cannot run their native/QVM game code), the game
-            // is run with this build's own cgame/ui/qagame on top of the mod's
-            // pk3, see preloadSideModule.
+            // when it does not (the browser cannot run native/QVM game code,
+            // and only a mod whose sources were built for wasm has modules it
+            // can run), the game is run with this build's own cgame/ui/qagame
+            // on top of the mod's pk3, see preloadSideModule. Each of the three
+            // modules is taken from the mod on its own, so a mod that only
+            // ships its own qagame keeps that and falls back for the rest.
             //
             // "pk3s" names the mod's data package(s) as served in its folder
             // (see modAssets): unlike the legacy pk3, whose name this page gets

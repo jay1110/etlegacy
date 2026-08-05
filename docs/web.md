@@ -366,7 +366,9 @@ logic (`qagame`), and a mod that brings no WebAssembly game logic of its own is
 run with this build's — which does load it (see
 [section 7](#7-host-games-in-the-browser-lobby--webrtc)). The library and its
 data are found through the absolute `omnibot_path` the page passes, so they do
-not depend on the mod's directory either.
+not depend on the mod's directory either — a mod that does bring its own
+`qagame` loads that very same library, as long as its bot interface was built
+against the same Omni-bot version.
 
 Alternatively, configure everything from the page URL (which skips the menu)
 or from the in-page **Connect…** panel (controls bar at the top edge):
@@ -494,30 +496,70 @@ xmod/
 └── ui.mp.wasm32.so           # menus                       (optional)
 
 jaymod/
-└── jaymod-2.2.1.pk3
+├── jaymod-2.2.1.pk3
+└── qagame.mp.wasm32.so       # server game logic           (optional)
 ```
 
 Only the pk3 is required. The three `.so` files are the mod's own game logic
-built for WebAssembly, and most mods will never have them: Jaymod, No Quarter
-and the other closed-source mods only ship native `.so`/`.qvm` game code, which
-a browser cannot execute at all. When a mod brings no module this engine can
-run, the page falls back to **this build's** `cgame`/`ui`/`qagame` and starts
-the game with `+set fs_basegame legacy`, so the mod's own pk3 (its maps, media
-and menus) is mounted on top of the Legacy pk3 the modules need. The game then
-plays with ET: Legacy's rules and everything that lives in the engine and in
-this game logic — Omni-bot in particular — works for that mod exactly as it does
-for Legacy. Only the mod's *own* gameplay features are missing, which is the
-best a browser can do without a WebAssembly build of that mod.
+built for WebAssembly. A mod that only ships the usual native `.so`/`.qvm` game
+code brings none of them — the browser can run neither of those — but a mod
+whose sources are available can be built for wasm just like this one: Jaymod
+(2.2.x, published under Apache-2.0) and XMod are open source and both carry
+their own Omni-bot support, so a `qagame.mp.wasm32.so` built from their trees
+can be served here. A mod does not have to provide all three modules; each is
+used on its own, and the missing ones fall back as described next. Note that a
+mod's `qagame` combined with this build's `cgame`/`ui` is only as compatible as
+the mod's server–client protocol is with Legacy's, so building the mod's
+`cgame`/`ui` as well is the safer deployment.
 
-A mod's own modules are preferred whenever they exist and were built for this
-engine version. That is checked before they are compiled: every game logic
-module of a build exports a marker symbol (`vmWasmAbi1`, `VM_WASM_ABI_VERSION`
-in `src/qcommon/q_shared.h`), and a module without it is ignored by the page and
-refused by the engine (`Sys_TryLibraryLoad`). Without that check a module of
-another ET: Legacy version — an old copy left in a mod folder, say — would load,
-call back into the engine through a syscall pointer of a different shape and
-kill the whole tab with `RuntimeError: indirect call signature mismatch`, a trap
-no error handler can catch.
+When a mod brings no module this engine can run, the page falls back to **this
+build's** `cgame`/`ui`/`qagame` and starts the game with
+`+set fs_basegame legacy`, so the mod's own pk3 (its maps, media and menus) is
+mounted on top of the Legacy pk3 the modules need. The game then plays with
+ET: Legacy's rules and everything that lives in the engine and in this game
+logic — Omni-bot in particular — works for that mod exactly as it does for
+Legacy. Only the mod's *own* gameplay features are missing, which is the best a
+browser can do without a WebAssembly build of that mod.
+
+### Building a mod's game logic for this engine
+
+A module of another source tree is loaded only if it was built for the browser
+engine, which means more than "compiled with emcc":
+
+- built as an Emscripten `SIDE_MODULE` with every object compiled `-fPIC` and
+  `-fvisibility=hidden` (only `vmMain`/`dllEntry` exported — `cgame` and `ui`
+  otherwise share their identically named `trap_*` symbols through one global
+  GOT, see the troubleshooting entry on `Bad cgame system trap: 24`), and named
+  like this build's modules (`qagame.mp.wasm32.so`, `cgame.mp.wasm32.so`,
+  `ui.mp.wasm32.so`) — see `etl_configure_wasm_side_module` in
+  `cmake/ETLBuildMod.cmake`;
+- `dllEntry` must take the **array-based** syscall pointer
+  (`intptr_t (*)(intptr_t *)`, see `src/game/g_syscalls.c`), not the variadic
+  one of the native builds: variadic function pointers do not work across
+  `MAIN_MODULE`/`SIDE_MODULE` boundaries;
+- it must export the ABI marker `vmWasmAbi1` (`VM_WASM_ABI_EXPORT` in
+  `src/qcommon/q_shared.h`), which is what states that the two points above are
+  fulfilled.
+
+For the mod's own Omni-bot support the mod's copy of the bot loader
+(`BotLoadLibrary.cpp`) additionally has to look for the library under the name
+served here, `omnibot_et.wasm32.so`, and its bot interface has to match the
+Omni-bot version of that library (the vendored 0.9x tree, see
+`vendor/omni-bot`); an interface built against an older Omni-bot (Jaymod 2.2
+targets 0.81) is refused by the library with a version error and the match then
+runs without bots. Nothing else is needed: the library is preloaded once per
+page and found through the absolute `omnibot_path`, whichever `fs_game` is
+running.
+
+A mod's own modules are preferred whenever they exist and were built that way.
+That is checked before they are compiled: every game logic module of such a
+build exports a marker symbol (`vmWasmAbi1`, `VM_WASM_ABI_VERSION` in
+`src/qcommon/q_shared.h`), and a module without it is ignored by the page and
+refused by the engine (`Sys_TryLibraryLoad`). Without that check a module built
+against a different engine revision — an old copy left in a mod folder, say —
+would load, call back into the engine through a syscall pointer of a different
+shape and kill the whole tab with `RuntimeError: indirect call signature
+mismatch`, a trap no error handler can catch.
 
 The pk3 inside the mod folder is also where the page reads the modules from
 first; a standalone `.so` next to it is used when the pk3 does not contain one.
@@ -891,8 +933,11 @@ idle-connection reaper and a failed bind.
   detected before it runs — it lacks the `vmWasmAbi1` export every module of a
   build has (`VM_WASM_ABI_VERSION`, `src/qcommon/q_shared.h`) — and is ignored
   by the page and refused by the engine (`Sys_TryLibraryLoad`), which falls back
-  to this build's own game logic. Delete those stale `.so` files from the mod
-  folder; only the mod's pk3 is needed (see
+  to this build's own game logic. Delete such stale `.so` files from the mod
+  folder — a mod's own modules are only used when they were built for this
+  engine's VM ABI (see
+  [Building a mod's game logic for this engine](#building-a-mods-game-logic-for-this-engine));
+  otherwise the mod's pk3 alone is what is needed (see
   [section 7](#7-host-games-in-the-browser-lobby--webrtc)).
 - **`Bad cgame system trap: 24` (or another unimplemented trap) right after
   connecting to a third-party mod server (xmod, …)** — trap 24 is **not** a
@@ -922,7 +967,11 @@ idle-connection reaper and a failed bind.
      `DLL_EXT`, see `src/qcommon/q_platform.h`), and make them reachable in the
      mod's own game directory — every module must be run through Emscripten's
      wasm preload plugin before the engine `dlopen()`s it (see the next entry;
-     the shipped shell only preloads the `legacy` game directory).
+     the shipped shell only preloads the `legacy` game directory);
+  4. export the ABI marker `vmWasmAbi1` (`VM_WASM_ABI_EXPORT` in
+     `src/qcommon/q_shared.h`), without which the module is ignored by the page
+     and refused by the engine — see
+     [Building a mod's game logic for this engine](#building-a-mods-game-logic-for-this-engine).
 - **`VM_Create on cgame/ui/qagame failed` / `dlopen` errors** — a side module
   was not compiled into `preloadedWasm` before the engine `dlopen()`ed it.
   Without Asyncify the browser cannot compile a wasm module synchronously on the

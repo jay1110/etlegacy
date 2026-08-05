@@ -889,17 +889,18 @@ static void *Sys_TryLibraryLoad(const char *base, const char *gamedir, const cha
 #endif // __APPLE__
 
 #ifdef __EMSCRIPTEN__
-	// Only a module built together with this engine can be run: WebAssembly type
+	// Only a module built for this engine's VM ABI can be run: WebAssembly type
 	// checks every indirect call, and a mismatch is an unrecoverable trap
 	// ("indirect call signature mismatch") that takes the whole browser tab down -
-	// so a module of another ET: Legacy version, which calls back into the engine
+	// so a module built against another revision (or a mod module still using the
+	// variadic syscall of the native builds), which calls back into the engine
 	// through a syscall pointer of a different signature, must never reach its
 	// dllEntry. Skipping it here instead lets the caller carry on with the next
 	// search path (and, for the ui module, with the legacy mod fallback).
 	if (libHandle && !Sys_LoadFunction(libHandle, VM_WASM_ABI_SYMBOL))
 	{
-		Com_Printf("Sys_LoadDll(%s/%s/%s): skipped, this module was built for a "
-		           "different engine version (no %s export)\n",
+		Com_Printf("Sys_LoadDll(%s/%s/%s): skipped, this module was not built for "
+		           "this engine's wasm VM ABI (no %s export)\n",
 		           base, gamedir, fname, VM_WASM_ABI_SYMBOL);
 		Sys_UnloadLibrary(libHandle);
 
