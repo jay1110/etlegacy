@@ -868,14 +868,15 @@ idle-connection reaper and a failed bind.
   listening UDP socket — use a native dedicated server for that.
 - A browser-hosted game depends on the host's browser tab: closing it ends the
   game for everybody (the players are returned to the launcher). Reloading the
-  page (F5) is fine for the host: the settings are kept for the tab and the game
-  is hosted again right away — but it is a *new* room, so its invite link
-  changes and the players have to rejoin.
+  page (F5) is fine for the host: the settings are kept for the tab and the room
+  is taken back over with the **same id**, so every invite link stays valid and
+  the players in it are reconnected automatically — as long as the host is back
+  within the lobby's grace period (`--reclaim-ms`, 60 s by default).
 - `vid_restart` (and the settings menu's "apply" that issues it) is disabled in
   the browser: a canvas WebGL context and gl4es cannot be torn down and
   re-created within the same page (the Wwasm reference port suppresses it the
   same way). Latched video cvar changes take effect on the next page reload —
-  which for a host means re-hosting as described above.
+  which for a host means the reload described above.
 - **A page can only load one map.** Starting a second one tears the client down
   and builds it back up inside the same page (`SV_SpawnServer` →
   `CL_ShutdownAll` → `Hunk_Clear` → `CL_StartHunkUsers`), which the wasm build

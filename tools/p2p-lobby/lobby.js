@@ -762,7 +762,12 @@ function handleControl(conn, msg) {
 			return;
 		}
 		// One room per connection, and a room has one host: drop whatever
-		// either side was still attached to.
+		// either side was still attached to. The token is what decides here,
+		// not the room's paused flag: a connection that died without a close
+		// (a phone that lost its network) is only noticed when its heartbeat
+		// runs out, and until then the room still looks hosted - refusing the
+		// reclaim in that window would cost the host its room id, its invite
+		// links and everybody in it, for a connection that is already gone.
 		if (conn.roomId && conn.roomId !== roomId) {
 			removeHostedRoom(conn);
 		}
