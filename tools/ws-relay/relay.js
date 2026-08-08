@@ -21,6 +21,15 @@
  * drop-in replacement for simple "full UDP gateway" scripts:
  *   ws://host:port/?target=<server-ip>:<server-port>
  *
+ * The relay also passes HTTP downloads through:
+ *   http://host:port/download?url=<url-of-a-pk3>
+ * A browser may not fetch the mirror a server redirects it to with
+ * sv_wwwBaseURL (mixed content, no Access-Control-Allow-Origin), which makes
+ * cl_wwwDownload fail and the game fall back to its own, far slower transfer.
+ * The relay fetches the file instead and serves it with the CORS header the
+ * browser wants. Only public http(s) .pk3 URLs are passed through; see
+ * --no-download-proxy and --allow-private-downloads.
+ *
  * Browsers served over HTTPS may only open secure (wss://) WebSockets, so a
  * page hosted on GitHub Pages / any HTTPS host needs the relay behind TLS -
  * either terminate TLS here with --tls-cert/--tls-key or in front of it with a
@@ -38,7 +47,9 @@
 const dgram = require('dgram');
 const dns = require('dns');
 const fs = require('fs');
+const http = require('http');
 const https = require('https');
+const net = require('net');
 const { WebSocketServer } = require('ws');
 
 // Configuration
@@ -48,6 +59,11 @@ const DEFAULT_CONNECTION_TIMEOUT_MS = 120000; // idle timeout (no traffic at all
 const DEFAULT_MAX_CONNECTIONS = 128;
 const HEARTBEAT_INTERVAL_MS = 15000; // ping interval to detect dead peers
 const TIMEOUT_CHECK_INTERVAL_MS = 5000;
+const DEFAULT_MAX_DOWNLOAD_MB = 512; // a pk3 larger than this is not passed through
+const DEFAULT_MAX_DOWNLOADS = 8; // proxied downloads at the same time
+const MAX_DOWNLOADS_PER_CLIENT = 2;
+const DOWNLOAD_RESPONSE_TIMEOUT_MS = 30000; // waiting for the mirror to answer
+const MAX_DOWNLOAD_REDIRECTS = 4;
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -57,6 +73,10 @@ let tlsCert = null;
 let tlsKey = null;
 let connectionTimeoutMs = DEFAULT_CONNECTION_TIMEOUT_MS;
 let maxConnections = DEFAULT_MAX_CONNECTIONS;
+let downloadProxy = true;
+let allowPrivateDownloads = false;
+let maxDownloadBytes = DEFAULT_MAX_DOWNLOAD_MB * 1024 * 1024;
+let maxDownloads = DEFAULT_MAX_DOWNLOADS;
 
 for (let i = 0; i < args.length; i++) {
     if (args[i] === '--port' && args[i + 1]) {
@@ -87,6 +107,26 @@ for (let i = 0; i < args.length; i++) {
         }
         maxConnections = limit;
         i++;
+    } else if (args[i] === '--no-download-proxy') {
+        downloadProxy = false;
+    } else if (args[i] === '--allow-private-downloads') {
+        allowPrivateDownloads = true;
+    } else if (args[i] === '--max-download-size' && args[i + 1]) {
+        const megabytes = parseInt(args[i + 1], 10);
+        if (isNaN(megabytes) || megabytes < 1) {
+            console.error('Error: --max-download-size must be a number of megabytes >= 1.');
+            process.exit(1);
+        }
+        maxDownloadBytes = megabytes * 1024 * 1024;
+        i++;
+    } else if (args[i] === '--max-downloads' && args[i + 1]) {
+        const limit = parseInt(args[i + 1], 10);
+        if (isNaN(limit) || limit < 1) {
+            console.error('Error: --max-downloads must be a number >= 1.');
+            process.exit(1);
+        }
+        maxDownloads = limit;
+        i++;
     } else if (args[i] === '--help') {
         console.log('ET: Legacy WebSocket-to-UDP Relay Server');
         console.log('');
@@ -99,11 +139,19 @@ for (let i = 0; i < args.length; i++) {
         console.log('  --tls-key <file>    TLS private key (PEM) to serve wss://');
         console.log('  --timeout <secs>    Idle timeout in seconds (default: 120)');
         console.log('  --max-connections <n>  Connection limit (default: 128)');
+        console.log('  --no-download-proxy    Do not pass game file downloads through');
+        console.log(`  --max-downloads <n>    Downloads at the same time (default: ${DEFAULT_MAX_DOWNLOADS})`);
+        console.log(`  --max-download-size <mb>  Largest file to pass through (default: ${DEFAULT_MAX_DOWNLOAD_MB})`);
+        console.log('  --allow-private-downloads  Allow downloads from private/loopback');
+        console.log('                         addresses (local testing only)');
         console.log('  --help              Show this help');
         console.log('');
         console.log('Provide both --tls-cert and --tls-key to accept secure');
         console.log('wss:// connections (required from HTTPS pages). Otherwise');
         console.log('the relay serves plain ws://.');
+        console.log('');
+        console.log('The download proxy answers GET /download?url=<pk3-url> with');
+        console.log('CORS headers so browser clients can use cl_wwwDownload.');
         process.exit(0);
     }
 }
@@ -250,12 +298,450 @@ function parseTargetFromRequestUrl(requestUrl) {
 }
 
 /**
- * Create the WebSocket server. When TLS is configured, attach the WebSocket
- * server to an HTTPS server so it accepts secure wss:// connections; otherwise
- * listen directly for plain ws://.
+ * Download proxy
+ *
+ * A server with sv_wwwDownload 1 redirects clients to its sv_wwwBaseURL mirror
+ * instead of sending a pk3 through the game connection, which is roughly an
+ * order of magnitude faster. A browser client cannot follow that redirect on
+ * its own: a page served over HTTPS may not fetch a http:// mirror at all
+ * (mixed content) and a mirror on another host has to allow the page with an
+ * Access-Control-Allow-Origin header, which a plain file mirror does not send.
+ * Without help every www download fails and the game falls back to its own slow
+ * transfer, so the relay fetches the file and serves it with that header.
+ *
+ * The relay must not become an open door into the network it runs in, so only
+ * plain http(s) GETs of .pk3 files to public addresses are passed through, the
+ * body is never interpreted, and the size, the number of redirects and the
+ * number of downloads at the same time are all capped.
+ */
+let activeDownloads = 0;
+const downloadsPerClient = new Map();
+
+/**
+ * Check whether an IPv4 address is one the relay must not fetch from: the
+ * loopback, private and link-local ranges are where a cloud metadata service,
+ * an admin interface or the game server's own control port live.
+ */
+function isPrivateIPv4(address) {
+    const parts = address.split('.').map((part) => Number(part));
+
+    if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
+        return true; // not an address we understand - refuse it
+    }
+
+    const [a, b] = parts;
+
+    if (a === 0 || a === 10 || a === 127) {
+        return true; // this host, private, loopback
+    }
+    if (a === 100 && b >= 64 && b <= 127) {
+        return true; // carrier-grade NAT
+    }
+    if (a === 169 && b === 254) {
+        return true; // link-local (cloud metadata)
+    }
+    if (a === 172 && b >= 16 && b <= 31) {
+        return true; // private
+    }
+    if (a === 192 && (b === 0 || b === 168)) {
+        return true; // protocol assignments, private
+    }
+    if (a === 198 && (b === 18 || b === 19)) {
+        return true; // benchmarking
+    }
+    if (a >= 224) {
+        return true; // multicast, reserved, broadcast
+    }
+
+    return false;
+}
+
+/**
+ * Same for IPv6, including the IPv4-mapped form a dual-stack lookup returns.
+ */
+function isPrivateIPv6(address) {
+    const ip = address.toLowerCase().split('%')[0]; // drop a zone index
+
+    if (ip === '::' || ip === '::1') {
+        return true;
+    }
+
+    if (ip.startsWith('::ffff:')) {
+        const mapped = ip.slice('::ffff:'.length);
+        return net.isIPv4(mapped) ? isPrivateIPv4(mapped) : true;
+    }
+
+    if (/^f[cd]/.test(ip)) {
+        return true; // unique local fc00::/7
+    }
+    if (/^fe[89ab]/.test(ip)) {
+        return true; // link-local fe80::/10
+    }
+    if (ip.startsWith('ff')) {
+        return true; // multicast
+    }
+
+    return false;
+}
+
+function isPrivateAddress(ip) {
+    if (net.isIPv4(ip)) {
+        return isPrivateIPv4(ip);
+    }
+    if (net.isIPv6(ip)) {
+        return isPrivateIPv6(ip);
+    }
+    return true;
+}
+
+/**
+ * Decode a URL path without throwing on a malformed escape sequence.
+ */
+function safeDecode(value) {
+    try {
+        return decodeURIComponent(value);
+    } catch (err) {
+        return value;
+    }
+}
+
+/**
+ * Check that a URL is one the relay is willing to fetch. Anything but a plain
+ * http(s) GET of a .pk3 file is refused - that is all a game download is, and
+ * everything else only widens what the relay can be pointed at.
+ *
+ * @returns {string|null} the reason it was refused, or null when it is fine
+ */
+function checkDownloadUrl(url) {
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        return 'only http and https URLs are passed through';
+    }
+
+    if (url.username || url.password) {
+        return 'URLs with credentials are not passed through';
+    }
+
+    if (!/\.pk3$/i.test(safeDecode(url.pathname))) {
+        return 'only .pk3 files are passed through';
+    }
+
+    return null;
+}
+
+/**
+ * Resolve a hostname and return an address the relay may connect to. The
+ * address is handed to the request itself, so a name that resolves to
+ * something else on the second lookup cannot be used to slip past this check.
+ */
+function resolvePublicAddress(hostname) {
+    return new Promise((resolve, reject) => {
+        // A literal address needs no lookup - and dns.lookup would happily
+        // hand back whatever it was given anyway.
+        if (net.isIP(hostname)) {
+            if (!allowPrivateDownloads && isPrivateAddress(hostname)) {
+                reject(new Error(`${hostname} is not a public address`));
+                return;
+            }
+            resolve({ address: hostname, family: net.isIPv6(hostname) ? 6 : 4 });
+            return;
+        }
+
+        dns.lookup(hostname, { all: true }, (err, addresses) => {
+            if (err || !addresses || !addresses.length) {
+                reject(new Error(`cannot resolve ${hostname}`));
+                return;
+            }
+
+            const usable = allowPrivateDownloads ?
+                addresses : addresses.filter((entry) => !isPrivateAddress(entry.address));
+
+            if (!usable.length) {
+                reject(new Error(`${hostname} does not resolve to a public address`));
+                return;
+            }
+
+            resolve(usable[0]);
+        });
+    });
+}
+
+/**
+ * Send a single request to the mirror, connecting to the address that was
+ * checked above.
+ */
+function requestUpstream(target, address, method) {
+    return new Promise((resolve, reject) => {
+        const client = target.protocol === 'https:' ? https : http;
+
+        const request = client.request({
+            protocol: target.protocol,
+            hostname: target.hostname,
+            port: target.port || (target.protocol === 'https:' ? 443 : 80),
+            path: `${target.pathname}${target.search}`,
+            method: method,
+            headers: {
+                'User-Agent': 'etlegacy-ws-relay',
+                'Accept': '*/*'
+            },
+            lookup: (name, options, callback) => callback(null, address.address, address.family)
+        }, resolve);
+
+        request.setTimeout(DOWNLOAD_RESPONSE_TIMEOUT_MS, () => {
+            request.destroy(new Error('the mirror did not answer in time'));
+        });
+
+        request.on('error', reject);
+        request.end();
+    });
+}
+
+/**
+ * Fetch a file from a mirror, following redirects - a mirror answering a
+ * http:// URL with a redirect to its https:// version is common - and checking
+ * every hop again.
+ */
+async function fetchFromMirror(target, method) {
+    let current = target;
+
+    for (let redirects = 0; redirects <= MAX_DOWNLOAD_REDIRECTS; redirects++) {
+        const address = await resolvePublicAddress(current.hostname);
+        const upstream = await requestUpstream(current, address, method);
+        const status = upstream.statusCode;
+
+        if (status >= 300 && status < 400 && upstream.headers.location) {
+            upstream.resume(); // discard the body of the redirect
+
+            if (redirects === MAX_DOWNLOAD_REDIRECTS) {
+                throw new Error('too many redirects');
+            }
+
+            let next;
+            try {
+                next = new URL(upstream.headers.location, current);
+            } catch (err) {
+                throw new Error('the mirror redirected to an invalid URL');
+            }
+
+            const refused = checkDownloadUrl(next);
+            if (refused) {
+                throw new Error(`the mirror redirected to a URL that is refused: ${refused}`);
+            }
+
+            current = next;
+            continue;
+        }
+
+        return { upstream: upstream, url: current };
+    }
+
+    throw new Error('too many redirects');
+}
+
+const CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+    'Access-Control-Max-Age': '86400'
+};
+
+function sendPlainResponse(res, status, message) {
+    if (res.headersSent) {
+        res.destroy();
+        return;
+    }
+
+    res.writeHead(status, Object.assign({
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store'
+    }, CORS_HEADERS));
+    res.end(`${message}\n`);
+}
+
+/**
+ * Serve GET /download?url=<url of a pk3>
+ */
+async function handleDownloadRequest(req, res, requestUrl) {
+    const clientKey = req.socket.remoteAddress || 'unknown';
+
+    if (req.method === 'OPTIONS') {
+        res.writeHead(204, CORS_HEADERS);
+        res.end();
+        return;
+    }
+
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+        sendPlainResponse(res, 405, 'Only GET is supported.');
+        return;
+    }
+
+    if (!downloadProxy) {
+        sendPlainResponse(res, 403, 'This relay does not pass downloads through (--no-download-proxy).');
+        return;
+    }
+
+    const raw = requestUrl.searchParams.get('url');
+
+    if (!raw) {
+        sendPlainResponse(res, 400, 'Missing url parameter. Use /download?url=<url of a pk3>.');
+        return;
+    }
+
+    let target;
+    try {
+        target = new URL(raw);
+    } catch (err) {
+        sendPlainResponse(res, 400, 'The url parameter is not a valid URL.');
+        return;
+    }
+
+    const refused = checkDownloadUrl(target);
+    if (refused) {
+        sendPlainResponse(res, 403, `Refused: ${refused}.`);
+        return;
+    }
+
+    if (activeDownloads >= maxDownloads) {
+        sendPlainResponse(res, 503, 'Too many downloads at the same time, try again shortly.');
+        return;
+    }
+
+    const perClient = downloadsPerClient.get(clientKey) || 0;
+    if (perClient >= MAX_DOWNLOADS_PER_CLIENT) {
+        sendPlainResponse(res, 429, 'Too many downloads from this address at the same time.');
+        return;
+    }
+
+    activeDownloads++;
+    downloadsPerClient.set(clientKey, perClient + 1);
+
+    let released = false;
+    const release = () => {
+        if (released) {
+            return;
+        }
+        released = true;
+        activeDownloads--;
+
+        const left = (downloadsPerClient.get(clientKey) || 1) - 1;
+        if (left > 0) {
+            downloadsPerClient.set(clientKey, left);
+        } else {
+            downloadsPerClient.delete(clientKey);
+        }
+    };
+
+    res.on('close', release);
+
+    console.log(`[dl] ${clientKey} -> ${target.href}`);
+
+    let upstream = null;
+
+    try {
+        const result = await fetchFromMirror(target, req.method);
+        upstream = result.upstream;
+
+        if (upstream.statusCode !== 200) {
+            const status = upstream.statusCode;
+            upstream.resume();
+            console.log(`[dl] ${target.href} answered ${status}`);
+            sendPlainResponse(res, status === 404 ? 404 : 502, `The mirror answered ${status}.`);
+            return;
+        }
+
+        const length = Number(upstream.headers['content-length']);
+
+        if (Number.isFinite(length) && length > maxDownloadBytes) {
+            upstream.destroy();
+            console.log(`[dl] ${target.href} is ${length} bytes, over the limit`);
+            sendPlainResponse(res, 502, 'The file is larger than this relay passes through.');
+            return;
+        }
+
+        const headers = Object.assign({
+            // The relay serves this from its own origin, so it must never be
+            // treated as anything but the opaque file it is.
+            'Content-Type': 'application/octet-stream',
+            'X-Content-Type-Options': 'nosniff',
+            'Content-Disposition': 'attachment',
+            'Cache-Control': 'no-store'
+        }, CORS_HEADERS);
+
+        if (Number.isFinite(length)) {
+            headers['Content-Length'] = String(length);
+        }
+
+        res.writeHead(200, headers);
+
+        if (req.method === 'HEAD') {
+            upstream.destroy();
+            res.end();
+            return;
+        }
+
+        let received = 0;
+
+        upstream.on('data', (chunk) => {
+            received += chunk.length;
+
+            if (received > maxDownloadBytes) {
+                console.log(`[dl] ${target.href} exceeded the size limit while streaming`);
+                upstream.destroy();
+                res.destroy();
+            }
+        });
+
+        upstream.on('error', (err) => {
+            console.log(`[dl] ${target.href} failed while streaming: ${err.message}`);
+            res.destroy();
+        });
+
+        upstream.pipe(res);
+    } catch (err) {
+        if (upstream) {
+            upstream.destroy();
+        }
+        console.log(`[dl] ${target.href} failed: ${err.message}`);
+        sendPlainResponse(res, 502, `Download failed: ${err.message}.`);
+    }
+}
+
+/**
+ * Handle a plain HTTP request. Everything the relay serves over HTTP is read
+ * from the last path segment, the same way the WebSocket target is, so it also
+ * works behind a reverse proxy that adds a location prefix of its own.
+ */
+function handleHttpRequest(req, res) {
+    let requestUrl;
+
+    try {
+        requestUrl = new URL(req.url, 'http://relay');
+    } catch (err) {
+        sendPlainResponse(res, 400, 'Bad request.');
+        return;
+    }
+
+    const segments = requestUrl.pathname.split('/').filter((part) => part.length);
+
+    if (segments.length && segments[segments.length - 1] === 'download') {
+        handleDownloadRequest(req, res, requestUrl).catch((err) => {
+            console.log(`[dl] unexpected failure: ${err && err.message ? err.message : err}`);
+            sendPlainResponse(res, 500, 'Download failed.');
+        });
+        return;
+    }
+
+    sendPlainResponse(res, 404,
+                      'ET: Legacy WebSocket-to-UDP relay. Open a WebSocket to /<host>:<port> to play, ' +
+                      'or GET /download?url=<url of a pk3> to fetch a game file.');
+}
+
+/**
+ * Create the server. The WebSocket server is attached to an HTTP(S) server so
+ * the relay can answer plain requests (the download proxy) next to the
+ * WebSocket upgrades; with TLS configured that is an HTTPS server, which is
+ * what a page served over HTTPS needs for both.
  */
 let wss;
-let httpsServer = null;
+let webServer;
 
 if (useTls) {
     let creds;
@@ -266,21 +752,20 @@ if (useTls) {
         process.exit(1);
     }
 
-    httpsServer = https.createServer(creds);
-    wss = new WebSocketServer({
-        server: httpsServer,
-        maxPayload: 65536, // Max packet size
-        perMessageDeflate: false // Disable compression for game packets
-    });
-    httpsServer.listen(port, host);
+    webServer = https.createServer(creds);
 } else {
-    wss = new WebSocketServer({
-        host: host,
-        port: port,
-        maxPayload: 65536, // Max packet size
-        perMessageDeflate: false // Disable compression for game packets
-    });
+    webServer = http.createServer();
 }
+
+webServer.on('request', handleHttpRequest);
+
+wss = new WebSocketServer({
+    server: webServer,
+    maxPayload: 65536, // Max packet size
+    perMessageDeflate: false // Disable compression for game packets
+});
+
+webServer.listen(port, host);
 
 const scheme = useTls ? 'wss' : 'ws';
 
@@ -288,7 +773,7 @@ const scheme = useTls ? 'wss' : 'ws';
 // socket is actually bound the relay may still fail, and a banner printed
 // up front is a lie that anything scripting the relay (tests, a health check,
 // an operator reading the log) has no way to tell from a working start.
-const listeningServer = httpsServer || wss;
+const listeningServer = webServer;
 let listening = false;
 let startupFailed = false;
 
@@ -302,6 +787,13 @@ listeningServer.on('listening', () => {
     console.log(`Listening on ${scheme}://${host}:${boundPort}`);
     console.log(`Max connections: ${maxConnections}`);
     console.log(`Connection timeout: ${connectionTimeoutMs / 1000}s`);
+    if (downloadProxy) {
+        console.log(`Download proxy: ${useTls ? 'https' : 'http'}://${host}:${boundPort}/download?url=<url of a pk3> ` +
+                    `(max ${maxDownloads} at a time, ${maxDownloadBytes / (1024 * 1024)} MB each` +
+                    `${allowPrivateDownloads ? ', private addresses allowed' : ''})`);
+    } else {
+        console.log('Download proxy: disabled');
+    }
     console.log('');
 });
 
@@ -498,12 +990,12 @@ wss.on('error', (err) => {
     handleServerError('WebSocket server', err);
 });
 
-if (httpsServer) {
-    httpsServer.on('error', (err) => {
-        handleServerError('HTTPS server', err);
-    });
+webServer.on('error', (err) => {
+    handleServerError(useTls ? 'HTTPS server' : 'HTTP server', err);
+});
 
-    httpsServer.on('tlsClientError', () => {
+if (useTls) {
+    webServer.on('tlsClientError', () => {
         // Ignore - probes and plain-HTTP requests must not affect the relay.
     });
 }
@@ -596,11 +1088,7 @@ function shutdown() {
     };
 
     wss.close(() => {
-        if (httpsServer) {
-            httpsServer.close(done);
-        } else {
-            done();
-        }
+        webServer.close(done);
     });
 
     // Do not hang forever if a socket refuses to close.
