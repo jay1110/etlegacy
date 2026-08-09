@@ -45,6 +45,10 @@ node relay.js --tls-cert /path/cert.pem --tls-key /path/key.pem
    ws://relay-server:8080/?target=<game-server-ip>:<game-server-port>
    ```
 
+   Only the last path segment is read as the target, so a reverse proxy that
+   keeps its own location prefix (`wss://host/ws-relay/<ip>:<port>`) needs no
+   special handling.
+
 2. The relay opens a UDP socket and forwards packets bidirectionally:
    - Browser → WebSocket → Relay → UDP → Game Server
    - Game Server → UDP → Relay → WebSocket → Browser
@@ -85,15 +89,29 @@ Then point the client at `?relay=wss://your-host:8443`.
 `ws://` behind it:
 
 ```nginx
-location /relay/ {
+location /ws-relay/ {
     proxy_pass http://127.0.0.1:8080/;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
+    proxy_set_header Host    $host;
+    proxy_read_timeout 3600s;
 }
 ```
 
-Then point the client at `?relay=wss://your-host/relay`.
+Then point the client at `?relay=wss://your-host/ws-relay` (no trailing slash:
+the engine appends `/<host>:<port>` to the relay URL).
+
+The trailing slash in `proxy_pass http://127.0.0.1:8080/;` strips the `/ws-relay/`
+prefix before the request reaches the relay. The slash-less form
+(`proxy_pass http://127.0.0.1:8080;`), which forwards the prefix as it stands,
+works too: the relay reads the **last path segment** as its target, so
+`/ws-relay/203.0.113.10:27960` and `/203.0.113.10:27960` mean the same thing.
+
+On a **Plesk** server the block goes into *Websites & Domains → the domain →
+Apache & nginx Settings → Additional nginx directives*; it applies to the HTTP
+and the HTTPS server block alike, so the same host serves `ws://` and `wss://`
+(`docs/web.md`, section 5a, has the full setup including the lobby).
 
 Use a certificate trusted by browsers (e.g. Let's Encrypt); self-signed
 certificates are rejected unless manually trusted.
@@ -116,9 +134,10 @@ shell (`src/web/shell.html`) reads these query parameters:
 | `connect` | Game server `host:port` to auto-join | `?connect=etclan.de:27966` |
 | `touch`   | Force the on-screen touch controls off/on | `?touch=1` |
 
-`relay` is optional: the shell has a default relay built in (`DEFAULT_RELAY_HOST`
-in `src/web/shell.html`) and picks `ws://` or `wss://` to match the page, so a
-share link normally only needs the server:
+`relay` is optional: the shell has a default relay built in (`DEFAULT_RELAY` in
+`src/web/shell.html`, one secure and one plain URL) and picks the one that
+matches how the page was opened — `wss://` for an HTTPS page, `ws://` for an
+HTTP one — so a share link normally only needs the server:
 
 ```
 etl.html?connect=etclan.de:27966

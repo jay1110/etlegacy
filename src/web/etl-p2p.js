@@ -145,6 +145,8 @@
 		this.role = null;         // 'host' | 'client' | null
 		this.roomId = null;
 		this.room = null;         // local copy of the room record
+		this.hostToken = null;    // host: secret that lets us reclaim the room
+		this.reclaiming = false;  // host: an unattended reclaim is in flight
 		this.hostPeerId = 0;      // client: the host's lobby peer id
 
 		this.peers = {};          // lobby peerId -> peer object
@@ -383,7 +385,23 @@
 	P.reregister = function () {
 		var self = this;
 		if (self.role === 'host' && self.room) {
-			self.sendControl({ t: 'host', room: self.room });
+			// Take the *same* room over again if the lobby still has it: the
+			// room id is in the invite link players already have, so losing it
+			// to a dropped WebSocket would invalidate every link handed out.
+			// The lobby keeps a room alive for a grace period and hands it back
+			// to whoever proves ownership with the host token; falling back to
+			// a fresh room is handled in handleError.
+			if (self.roomId && self.hostToken) {
+				self.reclaiming = true;
+				self.sendControl({
+					t: 'reclaim',
+					roomId: self.roomId,
+					hostToken: self.hostToken,
+					room: self.room
+				});
+			} else {
+				self.sendControl({ t: 'host', room: self.room });
+			}
 			if (self.subscribed) {
 				self.sendControl({ t: 'subscribe' });
 			}
@@ -479,6 +497,18 @@
 			this.handleRoomClosed(msg);
 			break;
 
+		case 'hostaway':
+			// The host's page went away (most likely a reload). The room and
+			// its id live on for a moment - hold everything until it is back.
+			this.handleHostAway(msg);
+			break;
+
+		case 'hostback':
+			// The host is back with a new peer id: every link has to be set up
+			// again, so the room has to be re-joined.
+			this.handleHostBack(msg);
+			break;
+
 		case 'signal':
 			this.handleSignal(msg);
 			break;
@@ -497,11 +527,29 @@
 	};
 
 	P.handleError = function (msg) {
+		// A refused reclaim is not an error the caller has to see: the room is
+		// simply gone (or this lobby is an older build that does not know the
+		// message), so host a new one instead. Only a reclaim that ran
+		// unattended - after a reconnect - is retried this way; an explicit
+		// reclaim() call is answered with its rejection.
+		if (this.reclaiming && (msg.code === 'noroom' || msg.code === 'badtoken' ||
+			msg.code === 'badrequest')) {
+			this.reclaiming = false;
+			if (!this.pending['host'] && this.role === 'host' && this.room) {
+				this.hostToken = null;
+				this.sendControl({ t: 'host', room: this.room });
+				return;
+			}
+		}
 		this.emit('error', { message: (msg.code || 'error') + ': ' + (msg.message || '') });
 		// Reject whatever one-shot request is most likely waiting.
 		var err = new Error(msg.message || msg.code || 'lobby error');
 		err.code = msg.code;
-		if (msg.code === 'noroom' || msg.code === 'full' || msg.code === 'self' || msg.code === 'badrequest') {
+		if (msg.code === 'noroom' || msg.code === 'full' || msg.code === 'self' ||
+			msg.code === 'badrequest' || msg.code === 'hostaway' ||
+			msg.code === 'badtoken') {
+			// 'hostaway': the room is paused because its host is reloading.
+			// 'badtoken': a reclaim of a room this page does not own (any more).
 			this.rejectPending('join', err);
 			this.rejectPending('host', err);
 		}
@@ -613,8 +661,52 @@
 		this.role = 'host';
 		this.roomId = msg.roomId;
 		this.room = msg.room || null;
-		this.status('hosting ' + this.roomId);
+		// Secret that proves this page owns the room. Keeping it means the very
+		// same room (and invite link) can be taken over again after a reload -
+		// see reclaim() and P.reregister.
+		this.hostToken = msg.hostToken || this.hostToken || null;
+		this.reclaiming = false;
+		this.status((msg.reclaimed ? 'hosting again ' : 'hosting ') + this.roomId);
 		this.resolvePending('host', msg);
+	};
+
+	/**
+	 * Take a room this page hosted before back over, keeping its id, after the
+	 * page reloaded. Resolves like host(); rejects if the lobby does not have
+	 * the room any more (grace period over) or does not know the message, so
+	 * the caller can host a fresh one.
+	 */
+	P.reclaim = function (roomId, hostToken, settings) {
+		var self = this;
+		if (!roomId || !hostToken) {
+			return Promise.reject(new Error('nothing to reclaim'));
+		}
+		return self.connect().then(function () {
+			self.wantReconnect = true;
+			self.roomId = roomId;
+			self.hostToken = hostToken;
+			var promise = self.waitFor('host');
+			self.sendControl({
+				t: 'reclaim',
+				roomId: roomId,
+				hostToken: hostToken,
+				room: settings || undefined
+			});
+			return promise;
+		}).then(function () {
+			return {
+				roomId: self.roomId,
+				inviteUrl: self.inviteUrlFor(self.roomId),
+				room: self.room
+			};
+		}).catch(function (err) {
+			// Nothing was taken over - do not leave a half-set room behind.
+			if (self.role !== 'host') {
+				self.roomId = null;
+				self.hostToken = null;
+			}
+			throw err;
+		});
 	};
 
 	P.inviteUrlFor = function (roomId) {
@@ -654,6 +746,7 @@
 		this.role = null;
 		this.roomId = null;
 		this.room = null;
+		this.hostToken = null;
 	};
 
 	P.handlePeerArrived = function (msg) {
@@ -710,6 +803,30 @@
 		this.roomId = null;
 		this.room = null;
 		this.hostPeerId = 0;
+	};
+
+	P.handleHostAway = function (msg) {
+		if (this.role !== 'client') { return; }
+		// Drop the transport to the host - its page is gone - but keep the room
+		// id, so the game can be picked up again when the host is back.
+		this.teardownAllPeers();
+		this.hostPeerId = 0;
+		this.emit('hostaway', { roomId: msg.roomId, grace: msg.grace || 0 });
+	};
+
+	P.handleHostBack = function (msg) {
+		var self = this;
+		if (self.role !== 'client' || !self.roomId || self.roomId !== msg.roomId) {
+			return;
+		}
+		// The host is a new peer now, so the room has to be joined again. The
+		// address the engine talks to (peer index 1) stays the same.
+		self.join(self.roomId).then(function (joined) {
+			self.emit('hostback', { roomId: msg.roomId, address: joined.address });
+		}).catch(function (err) {
+			self.emit('error', { message: 'could not rejoin the game: ' +
+				(err && err.message || err) });
+		});
 	};
 
 	P.handleRoomClosed = function (msg) {
@@ -1082,6 +1199,11 @@
 		return this.room;
 	};
 
+	/** Host only: the secret needed to reclaim this room after a reload. */
+	P.getHostToken = function () {
+		return this.hostToken;
+	};
+
 	P.getPeers = function () {
 		var out = [];
 		var ids = Object.keys(this.peers);
@@ -1118,8 +1240,9 @@
 		};
 		var methods = [
 			'configure', 'isSupported', 'connect', 'disconnect', 'listRooms',
-			'subscribeRooms', 'getRoomCount', 'host', 'updateRoom', 'stopHosting',
-			'join', 'leave', 'getRole', 'getRoomId', 'getPeers', 'getRoom',
+			'subscribeRooms', 'getRoomCount', 'host', 'reclaim', 'updateRoom',
+			'stopHosting', 'join', 'leave', 'getRole', 'getRoomId', 'getPeers',
+			'getRoom', 'getHostToken',
 			'on', 'off', 'send', 'receive', 'active', 'addressForPeer'
 		];
 		for (var i = 0; i < methods.length; i++) {

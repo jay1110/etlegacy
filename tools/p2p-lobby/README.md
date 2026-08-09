@@ -69,6 +69,7 @@ node lobby.js --tls-cert /etc/letsencrypt/live/EXAMPLE/fullchain.pem \
 | `--tls-key <file>` | _(none)_ | TLS private key (PEM); enables `wss://`/`https://` |
 | `--max-connections <n>` | `512` | Maximum simultaneous connections (excess closed with code 1013) |
 | `--max-rooms <n>` | `128` | Maximum hosted rooms (excess `host` gets `toomanyrooms`) |
+| `--reclaim-ms <ms>` | `60000` | How long a room is kept alive after its host's connection drops, so the host can reclaim it after a page reload (`0` closes it right away) |
 | `--ice <list>` | `stun:stun.l.google.com:19302` | Comma-separated `stun:`/`turn:` URLs advertised to every client |
 | `--turn-user <user>` | _(none)_ | Username applied to `turn:` URLs in `--ice` |
 | `--turn-pass <pass>` | _(none)_ | Credential applied to `turn:` URLs in `--ice` |
@@ -77,8 +78,9 @@ node lobby.js --tls-cert /etc/letsencrypt/live/EXAMPLE/fullchain.pem \
 
 Each option also has an environment-variable fallback: `ETL_LOBBY_PORT`,
 `ETL_LOBBY_HOST`, `ETL_LOBBY_TLS_CERT`, `ETL_LOBBY_TLS_KEY`,
-`ETL_LOBBY_MAX_CONNECTIONS`, `ETL_LOBBY_MAX_ROOMS`, `ETL_LOBBY_ICE`,
-`ETL_LOBBY_TURN_USER`, `ETL_LOBBY_TURN_PASS`. Command-line flags win.
+`ETL_LOBBY_MAX_CONNECTIONS`, `ETL_LOBBY_MAX_ROOMS`, `ETL_LOBBY_RECLAIM_MS`,
+`ETL_LOBBY_ICE`, `ETL_LOBBY_TURN_USER`, `ETL_LOBBY_TURN_PASS`. Command-line
+flags win.
 
 Provide **both** `--tls-cert` and `--tls-key` to accept secure `wss://`.
 Otherwise the server serves plain `ws://` and `http://`.
@@ -94,6 +96,10 @@ count without opening a WebSocket:
 | `GET /health` | `ok` (200) — use for load-balancer / systemd health checks |
 | anything else | `404` |
 
+The endpoint is taken from the last path segment, so both endpoints also answer
+behind a reverse proxy that keeps its own location prefix
+(`GET /p2p-lobby/health`).
+
 ## Pointing the browser at it
 
 The web shell (`src/web/shell.html`) loads `src/web/etl-p2p.js`, which is
@@ -108,27 +114,32 @@ ETLP2P.configure({
 ```
 
 The shell exposes it through the page URL, e.g. `?lobby=wss://lobby.example.com`
-to override the built-in default, and `?join=<id>` on an invite link to join a
-specific host. A joining player is handed a synthetic address
+to override the built-in default (`DEFAULT_LOBBY` in `src/web/shell.html`: a
+secure and a plain URL, of which the one matching the page's own scheme is
+used), and `?join=<id>` on an invite link to join a specific host. A joining
+player is handed a synthetic address
 (`241.0.0.1:27960`) that the engine (`src/qcommon/net_web.c`) connects to; the
 `241.0.0.0/8` block is reserved, so it can never collide with a real server.
 
 ## Wire protocol reference
 
-WebSocket, default port **8081**, default path `/`. **Text** frames are JSON
-control messages; **binary** frames are game packets (the fallback relay path).
+WebSocket, default port **8081**, default path `/` (any path is accepted, so a
+reverse proxy may serve the lobby under a location of its own). **Text** frames
+are JSON control messages; **binary** frames are game packets (the fallback
+relay path).
 
 ### Client → server (JSON)
 
 | Message | Reply / effect |
 |---------|----------------|
 | `{"t":"hello","name":"<name>","version":1}` | `{"t":"welcome","peer":<uint32>,"ice":[<RTCIceServer>…],"rooms":<public count>}`. `peer` is this connection's unique id. |
-| `{"t":"host","room":{name,map,maxPlayers,bots,timeLimit,private}}` | `{"t":"hosted","roomId":"<6-8 chars>","room":{…normalised…}}`. One room per connection; re-hosting replaces the old room. |
+| `{"t":"host","room":{name,map,mod,maxPlayers,bots,timeLimit,private}}` | `{"t":"hosted","roomId":"<6-8 chars>","hostToken":"<32 hex chars>","room":{…normalised…}}`. One room per connection; re-hosting replaces the old room. `hostToken` is a secret that is only ever sent to the host; it is what `reclaim` needs. |
+| `{"t":"reclaim","roomId":"<id>","hostToken":"<token>","room":{…optional new settings…}}` | Takes a room over again after the host's page reloaded: `{"t":"hosted","roomId","hostToken","reclaimed":true,"room":{…}}`, and everyone joined to it gets `{"t":"hostback","roomId"}`. The room keeps its id. The token is what decides: a room whose host connection is still registered (a drop the lobby has not noticed yet) is handed over as well, and the connection it was taken from is detached. Errors: `noroom` (unknown room, or the grace period ran out), `badtoken`, `badrequest`. |
 | `{"t":"update","room":{<subset of fields, plus players>}}` | `{"t":"updated","room":{…}}` and a coalesced push to subscribers. |
 | `{"t":"unhost"}` | `{"t":"unhosted"}`; the room disappears. Disconnecting does the same. |
 | `{"t":"list"}` | `{"t":"rooms","rooms":[…],"count":<n>}` (public rooms only). |
 | `{"t":"subscribe"}` / `{"t":"unsubscribe"}` | After subscribing, `{"t":"rooms",…}` is pushed whenever the public list changes (add/remove/update), coalesced to at most ~1 push per 250 ms. Subscribing also sends an immediate snapshot. |
-| `{"t":"join","roomId":"<id>"}` | Joiner gets `{"t":"joined","roomId","host":<host peer>,"room":{…}}`; the host gets `{"t":"peer","peer":<joiner>,"name":"<name>"}`. Errors: `noroom`, `full`, `self`, `badrequest`. Private rooms are joinable by id but never listed. |
+| `{"t":"join","roomId":"<id>"}` | Joiner gets `{"t":"joined","roomId","host":<host peer>,"room":{…}}`; the host gets `{"t":"peer","peer":<joiner>,"name":"<name>"}`. Errors: `noroom`, `full`, `self`, `badrequest`, `hostaway` (the host is reloading — try again in a moment). Private rooms are joinable by id but never listed. |
 | `{"t":"signal","to":<peer>,"data":<any JSON>}` | Forwarded verbatim to that peer as `{"t":"signal","from":<sender>,"data":<…>}`. Only between peers with an active join relationship, else `{"t":"error","code":"nopeer"}`. |
 | `{"t":"bye","to":<peer>}` | The target receives `{"t":"peerleft","peer":<sender>}`. |
 | `{"t":"ping"}` | `{"t":"pong"}` |
@@ -137,7 +148,17 @@ control messages; **binary** frames are game packets (the fallback relay path).
 
 `rooms`, `signal`, `peer`, `peerleft`, `roomclosed`
 (`{"t":"roomclosed","roomId":"…"}` sent to everyone joined to a room whose host
-went away), and `error` (`{"t":"error","code":"…","message":"…"}`).
+went away for good), `hostaway`/`hostback` and `error`
+(`{"t":"error","code":"…","message":"…"}`).
+
+When a host's connection drops, its room is **not** closed right away: it is
+marked paused (`"paused": true` in the room record), everyone joined to it gets
+`{"t":"hostaway","roomId":"…","grace":<ms>}` and further `join`s are refused
+with the `hostaway` error code. A `reclaim` with the room's host token within
+that grace period (`--reclaim-ms`) hands the room - and its id, so every invite
+link stays valid - to the new connection and pushes `{"t":"hostback","roomId"}`
+to the joiners, who then `join` again. If nobody reclaims it in time the room is
+closed as before (`roomclosed`).
 
 ### Binary frames — the data fallback
 
@@ -154,13 +175,18 @@ anything else is dropped silently. Payload limit **16384 bytes** (`MAX_MSGLEN`).
 ### Room record (as published in `rooms` / `GET /rooms`)
 
 ```json
-{ "roomId", "name", "map", "players", "maxPlayers", "bots",
-  "timeLimit", "private": false, "created" }
+{ "roomId", "name", "map", "mod", "players", "maxPlayers", "bots",
+  "timeLimit", "private": false, "paused": false, "created" }
 ```
+
+The host token is **not** part of the room record and is never published: it is
+only in the reply to the `host`/`reclaim` of that very connection.
 
 Nothing else is ever leaked — in particular **no IP addresses**. Every field is
 validated and clamped server-side: `name`/`map` trimmed and stripped of control
-characters (`name` ≤ 64, `map` ≤ 64 and restricted to `[A-Za-z0-9_-]`),
+characters (`name` ≤ 64, `map` ≤ 64 and `mod` ≤ 32, both restricted to
+`[A-Za-z0-9_-]`; `mod` defaults to `legacy` and tells joiners which mod's game
+logic to install before they connect),
 `maxPlayers` 2–32, `bots` 0–31 and never more than `maxPlayers-1`, `timeLimit`
 0–1440, `players` 0–`maxPlayers`, `private` coerced to a boolean.
 
@@ -286,6 +312,45 @@ server {
 
 Point the client at `wss://lobby.example.com/`.
 
+**A2. One domain for the page, the relay and the lobby** — the usual setup when
+the page is served by an existing web server (Plesk, cPanel, plain nginx) that
+already has a certificate for that domain. Instead of a lobby-only vhost, add
+two proxied paths to the site:
+
+```nginx
+# wss://et.example.com/p2p-lobby/            ->  ws://127.0.0.1:8081/
+location /p2p-lobby/ {
+    proxy_pass http://127.0.0.1:8081/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade    $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host       $host;
+    proxy_read_timeout 3600s;                    # keep idle lobbies open
+}
+
+# wss://et.example.com/ws-relay/<host>:<port> ->  ws://127.0.0.1:8080/<host>:<port>
+location /ws-relay/ {
+    proxy_pass http://127.0.0.1:8080/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade    $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host       $host;
+    proxy_read_timeout 3600s;
+}
+```
+
+In **Plesk** these go into *Websites & Domains → the domain → Apache & nginx
+Settings → Additional nginx directives*, which Plesk applies to the HTTP and the
+HTTPS server block alike — so the same host answers `ws://` and `wss://` and the
+page can pick the scheme it was opened with. Point the client at
+`?lobby=wss://et.example.com/p2p-lobby/` (this is the shell's built-in default,
+see `DEFAULT_LOBBY` in `src/web/shell.html` and section 5a of `docs/web.md`).
+
+WebSocket upgrades are accepted on **any** path, and the `/rooms` and `/health`
+status endpoints are matched on the last path segment, so the slash-less
+`proxy_pass http://127.0.0.1:8081;` (which forwards the `/p2p-lobby` prefix
+unchanged) works just as well as the form above.
+
 **B. Terminate TLS in the lobby itself** (no proxy):
 
 ```bash
@@ -408,7 +473,8 @@ Built to stay up — a broken client must never take down the other players.
 - **Connection & room caps.** `--max-connections` (close 1013) and `--max-rooms`
   (`toomanyrooms`) bound resource use.
 - **Heartbeat.** A `ws.ping()` every 30 s terminates connections that miss two
-  pongs; a peer disappearing removes its room and notifies its partners.
+  pongs; a peer disappearing pauses its room (see `reclaim`) and notifies its
+  partners, and the room is removed once the grace period is over.
 - Uncaught exceptions and unhandled rejections are logged, not fatal.
 - `SIGINT`/`SIGTERM` shut down cleanly, with a 5 s fallback so shutdown can't
   hang.
@@ -429,8 +495,11 @@ node tools/p2p-lobby/test-p2p-client.mjs   # loads src/web/etl-p2p.js against a 
 `test-lobby.mjs` drives a real `lobby.js` with raw `ws` clients and asserts the
 whole control protocol (hello/welcome, unique peer ids, ICE delivery), hosting
 and listing (including `GET /rooms`, and private rooms that are hidden but
-joinable by id), updates and coalesced subscriber pushes, `roomclosed` on host
-disconnect, the join errors (`noroom`/`full`/`self`), verbatim signalling
+joinable by id), updates and coalesced subscriber pushes, the pause/reclaim path
+after a host disconnect (`hostaway`, a refused join, `roomclosed` once the grace
+period is over, and a `reclaim` that keeps the room id, applies new settings and
+pushes `hostback` - including the `badtoken` and missing-token refusals), the
+join errors (`noroom`/`full`/`self`), verbatim signalling
 between partners and its refusal between strangers, the binary relay both ways
 with correct source ids and its silent drop between strangers, all the field
 validation/clamping, oversized-frame handling, the control-message rate limit,

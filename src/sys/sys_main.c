@@ -888,6 +888,27 @@ static void *Sys_TryLibraryLoad(const char *base, const char *gamedir, const cha
 
 #endif // __APPLE__
 
+#ifdef __EMSCRIPTEN__
+	// The modules built together with this engine state which VM ABI they speak by
+	// exporting VM_WASM_ABI_SYMBOL. A module that does not is not wrong by itself:
+	// a mod's own game logic (xmod, Jaymod, ... built from their sources for wasm)
+	// knows nothing about this marker, and refusing it would mean no mod could ever
+	// run its own cgame/ui/qagame here. It is therefore loaded as it is - only noted,
+	// so the log names the module to look at if the tab dies on the module's first
+	// trap call with "indirect call signature mismatch": WebAssembly type checks
+	// every indirect call, so a module that calls back through a syscall pointer of
+	// another shape (the variadic one of the native builds, say) takes the whole
+	// browser tab down in a trap no error handler can catch. The page checks the
+	// declared ABI version before it compiles a module (see src/web/shell.html).
+	if (libHandle && !Sys_LoadFunction(libHandle, VM_WASM_ABI_SYMBOL))
+	{
+		Com_Printf(S_COLOR_YELLOW "Sys_LoadDll(%s): this module does not declare the "
+		                          "engine's wasm VM ABI (no %s export) - loading it as it is; it has to have "
+		                          "been built as an Emscripten SIDE_MODULE using the array-based dllEntry "
+		                          "syscall\n", fn, VM_WASM_ABI_SYMBOL);
+	}
+#endif
+
 	return libHandle;
 }
 

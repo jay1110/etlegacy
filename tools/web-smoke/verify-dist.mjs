@@ -79,6 +79,26 @@ function hasWasmMagic(buf) {
     return buf.length >= 4 && buf.subarray(0, 4).equals(WASM_MAGIC);
 }
 
+// Every game logic module of a build declares the VM ABI it speaks with this
+// export (VM_WASM_ABI_SYMBOL in src/qcommon/q_shared.h), the version being part
+// of the symbol name. It is how the launcher (src/web/shell.html) recognises a
+// module of *another* version, whose differently shaped syscall pointer would
+// trap the whole browser tab with "indirect call signature mismatch". A build
+// that lost the export would silently give that detection up - the modules of
+// this build would look like a third-party mod's, which are loaded as they are -
+// so verify it here.
+const VM_ABI_SYMBOL = 'vmWasmAbi1';
+
+function exportsAbiMarker(buf) {
+    try {
+        const exports = WebAssembly.Module.exports(new WebAssembly.Module(buf));
+        return exports.some((e) => e.name === VM_ABI_SYMBOL ||
+            e.name === `_${VM_ABI_SYMBOL}`);
+    } catch (e) {
+        return false;
+    }
+}
+
 const sideModules = ['cgame.mp.wasm32.so', 'ui.mp.wasm32.so', 'qagame.mp.wasm32.so'];
 for (const so of sideModules) {
     const rel = path.join('legacy', so);
@@ -89,6 +109,10 @@ for (const so of sideModules) {
         check(
             hasWasmMagic(buf),
             `side module legacy/${so} is valid WebAssembly (got ${firstBytes(buf)}, expected 00 61 73 6d)`
+        );
+        check(
+            exportsAbiMarker(buf),
+            `side module legacy/${so} exports ${VM_ABI_SYMBOL}`
         );
     }
 }
@@ -119,6 +143,10 @@ if (pk3) {
                 check(
                     hasWasmMagic(bytes),
                     `mod pk3 ${so} is valid WebAssembly (got ${firstBytes(bytes)}, expected 00 61 73 6d)`
+                );
+                check(
+                    exportsAbiMarker(bytes),
+                    `mod pk3 ${so} exports ${VM_ABI_SYMBOL}`
                 );
             }
         }
@@ -206,16 +234,22 @@ if (mapListPresent) {
         const list = JSON.parse(fs.readFileSync(path.join(dir, 'maplist.json'), 'utf8'));
         const names = Object.keys(list);
         check(names.length > 0, 'maplist.json contains at least one map');
-        // An entry is either "" (a stock map, no download) or an http(s) link
-        // to the pk3 the map ships in.
+        // An entry is either "" (a stock map, no download) or a link to the pk3
+        // the map ships in: an absolute http(s) URL, a protocol relative
+        // "//host/path" one or a link relative to the page. Anything with
+        // another scheme is refused by the launcher (sanitiseMapList), which
+        // also aligns the link's scheme with the page's, so an https:// entry
+        // works on an http:// page too.
         const bad = names.filter((name) => {
             const url = list[name];
             if (typeof url !== 'string') return true;
             if (!/^[A-Za-z0-9_-]+$/.test(name)) return true;
-            return url !== '' && !/^https?:\/\/.+\.pk3$/.test(url);
+            if (url === '') return false;
+            if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(url) && !/^https?:/i.test(url)) return true;
+            return !/\.pk3$/.test(url.split('?')[0].split('#')[0]);
         });
         check(bad.length === 0,
-            `maplist.json entries are "<bsp name>": "" or a .pk3 URL${bad.length ? ` (bad: ${bad.join(', ')})` : ''}`);
+            `maplist.json entries are "<bsp name>": "" or a .pk3 link${bad.length ? ` (bad: ${bad.join(', ')})` : ''}`);
     } catch (e) {
         check(false, `maplist.json is valid JSON (${e.message})`);
     }

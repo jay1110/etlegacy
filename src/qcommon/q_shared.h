@@ -170,6 +170,48 @@
 #define Q_EXPORT
 #endif
 
+#ifdef __EMSCRIPTEN__
+/**
+ * @def VM_WASM_ABI_VERSION
+ * @brief ABI contract between the engine and a game logic side module (cgame/ui/qagame)
+ * in the browser build.
+ *
+ * On WebAssembly every indirect call is type checked against the callee, and there is
+ * no way to recover from a mismatch: it takes the whole page down with
+ * "indirect call signature mismatch". The two directions of the VM ABI are
+ * function pointers - the engine calls the module's vmMain (VM_EntryPoint_t) and the
+ * module calls back through the syscall pointer it is handed in dllEntry - so a module
+ * built against a *different* engine revision (for example one that still used the
+ * variadic syscall of the native builds) kills the browser tab as soon as it makes its
+ * first trap call, before anything can report the real problem.
+ *
+ * Every module of this build therefore declares the ABI it speaks by exporting
+ * VM_WASM_ABI_SYMBOL. The version is part of the symbol name, which is what makes the
+ * declaration readable from the binary: the web shell reads the export section of a
+ * module before it compiles it and refuses one that declares a *different* version
+ * (see src/web/shell.html). Bump the version - in the symbol name as well - whenever
+ * the engine/module calling convention changes; that is what makes the modules of
+ * earlier builds detectable.
+ *
+ * A module that declares no version at all is not refused: a mod's own game logic
+ * (xmod, Jaymod, ... built from their own sources for wasm) knows nothing about this
+ * marker, and requiring it would mean no mod could ever run its own cgame/ui/qagame in
+ * the browser. Such a module is loaded as it is, with a note in the log naming it
+ * (see Sys_TryLibraryLoad).
+ */
+#define VM_WASM_ABI_VERSION 1
+#define VM_WASM_ABI_SYMBOL  "vmWasmAbi1"
+
+/**
+ * @def VM_WASM_ABI_EXPORT
+ * @brief Defines the marker function VM_WASM_ABI_SYMBOL names. Used once per game logic
+ * module, next to its dllEntry.
+ */
+#define VM_WASM_ABI_EXPORT \
+	Q_EXPORT int vmWasmAbi1(void); \
+	Q_EXPORT int vmWasmAbi1(void) { return VM_WASM_ABI_VERSION; }
+#endif
+
 // FIXME: required for MinGW. Find a better way to handle this (<float.h>?)
 #ifdef __MINGW32__
 #   ifndef FLT_EPSILON

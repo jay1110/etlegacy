@@ -50,6 +50,24 @@ This produces `etl.html`, `etl.js`, `etl.wasm`, the side modules
 `build-wasm/`. The exact CMake flags CI uses are in
 `.github/workflows/emscripten.yml` — copy them for an exact match.
 
+> **Build from a full git clone.** The mod pk3 is named after the version
+> `git describe` reports (`legacy_v2.84.0-21-g7a784b4.pk3`), and CMake writes
+> that name to `build-wasm/etl_web_pk3_name.txt`. Without history and tags
+> (a shallow clone, a source tarball) `git describe` returns nothing and every
+> build falls back to the same generic `legacy_2.84-dirty.pk3` — two servers
+> with different game logic then advertise an identically named pk3, and a
+> client that already has one of them cannot connect to the other. CI checks
+> out with `fetch-depth: 0` and, for a repository without tags, passes
+> `CI_ETL_DESCRIBE`/`CI_ETL_TAG` built from `VERSION.txt`, the commit count and
+> the commit hash, so the name is always unique.
+
+> **Editing `src/web/shell.html`:** `emcc` runs the file through its own
+> preprocessor, which treats every line *outside* a `<style>` block whose first
+> non-blank character is `#` as a directive. A comment, a piece of text or a
+> line of JavaScript that starts with `#` therefore fails the build with
+> `Unknown preprocessor directive`; indent or reword such a line (CSS inside
+> `<style>` is passed through untouched, so `#id { … }` rules are fine).
+
 ## 2. Lay out the web directory
 
 Serve a directory with this layout (the CI "Package web release" step builds
@@ -70,6 +88,7 @@ etlegacy-web/
     ├── cgame.mp.wasm32.so      # standalone side module (fallback)
     ├── ui.mp.wasm32.so         # standalone side module (fallback)
     ├── qagame.mp.wasm32.so     # standalone side module (fallback)
+    ├── etl-host.cfg            # optional preset config for hosted games
     └── omni-bot/
         ├── omnibot_et.wasm32.so   # bot library (loaded on demand)
         └── omni-bot-data.zip      # bot scripts + navigation meshes
@@ -93,6 +112,9 @@ server never downloads it. The library is compiled up front like the other side
 modules; the data pack is cached in IndexedDB and unpacked next to it, because
 Omni-bot resolves its data directory from the location of the loaded library.
 If either cannot be fetched the game still starts, just without bots.
+
+`legacy/etl-host.cfg` is optional and only used when a game is hosted in the
+browser — see [Preset server configs](#preset-server-configs).
 
 Copy `pak0.pk3`, `pak1.pk3`, `pak2.pk3` from a retail Wolfenstein: Enemy
 Territory install into `etmain/`. **These are not included and may not be
@@ -141,6 +163,61 @@ pthreads, the page must then be served with
 > see it: re-upload `legacy/*.pk3` and `legacy/*.so` (and `etmain/*.pk3`) in
 > **binary** mode and confirm each URL returns the raw file with HTTP 200.
 
+### Start page layout
+
+The start page groups its buttons by *where* a game runs, so it is obvious which
+button leads to a dedicated server and which one stays in the browser:
+
+| Group | Buttons |
+|-------|---------|
+| Play on your own | **Quick single game** (pick a map and a bot count), **Start game** (main menu, no connection) |
+| Games in the browser | **Host game**, **Join games** — with the number of games currently hosted |
+| Dedicated servers | **Dedicated serverlist** (the maintained list plus a free address field with **Connect**) |
+| More | **Player profile**, **Download full game** (the native build, for full compatibility) |
+
+Above them sits the ET: Legacy logo (loaded from `etlegacy.com`; if it cannot be
+fetched the page simply shows the title instead).
+
+Three layouts are available for the button style. Which one is used is decided by
+the operator of the page, not by the players: open `etl.html` (or `index.html`)
+in an editor and set the value near the top of `<body>`:
+
+```html
+<script>window.ETL_HOME_LAYOUT = 'hero';</script>
+```
+
+| Value | Layout |
+|-------|--------|
+| `classic` | A single column of wide buttons with descriptions |
+| `cards` | A two-column grid of tiles with icons (one column on narrow screens) |
+| `hero` | A large title over a compact, borderless button column with icons (default) |
+
+Anything else falls back to `hero`. For a quick look at the alternatives before
+editing the file, `?home=cards` / `?home=classic` switches the layout for one
+page load.
+
+### Screen sizes and orientation
+
+The page is laid out for any window size and both orientations without anything
+leaving the screen or covering something else:
+
+- All panels are `header + scrolling body + fixed footer`. The action buttons
+  (**Back**, **Start hosting**, …) sit in the footer and stay reachable no matter
+  how long the content above them is — a map rotation with ten entries scrolls,
+  the buttons do not move.
+- Sizes are derived from the viewport (`dvh`/`dvw` where available, with a
+  measured fallback for browsers that resize their URL bar), so mobile browsers
+  cannot cut off the bottom of the page.
+- The controls bar scales its buttons with the window and drops labels, then
+  whole buttons, on small screens instead of wrapping into a second row or
+  pushing itself off screen. In a landscape window shorter than 480 px it hides
+  automatically.
+- Nothing ever lies on top of the picture: the game area starts next to the
+  in-game sidebar and below the controls bar and the host banner, all of which
+  publish their current size as a CSS variable the layout is built from.
+- Notches and rounded corners are respected (`viewport-fit=cover` plus the safe
+  area insets).
+
 ### Hosting on GitHub Pages
 
 The `emscripten.yml` workflow publishes the web client to GitHub Pages on pushes
@@ -176,13 +253,14 @@ node relay.js --tls-cert cert.pem --tls-key key.pem --port 8443
 
 A page served over `https://` (e.g. GitHub Pages) can only open `wss://`
 sockets, so the relay must be reachable over TLS — either terminate TLS in the
-relay (above) or behind an nginx reverse proxy (see the relay README).
+relay (above) or behind an nginx reverse proxy (see the relay README and
+[section 5a](#5a-serve-both-ws-and-wss-behind-plesk--nginx)).
 
 Targets may be hostnames (`?connect=etclan.de:27966`): the browser cannot
 resolve names, so the engine passes the name to the relay, which resolves it.
-The shell also has a **default relay** built in (`DEFAULT_RELAY_HOST` in
-`src/web/shell.html`, `ws://`/`wss://` chosen to match the page), so a share
-link only needs `?connect=`.
+The shell also has a **default relay** built in (`DEFAULT_RELAY` in
+`src/web/shell.html`, the secure or the plain URL chosen to match the page), so
+a share link only needs `?connect=`.
 
 The relay keeps running when a single connection fails (all connection errors
 are logged, never fatal) and drops dead peers via a WebSocket heartbeat. Idle
@@ -190,32 +268,122 @@ timeout and connection limit are tunable with `--timeout <secs>` and
 `--max-connections <n>`. For unattended hosting still run it under a process
 manager (systemd with `Restart=always`, or pm2).
 
+## 5a. Serve both `ws://` and `wss://` behind Plesk / nginx
+
+The site this deployment is served from (`et.clan-etc.de`) already has a
+certificate, and a certificate is issued for a *name* — never for a bare IP.
+The simplest way to reach the relay and the lobby over TLS is therefore to let
+the web server that holds that certificate terminate TLS and proxy two paths
+through to the services, which keep listening on plain `ws://` on localhost:
+
+| Page opened as | Relay | Lobby |
+|----------------|-------|-------|
+| `https://…`    | `wss://et.clan-etc.de/ws-relay`  | `wss://et.clan-etc.de/p2p-lobby/` |
+| `http://…`     | `ws://et.clan-etc.de:8080`       | `ws://et.clan-etc.de:8081/`       |
+
+That pair is what the shell has built in (`DEFAULT_RELAY` / `DEFAULT_LOBBY` in
+`src/web/shell.html`); `defaultServiceUrl()` picks the secure URL when
+`location.protocol` is `https:` and the plain one otherwise, because a
+`https://` page may not open a `ws://` socket (mixed content). Both are
+overridable per visit with `?relay=` / `?lobby=`.
+
+In **Plesk**: *Websites & Domains → the domain → Apache & nginx Settings →
+Additional nginx directives* (they apply to the HTTP and the HTTPS server block
+alike), then *SSL/TLS Certificates* for the certificate itself:
+
+```nginx
+# wss://et.clan-etc.de/ws-relay/<host>:<port>  ->  ws://127.0.0.1:8080/<host>:<port>
+location /ws-relay/ {
+    proxy_pass http://127.0.0.1:8080/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade    $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host       $host;
+    proxy_read_timeout 3600s;
+}
+
+# wss://et.clan-etc.de/p2p-lobby/  ->  ws://127.0.0.1:8081/
+location /p2p-lobby/ {
+    proxy_pass http://127.0.0.1:8081/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade    $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host       $host;
+    proxy_read_timeout 3600s;   # keep idle lobby connections open
+}
+```
+
+Notes:
+
+- `proxy_http_version 1.1` plus the two `Upgrade`/`Connection` headers are what
+  makes the WebSocket handshake pass through; without them the browser sees the
+  connection close right after opening it.
+- `proxy_read_timeout` must be well above nginx's 60 s default, otherwise a
+  lobby connection that waits for players is cut every minute.
+- The trailing slash in `proxy_pass http://127.0.0.1:8080/;` strips the
+  location prefix. Both services also accept the path *with* the prefix (the
+  relay reads the last path segment as its target, the lobby accepts WebSocket
+  upgrades on any path), so the slash-less `proxy_pass http://127.0.0.1:8080;`
+  works as well.
+- Keep **8080/tcp** and **8081/tcp** open if `http://` pages should keep
+  working; they are what the plain URLs above use. A deployment that only ever
+  serves the page over HTTPS can firewall them off and bind the services to
+  localhost (`--host 127.0.0.1`).
+- The services themselves need no TLS options in this setup; `--tls-cert` /
+  `--tls-key` are only for running them *without* a proxy — and under Plesk that
+  would mean handing the panel's certificate store to a Node process and
+  re-reading it after every renewal, which the proxy avoids entirely.
+- A Plesk "Permanent SEO-safe 301 redirect from HTTP to HTTPS" does not get in
+  the way: an `http://` page uses the direct ports, not the proxied paths.
+- Check the result with `curl -i --http1.1 -H 'Connection: Upgrade'
+  -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13'
+  -H 'Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==' https://et.clan-etc.de/p2p-lobby/`
+  — a working proxy answers `101 Switching Protocols`. `https://et.clan-etc.de/p2p-lobby/health`
+  answers `ok` in a browser as well.
+
 ## 6. Open the game and connect
 
 On first load the page asks how to provide the game data: **download
 pak0.pk3** (fetched together with pak1/pak2 and cached in the browser) or
 **use a local pak0.pk3** picked from your own installation. Once the data is
-set, a **Run game** menu offers: starting the game to the main menu without
-connecting anywhere, joining the preconfigured ETc server (a
-different `fs_game`, xmod — missing pk3s are downloaded from the server),
-a quick single game (`+map oasis`), a manually maintained server list
-(`SERVER_LIST` in `src/web/shell.html`), **hosting a game** in the browser and
-**joining a game** somebody else hosts (both described in section 7).
+set, the start page offers: a **quick single game** (choose the map and how many
+bots play — the server is sized to fit, e.g. 10 bots means 11 slots), **starting
+the game** to the main menu without connecting anywhere, the **dedicated
+serverlist** (the maintained `SERVER_LIST` in `src/web/shell.html`, plus an
+address field and a **Connect** button for any other server), **hosting a game**
+in the browser and **joining a game** somebody else hosts (both described in
+section 7).
+
+While a game runs, the **✕** button in the left sidebar returns to the start
+page; it asks for confirmation once (a host is told that all players lose their
+connection). Quitting the engine itself — `/quit` in the console or the main
+menu's Quit — returns to the start page as well instead of leaving an empty
+page behind.
 
 Locally hosted games fill the server with Omni-bot bots. The bot count is the
 one chosen in the launcher; it is written to `omni-bot.cfg` in `fs_homepath`
 (persisted in the browser like the rest of the home directory) and can be
 changed at any time in the game's settings panel or in-game with
-`/bot minbots <n>` and `/bot maxbots <n>`.
+`/bot minbots <n>` and `/bot maxbots <n>`. Bots work for **every** mod that can
+be hosted here, not just Legacy: the bot library is loaded by the server game
+logic (`qagame`), and a mod that brings no WebAssembly game logic of its own is
+run with this build's — which does load it (see
+[section 7](#7-host-games-in-the-browser-lobby--webrtc)). The library and its
+data are found through the absolute `omnibot_path` the page passes, so they do
+not depend on the mod's directory either — a mod that does bring its own
+`qagame` loads that very same library, as long as its bot interface was built
+against the same Omni-bot version.
 
 Alternatively, configure everything from the page URL (which skips the menu)
-or from the in-page **Connect…** panel (bottom controls bar):
+or from the in-page **Connect…** panel (controls bar at the top edge):
 
 | Parameter | Purpose | Example |
 |-----------|---------|---------|
 | `assets`  | Base URL for `pak0-2.pk3` | `?assets=https://example.com/etmain/` |
 | `legacy`  | Base URL for the mod pk3 | `?legacy=https://example.com/legacy/` |
 | `mod`     | Override which mod pk3(s) to fetch | `?mod=legacy_2.84.0.pk3` |
+| `modpk3`  | Override the pk3(s) of a *hosted* mod (XMod, Jaymod) | `?modpk3=xmod-2.0.4.pk3` |
+| `modbase` | Base URL for that mod's folder | `?modbase=https://example.com/xmod/` |
 | `relay`   | WebSocket relay URL (`net_wsRelayServer`) | `?relay=wss://relay.example.com:8443` |
 | `connect` | Game server `host:port` to auto-join | `?connect=203.0.113.10:27960` |
 | `map`     | Start a local game on this map | `?map=oasis` |
@@ -232,6 +400,56 @@ https://your-page/etl.html?relay=wss://relay.example.com:8443&connect=203.0.113.
 Multiple browser players can open the same link and join the same server; each
 gets its own UDP socket on the relay side.
 
+### The controls bar (desktop)
+
+**Fullscreen**, **Capture Mouse**, **Connect…**, **Console** and (on a touch
+monitor) **Touch controls** live in a bar at the top edge of the page. It stays
+out of the way while you play:
+
+- Closed, all that is left of it is a flat indicator strip with a **▾** in the
+  middle.
+- Moving the pointer onto that strip opens the bar; moving the pointer off the
+  bar closes it again.
+- **✕** at the right end closes it without having to leave it first — useful
+  when a mouse was dragged out of the window and left the bar open.
+- The bar never covers the picture: the game area always starts underneath
+  whatever the bar currently needs.
+
+### Mouse capture (desktop)
+
+The game only captures the mouse when you ask for it: click into the game area
+(or use **Capture Mouse** in the controls bar). Simply moving the pointer over
+the page never captures it, and `Esc` gives the pointer back and keeps it back
+until you click into the game again — so switching to another window or tab is
+always possible.
+
+A mouse click always captures, also on a PC with a touch monitor or a laptop
+with a touchscreen: what counts is the input that clicked, not whether the
+machine happens to support touch. Only a finger tap never captures — pointer
+lock does not apply to touch input, which drives the on-screen controls
+instead.
+
+### Phones and tablets
+
+Devices that are *played* by touch (the primary pointer is a finger, not a
+mouse) are detected automatically; force it either way with `?touch=1` or
+`?touch=0`. There, the controls bar is replaced by icons in the slim
+left sidebar — **⛶** fullscreen, **⇄** connect, **›_** console and **◎** touch
+controls — and the game area starts next to that sidebar instead of below it,
+so nothing covers the picture.
+
+A desktop with a touch screen keeps the desktop layout (and its mouse capture),
+but it can still switch the on-screen controls on with **Touch controls** in
+the controls bar.
+
+The touch controls are laid out on a fixed grid that keeps every button clear of
+its neighbours: a movement stick in the bottom left corner (with **RUN** above
+it), the fire button and the action cluster (jump, duck, prone, reload, weapon
+switch, use) in the bottom right corner, and chat/scores/menu as small buttons
+in the top left corner. Anywhere else on the screen is the look area: drag to
+aim, and the on-screen keyboard button (**⌨**, top right) types into the game
+(console, chat, name entry).
+
 ## 7. Host games in the browser (lobby / WebRTC)
 
 **Host game** in the launcher starts a listen server inside the browser and
@@ -243,20 +461,261 @@ passes through it.
 
 ### What the host can set
 
+The host form has two tabs. **Basic** holds everything a game needs:
+
 | Setting | Meaning |
 |---------|---------|
 | Room name | Name shown in the game list and as `sv_hostname` |
-| Map | One of the maps in `maplist.json`, or **Random map** |
+| Map rotation | Up to 10 maps from `maplist.json` (or **Random map**), played one after another; a single map simply restarts |
 | Max players | 2 – 32 (`sv_maxclients`) |
 | Bots | 0 – 31, never more than the free slots (Omni-bot) |
 | Time limit | Minutes; `0` keeps the time the map itself sets (`g_userTimeLimit`) |
 | Private room | The game is not listed; it can only be joined with the invite link |
 
+**Advanced** adds the mod and the usual server cvars:
+
+| Setting | Cvar | Default | Meaning |
+|---------|------|---------|---------|
+| Mod | `fs_game` | `legacy` | Legacy mod, XMod or Jaymod. A mod that brings no WebAssembly game logic of its own is played with ET: Legacy's game code on top of its pk3 (see below). ETBloat, No Quarter, ETPub and ETJump are listed but disabled — they are not served with the page |
+| Balanced teams | `g_teamForceBalance` | `0` | Players cannot join the team that already has more players (the read-only `g_balancedteams` the server advertises is derived from it) |
+| Warmup | `g_doWarmup` | `1` | Players have to be ready before a match starts |
+| Friendly fire | `g_friendlyFire` | `1` | Teammates can hurt each other |
+| Warmup time | `g_warmup` | `60` | Length of the warmup before a match starts, in seconds |
+| Allied respawn time | `g_userAlliedRespawnTime` | `0` | `0` keeps the map's own time, any higher value sets the respawn time in seconds |
+| Axis respawn time | `g_userAxisRespawnTime` | `0` | Same for the Axis team |
+
+Below those, **Advanced** lists **every server cvar the selected mod knows** —
+149 for Legacy, 176 for XMod, 149 for Jaymod — taken from the mods' own cvar
+tables (`gameCvarTable[]` in `src/game/g_cvars.c` here, `src/game/g_main.cpp` in
+the XMod and Jaymod trees). They are grouped by topic (match, teams, weapons,
+XP, voting, chat, admin, anti-cheat, …), each row shows the mod's default, and a
+search box filters the whole list. Switching the mod rebuilds the list and keeps
+every value the new mod knows as well.
+
+Only the settings that were actually changed are handed to the server; the rest
+keeps what the mod — or the preset config below — sets. Settings marked
+**restart** are `CVAR_LATCH`: the game only reads them when a match starts, so
+changing one of those in a running game restarts the match.
+
+Cvars the launcher manages itself (`sv_hostname`, `sv_maxclients`, `fs_game`,
+`g_gametype`, the ones in the tables above, the Omni-bot ones) are not part of
+that list, and neither are passwords, cheat and debug cvars.
+
+A mod other than Legacy is fetched on demand, the first time a game that uses
+it is hosted **or joined**, and its game logic is compiled up front exactly like
+the Legacy modules — without that the engine stops with `VM_Create on game
+failed` / `Sys_LoadDll(...) skipped (not present in virtual filesystem)`, because
+`dlopen()` in the browser can only return a module the page compiled before the
+engine asked for it (see "Loading order" above). Serve the mod next to the page,
+in a folder named after its `fs_game`:
+
+```
+xmod/
+├── xmod-2.0.3.pk3            # the mod's data package(s)   (required)
+├── qagame.mp.wasm32.so       # server game logic           (optional)
+├── cgame.mp.wasm32.so        # client game logic           (optional)
+└── ui.mp.wasm32.so           # menus                       (optional)
+
+jaymod/
+├── jaymod-2.2.1.pk3
+├── qagame.mp.wasm32.so       # server game logic           (optional)
+├── cgame.mp.wasm32.so        # client game logic           (optional)
+└── ui.mp.wasm32.so           # menus                       (optional)
+```
+
+Only the pk3 is required. The three `.so` files are the mod's own game logic
+built for WebAssembly, and a mod that ships them plays as itself: they are used
+in preference to this build's modules. A mod that only ships the usual native
+`.so`/`.qvm` game code brings none of them — the browser can run neither of
+those — but a mod whose sources are available can be built for wasm just like
+this one: XMod and Jaymod (2.2.x, published under Apache-2.0) are open source and
+both carry their own Omni-bot support, so `xmod/` and `jaymod/` folders holding
+the three modules built from their trees can be served here. A mod does not have
+to provide all three modules; each is used on its own, and the missing ones fall
+back as described next. Note that a mod's `qagame` combined with this build's
+`cgame`/`ui` is only as compatible as the mod's server–client protocol is with
+Legacy's, so shipping all three of the mod's modules is the safer deployment.
+
+When a mod brings no module this engine can run, the page falls back to **this
+build's** `cgame`/`ui`/`qagame` and starts the game with
+`+set fs_basegame legacy`, so the mod's own pk3 (its maps, media and menus) is
+mounted on top of the Legacy pk3 the modules need. The game then plays with
+ET: Legacy's rules and everything that lives in the engine and in this game
+logic — Omni-bot in particular — works for that mod exactly as it does for
+Legacy. Only the mod's *own* gameplay features are missing, which is the best a
+browser can do without a WebAssembly build of that mod.
+
+### Preset server configs
+
+A deployment can put a config file next to the mod it belongs to:
+
+```
+legacy/etl-host.cfg
+xmod/etl-host.cfg
+jaymod/etl-host.cfg
+```
+
+Every game hosted with that mod executes it before the settings picked in the
+panel. It is a normal ET config — one command per line — so it can set anything
+the mod understands: rules, banners, admin levels, ban lists, `exec`s of further
+configs. Because it lives on the web space, only whoever maintains the
+deployment (FTP) can change it, and a change is picked up by the next game that
+is hosted: the file is revalidated on every start, and an unreachable server
+falls back to the copy of the last visit. It is entirely optional — without one,
+hosting uses the mod's defaults.
+
+The order a hosted game starts with is:
+
+1. the mod's own defaults,
+2. `<mod>/etl-host.cfg`, the deployment's preset,
+3. the settings picked in **Host game** (written to `<mod>/etl-hostui.cfg` and
+   execed after the preset),
+4. `+map <first map of the rotation>`.
+
+So the panel always wins over the preset, and the preset wins over the mod's
+defaults. Everything nobody touched in the panel keeps the preset's value. The
+settings are written to a config instead of more `+set` arguments because the
+engine's command line is a single string of at most `MAX_STRING_CHARS` (1024)
+characters, which a hundred settings would not fit into.
+
+A preset is only fetched for a game hosted **in the browser**; joining a
+dedicated server never reads it.
+
+### Building a mod's game logic for this engine
+
+A module of another source tree has to be built for the browser engine, which
+means more than "compiled with emcc":
+
+- built as an Emscripten `SIDE_MODULE` with every object compiled `-fPIC` and
+  `-fvisibility=hidden` (only `vmMain`/`dllEntry` exported — `cgame` and `ui`
+  otherwise share their identically named `trap_*` symbols through one global
+  GOT, see the troubleshooting entry on `Bad cgame system trap: 24`), and named
+  like this build's modules (`qagame.mp.wasm32.so`, `cgame.mp.wasm32.so`,
+  `ui.mp.wasm32.so`) — see `etl_configure_wasm_side_module` in
+  `cmake/ETLBuildMod.cmake`;
+- `dllEntry` must take the **array-based** syscall pointer
+  (`intptr_t (*)(intptr_t *)`, see `src/game/g_syscalls.c`), not the variadic
+  one of the native builds: variadic function pointers do not work across
+  `MAIN_MODULE`/`SIDE_MODULE` boundaries;
+- it may export the ABI marker `vmWasmAbi1` (`VM_WASM_ABI_EXPORT` in
+  `src/qcommon/q_shared.h`) to state that the two points above are fulfilled.
+  That is optional — a module without it is used as it is — but it is what keeps
+  the module detectable should the calling convention ever change (see below).
+
+For the mod's own Omni-bot support the mod's copy of the bot loader
+(`BotLoadLibrary.cpp`) additionally has to look for the library under the name
+served here, `omnibot_et.wasm32.so`, and its bot interface has to match the
+Omni-bot version of that library (the vendored 0.9x tree, see
+`vendor/omni-bot`); an interface built against an older Omni-bot (Jaymod 2.2
+targets 0.81) is refused by the library with a version error and the match then
+runs without bots. Nothing else is needed: the library is preloaded once per
+page and found through the absolute `omnibot_path`, whichever `fs_game` is
+running.
+
+A mod's own modules are used whenever they exist, and only a module that
+declares a *different* engine ABI than this build's is passed over. That is
+checked before a module is compiled: every game logic module of an ET: Legacy
+build exports a marker symbol whose name carries the ABI version (`vmWasmAbi1`,
+`VM_WASM_ABI_VERSION` in `src/qcommon/q_shared.h`), so a module left over from a
+build with another calling convention can be recognised and ignored by the page.
+Without that check it would load, call back into the engine through a syscall
+pointer of a different shape and kill the whole tab with `RuntimeError: indirect
+call signature mismatch`, a trap no error handler can catch. A module that
+declares no version — a mod built from its own sources — cannot be checked that
+way: it is loaded as it is, and the page and the engine log say so (look for
+"does not declare this engine's WebAssembly VM ABI" in the browser console and
+the game log). Whether such a module matches is up to whoever built it, which is
+what the two points above are about.
+
+The pk3 inside the mod folder is also where the page reads the modules from
+first; a standalone `.so` next to it is used when the pk3 does not contain one.
+Unlike the Legacy folder, the name of a mod's pk3 cannot be guessed (a folder
+cannot be listed over HTTP), so the page uses the name in its mod table
+(`HOST_MODS` in `src/web/shell.html` — currently `xmod-2.0.3.pk3` and
+`jaymod-2.2.1.pk3`). Point it at a different name or version with
+`?modpk3=<a.pk3,b.pk3>`, and at a different location with `?modbase=<url>`. If
+none of the mod's pk3s can be downloaded the game is not started: the error
+names the files and the folder they belong in.
+
+Only `etmain/`, `legacy/` and the home directory are stored persistently, so
+another mod's files are downloaded once per browser session.
+
+**Export settings** writes everything above — including the map rotation and the
+mod settings that were changed — to a `.json` file, **Import settings** reads
+such a file back. Import is deliberately strict: the file must be smaller than
+64 KB, only known keys are read (an attacker cannot inject additional cvars or
+command-line arguments through it), every value is type-checked and clamped to
+its allowed range, map names must exist in `maplist.json`, mod settings must be
+in the selected mod's own cvar table, their values are stripped of the
+characters that could end a console command, and the room name is stripped of
+quotes, backslashes and control characters. Anything that does not fit is
+dropped and reported instead of being applied.
+
+The rotation is programmed into the server as a chain of `nextmap` cvars, which
+ET runs when a match ends, and it wraps around to the first map after the last
+one. It can be changed while the game runs (**⚙** in the sidebar), and it is
+announced in the lobby together with the rest of the room.
+
 Once the game runs, a narrow column on the left has an **✕** button (leave the
-game — if the host leaves, everybody is returned to the launcher), a **⚙**
-button (current map and player count; every setting above can be changed and
-the map can be switched while the game runs) and a **🔗** button that copies the
-invite link.
+game — after a confirmation; if the host leaves, everybody is returned to the
+launcher), a **⚙** button (current map, player count and the map rotation) and a
+**🔗** button that copies the invite link.
+
+The **⚙** panel has the same **Basic** / **Advanced** split as the host form, so
+every setting listed above — including the mod's own server settings — can be
+changed while the game runs, and any map of the rotation can be played
+immediately. Two quick actions sit above the tabs:
+
+- **⏭ Next map** ends the running map and loads the next one of the rotation.
+  It is only available with more than one map in the rotation; with a single map
+  it would be the restart next to it.
+- **↻ Restart map** restarts the match on the same map (`map_restart`), which
+  needs no reload of the page.
+
+The two buttons at the bottom do different things, and that difference matters
+most with a rotation:
+
+| Button | What it does |
+|--------|--------------|
+| **Apply** | Writes everything on the page to the running server — room name, slots, bots, time limit, the rotation you edited and every mod setting you changed. It **never changes the map**: the running match carries on (unless a restart is needed, see below) and the rotation continues from where it stands. |
+| **Play now** | Loads the map selected in the drop-down straight away, ending the running match. If that map is **not** part of the rotation, the rotation is left where it was and carries on with its next map once the one-off map is over — so a map somebody asked for can be squeezed in without losing the rotation's place. |
+
+Two more things behave differently in the panel than in the host form:
+
+- The **mod** is only shown, not changed: `fs_game` is picked when the engine
+  starts, so another mod means closing the game and hosting a new one.
+- Changing the player slots, the time limit or one of the respawn times restarts
+  the match for everyone, and so does a mod setting marked **restart**
+  (`CVAR_LATCH`) — the server only reads those when a match starts. Everything
+  else takes effect right away.
+
+The applied values are remembered for the tab as well, so a map change (which
+reloads the page, see below) comes back up with exactly what was set here —
+including the place the rotation has reached.
+
+The invite link is also written into the browser's address bar
+(`?join=<room>`), so it can be copied straight from there. It also means a host
+may reload the page (F5, or a `/vid_restart`): the room settings are remembered
+for the tab and the game is hosted again automatically — **with the same room
+id**, so every invite link handed out stays valid.
+
+The lobby makes that possible: hosting a room hands the page a secret host
+token (kept in `sessionStorage`, so it never leaves the tab), and when the
+host's connection drops the room is only *paused* for a grace period
+(`--reclaim-ms`, 60 s by default) instead of being closed. The players in it are
+shown "the host is reloading the page" and are reconnected automatically as
+soon as the page is back; only when nobody comes back within the grace period is
+the room closed and everybody returned to the launcher. Leaving the game through
+the sidebar (**✕**) closes it right away, as before.
+
+Changing the map of a hosted game reloads the page as well, for the same reason
+`vid_restart` is not available in the browser — see "Limitations" below.
+
+**A hosted game only lives as long as its tab is in the foreground.** Browsers
+throttle background tabs, which stops the server from stepping and disconnects
+everybody who joined, so the host is warned about this in the host form and
+again with a banner over the game — switching tabs, switching windows or
+minimizing the browser has to wait until the game is over.
 
 ### maplist.json
 
@@ -274,10 +733,22 @@ The key is the map's bsp name, the value is the download link of the pk3 the
 map ships in. An **empty** link marks a stock map that needs no download.
 Everything else is downloaded — by the host when the game starts (or when the
 map is switched) and by every player who joins that game — into the browser's
-`etmain` and cached in IndexedDB, so it is fetched only once. The file the URL
-points at must be a `.pk3` and the server hosting it must allow CORS
-(`Access-Control-Allow-Origin`), otherwise the browser cannot read it. Use
-`?maplist=<url>` to point the page at a different list.
+`etmain` and cached in IndexedDB, so it is fetched only once. The file the link
+points at must be a `.pk3`. Use `?maplist=<url>` to point the page at a
+different list.
+
+A link may be an absolute `http(s)://` URL, protocol relative (`//host/path`) or
+relative to the page (`etmain/etl_supply_v14.pk3`); any other scheme is dropped.
+Only a link that ends up on **another origin** needs CORS
+(`Access-Control-Allow-Origin`) on the server that hosts the pk3 — and the
+scheme is part of the origin, so an `https://` link fetched from a page opened
+over `http://` would be a cross-origin request even on the very same web space.
+The page therefore rewrites a link that points at its own host to the scheme it
+was itself opened with (`resolveDownloadUrl` in `src/web/shell.html`), which
+keeps a deployment that is reachable over both `http://` and `https://` working
+either way; the same is done for `?assets=`, `?legacy=` and `?modbase=`. Links
+to a foreign host are only ever upgraded to `https://`, never downgraded, so an
+`https://` page never asks the browser for blocked mixed content.
 
 ### Run the lobby server
 
@@ -298,12 +769,17 @@ node lobby.js --tls-cert /etc/letsencrypt/live/example.com/fullchain.pem \
 
 A page served over `https://` (e.g. GitHub Pages) may only open `wss://`
 sockets, so terminate TLS in the lobby (above) or put it behind nginx, exactly
-like the relay. `tools/p2p-lobby/README.md` contains a ready-made systemd unit
-and an nginx location block. The shell has a default lobby built in
-(`DEFAULT_LOBBY_HOST` in `src/web/shell.html`); `?lobby=<ws-url>` overrides it.
+like the relay — [section 5a](#5a-serve-both-ws-and-wss-behind-plesk--nginx)
+shows the Plesk/nginx directives that serve the lobby and the relay over the
+site's own certificate. `tools/p2p-lobby/README.md` contains a ready-made
+systemd unit and an nginx location block. The shell has a default lobby built in
+(`DEFAULT_LOBBY` in `src/web/shell.html`, a secure and a plain URL of which the
+one matching the page is used); `?lobby=<ws-url>` overrides it.
 
 Open ports: **8081/tcp** (or 8443/tcp with TLS) for the lobby, plus the UDP
-range WebRTC uses if the host runs a TURN server (below).
+range WebRTC uses if the host runs a TURN server (below). Behind the reverse
+proxy of section 5a the port is only needed for `http://` visitors; the lobby
+may otherwise listen on `--host 127.0.0.1` alone.
 
 ### When a direct connection is not possible (TURN)
 
@@ -352,8 +828,9 @@ whole handshake in Node.
 `tools/web-smoke/` contains two smoke tests (run in CI after the build):
 
 - `verify-dist.mjs <dir>` — structural check of the packaged build (engine files
-  present, valid wasm header, mod pk3 contains the side modules, Omni-bot module
-  and data pack shipped). No browser needed.
+  present, valid wasm header, mod pk3 contains the side modules and they export
+  the VM ABI marker the engine requires, Omni-bot module and data pack shipped,
+  `maplist.json` well-formed). No browser needed.
 - `boot-smoke.mjs <dir>` — boots the build in headless Chromium (Playwright) and
   confirms the wasm engine initializes and reaches its asset-bootstrap stage
   without a fatal error. Because the retail paks are not redistributable, it
@@ -390,11 +867,32 @@ idle-connection reaper and a failed bind.
   channels, section 7). Native clients cannot join it, because a browser has no
   listening UDP socket — use a native dedicated server for that.
 - A browser-hosted game depends on the host's browser tab: closing it ends the
-  game for everybody (the players are returned to the launcher).
+  game for everybody (the players are returned to the launcher). Reloading the
+  page (F5) is fine for the host: the settings are kept for the tab and the room
+  is taken back over with the **same id**, so every invite link stays valid and
+  the players in it are reconnected automatically — as long as the host is back
+  within the lobby's grace period (`--reclaim-ms`, 60 s by default).
 - `vid_restart` (and the settings menu's "apply" that issues it) is disabled in
   the browser: a canvas WebGL context and gl4es cannot be torn down and
   re-created within the same page (the Wwasm reference port suppresses it the
-  same way). Latched video cvar changes take effect on the next page reload.
+  same way). Latched video cvar changes take effect on the next page reload —
+  which for a host means the reload described above.
+- **A page can only load one map.** Starting a second one tears the client down
+  and builds it back up inside the same page (`SV_SpawnServer` →
+  `CL_ShutdownAll` → `Hunk_Clear` → `CL_StartHunkUsers`), which the wasm build
+  does not survive: it traps with `RuntimeError: index out of bounds` while the
+  world of the new map is loaded. A map change of a *browser-hosted* game is
+  therefore handed to the page (`Sys_WebRestartServer`, called at the top of
+  `SV_SpawnServer` in `src/server/sv_init.c`, which calls the shell's
+  `window.etlRestartHostedGame`) and the page reloads itself on the new map
+  instead of spawning it in place. This covers every way a map change can
+  start — the sidebar's "Change map", the map rotation at the end of a match,
+  a `map` typed into the console and a settings change that respawns the server
+  (`sv_maxclients`) — and it costs an engine restart (a few seconds), not the
+  game: the room, its invite link and the players in it survive the reload as
+  described in "Hosting a game in the browser". Connecting to a *dedicated*
+  server is not affected; there the map change happens on the server and the
+  browser only reloads the map data, which works.
   `etl.data` preloads `com_recommendedSet 1` so the first-run "apply
   recommended settings + vid_restart" path is never taken.
 - The cgame/ui/qagame side modules are never unloaded: Emscripten's `dlclose()`
@@ -510,6 +1008,29 @@ idle-connection reaper and a failed bind.
      INITIAL_MEMORY`) and raises the cap to the wasm32 maximum (`-s
      MAXIMUM_MEMORY=4gb`, growing on demand); large maps plus downloaded pk3s
      overflow the 2 GiB Emscripten default cap.
+- **`RuntimeError: indirect call signature mismatch` right after
+  `Sys_LoadDll(<mod>/ui) found vmMain function at 0x…`, the page is dead** — the
+  module that was loaded speaks a *different* VM ABI than this engine. It calls
+  back into the engine through a syscall pointer whose signature does not match
+  (this build passes one argument array, `intptr_t (*)(intptr_t *)`, where the
+  native builds pass a variadic list), and WebAssembly type checks every
+  indirect call: the mismatch is a trap that no error handler can catch, so the
+  whole tab dies instead of showing an error. Two sources:
+  1. **A module of another ET: Legacy build** copied into a mod folder
+     (`jaymod/`, `xmod/`, …) when the site was still on an older build. Such a
+     module is detected before it runs — it declares its ABI version in the
+     `vmWasmAbi<n>` export every ET: Legacy module has (`VM_WASM_ABI_VERSION`,
+     `src/qcommon/q_shared.h`) — and is ignored by the page, which falls back to
+     this build's own game logic. Delete those stale `.so` files.
+  2. **A mod's own module that was not built for this engine.** It declares no
+     ABI version, so it cannot be checked and is used as it is; the browser
+     console and the game log name it beforehand ("does not declare this
+     engine's WebAssembly VM ABI"). Rebuild it as described in
+     [Building a mod's game logic for this engine](#building-a-mods-game-logic-for-this-engine)
+     — the array-based `dllEntry` syscall is what matters here — or remove the
+     module from the mod folder to play the mod with this build's game logic and
+     its own pk3 (see
+     [section 7](#7-host-games-in-the-browser-lobby--webrtc)).
 - **`Bad cgame system trap: 24` (or another unimplemented trap) right after
   connecting to a third-party mod server (xmod, …)** — trap 24 is **not** a
   cgame trap in any ET engine (`CG_CM_LOADMODEL` is an unused enum slot that
@@ -538,7 +1059,11 @@ idle-connection reaper and a failed bind.
      `DLL_EXT`, see `src/qcommon/q_platform.h`), and make them reachable in the
      mod's own game directory — every module must be run through Emscripten's
      wasm preload plugin before the engine `dlopen()`s it (see the next entry;
-     the shipped shell only preloads the `legacy` game directory).
+     the shipped shell only preloads the `legacy` game directory);
+  4. optionally export the ABI marker `vmWasmAbi1` (`VM_WASM_ABI_EXPORT` in
+     `src/qcommon/q_shared.h`) to declare that the module speaks this engine's
+     VM ABI — see
+     [Building a mod's game logic for this engine](#building-a-mods-game-logic-for-this-engine).
 - **`VM_Create on cgame/ui/qagame failed` / `dlopen` errors** — a side module
   was not compiled into `preloadedWasm` before the engine `dlopen()`ed it.
   Without Asyncify the browser cannot compile a wasm module synchronously on the

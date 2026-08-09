@@ -687,6 +687,56 @@ void Sys_OpenURL(const char *url, qboolean doexit)
 }
 
 /**
+ * @brief Sys_WebRestartServer - Let the web page take a map change over.
+ *
+ * A browser page can only ever load one map: starting a second one tears the
+ * client down and builds it back up in the same page (SV_SpawnServer ->
+ * CL_ShutdownAll -> Hunk_Clear -> CL_StartHunkUsers), which leaves the renderer
+ * in a state the wasm build traps on ("index out of bounds" while the world of
+ * the new map is loaded). It is the same limitation that makes vid_restart
+ * unusable in the browser (CL_Vid_Restart_f).
+ *
+ * The web shell (src/web/shell.html) works around it by reloading the page and
+ * starting the new map from scratch, keeping the hosted game - and its room in
+ * the lobby, so the invite link stays valid and the players in it are only
+ * paused - across that reload. The page decides whether it can do that; a page
+ * without a game to restart says no and the engine takes its normal path.
+ *
+ * @param[in] mapname the map the server is about to spawn
+ * @return qtrue if the page took the map change over (the caller must not
+ *         spawn the server), qfalse to carry on as usual
+ */
+qboolean Sys_WebRestartServer(const char *mapname)
+{
+	int handled;
+
+	if (!mapname || !*mapname)
+	{
+		return qfalse;
+	}
+
+	// The map name is passed as a UTF8 string parameter so it is not
+	// interpreted as code.
+	handled = EM_ASM_INT({
+		var map = UTF8ToString($0);
+		if (typeof window.etlRestartHostedGame !== 'function')
+		{
+			return 0;
+		}
+		try
+		{
+			return window.etlRestartHostedGame(map) ? 1 : 0;
+		}
+		catch (e)
+		{
+			return 0;               // the page failed us - let the engine try
+		}
+	}, mapname);
+
+	return handled ? qtrue : qfalse;
+}
+
+/**
  * @brief Sys_WebPumpConsoleCommands - Feed page-entered console commands to the engine.
  *
  * The web shell (src/web/shell.html) lets the user type console commands into
