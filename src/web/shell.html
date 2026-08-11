@@ -4389,6 +4389,49 @@
             // sessions, and the "Player profile" launcher tab writes new
             // profiles into it before the engine starts.
             var HOME_ETL_DIR = '/home/web_user/.etlegacy';
+            var ETKEY_PATH = HOME_ETL_DIR + '/etmain/etkey';
+            var ETKEY_STORAGE_KEY = 'etlegacy.etkey.v1';
+
+            // IDBFS persistence is asynchronous and may be interrupted when a tab is
+            // closed. Keep the small, identity-critical etkey in localStorage too.
+            function cacheEtkey() {
+                try {
+                    if (!Module.FS || !Module.FS.analyzePath(ETKEY_PATH).exists) { return; }
+                    var bytes = Module.FS.readFile(ETKEY_PATH, { encoding: 'binary' });
+                    if (!bytes || bytes.length !== 28) { return; }
+                    var raw = '';
+                    for (var i = 0; i < bytes.length; i++) {
+                        raw += String.fromCharCode(bytes[i]);
+                    }
+                    window.localStorage.setItem(ETKEY_STORAGE_KEY, window.btoa(raw));
+                } catch (e) {
+                    // Storage may be disabled by browser privacy settings.
+                }
+            }
+
+            function restoreEtkey() {
+                try {
+                    var existing = Module.FS.analyzePath(ETKEY_PATH).exists ?
+                        Module.FS.readFile(ETKEY_PATH, { encoding: 'binary' }) : null;
+                    if (existing && existing.length === 28) {
+                        cacheEtkey();
+                        return;
+                    }
+
+                    var encoded = window.localStorage.getItem(ETKEY_STORAGE_KEY);
+                    if (!encoded) { return; }
+                    var raw = window.atob(encoded);
+                    if (raw.length !== 28) { return; }
+                    var bytes = new Uint8Array(28);
+                    for (var i = 0; i < bytes.length; i++) {
+                        bytes[i] = raw.charCodeAt(i);
+                    }
+                    Module.FS.mkdirTree(HOME_ETL_DIR + '/etmain');
+                    Module.FS.writeFile(ETKEY_PATH, bytes);
+                } catch (e) {
+                    // Let the engine generate a new key if browser storage is unavailable.
+                }
+            }
 
             // Where to download the ET: Legacy mod data from. This is the mod's
             // "legacy/" folder (analogous to etmain/ for the retail paks) served
@@ -5626,13 +5669,20 @@
                         // Home dir: player profiles + in-game settings
                         // (profiles/<name>/etconfig.cfg) persist across sessions.
                         Module.FS.mount(Module.FS.filesystems.IDBFS, {}, HOME_ETL_DIR);
-                        Module.FS.syncfs(true, function () { resolve(); });
+                        Module.FS.syncfs(true, function (err) {
+                            if (err && console && console.warn) {
+                                console.warn('IDBFS initial sync failed:', err);
+                            }
+                            restoreEtkey();
+                            resolve();
+                        });
                     } catch (e) {
                         // IDBFS unavailable - fall back to a plain in-memory FS.
                         try {
                             Module.FS.mkdirTree(ETMAIN_DIR);
                             Module.FS.mkdirTree(LEGACY_DIR);
                             Module.FS.mkdirTree(HOME_ETL_DIR);
+                            restoreEtkey();
                         } catch (e2) { /* ignore */ }
                         resolve();
                     }
@@ -5650,6 +5700,7 @@
                 var syncing = false;
                 var syncPending = false;
                 function syncHome() {
+                    cacheEtkey();
                     if (!Module.FS || !Module.FS.syncfs) { return; }
                     if (syncing) {
                         syncPending = true;
