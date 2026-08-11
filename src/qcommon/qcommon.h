@@ -958,6 +958,10 @@ const char *FS_ReferencedPakPureChecksums(void);
 // AND referenced pk3 files. Servers with sv_pure set will get this string
 // back from clients for pure validation
 
+#ifdef __EMSCRIPTEN__
+void FS_ForceReferencedModPak(int flags);
+#endif
+
 void FS_ClearPakReferences(int flags);
 // clears referenced booleans on loaded pk3s
 void FS_ClearPureServerPacks(void);

@@ -1142,6 +1142,9 @@ void CL_Vid_Restart_f(void)
 		cls.cgameStarted = qtrue;
 		CL_InitCGame();
 		// send pure checksums
+	#ifdef __EMSCRIPTEN__
+		FS_ForceReferencedModPak(FS_CGAME_REF | FS_UI_REF);
+	#endif
 		CL_SendPureChecksums();
 	}
 }
@@ -1543,6 +1546,9 @@ void CL_DownloadsComplete(void)
 	CL_InitCGame();
 
 	// set pure checksums
+#ifdef __EMSCRIPTEN__
+	FS_ForceReferencedModPak(FS_CGAME_REF | FS_UI_REF);
+#endif
 	CL_SendPureChecksums();
 
 	CL_WritePacket();
