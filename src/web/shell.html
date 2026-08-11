@@ -4409,6 +4409,24 @@
                 }
             }
 
+            function createEtkey() {
+                var now = new Date();
+                function pad(value, width) {
+                    return String(value).padStart(width, '0');
+                }
+
+                // Match CL_GenerateETKey's 28-byte format. This is created
+                // before main() so cl_guid is available during every connect.
+                return '0000001002' +
+                    pad(now.getFullYear(), 4) +
+                    pad(now.getMonth() + 1, 2) +
+                    pad(now.getDate(), 2) +
+                    pad(now.getHours(), 2) +
+                    pad(now.getMinutes(), 2) +
+                    pad(now.getSeconds(), 2) +
+                    pad(Math.floor(Math.random() * 10000), 4);
+            }
+
             function restoreEtkey() {
                 try {
                     var existing = Module.FS.analyzePath(ETKEY_PATH).exists ?
@@ -4419,15 +4437,15 @@
                     }
 
                     var encoded = window.localStorage.getItem(ETKEY_STORAGE_KEY);
-                    if (!encoded) { return; }
-                    var raw = window.atob(encoded);
-                    if (raw.length !== 28) { return; }
+                    var raw = encoded ? window.atob(encoded) : createEtkey();
+                    if (raw.length !== 28) { raw = createEtkey(); }
                     var bytes = new Uint8Array(28);
                     for (var i = 0; i < bytes.length; i++) {
                         bytes[i] = raw.charCodeAt(i);
                     }
                     Module.FS.mkdirTree(HOME_ETL_DIR + '/etmain');
                     Module.FS.writeFile(ETKEY_PATH, bytes);
+                    window.localStorage.setItem(ETKEY_STORAGE_KEY, window.btoa(raw));
                 } catch (e) {
                     // Let the engine generate a new key if browser storage is unavailable.
                 }
