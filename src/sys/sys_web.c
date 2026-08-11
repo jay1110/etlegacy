@@ -70,6 +70,22 @@ char *Sys_DefaultHomePath(void)
 }
 
 /**
+ * @brief Persist browser-side files to IndexedDB.
+ *
+ * IDBFS writes are asynchronous. The shell owns the actual sync operation and
+ * coalesces overlapping requests; this function is the C-side notification
+ * used after engine-generated files and WWW downloads are written.
+ */
+void Sys_SyncFilesystem(void)
+{
+	EM_ASM({
+		if (typeof window.etlPersistFilesystem === 'function') {
+			window.etlPersistFilesystem();
+		}
+	});
+}
+
+/**
  * @brief Sys_Milliseconds
  * @return Current time in milliseconds using emscripten_get_now()
  */

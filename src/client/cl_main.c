@@ -522,6 +522,9 @@ static void CL_GenerateETKey(void)
 			Com_Printf(S_COLOR_RED "ERROR: Could not write file %s\n", ETKEY_FILE);
 		}
 		FS_FCloseFile(f);
+	#ifdef __EMSCRIPTEN__
+		Sys_SyncFilesystem();
+	#endif
 	}
 }
 

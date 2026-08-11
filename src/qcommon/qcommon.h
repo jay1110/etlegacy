@@ -1485,6 +1485,11 @@ char *Sys_Cwd(void);
 char *Sys_DefaultBasePath(void);
 char *Sys_DefaultInstallPath(void);
 char *Sys_DefaultHomePath(void);
+
+#ifdef __EMSCRIPTEN__
+// Request persistence of the browser virtual filesystem (IDBFS).
+void Sys_SyncFilesystem(void);
+#endif
 const char *Sys_Basename(char *path);
 const char *Sys_Dirname(char *path);
 char *Sys_ConsoleInput(void);

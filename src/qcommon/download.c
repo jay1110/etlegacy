@@ -272,6 +272,12 @@ static void Com_WebDownloadComplete(webRequest_t *request, webRequestResult requ
 		Com_DPrintf("Downloaded file does not exist (anymore?) '%s'\n", dld.downloadTempName);
 	}
 
+#ifdef __EMSCRIPTEN__
+	// WWW downloads are written after the initial shell bootstrap sync. Queue
+	// an IDBFS flush now so downloaded PK3s survive closing the browser.
+	Sys_SyncFilesystem();
+#endif
+
 	*dld.downloadTempName = *dld.downloadName = 0;
 	Cvar_Set("cl_downloadName", "");
 	if (dld.bWWWDlDisconnected)

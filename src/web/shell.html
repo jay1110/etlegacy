@@ -5642,23 +5642,45 @@
             // Persist engine-written files (etconfig.cfg, profile data, ...)
             // to IndexedDB while the game runs: the engine has no syncfs hook
             // of its own, so sync periodically and when the tab is hidden or
-            // closed. A guard prevents overlapping syncfs calls.
+            // closed. Engine-side events (etkey and WWW downloads) request an
+            // immediate sync through window.etlPersistFilesystem. A pending
+            // flag ensures writes that arrive during a sync get flushed by the
+            // following transaction too.
             (function () {
                 var syncing = false;
+                var syncPending = false;
                 function syncHome() {
-                    if (syncing || !Module.FS || !Module.FS.syncfs) { return; }
+                    if (!Module.FS || !Module.FS.syncfs) { return; }
+                    if (syncing) {
+                        syncPending = true;
+                        return;
+                    }
                     syncing = true;
                     try {
-                        Module.FS.syncfs(false, function () { syncing = false; });
+                        Module.FS.syncfs(false, function (err) {
+                            syncing = false;
+                            if (err && console && console.warn) {
+                                console.warn('IDBFS sync failed:', err);
+                            }
+                            if (syncPending) {
+                                syncPending = false;
+                                syncHome();
+                            }
+                        });
                     } catch (e) {
                         syncing = false;
+                        if (console && console.warn) {
+                            console.warn('IDBFS sync failed:', e);
+                        }
                     }
                 }
-                setInterval(syncHome, 30000);
+                window.etlPersistFilesystem = syncHome;
+                setInterval(syncHome, 5000);
                 document.addEventListener('visibilitychange', function () {
                     if (document.hidden) { syncHome(); }
                 });
                 window.addEventListener('pagehide', syncHome);
+                window.addEventListener('beforeunload', syncHome);
             })();
 
             // Read a browser File object into a Uint8Array (arrayBuffer() is not
