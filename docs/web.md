@@ -391,10 +391,12 @@ or from the in-page **Connect…** panel (controls bar at the top edge):
 | `assets`  | Base URL for `pak0-2.pk3` | `?assets=https://example.com/etmain/` |
 | `legacy`  | Base URL for the mod pk3 | `?legacy=https://example.com/legacy/` |
 | `mod`     | Override which mod pk3(s) to fetch | `?mod=legacy_2.84.0.pk3` |
-| `modpk3`  | Override the pk3(s) of a *hosted* mod (XMod, Jaymod) | `?modpk3=xmod-2.0.4.pk3` |
+| `modpk3`  | Backward-compatible override of the pk3(s) of a *hosted* mod (XMod, Jaymod) | `?modpk3=xmod-2.0.4.pk3` |
+| `<mod>pk3` | Override one hosted mod's pk3(s) without affecting another one | `?jaymodpk3=jaymod-2.2.0-165-gba72bac.pk3` |
 | `modbase` | Base URL for that mod's folder | `?modbase=https://example.com/xmod/` |
 | `relay`   | WebSocket relay URL (`net_wsRelayServer`) | `?relay=wss://relay.example.com:8443` |
 | `connect` | Game server `host:port` to auto-join | `?connect=203.0.113.10:27960` |
+| `connectmod` | Force the mod client modules prepared for a direct connection; normally detected automatically from the server's `getinfo` reply | `?connectmod=jaymod` |
 | `map`     | Start a local game on this map | `?map=oasis` |
 | `lobby`   | Lobby server for browser-hosted games | `?lobby=wss://lobby.example.com:8443` |
 | `join`    | Join a browser-hosted game (invite link) | `?join=7f3a91` |
@@ -404,6 +406,14 @@ Full example:
 
 ```
 https://your-page/etl.html?relay=wss://relay.example.com:8443&connect=203.0.113.10:27960
+```
+
+For a server that suppresses `getinfo`, add its known mod explicitly. The page
+then preloads the client modules before the engine starts; it does **not** guess
+or download the server's versioned data package:
+
+```
+https://your-page/etl.html?connect=203.0.113.10:27960&connectmod=jaymod
 ```
 
 Multiple browser players can open the same link and join the same server; each
@@ -526,7 +536,7 @@ xmod/
 └── ui.mp.wasm32.so           # menus                       (optional)
 
 jaymod/
-├── jaymod-2.2.1.pk3
+├── jaymod-2.2.0.pk3          # stable alias for the current versioned build
 ├── qagame.mp.wasm32.so       # server game logic           (optional)
 ├── cgame.mp.wasm32.so        # client game logic           (optional)
 └── ui.mp.wasm32.so           # menus                       (optional)
@@ -639,12 +649,25 @@ what the two points above are about.
 The pk3 inside the mod folder is also where the page reads the modules from
 first; a standalone `.so` next to it is used when the pk3 does not contain one.
 Unlike the Legacy folder, the name of a mod's pk3 cannot be guessed (a folder
-cannot be listed over HTTP), so the page uses the name in its mod table
-(`HOST_MODS` in `src/web/shell.html` — currently `xmod-2.0.3.pk3` and
-`jaymod-2.2.1.pk3`). Point it at a different name or version with
-`?modpk3=<a.pk3,b.pk3>`, and at a different location with `?modbase=<url>`. If
-none of the mod's pk3s can be downloaded the game is not started: the error
-names the files and the folder they belong in.
+cannot be listed over HTTP). For browser-hosted Jaymod games, publish a stable
+`jaymod/jaymod-2.2.0.pk3` alias (symlink, rewrite or copy) that points at the
+current versioned build, such as `jaymod-2.2.0-165-gba72bac.pk3`. Update that
+alias after every build; the versioned file can remain available for native
+servers. The page's defaults are `xmod-2.0.3.pk3` and this stable Jaymod alias.
+
+Alternatively, point the selected mod at an exact package with
+`?jaymodpk3=<a.pk3,b.pk3>` (or the older generic `?modpk3=...`), and at another
+folder with `?modbase=<url>`. The filename is accepted only as a simple `.pk3`
+basename. If no selected mod package can be downloaded, browser hosting does
+not start and the error names the files and folder to fix.
+
+Joining a native dedicated Jaymod server is different: its normal `getinfo`
+reply exposes `game=jaymod`, so the page preloads only the fixed standalone
+`cgame.mp.wasm32.so` and `ui.mp.wasm32.so` before startup. The server then
+requests its own exact versioned PK3 with the usual download protocol. Its
+changing `jaymod-2.2.0-<build>-g<sha>.pk3` name therefore does not have to be
+known by the link. Use `?connectmod=jaymod` only when that preliminary server
+query is unavailable.
 
 Only `etmain/`, `legacy/` and the home directory are stored persistently, so
 another mod's files are downloaded once per browser session.
@@ -1033,7 +1056,10 @@ idle-connection reaper and a failed bind.
      module is detected before it runs — it declares its ABI version in the
      `vmWasmAbi<n>` export every ET: Legacy module has (`VM_WASM_ABI_VERSION`,
      `src/qcommon/q_shared.h`) — and is ignored by the page, which falls back to
-     this build's own game logic. Delete those stale `.so` files.
+     this build's own game logic. The shell also checks the exported `vmMain`
+     function type: this engine requires 13 arguments (the command plus 12
+     `intptr_t` values), so an old Jaymod module with 17 is rejected before it
+     can trap. Delete or replace those stale `.so` files.
   2. **A mod's own module that was not built for this engine.** It declares no
      ABI version, so it cannot be checked and is used as it is; the browser
      console and the game log name it beforehand ("does not declare this

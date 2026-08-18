@@ -133,6 +133,7 @@ shell (`src/web/shell.html`) reads these query parameters:
 | `assets`  | Base URL to download `pak0-2.pk3` from | `?assets=https://et.clan-etc.de/etmain/` |
 | `relay`   | WebSocket relay URL (`net_wsRelayServer`) | `?relay=wss://relay.example.com` |
 | `connect` | Game server `host:port` to auto-join | `?connect=etclan.de:27966` |
+| `connectmod` | Force the mod prepared before a direct connection (`legacy`, `xmod`, `jaymod`); normally detected with `getinfo` | `?connectmod=jaymod` |
 | `touch`   | Force the on-screen touch controls off/on | `?touch=1` |
 
 `relay` is optional: the shell has a default relay built in (`DEFAULT_RELAY` in
@@ -143,6 +144,11 @@ HTTP one — so a share link normally only needs the server:
 ```
 etl.html?connect=etclan.de:27966
 ```
+
+For a server that does not answer the normal `getinfo` probe, add its mod to a
+shared link, for example `?connect=SERVER:27960&connectmod=jaymod`. This makes
+the page preload the browser-side `cgame` and `ui` modules before the server
+announces `fs_game`; the server still supplies its own exact PK3 filename.
 
 ## Browser asset downloads
 

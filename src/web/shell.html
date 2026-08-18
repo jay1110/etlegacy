@@ -646,7 +646,8 @@
             margin-bottom: 4px;
         }
 
-        #connect-panel input {
+        #connect-panel input,
+        #connect-panel select {
             width: 100%;
             max-width: 100%;
             padding: 8px 10px;
@@ -2027,7 +2028,7 @@
         </div>
         <input type="file" id="pak-file-input" accept=".pk3" multiple style="display:none"
                onchange="onLocalPaksChosen(this)">
-        <div id="build-marker" style="margin-top:24px;font-size:12px;color:#6c6c8a;">shell build: 2026-07-05-A</div>
+        <div id="build-marker" style="margin-top:24px;font-size:12px;color:#6c6c8a;">shell build: 2026-08-18-B</div>
     </div>
 
     <!-- Error overlay -->
@@ -2295,6 +2296,14 @@
         <label for="connect-server">Game server (host:port)</label>
         <input id="connect-server" type="text" placeholder="etclan.de:27966" autocomplete="off">
         <div class="hint">The dedicated server to join through the relay. A hostname works - the relay resolves it.</div>
+        <label for="connect-mod">Server mod</label>
+        <select id="connect-mod">
+            <option value="">Detect automatically</option>
+            <option value="legacy">ET: Legacy</option>
+            <option value="xmod">XMod</option>
+            <option value="jaymod">Jaymod</option>
+        </select>
+        <div class="hint">The page asks the server which mod it runs before starting. Choose a mod here only when that query is blocked or the server does not answer it.</div>
         <div class="panel-actions">
             <button class="control-btn" onclick="closeConnectPanel()">Cancel</button>
             <button class="control-btn" onclick="applyConnect()">Connect &amp; Reload</button>
@@ -2450,9 +2459,18 @@
                 <div id="server-list"></div>
                 <label for="servers-address">Other server (host:port)</label>
                 <input id="servers-address" type="text" placeholder="etclan.de:27966" autocomplete="off">
+                <label for="servers-mod">Server mod</label>
+                <select id="servers-mod">
+                    <option value="">Detect automatically</option>
+                    <option value="legacy">ET: Legacy</option>
+                    <option value="xmod">XMod</option>
+                    <option value="jaymod">Jaymod</option>
+                </select>
                 <div class="launcher-hint" id="servers-hint">
-                    Missing pk3 files are downloaded from the server when joining.
-                    Dedicated servers are reached through the WebSocket relay.
+                    The server's mod is normally detected before the game starts.
+                    Pick one only when its getinfo response is blocked. Missing pk3
+                    files are downloaded from the server when joining. Dedicated
+                    servers are reached through the WebSocket relay.
                 </div>
             </div>
             <div class="launcher-actions">
@@ -4118,6 +4136,8 @@
             var params = new URLSearchParams(window.location.search);
             document.getElementById('connect-relay').value = params.get('relay') || '';
             document.getElementById('connect-server').value = params.get('connect') || '';
+            document.getElementById('connect-mod').value =
+                params.get('connectmod') || params.get('modgame') || '';
             document.getElementById('connect-panel').style.display = 'block';
             document.getElementById('connect-relay').focus();
         }
@@ -4129,6 +4149,7 @@
         function applyConnect() {
             var relay = document.getElementById('connect-relay').value.trim();
             var server = document.getElementById('connect-server').value.trim();
+            var mod = document.getElementById('connect-mod').value;
 
             // Preserve any other configuration already on the URL (assets,
             // legacy, mod) and only update the relay/connect parameters.
@@ -4142,6 +4163,12 @@
                 params.set('connect', server);
             } else {
                 params.delete('connect');
+            }
+            if (mod) {
+                params.set('connectmod', mod);
+            } else {
+                params.delete('connectmod');
+                params.delete('modgame');
             }
 
             var query = params.toString();
@@ -4279,6 +4306,9 @@
                                     share link normally only needs ?connect=.
                ?connect=<host:port> game server to join through the relay. May
                                     be a hostname - the relay resolves it.
+               ?connectmod=<mod>    optional known mod for that server
+                                    (legacy, xmod or jaymod). The page normally
+                                    detects it with an OOB getinfo request.
                ?touch=0|1           force the on-screen touch controls off/on
                                     (they default to on-screen-capable devices)
                ?lobby=<ws-url>      lobby/signalling server for games hosted in
@@ -4693,10 +4723,16 @@
             var relay = params.get('relay') || defaultRelayUrl();
             args.push('+set', 'net_wsRelayServer', relay);
             var connect = params.get('connect');
+            // A direct connection is deliberately appended only after preRun
+            // has identified and prepared the server's client game module. A
+            // server tells the client its fs_game only after the engine has
+            // already started receiving gamestate packets, which is too late
+            // for Emscripten to asynchronously compile cgame/ui side modules.
+            // Keeping the actual +connect until the end of preRun gives the
+            // browser a chance to put those modules in preloadedWasm first.
             if (connect) {
                 args.push('+set', 'cl_allowDownload', '1');
                 args.push('+set', 'cl_wwwDownload', '1');
-                args.push('+connect', connect);
             }
             var mapParam = params.get('map');
             if (mapParam) {
@@ -4738,15 +4774,17 @@
             // --- Launcher server list -------------------------------------
             // Compatible dedicated servers shown by the launcher's "Dedicated
             // serverlist" button. Maintain this list manually: add one
-            // { name, address } entry per server. Missing pk3s (e.g. a
-            // different fs_game such as xmod) are downloaded from the server on
-            // connect (cl_allowDownload 1). Addresses may be given as a
+            // { name, address, mod? } entry per server. "mod" is optional: it
+            // bypasses the getinfo probe when a server suppresses that query.
+            // Missing pk3s (e.g. a different fs_game such as xmod) are
+            // downloaded from the server on connect (cl_allowDownload 1).
+            // Addresses may be given as a
             // hostname (the relay resolves it, see tools/ws-relay), so a server
             // that changes its IP keeps working.
             var SERVER_LIST = [
                 { name: 'ETc', address: 'etclan.de:27966' }
                 // Add more compatible servers here, e.g.:
-                // { name: 'My server', address: '203.0.113.10:27960' }
+                // { name: 'My Jaymod server', address: '203.0.113.10:27960', mod: 'jaymod' }
             ];
 
             // Accept only what an address can be - a hostname or IP with an
@@ -5420,6 +5458,136 @@
                 return (found === undefined) ? null : found;
             }
 
+            // The marker above identifies this engine family, but it cannot
+            // express a change to vmMain itself. In particular, an older Jaymod
+            // wasm build exported vmWasmAbi1 *and* a 17-argument vmMain while
+            // this engine calls command + 12 intptr_t arguments (13 total).
+            // WebAssembly rejects that call_indirect at runtime with the
+            // otherwise uncatchable "indirect call signature mismatch". Read
+            // just enough of the module type/import/function/export sections to
+            // reject that binary before Emscripten compiles it.
+            var VM_MAIN_PARAM_COUNT = 13;
+
+            function vmMainParamCount(bytes) {
+                if (!hasWasmMagic(bytes) || bytes.length < 8) { return null; }
+
+                var pos = 8;
+                var typeParamCounts = [];
+                var functionTypes = [];
+                var vmMainIndex = null;
+
+                function uleb(end) {
+                    var result = 0, shift = 0, b;
+                    do {
+                        if (pos >= end || shift > 49) { throw new Error('truncated'); }
+                        b = bytes[pos++];
+                        result += (b & 0x7f) * Math.pow(2, shift);
+                        shift += 7;
+                    } while (b & 0x80);
+                    return result;
+                }
+
+                function byte(end) {
+                    if (pos >= end) { throw new Error('truncated'); }
+                    return bytes[pos++];
+                }
+
+                function skipName(end) {
+                    var length = uleb(end);
+                    if (pos + length > end) { throw new Error('truncated'); }
+                    pos += length;
+                }
+
+                function skipLimits(end) {
+                    var flags = uleb(end);
+                    uleb(end);                     // initial size
+                    if (flags & 1) { uleb(end); }   // maximum size
+                }
+
+                function skipImportDescriptor(kind, end) {
+                    if (kind === 0) {               // function: type index
+                        functionTypes.push(uleb(end));
+                    } else if (kind === 1) {        // table: reftype + limits
+                        byte(end);
+                        skipLimits(end);
+                    } else if (kind === 2) {        // memory: limits
+                        skipLimits(end);
+                    } else if (kind === 3) {        // global: valtype + mutability
+                        byte(end);
+                        byte(end);
+                    } else if (kind === 4) {        // exception tag: attr + type
+                        byte(end);
+                        uleb(end);
+                    } else {
+                        throw new Error('unknown import');
+                    }
+                }
+
+                try {
+                    while (pos < bytes.length) {
+                        var id = byte(bytes.length);
+                        var size = uleb(bytes.length);
+                        var end = pos + size;
+                        if (end > bytes.length) { return null; }
+
+                        var count, i, form, params, results, name, kind, index;
+                        if (id === 1) {              // type section
+                            count = uleb(end);
+                            for (i = 0; i < count; i++) {
+                                form = byte(end);
+                                if (form !== 0x60) { return null; }
+                                params = uleb(end);
+                                if (pos + params > end) { return null; }
+                                pos += params;       // one byte per value type
+                                results = uleb(end);
+                                if (pos + results > end) { return null; }
+                                pos += results;
+                                typeParamCounts.push(params);
+                            }
+                        } else if (id === 2) {       // import section
+                            count = uleb(end);
+                            for (i = 0; i < count; i++) {
+                                skipName(end);        // module
+                                skipName(end);        // field
+                                skipImportDescriptor(byte(end), end);
+                            }
+                        } else if (id === 3) {       // local function type indices
+                            count = uleb(end);
+                            for (i = 0; i < count; i++) {
+                                functionTypes.push(uleb(end));
+                            }
+                        } else if (id === 7) {       // exports
+                            count = uleb(end);
+                            for (i = 0; i < count; i++) {
+                                var length = uleb(end);
+                                if (pos + length > end) { return null; }
+                                name = '';
+                                for (var j = 0; j < length; j++) {
+                                    name += String.fromCharCode(bytes[pos++]);
+                                }
+                                kind = byte(end);
+                                index = uleb(end);
+                                if (kind === 0 && (name === 'vmMain' || name === '_vmMain')) {
+                                    vmMainIndex = index;
+                                }
+                            }
+                        } else {
+                            pos = end;
+                        }
+                        if (pos !== end) { return null; }
+                    }
+                } catch (e) {
+                    return null;                     // unknown/invalid module
+                }
+
+                if (vmMainIndex === null || vmMainIndex >= functionTypes.length) {
+                    return null;
+                }
+                var typeIndex = functionTypes[vmMainIndex];
+                return typeIndex >= 0 && typeIndex < typeParamCounts.length ?
+                    typeParamCounts[typeIndex] : null;
+            }
+
             // Why a module cannot be used, or null when it can be.
             function describeModuleProblem(bytes) {
                 if (!hasWasmMagic(bytes)) { return describeNonWasm(bytes); }
@@ -5429,6 +5597,12 @@
                         'WebAssembly VM ABI (it exports vmWasmAbi' + abi + '), this ' +
                         'build speaks version ' + VM_ABI_VERSION + ' - engine and ' +
                         'game logic of one build belong together';
+                }
+                var vmMainParams = vmMainParamCount(bytes);
+                if (vmMainParams !== null && vmMainParams !== VM_MAIN_PARAM_COUNT) {
+                    return 'its vmMain export accepts ' + vmMainParams +
+                        ' arguments, but this engine requires ' +
+                        VM_MAIN_PARAM_COUNT + ' (command plus 12 intptr_t values)';
                 }
                 return null;
             }
@@ -6165,7 +6339,8 @@
             // from the build, another mod's pk3 carries its own version, which
             // the browser cannot guess - a folder cannot be listed over HTTP.
             // Point the shell at a differently named/versioned one with
-            // ?modpk3=<a.pk3,b.pk3>, and at a different folder with
+            // ?<mod>pk3=<a.pk3,b.pk3> (for example ?jaymodpk3=...) or the
+            // older generic ?modpk3=..., and at a different folder with
             // ?modbase=<url> (e.g. when the files are not served next to this
             // page). Both apply to the mod that is started, not to legacy.
             var HOST_MODS = {
@@ -6174,7 +6349,11 @@
                              pk3s: ['xmod-2.0.3.pk3'],
                              base: ETL_MIRROR_BASE + 'xmod/' },
                 jaymod:    { name: 'Jaymod',     fsGame: 'jaymod',    available: true,
-                             pk3s: ['jaymod-2.2.1.pk3'],
+                             // Keep this stable name as a mirror alias for the
+                             // current versioned 2.2.0 package. A server itself
+                             // may still require jaymod-2.2.0-<build>-g<sha>.pk3;
+                             // that exact package is downloaded after connect.
+                             pk3s: ['jaymod-2.2.0.pk3'],
                              base: ETL_MIRROR_BASE + 'jaymod/' },
                 etbloat:   { name: 'ETBloat',    fsGame: 'etbloat',   available: false },
                 noquarter: { name: 'No Quarter', fsGame: 'nq',        available: false },
@@ -6910,12 +7089,33 @@
             // even though the files are served correctly.
             var modInstalls = {};
 
-            function hostModAssets(mod) {
-                var pk3s = params.get('modpk3');
+            function modPk3Names(value) {
+                if (!value) { return null; }
+                var names = String(value).split(',').map(function (name) {
+                    return name.trim();
+                }).filter(function (name) { return name.length; });
+
+                // A package name is appended to a URL and written into the
+                // virtual filesystem. It must be a plain .pk3 basename - never
+                // a path, query string or parent-directory escape.
+                if (!names.length || names.some(function (name) {
+                    return !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.pk3$/i.test(name);
+                })) {
+                    if (console && console.warn) {
+                        console.warn('Ignoring unsafe mod pk3 override: ' + value);
+                    }
+                    return null;
+                }
+                return names;
+            }
+
+            function hostModAssets(mod, modKey) {
+                // A mod-specific override avoids accidentally applying an old
+                // Jaymod package name to XMod. Keep ?modpk3= for existing links.
+                var pk3s = modPk3Names(params.get((modKey || '') + 'pk3')) ||
+                    modPk3Names(params.get('modpk3'));
                 return modAssets(mod.fsGame,
-                    pk3s ? pk3s.split(',').map(function (s) { return s.trim(); })
-                                .filter(function (s) { return s.length; })
-                         : (mod.pk3s || []),
+                    pk3s || (mod.pk3s || []),
                     params.get('modbase') || mod.base || null);
             }
 
@@ -6929,7 +7129,7 @@
                 }
                 if (modInstalls[modKey]) { return modInstalls[modKey]; }
 
-                var assets = hostModAssets(mod);
+                var assets = hostModAssets(mod, modKey);
                 var install = downloadModAssets(assets).catch(function (err) {
                     // A failed install must not be remembered: the next attempt
                     // (after the file was uploaded, or on a better connection)
@@ -6953,7 +7153,265 @@
                 if (!mod || !mod.available || mod.fsGame === LEGACY_ASSETS.fsGame) {
                     return LEGACY_ASSETS;
                 }
-                return hostModAssets(mod);
+                return hostModAssets(mod, modKey);
+            }
+
+            // --- Preparing a mod for a dedicated-server connection ---------
+            //
+            // A native server tells a client its fs_game in the gamestate. By
+            // then a browser client is already running: Emscripten cannot fetch
+            // and compile a cgame/ui SIDE_MODULE synchronously from inside
+            // Sys_LoadGameDll. We therefore ask the server first (the standard
+            // out-of-band getinfo response contains \game\<fs_game>) and put the
+            // two *client* modules into preloadedWasm before main() starts.
+            //
+            // Do not download a guessed Jaymod pk3 here. The server will later
+            // request its exact, versioned package through cl_wwwDownload; a
+            // guessed package would both break pure checks and make the changing
+            // jaymod-2.2.0-<build>-g<sha>.pk3 filename a browser-side concern.
+            // qagame is likewise deliberately not preloaded: a remote player
+            // never loads the server module.
+            var REMOTE_CLIENT_MODULES = ['cgame.mp.wasm32.so', 'ui.mp.wasm32.so'];
+            var remoteClientModPreloads = {};
+
+            function knownModKey(value) {
+                var key = String(value || '').toLowerCase();
+                return (HOST_MODS[key] && HOST_MODS[key].available) ? key : null;
+            }
+
+            function configuredConnectMod() {
+                var raw = params.get('connectmod') || params.get('modgame');
+                if (!raw) { return null; }
+                var key = knownModKey(raw);
+                if (!key) {
+                    throw new Error('Unknown connectmod "' + raw +
+                        '". Use legacy, xmod or jaymod.');
+                }
+                return key;
+            }
+
+            function modKeyForFsGame(fsGame) {
+                var keys = Object.keys(HOST_MODS);
+                var game = String(fsGame || '').toLowerCase();
+                for (var i = 0; i < keys.length; i++) {
+                    var mod = HOST_MODS[keys[i]];
+                    if (mod.available && mod.fsGame.toLowerCase() === game) {
+                        return keys[i];
+                    }
+                }
+                return null;
+            }
+
+            function getinfoPacket() {
+                var text = 'getinfo etl-web-mod';
+                var packet = new Uint8Array(4 + text.length);
+                packet[0] = packet[1] = packet[2] = packet[3] = 0xff;
+                for (var i = 0; i < text.length; i++) {
+                    packet[4 + i] = text.charCodeAt(i);
+                }
+                return packet;
+            }
+
+            function gameFromInfoResponse(data) {
+                var bytes;
+                if (typeof data === 'string') {
+                    bytes = null;
+                } else if (data instanceof ArrayBuffer) {
+                    bytes = new Uint8Array(data);
+                } else if (data && data.buffer instanceof ArrayBuffer) {
+                    bytes = new Uint8Array(data.buffer, data.byteOffset || 0,
+                        data.byteLength || data.length);
+                } else {
+                    return null;
+                }
+
+                var text = '';
+                var start = bytes && bytes.length >= 4 &&
+                    bytes[0] === 0xff && bytes[1] === 0xff &&
+                    bytes[2] === 0xff && bytes[3] === 0xff ? 4 : 0;
+                if (bytes) {
+                    for (var i = start; i < bytes.length; i++) {
+                        text += String.fromCharCode(bytes[i]);
+                    }
+                } else {
+                    text = data;
+                }
+
+                // Only accept an actual getinfo response. A relay socket can
+                // carry arbitrary UDP data, and no untrusted packet is allowed
+                // to select a module except through this whitelisted field.
+                var marker = text.indexOf('infoResponse');
+                if (marker < 0) { return null; }
+                text = text.slice(marker + 'infoResponse'.length)
+                    .replace(/^[\r\n]+/, '');
+                var match = /(?:^|\\)(?:game|fs_game)\\([^\\\0\r\n]+)/i.exec(text);
+                return match ? match[1].trim() : null;
+            }
+
+            // Probe through the same relay protocol as the engine. The relay's
+            // ?target= form also avoids any ambiguity if a reverse proxy keeps
+            // a path prefix (for example /ws-relay/) on the URL.
+            function probeRemoteServerMod(address) {
+                var probeUrl;
+                try {
+                    probeUrl = new URL(relay, window.location.href);
+                    // The relay accepts a target query too, but reverse proxies
+                    // commonly redirect /ws-relay to /ws-relay/. WebSocket
+                    // handshakes do not follow HTTP redirects, unlike fetch().
+                    if (probeUrl.pathname.charAt(probeUrl.pathname.length - 1) !== '/') {
+                        probeUrl.pathname += '/';
+                    }
+                    probeUrl.searchParams.set('target', address);
+                } catch (e) {
+                    return Promise.resolve(null);
+                }
+                if (typeof WebSocket === 'undefined') {
+                    return Promise.resolve(null);
+                }
+
+                return new Promise(function (resolve) {
+                    var socket = null;
+                    var finished = false;
+                    var timeout;
+
+                    function finish(game) {
+                        if (finished) { return; }
+                        finished = true;
+                        if (timeout) { clearTimeout(timeout); }
+                        try {
+                            if (socket && socket.readyState <= 1) {
+                                socket.close(1000, 'mod probe complete');
+                            }
+                        } catch (e) { /* socket is already gone */ }
+                        resolve(game || null);
+                    }
+
+                    try {
+                        socket = new WebSocket(probeUrl.href);
+                        socket.binaryType = 'arraybuffer';
+                        socket.onopen = function () {
+                            try { socket.send(getinfoPacket()); }
+                            catch (e) { finish(null); }
+                        };
+                        socket.onmessage = function (event) {
+                            var game = gameFromInfoResponse(event.data);
+                            if (game) { finish(game); }
+                        };
+                        socket.onerror = function () { finish(null); };
+                        socket.onclose = function () { finish(null); };
+                    } catch (e) {
+                        finish(null);
+                        return;
+                    }
+                    // A server may disable getinfo. This is only automatic
+                    // detection, so do not block a normal Legacy connection for
+                    // more than a brief relay round trip; ?connectmod= remains
+                    // the explicit escape hatch.
+                    timeout = setTimeout(function () { finish(null); }, 2500);
+                });
+            }
+
+            // The normal asset path deliberately goes through the download
+            // relay. During a rolling relay update older instances may not yet
+            // permit .wasm32.so; the public mirror also exposes CORS for these
+            // small fixed modules, so try it directly as a compatibility
+            // fallback. A failed direct attempt (such as HTTP from an HTTPS
+            // page) still reports the original proxy failure clearly.
+            function fetchRemoteClientModule(name, assets) {
+                var direct = assets.base + name;
+                var proxied = downloadFetchUrl(direct);
+                var urls = [proxied];
+                if (proxied !== direct) { urls.push(direct); }
+                var failures = [];
+
+                function fetchAt(index) {
+                    return fetch(urls[index], { cache: 'no-cache' }).then(function (response) {
+                        if (!response.ok) {
+                            throw new Error('HTTP ' + response.status + ' for ' + urls[index]);
+                        }
+                        return response.arrayBuffer();
+                    }).then(function (buf) {
+                        return new Uint8Array(buf);
+                    }).catch(function (err) {
+                        failures.push(err && err.message || String(err));
+                        if (index + 1 < urls.length) { return fetchAt(index + 1); }
+                        throw new Error(failures.join('; '));
+                    });
+                }
+
+                return fetchAt(0);
+            }
+
+            function preloadRemoteClientModule(name, assets) {
+                Module.setStatus('Loading ' + name);
+                return fetchRemoteClientModule(name, assets).then(function (bytes) {
+                    var problem = describeModuleProblem(bytes);
+                    if (problem) {
+                        throw new Error('the standalone copy at ' + assets.base + name +
+                            ' is not usable: ' + problem);
+                    }
+                    noteUndeclaredVmAbi(name, assets, 'folder', bytes);
+                    return assets.moduleDirs.reduce(function (chain, dir) {
+                        return chain.then(function () {
+                            return createPreloadedSideModule(dir, name, bytes);
+                        });
+                    }, Promise.resolve());
+                }).catch(function (err) {
+                    var wrapped = err instanceof Error ? err :
+                        new Error(String(err || 'unknown error'));
+                    wrapped.sideModule = name;
+                    throw wrapped;
+                });
+            }
+
+            function preloadRemoteClientMod(modKey) {
+                var mod = HOST_MODS[modKey];
+                if (!mod || !mod.available || mod.fsGame === LEGACY_ASSETS.fsGame) {
+                    return Promise.resolve(mod && mod.fsGame || null);
+                }
+                if (remoteClientModPreloads[modKey]) {
+                    return remoteClientModPreloads[modKey];
+                }
+
+                // An empty pk3 list is intentional: the remote server owns the
+                // data package and decides its precise filename after connect.
+                var assets = modAssets(mod.fsGame, [],
+                    params.get('modbase') || mod.base || null);
+                var install = REMOTE_CLIENT_MODULES.reduce(function (chain, name) {
+                    return chain.then(function () {
+                        return preloadRemoteClientModule(name, assets);
+                    });
+                }, Promise.resolve()).then(function () {
+                    return mod.fsGame;
+                }).catch(function (err) {
+                    if (remoteClientModPreloads[modKey] === install) {
+                        remoteClientModPreloads[modKey] = null;
+                    }
+                    var wrapped = err instanceof Error ? err :
+                        new Error(String(err || 'unknown error'));
+                    wrapped.remoteMod = mod.name;
+                    throw wrapped;
+                });
+                remoteClientModPreloads[modKey] = install;
+                return install;
+            }
+
+            function prepareRemoteConnection(address, explicitMod, probe) {
+                return Promise.resolve().then(function () {
+                    if (explicitMod) {
+                        var forced = knownModKey(explicitMod);
+                        if (!forced) {
+                            throw new Error('Unknown server mod "' + explicitMod +
+                                '". Use legacy, xmod or jaymod.');
+                        }
+                        return forced;
+                    }
+                    return probe ? probe.then(modKeyForFsGame) :
+                        probeRemoteServerMod(address).then(modKeyForFsGame);
+                }).then(function (modKey) {
+                    if (!modKey) { return null; }
+                    return preloadRemoteClientMod(modKey);
+                });
             }
 
             // --- Preset server config ----------------------------------------
@@ -8757,6 +9215,16 @@
                         resolve(extra);
                     }
 
+                    // Like a shared ?connect= link, a server selected from the
+                    // launcher has to have cgame/ui compiled before the engine
+                    // processes its fs_game. The probe is automatic unless a
+                    // maintained list entry or the selector supplies a mod.
+                    function remoteConnectArgs(address, mod) {
+                        return prepareRemoteConnection(address, mod).then(function (fsGame) {
+                            return connectArgs(address, fsGame);
+                        });
+                    }
+
                     // Just start the game - boots to the main menu without
                     // connecting anywhere.
                     document.getElementById('menu-start').onclick = function () {
@@ -8828,7 +9296,10 @@
                             b.className = 'launcher-btn';
                             b.type = 'button';
                             b.textContent = srv.name + ' \u2014 ' + srv.address;
-                            b.onclick = function () { pick(connectArgs(srv.address)); };
+                            b.onclick = function () {
+                                startFlow(remoteConnectArgs(srv.address, srv.mod),
+                                    'launcher-servers', 'servers-hint');
+                            };
                             box.appendChild(b);
                         });
                         if (!SERVER_LIST.length) {
@@ -8855,7 +9326,9 @@
                             return;
                         }
                         hint.style.color = '';
-                        pick(connectArgs(address));
+                        var mod = document.getElementById('servers-mod').value;
+                        startFlow(remoteConnectArgs(address, mod),
+                            'launcher-servers', 'servers-hint');
                     };
 
                     // Button 4: host a game (listen server in the browser).
@@ -9232,6 +9705,14 @@
                 });
             }
 
+            // Start the lightweight server query while the normal game data is
+            // loading. It does not touch the virtual filesystem, so it can run
+            // in parallel with mountCache()/the pak downloads; installing the
+            // detected client modules still waits until those are ready below.
+            var directConnectModParam = params.get('connectmod') || params.get('modgame');
+            var directConnectProbe = (connect && !directConnectModParam) ?
+                probeRemoteServerMod(connect) : Promise.resolve(null);
+
             // Run before the engine's main(): block startup until assets exist.
             Module.preRun = Module.preRun || [];
             Module.preRun.push(function () {
@@ -9253,7 +9734,24 @@
                         // reported below.
                         return downloadModAssets();
                     })
-                    .then(persist)
+                    .then(function () {
+                        // A normal server connection may use a mod other than
+                        // Legacy. Detect it (or honor ?connectmod=) and preload
+                        // its cgame/ui before the engine receives fs_game from
+                        // the server. This intentionally fetches no mod pk3:
+                        // the server owns that exact, versioned download.
+                        if (!connect) { return null; }
+                        return prepareRemoteConnection(connect,
+                            configuredConnectMod(), directConnectProbe);
+                    })
+                    .then(function () {
+                        // The direct-client path deliberately never falls back
+                        // to a different mod's game logic. It either prepares
+                        // the server's own cgame/ui pair or reports a clear
+                        // error, so no early fs_game/fs_basegame override can
+                        // disturb the server's normal pure-download sequence.
+                        return persist();
+                    })
                     .then(function () {
                         // A default profile must exist, otherwise the engine
                         // stops at its first-start profile wizard and never
@@ -9271,6 +9769,10 @@
                         // addEngineArgs; replacing Module.arguments here would
                         // be a no-op.
                         addEngineArgs(extraArgs);
+                        if (connect) {
+                            // Deliberately comes after the remote mod preload.
+                            addEngineArgs(['+connect', connect]);
+                        }
                         showLoading('Starting ET: Legacy...');
                         Module.removeRunDependency('etl-assets');
                     })
@@ -9278,6 +9780,20 @@
                         hideLauncher();
                         showLoading();
                         var msg;
+                        if (err && err.remoteMod) {
+                            var remoteWhich = err.sideModule || 'a client game module';
+                            msg = 'Could not prepare ' + err.remoteMod + ' for this ' +
+                                'dedicated server (' + remoteWhich + ').\n' +
+                                (err.message || err) +
+                                '\n\nThe browser must preload cgame/ui before ' +
+                                'the server switches fs_game. Serve the current ' +
+                                'standalone .wasm32.so files in the mod folder, ' +
+                                'or use ?connectmod=legacy, xmod or jaymod to ' +
+                                'override automatic detection.';
+                            showError(msg);
+                            Module.removeRunDependency('etl-assets');
+                            return;
+                        }
                         if (err && (err.sideModule || /preload/i.test(err.message || ''))) {
                             // A mandatory cgame/ui side module could not be loaded
                             // from the mod pk3 or the standalone .so fallback. Show
