@@ -22,13 +22,14 @@
  *   ws://host:port/?target=<server-ip>:<server-port>
  *
  * The relay also passes HTTP downloads through:
- *   http://host:port/download?url=<url-of-a-pk3>
+ *   http://host:port/download?url=<url-of-a-game-asset>
  * A browser may not fetch the mirror a server redirects it to with
  * sv_wwwBaseURL (mixed content, no Access-Control-Allow-Origin), which makes
  * cl_wwwDownload fail and the game fall back to its own, far slower transfer.
  * The relay fetches the file instead and serves it with the CORS header the
- * browser wants. Only public http(s) .pk3 URLs are passed through; see
- * --no-download-proxy and --allow-private-downloads.
+ * browser wants. Only public http(s) game assets (.pk3, wasm side modules and
+ * bot data zips) are passed through; see --no-download-proxy and
+ * --allow-private-downloads.
  *
  * Browsers served over HTTPS may only open secure (wss://) WebSockets, so a
  * page hosted on GitHub Pages / any HTTPS host needs the relay behind TLS -
@@ -59,7 +60,7 @@ const DEFAULT_CONNECTION_TIMEOUT_MS = 120000; // idle timeout (no traffic at all
 const DEFAULT_MAX_CONNECTIONS = 128;
 const HEARTBEAT_INTERVAL_MS = 15000; // ping interval to detect dead peers
 const TIMEOUT_CHECK_INTERVAL_MS = 5000;
-const DEFAULT_MAX_DOWNLOAD_MB = 512; // a pk3 larger than this is not passed through
+const DEFAULT_MAX_DOWNLOAD_MB = 512; // a game asset larger than this is not passed through
 const DEFAULT_MAX_DOWNLOADS = 8; // proxied downloads at the same time
 const MAX_DOWNLOADS_PER_CLIENT = 2;
 const DOWNLOAD_RESPONSE_TIMEOUT_MS = 30000; // waiting for the mirror to answer
@@ -150,7 +151,7 @@ for (let i = 0; i < args.length; i++) {
         console.log('wss:// connections (required from HTTPS pages). Otherwise');
         console.log('the relay serves plain ws://.');
         console.log('');
-        console.log('The download proxy answers GET /download?url=<pk3-url> with');
+        console.log('The download proxy answers GET /download?url=<game-asset-url> with');
         console.log('CORS headers so browser clients can use cl_wwwDownload.');
         process.exit(0);
     }
@@ -310,9 +311,9 @@ function parseTargetFromRequestUrl(requestUrl) {
  * transfer, so the relay fetches the file and serves it with that header.
  *
  * The relay must not become an open door into the network it runs in, so only
- * plain http(s) GETs of .pk3 files to public addresses are passed through, the
- * body is never interpreted, and the size, the number of redirects and the
- * number of downloads at the same time are all capped.
+ * plain http(s) GETs of recognised game assets to public addresses are passed
+ * through, the body is never interpreted, and the size, the number of
+ * redirects and the number of downloads at the same time are all capped.
  */
 let activeDownloads = 0;
 const downloadsPerClient = new Map();
@@ -406,9 +407,10 @@ function safeDecode(value) {
 }
 
 /**
- * Check that a URL is one the relay is willing to fetch. Anything but a plain
- * http(s) GET of a .pk3 file is refused - that is all a game download is, and
- * everything else only widens what the relay can be pointed at.
+ * Check that a URL is one the relay is willing to fetch. The browser launcher
+ * needs pk3s plus Emscripten side modules and Omni-bot data, but no arbitrary
+ * public URLs. Keeping this small allowlist preserves the SSRF boundary while
+ * allowing a GitHub Pages deployment to use its asset mirror.
  *
  * @returns {string|null} the reason it was refused, or null when it is fine
  */
@@ -421,8 +423,8 @@ function checkDownloadUrl(url) {
         return 'URLs with credentials are not passed through';
     }
 
-    if (!/\.pk3$/i.test(safeDecode(url.pathname))) {
-        return 'only .pk3 files are passed through';
+    if (!/\.(?:pk3|wasm32\.so|zip)$/i.test(safeDecode(url.pathname))) {
+        return 'only game asset files (.pk3, .wasm32.so, .zip) are passed through';
     }
 
     return null;
@@ -483,7 +485,21 @@ function requestUpstream(target, address, method) {
                 'User-Agent': 'etlegacy-ws-relay',
                 'Accept': '*/*'
             },
-            lookup: (name, options, callback) => callback(null, address.address, address.family)
+            // Node may request an address array when autoSelectFamily is
+            // enabled. Match the lookup callback shape in that case; returning
+            // a scalar for options.all makes Node 24 pass undefined to its
+            // socket layer.
+            lookup: (name, options, callback) => {
+                if (typeof options === 'function') {
+                    callback = options;
+                    options = {};
+                }
+                if (options && options.all) {
+                    callback(null, [{ address: address.address, family: address.family }]);
+                    return;
+                }
+                callback(null, address.address, address.family);
+            }
         }, resolve);
 
         request.setTimeout(DOWNLOAD_RESPONSE_TIMEOUT_MS, () => {
@@ -557,7 +573,7 @@ function sendPlainResponse(res, status, message) {
 }
 
 /**
- * Serve GET /download?url=<url of a pk3>
+ * Serve GET /download?url=<url of a game asset>
  */
 async function handleDownloadRequest(req, res, requestUrl) {
     const clientKey = req.socket.remoteAddress || 'unknown';
@@ -581,7 +597,7 @@ async function handleDownloadRequest(req, res, requestUrl) {
     const raw = requestUrl.searchParams.get('url');
 
     if (!raw) {
-        sendPlainResponse(res, 400, 'Missing url parameter. Use /download?url=<url of a pk3>.');
+        sendPlainResponse(res, 400, 'Missing url parameter. Use /download?url=<url of a game asset>.');
         return;
     }
 
@@ -731,7 +747,7 @@ function handleHttpRequest(req, res) {
 
     sendPlainResponse(res, 404,
                       'ET: Legacy WebSocket-to-UDP relay. Open a WebSocket to /<host>:<port> to play, ' +
-                      'or GET /download?url=<url of a pk3> to fetch a game file.');
+                      'or GET /download?url=<url of a game asset> to fetch a game file.');
 }
 
 /**
@@ -788,7 +804,7 @@ listeningServer.on('listening', () => {
     console.log(`Max connections: ${maxConnections}`);
     console.log(`Connection timeout: ${connectionTimeoutMs / 1000}s`);
     if (downloadProxy) {
-        console.log(`Download proxy: ${useTls ? 'https' : 'http'}://${host}:${boundPort}/download?url=<url of a pk3> ` +
+        console.log(`Download proxy: ${useTls ? 'https' : 'http'}://${host}:${boundPort}/download?url=<url of a game asset> ` +
                     `(max ${maxDownloads} at a time, ${maxDownloadBytes / (1024 * 1024)} MB each` +
                     `${allowPrivateDownloads ? ', private addresses allowed' : ''})`);
     } else {

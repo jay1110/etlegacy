@@ -2041,7 +2041,14 @@ typedef enum
 #define MAX_GLOBAL_SERVERS          4096
 #define MAX_OTHER_SERVERS           128 // local servers
 #define MAX_FAVOURITE_SERVERS       128
+#ifdef __EMSCRIPTEN__
+// A server-list refresh opens one WebSocket per ping in the browser build.
+// Eight parallel handshakes keep the relay responsive without exhausting the
+// browser's connection budget; native clients retain the original UDP batch.
+#define MAX_PINGREQUESTS            8
+#else
 #define MAX_PINGREQUESTS            16
+#endif
 #define MAX_SERVERSTATUSREQUESTS    16
 
 /**

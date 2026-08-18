@@ -4078,6 +4078,16 @@ void CL_GetPing(int n, char *buf, size_t buflen, int *pingtime)
 		// check for timeout
 		time = cls.realtime - cl_pinglist[n].start;
 
+#ifdef __EMSCRIPTEN__
+		// A browser has to establish a WebSocket and the relay has to create a
+		// UDP socket before a getinfo can travel. The desktop default (800 ms)
+		// is too short for that path and makes healthy servers disappear.
+		if (maxPing < 1500)
+		{
+			maxPing = 1500;
+		}
+#endif
+
 		if (maxPing < 100)
 		{
 			maxPing = 100;
@@ -4331,8 +4341,7 @@ qboolean CL_UpdateVisiblePings_f(int source)
 						}
 					}
 
-					// FIXME: Dead code, this part is NEVER REACHED !
-					// j is never >= MAX_PINGREQUESTS due to previous "for" condition j = 0 and j < MAX_PINGREQUESTS
+					// There is no matching ping already queued; use a free slot.
 					if (j >= MAX_PINGREQUESTS)
 					{
 						status = qtrue;

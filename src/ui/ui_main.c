@@ -9457,7 +9457,10 @@ static void UI_StartServerRefresh(qboolean full)
 		{
 			if (UI_Cvar_VariableString(va("sv_master%i", i + 1))[0] != '\0')
 			{
-				trap_Cmd_ExecuteText(EXEC_APPEND, va("globalservers %d %d empty full\n", i, (int)(trap_Cvar_VariableValue("protocol"))));
+				// globalservers 0 means "all masters" to the client command.
+				// Master cvars are numbered from one, so do not turn the first
+				// iteration into a duplicate all-master refresh.
+				trap_Cmd_ExecuteText(EXEC_APPEND, va("globalservers %d %d empty full\n", i + 1, (int)(trap_Cvar_VariableValue("protocol"))));
 			}
 		}
 	}

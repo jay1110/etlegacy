@@ -423,8 +423,8 @@ static void GLimp_InitCvars(void)
 	// user gesture and leaves a black canvas when the request is deferred
 	// or rejected. Fullscreen is the page's job (the shell's Fullscreen
 	// button). The reference Wwasm web port registers r_fullscreen "0"
-	// CVAR_ROM and runs at a fixed windowed resolution (r_mode -1 with
-	// r_customwidth 1366 x r_customheight 768) for the same reason.
+	// CVAR_ROM. Use the browser/desktop canvas resolution by default (r_mode
+	// -2); fullscreen itself is still owned by the page's Fullscreen button.
 	// CVAR_ROM force-resets any archived/user value back to "0".
 	r_fullscreen     = Cvar_Get("r_fullscreen", "0", CVAR_ROM);
 	r_noBorder       = Cvar_Get("r_noborder", "0", CVAR_ARCHIVE_ND | CVAR_LATCH);
@@ -432,7 +432,7 @@ static void GLimp_InitCvars(void)
 	r_customwidth    = Cvar_Get("r_customwidth", "1366", CVAR_ARCHIVE | CVAR_LATCH);
 	r_customheight   = Cvar_Get("r_customheight", "768", CVAR_ARCHIVE | CVAR_LATCH);
 	r_swapInterval   = Cvar_Get("r_swapInterval", "0", CVAR_ARCHIVE_ND | CVAR_LATCH);
-	r_mode           = Cvar_Get("r_mode", "-1", CVAR_ARCHIVE | CVAR_LATCH | CVAR_UNSAFE);
+	r_mode           = Cvar_Get("r_mode", "-2", CVAR_ARCHIVE | CVAR_LATCH | CVAR_UNSAFE);
 #else
 	r_fullscreen     = Cvar_Get("r_fullscreen", "1", CVAR_ARCHIVE | CVAR_LATCH);
 	r_noBorder       = Cvar_Get("r_noborder", "0", CVAR_ARCHIVE_ND | CVAR_LATCH);

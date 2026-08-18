@@ -120,6 +120,14 @@ Copy `pak0.pk3`, `pak1.pk3`, `pak2.pk3` from a retail Wolfenstein: Enemy
 Territory install into `etmain/`. **These are not included and may not be
 redistributed.**
 
+The project GitHub Pages deployment defaults to the ETc mirror
+`https://etclan.de/etl/etmain/` for these retail paks and to its `xmod/` and
+`jaymod/` folders when hosting those optional mods. Cross-origin asset requests
+are sent through the configured relay's `/download?url=...` endpoint, which
+adds the browser CORS response header. Deploy the matching updated relay when
+using that default. A self-contained deployment can instead serve its own
+assets next to the page, where no proxy or CORS policy is needed.
+
 Alternatively, you do not have to host the retail paks at all: the loading
 screen has a **"Load local game files (pak0-2.pk3)"** button that lets each
 player pick `pak0.pk3`, `pak1.pk3` and `pak2.pk3` from their own installation
@@ -379,6 +387,7 @@ or from the in-page **Connect…** panel (controls bar at the top edge):
 
 | Parameter | Purpose | Example |
 |-----------|---------|---------|
+| `mirror`  | Base URL of the retail/XMod/Jaymod asset mirror | `?mirror=https://etclan.de/etl/` |
 | `assets`  | Base URL for `pak0-2.pk3` | `?assets=https://example.com/etmain/` |
 | `legacy`  | Base URL for the mod pk3 | `?legacy=https://example.com/legacy/` |
 | `mod`     | Override which mod pk3(s) to fetch | `?mod=legacy_2.84.0.pk3` |
@@ -739,16 +748,19 @@ different list.
 
 A link may be an absolute `http(s)://` URL, protocol relative (`//host/path`) or
 relative to the page (`etmain/etl_supply_v14.pk3`); any other scheme is dropped.
-Only a link that ends up on **another origin** needs CORS
-(`Access-Control-Allow-Origin`) on the server that hosts the pk3 — and the
-scheme is part of the origin, so an `https://` link fetched from a page opened
-over `http://` would be a cross-origin request even on the very same web space.
-The page therefore rewrites a link that points at its own host to the scheme it
-was itself opened with (`resolveDownloadUrl` in `src/web/shell.html`), which
-keeps a deployment that is reachable over both `http://` and `https://` working
-either way; the same is done for `?assets=`, `?legacy=` and `?modbase=`. Links
-to a foreign host are only ever upgraded to `https://`, never downgraded, so an
-`https://` page never asks the browser for blocked mixed content.
+Foreign map PK3s are fetched through the configured relay's `/download` proxy,
+so their file host does not need CORS. The relay must be available over HTTPS
+when the page is HTTPS. Its server-side request preserves an explicitly given
+foreign `http://` URL, which lets the browser client use a game server's
+HTTP-only download mirror without mixed-content blocking. A foreign
+`?maplist=` JSON file is different: it is read directly and must still allow
+CORS. The page rewrites a link that points at its own host to the scheme it was
+itself opened with (`resolveDownloadUrl` in `src/web/shell.html`), which keeps a
+deployment that is reachable over both `http://` and `https://` working either
+way; the same is done for `?assets=`, `?legacy=` and `?modbase=`. Foreign links
+that are fetched directly are only ever upgraded to `https://`, never
+downgraded, so an `https://` page never asks the browser for blocked mixed
+content.
 
 ### Run the lobby server
 

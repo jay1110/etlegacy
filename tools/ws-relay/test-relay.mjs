@@ -22,6 +22,7 @@
 
 import { spawn } from 'node:child_process';
 import dgram from 'node:dgram';
+import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -122,6 +123,43 @@ function startFakeServer() {
 	});
 }
 
+/** A tiny game-asset mirror used to exercise the relay's HTTP proxy. */
+function startAssetServer() {
+	return new Promise((resolve, reject) => {
+		const assets = {
+			'/fixture.pk3': Buffer.from('test pk3 contents', 'utf8'),
+			'/module.wasm32.so': Buffer.from('test wasm side module', 'utf8'),
+			'/data.zip': Buffer.from('test bot data', 'utf8')
+		};
+		const server = http.createServer((req, res) => {
+			const body = assets[new URL(req.url, 'http://mirror').pathname];
+			if (!body) {
+				res.writeHead(404);
+				res.end();
+				return;
+			}
+			res.writeHead(200, {
+				'Content-Type': 'application/octet-stream',
+				'Content-Length': String(body.length)
+			});
+			if (req.method === 'HEAD') {
+				res.end();
+				return;
+			}
+			res.end(body);
+		});
+
+		server.on('error', reject);
+		// Bind the IPv6 wildcard so the first localhost address returned by DNS
+		// can be used, while the default dual-stack setting also accepts IPv4.
+		server.listen(0, '::', () => {
+			const address = server.address();
+			cleanups.push(() => server.close());
+			resolve({ port: address.port, assets });
+		});
+	});
+}
+
 /** Start relay.js and wait until it reports it is listening. */
 async function startRelay(extraArgs = []) {
 	const port = await freePort();
@@ -160,6 +198,23 @@ function connectOnce(port) {
 		const sock = net.connect(port, '127.0.0.1');
 		sock.once('connect', () => { sock.destroy(); resolve(); });
 		sock.once('error', (err) => { sock.destroy(); reject(err); });
+	});
+}
+
+/** Issue an HTTP request and retain its complete (small) response body. */
+function requestOnce(url, method = 'GET') {
+	return new Promise((resolve, reject) => {
+		const req = http.request(url, { method }, (res) => {
+			const chunks = [];
+			res.on('data', (chunk) => chunks.push(chunk));
+			res.on('end', () => resolve({
+				status: res.statusCode,
+				headers: res.headers,
+				body: Buffer.concat(chunks)
+			}));
+		});
+		req.on('error', reject);
+		req.end();
 	});
 }
 
@@ -359,6 +414,33 @@ async function testBindFailureIsFatal(occupiedPort) {
 	check(/EADDRINUSE/.test(output), 'the bind failure is reported');
 }
 
+/**
+ * The download proxy pins the DNS result it checked, including when modern
+ * Node requests the custom lookup callback in its `all: true` form.
+ */
+async function testDownloadProxy() {
+	const mirror = await startAssetServer();
+	const relay = await startRelay(['--allow-private-downloads']);
+	const relayBase = 'http://127.0.0.1:' + relay.port + '/download?url=';
+
+	for (const [path, expected] of Object.entries(mirror.assets)) {
+		const response = await deadline(requestOnce(relayBase + encodeURIComponent(
+			'http://localhost:' + mirror.port + path)), 'the download proxy to fetch ' + path);
+		check(response.status === 200, 'download proxy returns 200 for ' + path);
+		check(response.headers['access-control-allow-origin'] === '*',
+			'download proxy adds CORS for ' + path);
+		check(response.body.equals(expected), 'download proxy preserves the body for ' + path);
+	}
+
+	const head = await deadline(requestOnce(relayBase + encodeURIComponent(
+		'http://localhost:' + mirror.port + '/fixture.pk3'), 'HEAD'),
+		'the download proxy HEAD request');
+	check(head.status === 200 && head.body.length === 0,
+		'download proxy supports HEAD without returning a body');
+
+	relay.proc.kill('SIGTERM');
+}
+
 async function main() {
 	const server = await startFakeServer();
 	const relay = await startRelay();
@@ -418,6 +500,7 @@ async function main() {
 
 	await testBindFailureIsFatal(relay.port);
 	await testIdleTimeout(server);
+	await testDownloadProxy();
 
 	check(server.received.length > 0, 'the fake game server actually received UDP traffic');
 

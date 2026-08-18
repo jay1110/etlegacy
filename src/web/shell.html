@@ -4261,16 +4261,17 @@
         before the engine starts we:
           1. Download the etmain paks (pak0-2.pk3) into the in-browser
              filesystem (cached in IndexedDB so they are fetched once). By
-             default they are loaded same-origin (from an "etmain/" folder next
-             to this page) so no CORS configuration is required.
+             default they come from the configured ETc mirror through the
+             relay's CORS-enabled download endpoint.
           2. Download the ET: Legacy mod pk3 (game logic cgame/ui + ui menus)
              into the in-browser filesystem from a "legacy/" folder next to this
              page. The engine mounts it and extracts + loads cgame/ui from it.
           3. Optionally point the client at a WebSocket->UDP relay and auto-join
              a server, driven by URL query parameters:
-               ?assets=<base-url>   override where the paks are downloaded from.
-                                    A cross-origin URL requires the web space to
-                                    allow CORS downloads of the paks.
+               ?mirror=<base-url>   override the ETc asset mirror used for
+                                    retail paks and hosted-mod files.
+               ?assets=<base-url>   override where the retail paks are
+                                    downloaded from.
                ?legacy=<base-url>   override where the mod pk3 is downloaded from.
                ?mod=<a.pk3,b.pk3>   override which mod pk3(s) to download.
                ?relay=<ws-url>      WebSocket relay (see tools/ws-relay).
@@ -4298,11 +4299,23 @@
         (function () {
             var params = new URLSearchParams(window.location.search);
 
-            // Where to download the retail etmain data from. Defaults to an
-            // "etmain/" folder served next to this page, so the paks are fetched
-            // same-origin (no CORS needed), just like the mod side-modules
-            // below. Override with ?assets=<url>; a cross-origin URL requires
-            // the remote web space to allow CORS downloads of the paks.
+            // The public mirror contains the retail game paks and the optional
+            // hosted-mod files. GitHub Pages deliberately does not redistribute
+            // those large assets itself. The legacy pk3 remains next to this
+            // page: it is built together with this exact engine and cannot be
+            // substituted by an arbitrary mirror revision.
+            //
+            // ?mirror= changes this default mirror, while ?assets= remains a
+            // direct override for pak0-2 only.
+            var ETL_MIRROR_BASE = params.get('mirror') || 'https://etclan.de/etl/';
+            if (ETL_MIRROR_BASE.charAt(ETL_MIRROR_BASE.length - 1) !== '/') {
+                ETL_MIRROR_BASE += '/';
+            }
+
+            // Where to download the retail etmain data from. A remote .pk3 is
+            // passed through the configured relay download endpoint below, so
+            // this also works when the mirror does not expose CORS headers to
+            // GitHub Pages. Override with ?assets=<url>.
             var ASSET_BASE = params.get('assets');
             if (ASSET_BASE) {
                 // Normalise a user-supplied override to end in a single slash.
@@ -4310,7 +4323,7 @@
                     ASSET_BASE += '/';
                 }
             } else {
-                ASSET_BASE = 'etmain/';
+                ASSET_BASE = ETL_MIRROR_BASE + 'etmain/';
             }
 
             // Resolve a download link against this page and align its protocol
@@ -4323,8 +4336,10 @@
             // the web space also sends CORS headers. Following the page's
             // scheme for links that point at the very same web space keeps
             // those downloads same-origin either way. Links to a *foreign* host
-            // are only upgraded to https:// on an https:// page, where the
-            // browser would block plain http:// downloads as mixed content.
+            // are only upgraded to https:// on an https:// page when the
+            // browser fetches them directly. downloadFetchUrl() deliberately
+            // preserves an explicit foreign http:// URL for the relay, which
+            // fetches it server-side and is not subject to mixed content.
             function resolveDownloadUrl(url) {
                 var page = window.location;
                 var resolved;
@@ -4349,8 +4364,8 @@
                 return resolved.href;
             }
 
-            // True when ASSET_BASE resolves to a different origin than this page,
-            // in which case the remote server must send CORS headers.
+            // True when ASSET_BASE resolves to a different origin than this page.
+            // Such paks are normally requested through downloadFetchUrl().
             function assetsAreCrossOrigin() {
                 try {
                     return new URL(resolveDownloadUrl(ASSET_BASE), window.location.href).origin !==
@@ -4451,10 +4466,10 @@
                 }
             }
 
-            // Where to download the ET: Legacy mod data from. This is the mod's
-            // "legacy/" folder (analogous to etmain/ for the retail paks) served
-            // next to this page by default, so it is fetched same-origin (no CORS
-            // needed). Override with ?legacy=<url>.
+            // Where to download the ET: Legacy mod data from. Keep this build's
+            // "legacy/" folder next to the page: the pk3 contains side modules
+            // that must match the exact engine build. Override with ?legacy=<url>
+            // only when that folder was built for this same engine revision.
             var LEGACY_BASE = params.get('legacy');
             if (LEGACY_BASE) {
                 if (LEGACY_BASE.charAt(LEGACY_BASE.length - 1) !== '/') {
@@ -4517,12 +4532,12 @@
             // changes, so one descriptor per mod is enough to reuse the whole
             // download/preload machinery below for any of them.
             //
-            // Another mod's files are served in a folder named after its fs_game
-            // directory next to this page - e.g. "xmod/" holding xmod-2.0.3.pk3
-            // and the three *.mp.wasm32.so modules - which is also how a dedicated
-            // server lays them out.
+            // Another mod's files normally come from the public mirror, in a
+            // folder named after its fs_game directory - e.g. "xmod/" holding
+            // xmod-2.0.3.pk3 and the three *.mp.wasm32.so modules. A deployment
+            // can still supply an explicit base for a particular mod.
             function modAssets(fsGame, pk3s, base) {
-                var url = base || (fsGame + '/');
+                var url = base || (ETL_MIRROR_BASE + fsGame + '/');
                 if (url.charAt(url.length - 1) !== '/') { url += '/'; }
                 return {
                     fsGame: fsGame,
@@ -4607,6 +4622,52 @@
 
             function defaultRelayUrl() {
                 return defaultServiceUrl(DEFAULT_RELAY);
+            }
+
+            // Fetch a remote game asset through the relay's HTTP download
+            // endpoint. GitHub Pages cannot read an etclan.de response without
+            // CORS, while the relay already validates public URLs and returns
+            // the required CORS response headers. Same-origin files stay direct
+            // so a self-contained deployment has no proxy dependency.
+            function downloadFetchUrl(sourceUrl) {
+                var source;
+                var direct;
+                var relayUrl;
+                var relay;
+
+                try {
+                    // Preserve an explicit HTTP scheme for a foreign mirror:
+                    // the relay can load it server-side even though an HTTPS
+                    // page could not fetch it directly. Still use the resolved
+                    // URL for same-origin files so a dual HTTP/HTTPS site stays
+                    // same-origin instead of needlessly going through a relay.
+                    direct = new URL(resolveDownloadUrl(sourceUrl), window.location.href);
+                    if (direct.origin === window.location.origin) {
+                        return direct.href;
+                    }
+                    source = new URL(sourceUrl, window.location.href);
+                    if (source.protocol !== 'http:' && source.protocol !== 'https:') {
+                        return direct.href;
+                    }
+
+                    relayUrl = params.get('relay') || defaultRelayUrl();
+                    relay = new URL(relayUrl, window.location.href);
+                    if (relay.protocol === 'wss:') {
+                        relay.protocol = 'https:';
+                    } else if (relay.protocol === 'ws:') {
+                        relay.protocol = 'http:';
+                    }
+                    if (relay.protocol !== 'http:' && relay.protocol !== 'https:') {
+                        return source.href;
+                    }
+                    relay.hash = '';
+                    relay.search = '';
+                    relay.pathname = relay.pathname.replace(/\/+$/, '') + '/download';
+                    relay.searchParams.set('url', source.href);
+                    return relay.href;
+                } catch (e) {
+                    return resolveDownloadUrl(sourceUrl);
+                }
             }
 
             function defaultLobbyUrl() {
@@ -4817,9 +4878,8 @@
                     }, function (err) {
                         throw new Error('The map "' + map + '" could not be ' +
                             'downloaded from ' + url + ': ' +
-                            (err && err.message || err) + '. The server that ' +
-                            'hosts the pk3 must allow cross-origin (CORS) ' +
-                            'downloads.');
+                            (err && err.message || err) + '. Check that the ' +
+                            'relay download proxy is online and permits the pk3.');
                     });
                 });
             }
@@ -4853,7 +4913,7 @@
                     return Promise.resolve();
                 }
 
-                return fetch(resolveDownloadUrl(sourceUrl), fetchOpts).then(function (response) {
+                return fetch(downloadFetchUrl(sourceUrl), fetchOpts).then(function (response) {
                     if (!response.ok) {
                         throw new Error('Failed to download ' + label + ': HTTP ' + response.status);
                     }
@@ -5226,7 +5286,7 @@
             // browser-cached copy from a previous deployment is not silently
             // reused.
             function fetchStandaloneSideModule(name, assets) {
-                return fetch(resolveDownloadUrl(assets.base + name), { cache: 'no-cache' }).then(function (response) {
+                return fetch(downloadFetchUrl(assets.base + name), { cache: 'no-cache' }).then(function (response) {
                     if (!response.ok) {
                         throw new Error('HTTP ' + response.status + ' for ' +
                             assets.base + name);
@@ -5624,7 +5684,7 @@
                     // dlopen()s it (Omnibot_LoadLibrary), and on Emscripten that
                     // can only ever succeed for a module already compiled into
                     // the preloadedWasm cache under exactly this path.
-                    return fetch(resolveDownloadUrl(moduleUrl), { cache: 'no-cache' });
+                    return fetch(downloadFetchUrl(moduleUrl), { cache: 'no-cache' });
                 }).then(function (response) {
                     if (!response.ok) {
                         throw new Error('HTTP ' + response.status + ' for ' + moduleUrl);
@@ -6111,9 +6171,11 @@
             var HOST_MODS = {
                 legacy:    { name: 'Legacy Mod', fsGame: 'legacy',    available: true },
                 xmod:      { name: 'XMod',       fsGame: 'xmod',      available: true,
-                             pk3s: ['xmod-2.0.3.pk3'] },
+                             pk3s: ['xmod-2.0.3.pk3'],
+                             base: ETL_MIRROR_BASE + 'xmod/' },
                 jaymod:    { name: 'Jaymod',     fsGame: 'jaymod',    available: true,
-                             pk3s: ['jaymod-2.2.1.pk3'] },
+                             pk3s: ['jaymod-2.2.1.pk3'],
+                             base: ETL_MIRROR_BASE + 'jaymod/' },
                 etbloat:   { name: 'ETBloat',    fsGame: 'etbloat',   available: false },
                 noquarter: { name: 'No Quarter', fsGame: 'nq',        available: false },
                 etpub:     { name: 'ETPub',      fsGame: 'etpub',     available: false },
@@ -6322,7 +6384,10 @@
                 ['g_saveCampaignStats', 'b', '1', 'xp'],
                 ['g_intermissionTime', 'i', '60', 'match'],
                 ['g_intermissionReadyPercent', 'i', '100', 'match'],
-                ['g_spectator', 'b', '0', 'chat'],
+                // XMod/Jaymod use this as a bitmask (1 + 2 + 4), not a
+                // boolean. In particular, the browser-hosted XMod preset uses
+                // 7 to enable all three spectator behaviours.
+                ['g_spectator', 'i', '0', 'chat'],
                 ['g_spawnInvul', 'i', '3', 'lives'],
                 ['g_shoveNoZ', 'b', '0', 'support'],
                 ['g_slashKill', 'b', '0', 'chat'],
@@ -6851,7 +6916,7 @@
                     pk3s ? pk3s.split(',').map(function (s) { return s.trim(); })
                                 .filter(function (s) { return s.length; })
                          : (mod.pk3s || []),
-                    params.get('modbase') || null);
+                    params.get('modbase') || mod.base || null);
             }
 
             // Resolves once the mod's game logic is in place; rejects with a
@@ -6971,6 +7036,18 @@
                 ];
             }
 
+            // Browser-hosted XMod has no usable JXAC transport, so enabling its
+            // anti-cheat would reject every browser client. Keep its spectator
+            // bitmask fully enabled as well. These are deliberately appended
+            // after both the site preset and the editable cvars below.
+            function forcedModHostCommands(modKey) {
+                if (modKey !== 'xmod') { return []; }
+                return [
+                    configLine('jxac_enable', '0'),
+                    configLine('g_spectator', '7')
+                ];
+            }
+
             // Write the panel's settings into the mod's folder. Returns true
             // when there is something to exec.
             function writeHostCvarConfig(assets, lines) {
@@ -7021,6 +7098,10 @@
                 if (mod && mod.available && settings.mod !== DEFAULT_MOD) {
                     args.push('+set', 'fs_game', mod.fsGame);
                 }
+                if (settings.mod === 'xmod') {
+                    args.push('+set', 'jxac_enable', '0');
+                    args.push('+set', 'g_spectator', '7');
+                }
                 args.push('+set', 'g_teamForceBalance', settings.balancedTeams ? '1' : '0');
                 args.push('+set', 'g_doWarmup', settings.doWarmup === false ? '0' : '1');
                 args.push('+set', 'g_friendlyFire', settings.friendlyFire === false ? '0' : '1');
@@ -7063,7 +7144,8 @@
                 }).then(function (hasPreset) {
                     var mine = writeHostCvarConfig(assets,
                         hostSetupCommands(settings, botsReady)
-                            .concat(cvarCommands(settings.mod, settings.cvars)));
+                            .concat(cvarCommands(settings.mod, settings.cvars))
+                            .concat(forcedModHostCommands(settings.mod)));
                     // The preset is the baseline a deployment sets up, so it
                     // comes first; the settings picked in the panel are execed
                     // after it and win over it.
@@ -8138,6 +8220,12 @@
                     cvars: readModCvars(byId('game-cvars'), settings.mod || DEFAULT_MOD)
                 };
                 next.bots = Math.min(next.bots, next.maxPlayers - 1);
+                if (next.mod === 'xmod') {
+                    // JXAC cannot operate through the browser relay and XMod's
+                    // spectator cvar is a three-bit mask. Do not let a stale
+                    // saved panel value undo the browser-hosted XMod defaults.
+                    next.cvars.g_spectator = '7';
+                }
                 next.rotationIndex = rotationIndexFor(next.rotation, next.map,
                     settings.rotationIndex);
 
@@ -8171,6 +8259,10 @@
                 cvarUpdate.commands.forEach(function (command) {
                     etlSendCommand(command);
                 });
+                if (next.mod === 'xmod') {
+                    etlSendCommand('set jxac_enable "0"');
+                    etlSendCommand('set g_spectator "7"');
+                }
                 if (next.bots !== settings.bots) {
                     // Omni-bot's server manager keeps the bot count between
                     // these two bounds and adds/kicks bots accordingly.
@@ -9209,9 +9301,9 @@
                         msg = 'Could not load game data from ' + ASSET_BASE +
                             '.\n' + err.message;
                         if (assetsAreCrossOrigin()) {
-                            msg += '\n\nThe web space must allow cross-origin ' +
-                                '(CORS) downloads of the paks, or host ' +
-                                'pak0-2.pk3 next to this page.';
+                            msg += '\n\nThis mirror is fetched through the ' +
+                                'configured relay download proxy. Check that ' +
+                                'the relay is online and permits the file.';
                         } else {
                             msg += '\n\nMake sure pak0.pk3, pak1.pk3 and ' +
                                 'pak2.pk3 are present in the "' +

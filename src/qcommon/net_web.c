@@ -69,7 +69,7 @@
 // sequenced connections are reaped (see wsConnection_t::sequenced), so a game
 // connection is never dropped, not even while a long map load keeps the engine
 // from sending anything for a while.
-#define WS_IDLE_TIMEOUT 30000
+#define WS_IDLE_TIMEOUT 5000
 
 // Packet buffer for received data
 #define WS_RECV_BUFFER_SIZE (MAX_MSGLEN * 4)
@@ -450,7 +450,10 @@ static EM_BOOL WS_OnMessage(int eventType, const EmscriptenWebSocketMessageEvent
 {
 	wsConnection_t *conn = (wsConnection_t *)userData;
 
-	if (!conn || !conn->active)
+	// Slots are recycled after a server-browser refresh. An event from the old
+	// socket must never be allowed to enqueue a packet for the new address that
+	// now occupies this slot.
+	if (!conn || !conn->active || !wsEvent || wsEvent->socket != conn->socket)
 	{
 		return EM_FALSE;
 	}
@@ -471,11 +474,11 @@ static EM_BOOL WS_OnOpen(int eventType, const EmscriptenWebSocketOpenEvent *wsEv
 {
 	wsConnection_t *conn = (wsConnection_t *)userData;
 
-	if (conn)
+	if (conn && conn->active && wsEvent && wsEvent->socket == conn->socket)
 	{
 		int i;
 
-		Com_Printf("WebSocket connected to %s\n", conn->url);
+		Com_DPrintf("WebSocket connected to %s\n", conn->url);
 		conn->open = qtrue;
 
 		// Flush packets queued while the socket was still connecting
@@ -496,9 +499,9 @@ static EM_BOOL WS_OnError(int eventType, const EmscriptenWebSocketErrorEvent *ws
 {
 	wsConnection_t *conn = (wsConnection_t *)userData;
 
-	if (conn)
+	if (conn && conn->active && wsEvent && wsEvent->socket == conn->socket)
 	{
-		Com_Printf("WebSocket error on connection to %s\n", conn->url);
+		Com_DPrintf("WebSocket error on connection to %s\n", conn->url);
 	}
 
 	return EM_TRUE;
@@ -511,18 +514,20 @@ static EM_BOOL WS_OnClose(int eventType, const EmscriptenWebSocketCloseEvent *ws
 {
 	wsConnection_t *conn = (wsConnection_t *)userData;
 
-	if (conn)
+	if (conn && conn->active && wsEvent && wsEvent->socket == conn->socket)
 	{
-		Com_Printf("WebSocket closed: %s (code: %d)\n", conn->url, wsEvent->code);
+		EMSCRIPTEN_WEBSOCKET_T socket = conn->socket;
+
+		Com_DPrintf("WebSocket closed: %s (code: %d)\n", conn->url, wsEvent->code);
 		conn->active       = qfalse;
 		conn->open         = qfalse;
 		conn->pendingCount = 0;
+		conn->socket       = 0;
 		// Release the browser-side socket object as well; without this the
 		// handle (and its buffers) leaked for every closed connection.
-		if (conn->socket > 0)
+		if (socket > 0)
 		{
-			emscripten_websocket_delete(conn->socket);
-			conn->socket = 0;
+			emscripten_websocket_delete(socket);
 		}
 	}
 
@@ -668,6 +673,7 @@ static wsConnection_t *WS_GetConnection(const netadr_t *to)
 		                       net_wsRelayServer->string : WS_DEFAULT_RELAY_URL;
 		const char *hostname = WS_HostnameForAdr(to);
 		char       target[MAX_QPATH];
+		unsigned short port = (unsigned short)BigShort(to->port);
 
 		if (hostname)
 		{
@@ -679,7 +685,7 @@ static wsConnection_t *WS_GetConnection(const netadr_t *to)
 			            to->ip[0], to->ip[1], to->ip[2], to->ip[3]);
 		}
 
-		Com_sprintf(url, sizeof(url), "%s/%s:%d", relay, target, BigShort(to->port));
+		Com_sprintf(url, sizeof(url), "%s/%s:%u", relay, target, (unsigned int)port);
 	}
 
 	// Create WebSocket
@@ -713,7 +719,9 @@ static wsConnection_t *WS_GetConnection(const netadr_t *to)
 	emscripten_websocket_set_onclose_callback(ws, &wsConnections[i], WS_OnClose);
 	emscripten_websocket_set_onmessage_callback(ws, &wsConnections[i], WS_OnMessage);
 
-	Com_Printf("WS_GetConnection: connecting to %s\n", url);
+	// A server-list refresh legitimately creates a connection per probe; keep
+	// that operational detail out of the normal in-game console.
+	Com_DPrintf("WS_GetConnection: connecting to %s\n", url);
 
 	return &wsConnections[i];
 }
