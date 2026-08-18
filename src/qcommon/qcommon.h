@@ -959,6 +959,7 @@ const char *FS_ReferencedPakPureChecksums(void);
 // back from clients for pure validation
 
 #ifdef __EMSCRIPTEN__
+qboolean FS_ForceReferencedPakForFile(int flag, const char *fileName);
 void FS_ForceReferencedModPak(int flags);
 #endif
 

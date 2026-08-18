@@ -1026,6 +1026,124 @@ static void CL_Rcon_f(void)
 	NET_SendPacket(NS_CLIENT, strlen(message) + 1, message, &rcon_address);
 }
 
+#ifdef __EMSCRIPTEN__
+typedef struct
+{
+	const char *platform;
+	const char *moduleFormat;
+} serverModulePlatform_t;
+
+/**
+ * @brief Check for a complete platform token in a server version string.
+ */
+static qboolean CL_ServerVersionHasPlatform(const char *serverVersion, const char *platform)
+{
+	const char *match = serverVersion;
+	size_t     platformLength = strlen(platform);
+
+	if (!serverVersion || !*serverVersion)
+	{
+		return qfalse;
+	}
+
+	while ((match = Q_stristr(match, platform)) != NULL)
+	{
+		if ((match == serverVersion || match[-1] <= ' ' || match[-1] == '(') &&
+		    (match[platformLength] == '\0' || match[platformLength] <= ' ' || match[platformLength] == ')'))
+		{
+			return qtrue;
+		}
+
+		match++;
+	}
+
+	return qfalse;
+}
+
+/**
+ * @brief Build the native cgame/UI filename used by the dedicated server.
+ */
+static qboolean CL_BuildServerModuleNameForVersion(const char *moduleName, const char *serverVersion,
+                                                    char *fileName, int fileNameSize)
+{
+	static const serverModulePlatform_t platforms[] =
+	{
+		{ "win-x64",              "%s_mp_x64.dll" },
+		{ "win-x86",              "%s_mp_x86.dll" },
+		{ "MacOS",                "%s_mac" },
+		{ "OSX-universal",         "%s_mac" },
+		{ "linux-x86_64",         "%s.mp.x86_64.so" },
+		{ "linux-i386",           "%s.mp.i386.so" },
+		{ "linux-loongarch64",    "%s.mp.loongarch64.so" },
+		{ "linux-ppc64le",        "%s.mp.ppc64le.so" },
+		{ "linux-ppc64",          "%s.mp.ppc64.so" },
+		{ "linux-ppc",            "%s.mp.ppc.so" },
+		{ "linux-s390x",          "%s.mp.s390x.so" },
+		{ "linux-s390",           "%s.mp.s390.so" },
+		{ "linux-ia64",           "%s.mp.ia64.so" },
+		{ "linux-alpha",          "%s.mp.alpha.so" },
+		{ "linux-sparc",          "%s.mp.sparc.so" },
+		{ "linux-aarch64",        "%s.mp.aarch64.so" },
+		{ "linux-arm",            "%s.mp.arm.so" },
+		{ "linux-cris",           "%s.mp.cris.so" },
+		{ "linux-hppa",           "%s.mp.hppa.so" },
+		{ "linux-mips",           "%s.mp.mips.so" },
+		{ "linux-sh",             "%s.mp.sh.so" },
+		{ "openbsd-x86_64",       "%s.mp.obsd.x86_64.so" },
+		{ "openbsd-aarch64",      "%s.mp.obsd.aarch64.so" },
+		{ "openbsd-i386",         "%s.mp.obsd.i386.so" },
+		{ "openbsd-alpha",        "%s.mp.obsd.alpha.so" },
+		{ "freebsd-x86_64",       "%s.mp.fbsd.x86_64.so" },
+		{ "freebsd-aarch64",      "%s.mp.fbsd.aarch64.so" },
+		{ "freebsd-i386",         "%s.mp.fbsd.i386.so" },
+		{ "freebsd-alpha",        "%s.mp.fbsd.alpha.so" },
+		{ "netbsd-x86_64",        "%s.mp.nbsd.x86_64.so" },
+		{ "netbsd-aarch64",       "%s.mp.nbsd.aarch64.so" },
+		{ "netbsd-i386",          "%s.mp.nbsd.i386.so" },
+		{ "netbsd-alpha",         "%s.mp.nbsd.alpha.so" },
+		{ "kfreebsd-x86_64",      "%s.mp.x86_64.so" },
+		{ "kfreebsd-i386",        "%s.mp.i386.so" },
+		{ "solaris-i386",         "%s.mp.i386.so" },
+		{ "solaris-sparc",        "%s.mp.sparc.so" },
+		{ "irix-mips",            "%s.mp.mips.so" },
+		{ "android-armeabi-v7a",  "lib%s.mp.android.armeabi-v7a.so" },
+		{ "android-arm64-v8a",    "lib%s.mp.android.arm64-v8a.so" },
+		{ "q3vm-bytecode",        "%s.mp.bytecode.qvm" },
+		{ "wasm32",               "%s.mp.wasm32.so" }
+	};
+	int i;
+
+	for (i = 0; i < ARRAY_LEN(platforms); i++)
+	{
+		if (CL_ServerVersionHasPlatform(serverVersion, platforms[i].platform))
+		{
+			Com_sprintf(fileName, fileNameSize, platforms[i].moduleFormat, moduleName);
+			return qtrue;
+		}
+	}
+
+	return qfalse;
+}
+
+/**
+ * @brief Resolve the server platform from the challenge or live server info.
+ */
+static qboolean CL_BuildServerModuleName(const char *moduleName, char *fileName, int fileNameSize)
+{
+	const char *serverInfo;
+	char       serverVersion[MAX_STRING_CHARS];
+
+	if (CL_BuildServerModuleNameForVersion(moduleName, clc.agent.string, fileName, fileNameSize))
+	{
+		return qtrue;
+	}
+
+	serverInfo = cl.gameState.stringData + cl.gameState.stringOffsets[CS_SERVERINFO];
+	Q_strncpyz(serverVersion, Info_ValueForKey(serverInfo, "version"), sizeof(serverVersion));
+	return CL_BuildServerModuleNameForVersion(moduleName, serverVersion, fileName, fileNameSize);
+}
+#endif
+
 /**
  * @brief CL_SendPureChecksums
  */
@@ -1033,9 +1151,32 @@ void CL_SendPureChecksums(void)
 {
 	const char *pChecksums;
 	char       cMsg[MAX_INFO_VALUE];
+#ifdef __EMSCRIPTEN__
+	char       cgameName[MAX_QPATH];
+	char       uiName[MAX_QPATH];
+	int        fallbackFlags = 0;
+
+	if (!CL_BuildServerModuleName("cgame", cgameName, sizeof(cgameName)) ||
+	    !FS_ForceReferencedPakForFile(FS_CGAME_REF, cgameName))
+	{
+		fallbackFlags |= FS_CGAME_REF;
+	}
+
+	if (!CL_BuildServerModuleName("ui", uiName, sizeof(uiName)) ||
+	    !FS_ForceReferencedPakForFile(FS_UI_REF, uiName))
+	{
+		fallbackFlags |= FS_UI_REF;
+	}
+
+	if (fallbackFlags)
+	{
+		FS_ForceReferencedModPak(fallbackFlags);
+	}
+#endif
 
 	// if we are pure we need to send back a command with our referenced pk3 checksums
 	pChecksums = FS_ReferencedPakPureChecksums();
+	Com_Printf("Pure: sending checksums: %s\n", pChecksums);
 
 	Com_sprintf(cMsg, sizeof(cMsg), "cp %d %s", cl.serverId, pChecksums);
 
@@ -1145,9 +1286,6 @@ void CL_Vid_Restart_f(void)
 		cls.cgameStarted = qtrue;
 		CL_InitCGame();
 		// send pure checksums
-	#ifdef __EMSCRIPTEN__
-		FS_ForceReferencedModPak(FS_CGAME_REF | FS_UI_REF);
-	#endif
 		CL_SendPureChecksums();
 	}
 }
@@ -1549,9 +1687,6 @@ void CL_DownloadsComplete(void)
 	CL_InitCGame();
 
 	// set pure checksums
-#ifdef __EMSCRIPTEN__
-	FS_ForceReferencedModPak(FS_CGAME_REF | FS_UI_REF);
-#endif
 	CL_SendPureChecksums();
 
 	CL_WritePacket();

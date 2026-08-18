@@ -4816,8 +4816,13 @@ const char *FS_ReferencedPakPureChecksums(void)
 {
 	static char  info[BIG_INFO_STRING];
 	searchpath_t *search;
+	int          emittedChecksums[MAX_STRING_TOKENS];
 	int          nFlags, numPaks = 0, checksum = fs_checksumFeed;
+	int          duplicatePaks = 0;
+	int          omittedPaks = 0;
+	int          i;
 	size_t       len;
+	const size_t maxInfoLength = MAX_STRING_CHARS - 32;
 
 	info[0] = 0;
 
@@ -4826,22 +4831,51 @@ const char *FS_ReferencedPakPureChecksums(void)
 		if (nFlags & FS_GENERAL_REF)
 		{
 			// add a delimter between must haves and general refs
-			//Q_strcat(info, sizeof(info), "@ ");
-			info[strlen(info) + 1] = '\0';
-			info[strlen(info) + 2] = '\0';
-			info[strlen(info)]     = '@';
-			info[strlen(info)]     = ' ';
+			Q_strcat(info, sizeof(info), "@ ");
 		}
 		for (search = fs_searchpaths ; search ; search = search->next)
 		{
 			// is the element a pak file and has it been referenced based on flag?
 			if (search->pack && (search->pack->referenced & nFlags))
 			{
-				Q_strcat(info, sizeof(info), va("%i ", search->pack->pure_checksum));
+				char pakChecksum[16];
+
+				Com_sprintf(pakChecksum, sizeof(pakChecksum), "%i ", search->pack->pure_checksum);
+
+				if (nFlags & FS_GENERAL_REF)
+				{
+					for (i = 0; i < numPaks; i++)
+					{
+						if (emittedChecksums[i] == search->pack->pure_checksum)
+						{
+							break;
+						}
+					}
+
+					if (i < numPaks)
+					{
+						duplicatePaks++;
+						continue;
+					}
+
+					// Client reliable commands are limited to MAX_STRING_CHARS and
+					// command parsing is limited to MAX_STRING_TOKENS. Keep room for
+					// the final checksum and "cp <id>" framing. The server accepts a
+					// subset of approved general paks.
+					if (numPaks >= MAX_STRING_TOKENS - 6 ||
+					    strlen(info) + strlen(pakChecksum) + sizeof(pakChecksum) >= maxInfoLength)
+					{
+						omittedPaks++;
+						continue;
+					}
+				}
+
+				Q_strcat(info, sizeof(info), pakChecksum);
 				if (nFlags & (FS_CGAME_REF | FS_UI_REF))
 				{
 					break;
 				}
+				emittedChecksums[numPaks] = search->pack->pure_checksum;
 				checksum ^= search->pack->pure_checksum;
 				numPaks++;
 			}
@@ -4858,12 +4892,231 @@ const char *FS_ReferencedPakPureChecksums(void)
 		info[len - 1] = 0;
 	}
 
+	if (duplicatePaks)
+	{
+		Com_DPrintf("Pure: omitted %i duplicate general pak checksum(s)\n", duplicatePaks);
+	}
+	if (omittedPaks)
+	{
+		Com_Printf(S_COLOR_YELLOW "Pure: omitted %i general pak checksum(s) to fit the protocol command limits\n",
+		           omittedPaks);
+	}
+
 	return info;
 }
 
 #ifdef __EMSCRIPTEN__
 /**
- * @brief Mark the active mod pak as the source of cgame and UI for pure servers.
+ * @brief Test whether a pak contains an exact file.
+ */
+static qboolean FS_PakContainsFile(pack_t *pak, const char *fileName)
+{
+	fileInPack_t *pakFile;
+	int          i;
+
+	pakFile = pak->buildBuffer;
+	for (i = 0; i < pak->numfiles; i++, pakFile++)
+	{
+		if (!FS_FilenameCompare(pakFile->name, fileName))
+		{
+			return qtrue;
+		}
+	}
+
+	return qfalse;
+}
+
+/**
+ * @brief Test whether a pak contains a native or WebAssembly build of a VM.
+ *
+ * Older mod packages predate the WebAssembly port and therefore cannot contain
+ * the wasm32 filename requested by this client. The pure protocol nevertheless
+ * expects every platform's cgame/UI to come from the same package, so native
+ * builds can be used as a compatibility fallback. The caller rejects this
+ * fallback when more than one approved package is a candidate.
+ */
+static qboolean FS_PakContainsGameModule(pack_t *pak, const char *moduleName)
+{
+	fileInPack_t *pakFile;
+	size_t       moduleNameLen = strlen(moduleName);
+	int          i;
+
+	pakFile = pak->buildBuffer;
+	for (i = 0; i < pak->numfiles; i++, pakFile++)
+	{
+		const char *fileName = pakFile->name;
+		const char *suffix;
+
+		// VM binaries live at the package root. Do not mistake ui/*.menu or
+		// similarly named assets in add-on packages for the UI module.
+		if (strchr(pakFile->name, '/') || strchr(pakFile->name, '\\'))
+		{
+			continue;
+		}
+
+		// Android follows the shared-library convention and prefixes the
+		// module filename with "lib".
+		if (!Q_stricmpn(fileName, "lib", 3))
+		{
+			fileName += 3;
+		}
+
+		if (Q_stricmpn(fileName, moduleName, moduleNameLen))
+		{
+			continue;
+		}
+
+		suffix = fileName + moduleNameLen;
+		if (!Q_stricmp(suffix, "_mac") ||
+		    (!Q_stricmpn(suffix, "_mp_", 4) && COM_CompareExtension(fileName, ".dll")) ||
+		    (!Q_stricmpn(suffix, ".mp.", 4) &&
+		     (COM_CompareExtension(fileName, ".so") || COM_CompareExtension(fileName, ".qvm"))))
+		{
+			return qtrue;
+		}
+	}
+
+	return qfalse;
+}
+
+/**
+ * @brief Mark the first server-priority pak that contains an exact file.
+ *
+ * The server publishes normal pak checksums in its own search order. Walking
+ * that list first mirrors the FS_FileIsInPAK() lookup used by SV_VerifyPaks_f,
+ * even when the local copy lives in a container such as legacy/dlcache.
+ */
+qboolean FS_ForceReferencedPakForFile(int flag, const char *fileName)
+{
+	searchpath_t *search;
+	searchpath_t *selected = NULL;
+	int          i;
+
+	if (!fileName || !*fileName)
+	{
+		return qfalse;
+	}
+
+	// There is no authoritative package order to mirror on a non-pure
+	// server. Let the normal module reference or compatibility fallback win.
+	if (!fs_numServerPaks)
+	{
+		return qfalse;
+	}
+
+	for (i = 0; i < fs_numServerPaks && !selected; i++)
+	{
+		for (search = fs_searchpaths; search; search = search->next)
+		{
+			if (!search->pack || search->pack->checksum != fs_serverPaks[i])
+			{
+				continue;
+			}
+
+			if (FS_PakContainsFile(search->pack, fileName))
+			{
+				selected = search;
+				break;
+			}
+		}
+	}
+
+	if (!selected)
+	{
+		Com_Printf(S_COLOR_YELLOW "Pure: no server-approved pak contains %s\n", fileName);
+		return qfalse;
+	}
+
+	FS_ClearPakReferences(flag);
+	selected->pack->referenced |= flag;
+	Com_Printf("Pure: using %s/%s.pk3 for %s (checksum %i, pure %i)\n",
+	           selected->pack->pakGamename, selected->pack->pakBasename, fileName,
+	           selected->pack->checksum, selected->pack->pure_checksum);
+	return qtrue;
+}
+
+/**
+ * @brief Mark the server-approved mod pak that actually contains a VM module.
+ */
+static qboolean FS_ForceReferencedModModule(int flag, const char *moduleName)
+{
+	searchpath_t *search;
+	searchpath_t *selected = NULL;
+	qboolean     ambiguous = qfalse;
+	int          i;
+
+	if (fs_numServerPaks)
+	{
+		// Match the server's search order exactly. FS_PakIsPure() only tests
+		// membership and cannot distinguish which of several approved packages
+		// wins when they contain the same module.
+		for (i = 0; i < fs_numServerPaks; i++)
+		{
+			for (search = fs_searchpaths; search; search = search->next)
+			{
+				if (!search->pack || search->pack->checksum != fs_serverPaks[i])
+				{
+					continue;
+				}
+
+				if (FS_PakContainsGameModule(search->pack, moduleName))
+				{
+					if (!selected)
+					{
+						selected = search;
+					}
+					else if (selected->pack->checksum != search->pack->checksum)
+					{
+						ambiguous = qtrue;
+					}
+					break;
+				}
+			}
+		}
+	}
+	else
+	{
+		for (search = fs_searchpaths; search; search = search->next)
+		{
+			if (!search->pack || Q_stricmp(search->pack->pakGamename, fs_gamedirvar->string))
+			{
+				continue;
+			}
+
+			if (FS_PakContainsGameModule(search->pack, moduleName))
+			{
+				selected = search;
+				break;
+			}
+		}
+	}
+
+	if (ambiguous)
+	{
+		Com_Printf(S_COLOR_YELLOW "Pure: multiple server-approved paks contain a %s module; preserving the loader reference\n",
+		           moduleName);
+		return qfalse;
+	}
+
+	if (selected)
+	{
+		// Replace a stale or guessed reference only after a suitable package
+		// has been found. This preserves the normal loader's reference for mods
+		// whose VM package cannot be identified by the compatibility scan.
+		FS_ClearPakReferences(flag);
+		selected->pack->referenced |= flag;
+		Com_Printf("Pure: using %s/%s.pk3 for %s (checksum %i, pure %i)\n",
+		           selected->pack->pakGamename, selected->pack->pakBasename, moduleName,
+		           selected->pack->checksum, selected->pack->pure_checksum);
+		return qtrue;
+	}
+
+	Com_Printf(S_COLOR_YELLOW "Pure: no server-approved pak contains a %s module\n", moduleName);
+	return qfalse;
+}
+
+/**
+ * @brief Mark an unambiguous mod pak as the cgame/UI compatibility fallback.
  *
  * Web builds preload their cgame and UI WASM modules. As a result, the normal
  * file-open path does not mark their pak with FS_CGAME_REF or FS_UI_REF.
@@ -4871,36 +5124,22 @@ const char *FS_ReferencedPakPureChecksums(void)
  */
 void FS_ForceReferencedModPak(int flags)
 {
-	searchpath_t *search;
-	searchpath_t *fallback = NULL;
+	int vmFlags = flags & (FS_CGAME_REF | FS_UI_REF);
 
-	for (search = fs_searchpaths; search; search = search->next)
+	if (!vmFlags)
 	{
-		if (search->pack && !Q_stricmp(search->pack->pakGamename, fs_gamedirvar->string))
-		{
-			if (!fallback)
-			{
-				fallback = search;
-			}
-
-			// Prefer the mod pak approved by the connected pure server. This is
-			// essential when an older version of the same mod is still installed.
-			if (fs_numServerPaks && FS_PakIsPure(search->pack))
-			{
-				search->pack->referenced |= flags;
-				return;
-			}
-		}
-	}
-
-	// Non-pure servers have no checksum list to disambiguate the packages.
-	if (!fs_numServerPaks && fallback)
-	{
-		fallback->pack->referenced |= flags;
 		return;
 	}
 
-	Com_DPrintf("FS_ForceReferencedModPak: no server-approved pak found for game directory '%s'\n", fs_gamedirvar->string);
+	if (flags & FS_CGAME_REF)
+	{
+		FS_ForceReferencedModModule(FS_CGAME_REF, "cgame");
+	}
+
+	if (flags & FS_UI_REF)
+	{
+		FS_ForceReferencedModModule(FS_UI_REF, "ui");
+	}
 }
 #endif
 
