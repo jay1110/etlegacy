@@ -4872,17 +4872,35 @@ const char *FS_ReferencedPakPureChecksums(void)
 void FS_ForceReferencedModPak(int flags)
 {
 	searchpath_t *search;
+	searchpath_t *fallback = NULL;
 
 	for (search = fs_searchpaths; search; search = search->next)
 	{
 		if (search->pack && !Q_stricmp(search->pack->pakGamename, fs_gamedirvar->string))
 		{
-			search->pack->referenced |= flags;
-			return;
+			if (!fallback)
+			{
+				fallback = search;
+			}
+
+			// Prefer the mod pak approved by the connected pure server. This is
+			// essential when an older version of the same mod is still installed.
+			if (fs_numServerPaks && FS_PakIsPure(search->pack))
+			{
+				search->pack->referenced |= flags;
+				return;
+			}
 		}
 	}
 
-	Com_DPrintf("FS_ForceReferencedModPak: no pak found for game directory '%s'\n", fs_gamedirvar->string);
+	// Non-pure servers have no checksum list to disambiguate the packages.
+	if (!fs_numServerPaks && fallback)
+	{
+		fallback->pack->referenced |= flags;
+		return;
+	}
+
+	Com_DPrintf("FS_ForceReferencedModPak: no server-approved pak found for game directory '%s'\n", fs_gamedirvar->string);
 }
 #endif
 

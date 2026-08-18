@@ -711,7 +711,7 @@ void S_Base_StartSoundEx(vec3_t origin, int entnum, int entchannel, sfxHandle_t 
 
 		for (i = 0 ; i < MAX_CHANNELS ; i++, ch++)
 		{
-			if (ch->entnum != listener_number && ch->entnum == entnum && ch->allocTime < oldest && ch->entchannel != CHAN_ANNOUNCER)
+			if (ch->entnum != listener_number && ch->entnum == entnum && ch->allocTime <= oldest && ch->entchannel != CHAN_ANNOUNCER)
 			{
 				oldest = ch->allocTime;
 				chosen = i;
@@ -722,7 +722,7 @@ void S_Base_StartSoundEx(vec3_t origin, int entnum, int entchannel, sfxHandle_t 
 			ch = s_channels;
 			for (i = 0 ; i < MAX_CHANNELS ; i++, ch++)
 			{
-				if (ch->entnum != listener_number && ch->allocTime < oldest && ch->entchannel != CHAN_ANNOUNCER)
+				if (ch->entnum != listener_number && ch->allocTime <= oldest && ch->entchannel != CHAN_ANNOUNCER)
 				{
 					oldest = ch->allocTime;
 					chosen = i;
@@ -731,15 +731,12 @@ void S_Base_StartSoundEx(vec3_t origin, int entnum, int entchannel, sfxHandle_t 
 			if (chosen == -1)
 			{
 				ch = s_channels;
-				if (ch->entnum == listener_number)
+				for (i = 0 ; i < MAX_CHANNELS ; i++, ch++)
 				{
-					for (i = 0 ; i < MAX_CHANNELS ; i++, ch++)
+					if (ch->allocTime <= oldest && ch->entchannel != CHAN_ANNOUNCER)
 					{
-						if (ch->allocTime < oldest)
-						{
-							oldest = ch->allocTime;
-							chosen = i;
-						}
+						oldest = ch->allocTime;
+						chosen = i;
 					}
 				}
 				if (chosen == -1)
