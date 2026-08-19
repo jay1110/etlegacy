@@ -7507,11 +7507,19 @@
             // bitmask fully enabled as well. These are deliberately appended
             // after both the site preset and the editable cvars below.
             function forcedModHostCommands(modKey) {
-                if (modKey !== 'xmod') { return []; }
-                return [
-                    configLine('jxac_enable', '0'),
-                    configLine('g_spectator', '7')
-                ];
+                if (modKey === 'xmod') {
+                    return [
+                        configLine('jxac_enable', '0'),
+                        configLine('g_spectator', '7')
+                    ];
+                }
+                // ETJump's browser build must not load Omni-bot. Its native
+                // bot library is a separate dynamic module and does not share
+                // the WebAssembly ABI of ETJump's qagame.
+                if (modKey === 'etjump') {
+                    return [configLine('omnibot_enable', '0')];
+                }
+                return [];
             }
 
             // Write the panel's settings into the mod's folder. Returns true
@@ -7561,6 +7569,7 @@
                 var mod = HOST_MODS[settings.mod];
                 var assets = hostAssetsFor(settings.mod);
                 var botsReady = false;
+                var supportsOmniBot = settings.mod !== 'etjump';
                 if (mod && mod.available && settings.mod !== DEFAULT_MOD) {
                     args.push('+set', 'fs_game', mod.fsGame);
                 }
@@ -7587,6 +7596,10 @@
                     // game logic for the browser is run with this build's own,
                     // which needs the legacy pk3 mounted underneath it.
                     args.push.apply(args, legacyLogicArgs(mod && mod.fsGame));
+                    // ETJump brings its own qagame and cannot load the
+                    // Legacy Omni-bot side module. Do not fetch, mount, or
+                    // enable it for an ETJump browser host.
+                    if (!supportsOmniBot) { return false; }
                     return setupOmniBot(settings.bots);
                 }).then(function (ready) {
                     if (!ready) {
@@ -7596,7 +7609,8 @@
                         settings.bots = 0;
                     }
                     botsReady = ready;
-                    args.push('+set', 'omnibot_enable', (ready && settings.bots > 0) ? '1' : '0');
+                    args.push('+set', 'omnibot_enable',
+                        (supportsOmniBot && ready && settings.bots > 0) ? '1' : '0');
                     if (ready) {
                         args.push('+set', 'omnibot_path', OMNIBOT_DIR);
                     }
@@ -8692,6 +8706,12 @@
                     // saved panel value undo the browser-hosted XMod defaults.
                     next.cvars.g_spectator = '7';
                 }
+                if (next.mod === 'etjump') {
+                    // Omni-bot is intentionally unavailable for the browser
+                    // ETJump host; keep both the session state and lobby slot
+                    // count from advertising bots that cannot exist.
+                    next.bots = 0;
+                }
                 next.rotationIndex = rotationIndexFor(next.rotation, next.map,
                     settings.rotationIndex);
 
@@ -8729,7 +8749,10 @@
                     etlSendCommand('set jxac_enable "0"');
                     etlSendCommand('set g_spectator "7"');
                 }
-                if (next.bots !== settings.bots) {
+                if (next.mod === 'etjump') {
+                    etlSendCommand('set omnibot_enable "0"');
+                }
+                if (next.mod !== 'etjump' && next.bots !== settings.bots) {
                     // Omni-bot's server manager keeps the bot count between
                     // these two bounds and adds/kicks bots accordingly.
                     etlSendCommand('bot maxbots ' + next.bots);
