@@ -1730,7 +1730,9 @@ static void IN_ProcessEvents(void)
 				{
 					break;
 				}
+#ifndef __APPLE__
 				IN_WindowFocusLost();
+#endif
 			// fall through
 			case SDL_WINDOWEVENT_LEAVE:
 				Key_ClearStates();

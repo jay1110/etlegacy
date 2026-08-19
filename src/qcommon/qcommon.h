@@ -1155,6 +1155,10 @@ extern cvar_t *com_downloadURL;
 extern fileHandle_t com_journalFile;
 extern fileHandle_t com_journalDataFile;
 
+#ifndef DEDICATED
+extern qboolean cl_optimizedPatchServer;
+#endif
+
 /**
  * @enum memtag_t
  * @brief

@@ -124,6 +124,11 @@ static qboolean G_SnapshotCallbackExt(int entityNum, int clientNum, int clientNu
 		return G_EBS_ShoutcastCallback(clientNumReal);
 	}
 
+	if (ent->s.eType == ET_EBS_FIRETEAM)
+	{
+		return G_EBS_FireteamCallback(entityNum, clientNumReal);
+	}
+
 	return qtrue;
 }
 
@@ -1700,10 +1705,11 @@ void G_InitGame(int levelTime, int randomSeed, int restart, int etLegacyServer, 
 	// set client fields on player ents
 	for (i = 0 ; i < level.maxclients ; i++)
 	{
-		g_entities[i].client                           = level.clients + i;
-		level.clients[i].sess.userSpawnPointValue      = 0;
-		level.clients[i].sess.userMinorSpawnPointValue = -1;
-		level.clients[i].sess.resolvedSpawnPointIndex  = 0;
+		g_entities[i].client                               = level.clients + i;
+		level.clients[i].sess.userSpawnPointValue          = 0;
+		level.clients[i].sess.userMinorSpawnPointValue     = -1;
+		level.clients[i].sess.resolvedSpawnPointIndex      = 0;
+		level.clients[i].sess.resolvedMinorSpawnPointIndex = -1;
 	}
 
 	// always leave room for the max number of clients,
@@ -1749,14 +1755,6 @@ void G_InitGame(int levelTime, int randomSeed, int restart, int etLegacyServer, 
 		{
 			G_Printf("^3WARNING: g_skillRating changed to 0\n");
 			trap_Cvar_Set("g_skillRating", "0");
-		}
-#endif
-
-#ifdef FEATURE_PRESTIGE
-		if (g_prestige.integer)
-		{
-			G_Printf("^3WARNING: g_prestige changed to 0\n");
-			trap_Cvar_Set("g_prestige", "0");
 		}
 #endif
 
@@ -1873,6 +1871,7 @@ void G_InitGame(int levelTime, int randomSeed, int restart, int etLegacyServer, 
 	G_loadMatchGame();
 
 	G_EBS_InitShoutcast();
+	G_EBS_InitFireteam();
 
 	GeoIP_open(); // GeoIP open/update
 
@@ -1963,6 +1962,12 @@ void G_ShutdownGame(int restart)
 	// zinx - realistic hitboxes
 	mdx_cleanup();
 #endif
+
+	// reset stats on any mid-match restart that didn't already handle them (e.g. console map_restart)
+	if (restart && !level.fResetStats && !trap_Cvar_VariableIntegerValue("g_restarted") && g_gamestate.integer == GS_PLAYING)
+	{
+		level.fResetStats = qtrue;
+	}
 
 	// write all the client session data so we can get it back
 	G_WriteSessionData(restart);
@@ -3022,24 +3027,6 @@ void G_LogExit(const char *string)
 	}
 #endif
 
-#ifdef FEATURE_PRESTIGE
-	// record prestige
-	if (g_prestige.integer && g_gametype.integer != GT_WOLF_CAMPAIGN && g_gametype.integer != GT_WOLF_STOPWATCH && g_gametype.integer != GT_WOLF_LMS)
-	{
-		for (i = 0; i < level.numConnectedClients; i++)
-		{
-			gentity_t *ent = &g_entities[level.sortedClients[i]];
-
-			if (!ent->inuse)
-			{
-				continue;
-			}
-
-			// record prestige before intermission
-			G_SetClientPrestige(ent->client, qtrue);
-		}
-	}
-#endif
 	if (
 		(g_xpSaver.integer & XPSF_ENABLE) && (
 			(g_gametype.integer == GT_WOLF_CAMPAIGN) ||
@@ -4320,9 +4307,10 @@ void G_RunEntity(gentity_t *ent, int msec)
 		return;
 	}
 
-	if (ent->s.eType == ET_EBS_SHOUTCAST)
+	if (ent->s.eType == ET_EBS_SHOUTCAST ||
+	    ent->s.eType == ET_EBS_FIRETEAM)
 	{
-		G_RunThink(ent);
+		ent->runthisframe = qfalse;
 		return;
 	}
 
@@ -4547,6 +4535,38 @@ void G_RunEntity(gentity_t *ent, int msec)
 }
 
 /**
+ * @brief G_EBS_RunEntities shoutcast and fireteam entities contain player information
+ *                          so they should run after anything that can modify it
+ */
+void G_EBS_RunEntities(void)
+{
+	gentity_t *ent;
+	int       i;
+
+	if (G_EBS_ShoutcastEnabled())
+	{
+		for (i = 0; i < 2; i++)
+		{
+			ent               = &g_entities[level.ebs_shoutcast[i]];
+			ent->runthisframe = qtrue;
+
+			G_RunThink(ent);
+		}
+	}
+
+	if (G_EBS_FireteamEnabled())
+	{
+		for (i = 0; i < MAX_FIRETEAMS; i++)
+		{
+			ent               = &g_entities[level.fireTeams[i].entNum];
+			ent->runthisframe = qtrue;
+
+			G_RunThink(ent);
+		}
+	}
+}
+
+/**
  * @brief Advances the non-player objects in the world
  * @param[in] levelTime
  */
@@ -4667,6 +4687,8 @@ void G_RunFrame(int levelTime)
 #ifdef FEATURE_LUA
 	G_LuaHook_RunFrame(levelTime);
 #endif
+
+	G_EBS_RunEntities();
 
 	level.frameStartTime = trap_Milliseconds();
 }

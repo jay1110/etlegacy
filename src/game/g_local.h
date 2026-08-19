@@ -642,7 +642,7 @@ typedef struct
 	int userSpawnPointValue;                            ///< index of objective to spawn nearest to (returned from UI)
 	int userMinorSpawnPointValue;                       ///< index of minor spawnpoint to spawn nearest to
 	int resolvedSpawnPointIndex;                        ///< most possible objective to spawn nearest to
-	int previousUserMinorSpawnPointValue;               ///< keeps track if minor spawn changed since last time
+	int resolvedMinorSpawnPointIndex;                   ///< most possible blob to spawn at
 	int latchPlayerType;                                ///< latched class
 	weapon_t latchPlayerWeapon;                         ///< latched primary weapon
 	weapon_t latchPlayerWeapon2;                        ///< latched secondary weapon
@@ -680,9 +680,6 @@ typedef struct
 	float sigma;
 	float oldmu;
 	float oldsigma;
-#endif
-#ifdef FEATURE_PRESTIGE
-	int prestige;
 #endif
 
 	// MAPVOTE
@@ -1061,6 +1058,8 @@ struct gclient_s
 	int medals;
 	float acc;
 	float hspct;
+	float accscore;
+	float hsscore;
 
 	int flametime;                          ///< flamethrower exploit fix
 
@@ -1193,6 +1192,12 @@ typedef struct spawnPointState_s
 	int isActive;
 	char description[128];
 } spawnPointState_t;
+
+typedef struct playerSpawn_s
+{
+	int major;
+	int minor;
+} playerSpawn_t;
 
 /**
  * @struct level_locals_s
@@ -1407,7 +1412,8 @@ typedef struct level_locals_s
 	int demoClientsNum;        ///< number of reserved slots for demo clients
 	int demoClientBotNum;      ///< clientNum of bot that collects stats during recording, optional
 
-	uint64_t shoutcasters;     ///< clients bits of shoutcasters
+	uint64_t shoutcasters;     ///< shoutcasters, bitmask
+	int ebs_shoutcast[2];      ///< ebs shoutcast entities numbers
 } level_locals_t;
 
 /**
@@ -1464,8 +1470,6 @@ void Cmd_SelectedObjective_f(gentity_t *ent, unsigned int dwCommand, int value);
 void Cmd_IntermissionPlayerKillsDeaths_f(gentity_t *ent, unsigned int dwCommand, int value);
 void Cmd_IntermissionPlayerTime_f(gentity_t *ent, unsigned int dwCommand, int value);
 void Cmd_IntermissionSkillRating_f(gentity_t *ent, unsigned int dwCommand, int value);
-void Cmd_IntermissionPrestige_f(gentity_t *ent, unsigned int dwCommand, int value);
-void Cmd_IntermissionCollectPrestige_f(gentity_t *ent, unsigned int dwCommand, int value);
 void Cmd_IntermissionWeaponAccuracies_f(gentity_t *ent, unsigned int dwCommand, int value);
 void Cmd_IntermissionWeaponStats_f(gentity_t *ent, unsigned int dwCommand, int value);
 void Cmd_UnIgnore_f(gentity_t *ent, unsigned int dwCommand, int value);
@@ -1869,7 +1873,7 @@ void G_InitMemory(void);
 void Svcmd_GameMem_f(void);
 
 // g_session.c
-void G_ReadSessionData(gclient_t *client);
+qboolean G_ReadSessionData(gclient_t *client);
 void G_InitSessionData(gclient_t *client, const char *userinfo);
 
 void G_InitWorldSession(void);
@@ -2325,6 +2329,14 @@ int G_DB_DeInit(void);
 #define TAU     (SIGMA / 100)   ///< dynamics factor
 #define EPSILON 0.f             ///< draw margin (assumed null)
 #define LAMBDA  10              ///< map continuity correction (n = 2 * LAMBDA, n >= 20)
+// effective sample size of the decayed map win counters (EMA over plays with exact cap).
+// Lower bound from noise: bias error epsilon shifts expected performance by
+// 2 * MU * epsilon mu (MU = 25), so epsilon <= SIGMA / 2 (~8%) keeps it
+// below the rating system's own noise floor;
+// delta = 7% at 95% confidence gives N = (1.96 / (2 * 0.07))^2 ~ 196. Upper bound from
+// adaptation lag (~N plays to track a real change) argues against much larger values.
+// N = 200 maximizes responsiveness subject to the estimate not being noise.
+#define MAP_BIAS_N 200.f
 
 void G_CalculateSkillRatings(void);
 float G_CalculateWinProbability(int team);
@@ -2348,23 +2360,6 @@ void G_SkillRatingGetClientRating(gclient_t *cl);
 void G_SkillRatingSetClientRating(gclient_t *cl);
 float G_SkillRatingGetMapRating(char *mapname);
 void G_SkillRatingSetMapRating(char *mapname, int winner);
-#endif
-
-#ifdef FEATURE_PRESTIGE
-// g_prestige.c
-typedef struct prData_s
-{
-	const unsigned char *guid;
-	int prestige;
-	int streak;
-	int skillpoints[SK_NUM_SKILLS];
-} prData_t;
-
-int G_PrestigeDBCheck(char *db_path, int db_mode);
-void G_GetClientPrestige(gclient_t *cl);
-void G_SetClientPrestige(gclient_t *cl, qboolean streakUp);
-int G_ReadPrestige(prData_t *pr_data);
-int G_WritePrestige(prData_t *pr_data);
 #endif
 
 #define XPSF_ENABLE              1  ///< enable XP Save on disconnect
@@ -2466,7 +2461,12 @@ void G_clientFlagIndicator(gentity_t *ent);
 qboolean G_EBS_ShoutcastCallback(int clientNumReal);
 void G_EBS_ShoutcastThink(gentity_t *ent);
 void G_EBS_InitShoutcast(void);
-ID_INLINE qboolean G_EBS_ShoutcastEnabled(void);
+qboolean G_EBS_ShoutcastEnabled(void);
+
+qboolean G_EBS_FireteamCallback(int entityNum, int clientNumReal);
+void G_EBS_FireteamThink(gentity_t *ent);
+void G_EBS_InitFireteam(void);
+qboolean G_EBS_FireteamEnabled(void);
 
 // g_vote.c
 int G_voteCmdCheck(gentity_t *ent, char *arg, char *arg2, qboolean fRefereeCmd);
