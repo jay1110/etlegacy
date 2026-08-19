@@ -495,7 +495,7 @@ The host form has two tabs. **Basic** holds everything a game needs:
 
 | Setting | Cvar | Default | Meaning |
 |---------|------|---------|---------|
-| Mod | `fs_game` | `legacy` | Legacy mod, XMod or Jaymod. A mod that brings no WebAssembly game logic of its own is played with ET: Legacy's game code on top of its pk3 (see below). ETBloat, No Quarter, ETPub and ETJump are listed but disabled — they are not served with the page |
+| Mod | `fs_game` | `legacy` | Legacy mod, XMod, Jaymod, ETJump, ETPub, No Quarter or ETBloat. Mods with their own WebAssembly game logic load it from their configured pk3 or standalone module files (see below). |
 | Balanced teams | `g_teamForceBalance` | `0` | Players cannot join the team that already has more players (the read-only `g_balancedteams` the server advertises is derived from it) |
 | Warmup | `g_doWarmup` | `1` | Players have to be ready before a match starts |
 | Friendly fire | `g_friendlyFire` | `1` | Teammates can hurt each other |
