@@ -589,8 +589,6 @@ void CL_Disconnect(qboolean showMainMenu)
 	SCR_StopCinematic();
 	S_ClearSoundBuffer(qtrue);    // modified
 
-	Cvar_ForceReset("cm_optimizePatchPlanes");
-
 	// send a disconnect message to the server
 	// send it a few times in case one is dropped
 	if (cls.state >= CA_CONNECTED)
@@ -620,8 +618,6 @@ void CL_Disconnect(qboolean showMainMenu)
 	// not connected to a pure server anymore
 	cl_connectedToPureServer = qfalse;
 
-	cl_optimizedPatchServer = qfalse;
-
 	// don't try a restart if uivm is NULL, as we might be in the middle of a restart already
 	if (uivm && cls.state > CA_DISCONNECTED)
 	{
@@ -637,6 +633,12 @@ void CL_Disconnect(qboolean showMainMenu)
 	else
 	{
 		cls.state = CA_DISCONNECTED;
+	}
+
+	// reset patch collision to default incase it was modified by server
+	if (cls.state < CA_CONNECTING)
+	{
+		Cvar_Set("cm_optimizePatchPlanes", "0");
 	}
 }
 
@@ -941,6 +943,12 @@ static void CL_Connect_f(void)
 	// server connection string
 	Cvar_Set("cl_currentServerAddress", server);
 	Cvar_Set("cl_currentServerIP", ip_port);
+
+	// if we are not compatible, likely 2.60b server - use vanilla patch collision
+	if (!Com_IsCompatible(&clc.agent, 0x1))
+	{
+		Cvar_Set("cm_optimizePatchPlanes", "1");
+	}
 
 #ifdef FEATURE_IRC_CLIENT
 	if (irc_mode->integer & IRCM_AUTO_CONNECT)
@@ -2674,11 +2682,27 @@ static void CL_FrameHandleVideo(int *msec)
 void CL_Frame(int msec)
 {
 	int frameStart = 0;
+#ifdef __EMSCRIPTEN__
+	const qboolean traceETJumpFrame =
+		cls.state == CA_ACTIVE && !Q_stricmp(Cvar_VariableString("fs_game"), "etjump");
+#define ETJ_ENGINE_FRAME_CHECKPOINT(label) \
+	do \
+	{ \
+		if (traceETJumpFrame) \
+		{ \
+			Com_Printf("ETL-WASM client frame: %s\n", label); \
+		} \
+	} while (0)
+#else
+#define ETJ_ENGINE_FRAME_CHECKPOINT(label) do { } while (0)
+#endif
 
 	if (!com_cl_running->integer)
 	{
 		return;
 	}
+
+	ETJ_ENGINE_FRAME_CHECKPOINT("enter");
 
 	if (cls.state == CA_DISCONNECTED && !(cls.keyCatchers & KEYCATCH_UI)
 	    && !com_sv_running->integer)
@@ -2694,6 +2718,7 @@ void CL_Frame(int msec)
 	}
 
 	CL_FrameHandleVideo(&msec);
+	ETJ_ENGINE_FRAME_CHECKPOINT("video complete");
 
 	// save the msec before checking pause
 	cls.realFrametime = msec;
@@ -2710,36 +2735,47 @@ void CL_Frame(int msec)
 
 	// see if we need to update any userinfo
 	CL_CheckUserinfo();
+	ETJ_ENGINE_FRAME_CHECKPOINT("userinfo complete");
 
 	// if we haven't gotten a packet in a long time,
 	// drop the connection
 	CL_CheckTimeout();
+	ETJ_ENGINE_FRAME_CHECKPOINT("timeout complete");
 
 	// let the download system run its loop quick if there are open sockets
 	Com_WebDownloadLoop();
+	ETJ_ENGINE_FRAME_CHECKPOINT("downloads complete");
 
 	// send intentions now
 	CL_SendCmd();
+	ETJ_ENGINE_FRAME_CHECKPOINT("send command complete");
 
 	// resend a connection request if necessary
 	CL_CheckForResend();
+	ETJ_ENGINE_FRAME_CHECKPOINT("resend complete");
 
 	// request motd and update data from the master server
 	CL_RequestMasterData(qfalse);
+	ETJ_ENGINE_FRAME_CHECKPOINT("master data complete");
 
 	// decide on the serverTime to render
 	CL_SetCGameTime();
+	ETJ_ENGINE_FRAME_CHECKPOINT("cgame time complete");
 
 	// update the screen
 	SCR_UpdateScreen();
+	ETJ_ENGINE_FRAME_CHECKPOINT("screen complete");
 
 	// update the sound
 	S_Update();
+	ETJ_ENGINE_FRAME_CHECKPOINT("sound complete");
 
 	// advance local effects for next frame
 	SCR_RunCinematic();
+	ETJ_ENGINE_FRAME_CHECKPOINT("cinematic complete");
 
 	Con_RunConsole();
+	ETJ_ENGINE_FRAME_CHECKPOINT("console complete");
 
 	cls.framecount++;
 
@@ -2754,6 +2790,9 @@ void CL_Frame(int msec)
 		// - 1 because timeFrames has already been incremented at this point in CL_SetCGameTime
 		clc.demo.timedemo.frametime[(clc.demo.timedemo.timeFrames - 1) % MAX_TIMEDEMO_FRAMES] = Sys_Milliseconds() - frameStart;
 	}
+
+	ETJ_ENGINE_FRAME_CHECKPOINT("leave");
+#undef ETJ_ENGINE_FRAME_CHECKPOINT
 }
 
 //============================================================================
