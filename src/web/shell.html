@@ -5295,6 +5295,13 @@
             // be re-preloaded on every load; drop any copy persisted in IndexedDB
             // from a previous session first, otherwise createPreloadedFile throws
             // trying to recreate an existing file.
+            // Emscripten's dynamic linker is not transactional. If it rejects a
+            // side module after it has started relocating it, its table/memory
+            // allocations cannot safely be rolled back from JavaScript. Never
+            // try a different mod in that half-linked runtime; the next mod can
+            // otherwise fail with the first mod's misleading error.
+            var sideModuleRuntimeTainted = false;
+
             function createPreloadedSideModule(dir, name, source) {
                 try {
                     Module.FS.mkdirTree(dir);
@@ -5313,6 +5320,7 @@
                             dir, name, source, true, false,
                             function () { resolve(); },
                             function (err) {
+                                sideModuleRuntimeTainted = true;
                                 // Preserve the real reason (a network error for the
                                 // standalone .so, or a WebAssembly compile/link error
                                 // for a broken/incompatible module) instead of
@@ -5321,6 +5329,7 @@
                                     new Error(String(err || 'unknown error')));
                             });
                     } catch (e) {
+                        sideModuleRuntimeTainted = true;
                         reject(e);
                     }
                 });
@@ -5701,7 +5710,11 @@
                     // are still used, and everything that lives in the engine
                     // and in this game logic (Omni-bot in particular) works for
                     // them exactly as it does for legacy.
-                    if (assets.fsGame === LEGACY_ASSETS.fsGame) { throw err; }
+                    if (assets.fsGame === LEGACY_ASSETS.fsGame ||
+                        (HOST_MODS[assets.fsGame] &&
+                         HOST_MODS[assets.fsGame].requireOwnLogic)) {
+                        throw err;
+                    }
                     return sideModuleBytes(name, LEGACY_ASSETS).then(function (bytes) {
                         if (!modFallbackLogic[assets.fsGame] && console && console.warn) {
                             console.warn(assets.fsGame + ' does not come with game ' +
@@ -6375,6 +6388,7 @@
                                     'z_adds.pk3'],
                              base: ETL_MIRROR_BASE + 'nq/' },
                 etbloat:   { name: 'ETBloat',    fsGame: 'etbloat',   available: true,
+                             requireOwnLogic: true,
                              pk3s: ['etbloat_etbloat-e5a79c6b.pk3'],
                              base: ETL_MIRROR_BASE + 'etbloat/' },
             };
@@ -7154,6 +7168,13 @@
                 var mod = HOST_MODS[modKey];
                 if (!mod || !mod.available || mod.fsGame === HOST_MODS[DEFAULT_MOD].fsGame) {
                     return Promise.resolve();     // shipped with the page already
+                }
+                if (sideModuleRuntimeTainted) {
+                    // A full document reload creates fresh WebAssembly.Memory,
+                    // Table and LDSO state. Keep this pending while navigation
+                    // replaces the page so no more work runs in the damaged VM.
+                    window.location.reload();
+                    return new Promise(function () {});
                 }
                 if (modInstalls[modKey]) { return modInstalls[modKey]; }
 

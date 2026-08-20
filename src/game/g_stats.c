@@ -228,19 +228,6 @@ void G_UpgradeSkill(gentity_t *ent, skillType_t skill)
 
 	G_DebugAddSkillLevel(ent, skill);
 
-#ifdef FEATURE_RATING
-	if (g_skillRating.integer)
-	{
-		ent->client->sess.rank = (int)(MAX(ent->client->sess.mu - 3 * ent->client->sess.sigma, 0.f) / (2 * MU) * NUM_EXPERIENCE_LEVELS);
-
-		if (ent->client->sess.rank > 10)
-		{
-			ent->client->sess.rank = 10;
-		}
-	}
-	else
-	{
-#endif
 	if (i == SK_NUM_SKILLS)
 	{
 		// increase rank
@@ -266,9 +253,6 @@ void G_UpgradeSkill(gentity_t *ent, skillType_t skill)
 			ent->client->sess.rank = 10;
 		}
 	}
-#ifdef FEATURE_RATING
-}
-#endif
 
 	ClientUserinfoChanged(ent - g_entities);
 
@@ -356,12 +340,7 @@ void G_ResetXP(gentity_t *ent)
 		return;
 	}
 
-#ifdef FEATURE_RATING
-	if (!g_skillRating.integer)
-#endif
-	{
-		ent->client->sess.rank = 0;
-	}
+	ent->client->sess.rank = 0;
 
 	for (i = 0; i < SK_NUM_SKILLS; i++)
 	{
@@ -805,53 +784,6 @@ void G_BuildEndgameStats(void)
 
 	*buffer = '\0';
 
-#ifdef FEATURE_PRESTIGE
-	// most prestigious player - check prestige > 0, then XPs
-	for (i = 0; i < level.numConnectedClients; i++)
-	{
-		gclient_t *cl = &level.clients[level.sortedClients[i]];
-
-		if (cl->sess.sessionTeam == TEAM_FREE)
-		{
-			continue;
-		}
-
-		// no reward for non players
-		if (!cl->sess.time_axis && !cl->sess.time_allies)
-		{
-			continue;
-		}
-
-		if (cl->sess.prestige <= 0)
-		{
-			continue;
-		}
-
-		if (!best || cl->sess.prestige > best->sess.prestige)
-		{
-			best          = cl;
-			bestClientNum = level.sortedClients[i];
-		}
-		else if (cl->sess.prestige == best->sess.prestige && cl->ps.persistant[PERS_SCORE] > best->ps.persistant[PERS_SCORE])
-		{
-			best          = cl;
-			bestClientNum = level.sortedClients[i];
-		}
-	}
-
-	if (best)
-	{
-		best->hasaward = qtrue;
-		Q_strcat(buffer, 1024, va("%i %i %i ", bestClientNum, best->sess.prestige, best->sess.sessionTeam));
-	}
-	else
-	{
-		Q_strcat(buffer, 1024, "-1 0 0 ");
-	}
-
-	best = NULL;
-#endif
-
 	// highest ranking officer - check rank, then medals and XP
 	for (i = 0; i < level.numConnectedClients; i++)
 	{
@@ -1159,7 +1091,7 @@ void G_BuildEndgameStats(void)
 
 	best = NULL;
 
-	// highest accuracy
+	// highest accuracy - ranked by the accuracy score (see G_AccuracyScore)
 	for (i = 0; i < level.numConnectedClients; i++)
 	{
 		gclient_t *cl = &level.clients[level.sortedClients[i]];
@@ -1169,12 +1101,12 @@ void G_BuildEndgameStats(void)
 			continue;
 		}
 
-		if (cl->acc <= 0)
+		if (cl->accscore <= 0)
 		{
 			continue;
 		}
 
-		if (!best || cl->acc > best->acc)
+		if (!best || cl->accscore > best->accscore)
 		{
 			best          = cl;
 			bestClientNum = level.sortedClients[i];
@@ -1193,7 +1125,7 @@ void G_BuildEndgameStats(void)
 
 	best = NULL;
 
-	// highest HS percentage
+	// highest HS percentage - ranked by the accuracy score (see G_AccuracyScore)
 	for (i = 0; i < level.numConnectedClients; i++)
 	{
 		gclient_t *cl = &level.clients[level.sortedClients[i]];
@@ -1203,12 +1135,12 @@ void G_BuildEndgameStats(void)
 			continue;
 		}
 
-		if (cl->hspct <= 0)
+		if (cl->hsscore <= 0)
 		{
 			continue;
 		}
 
-		if (!best || cl->hspct > best->hspct)
+		if (!best || cl->hsscore > best->hsscore)
 		{
 			best          = cl;
 			bestClientNum = level.sortedClients[i];

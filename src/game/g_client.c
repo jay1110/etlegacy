@@ -2088,21 +2088,15 @@ void ClientUserinfoChanged(int clientNum)
 	               );
 	*/
 	infoLen = sizeof(configStr);
-	len     = snprintf(configStr, infoLen - len, "n\\%s\\t\\%i\\c\\%i\\lc\\%i\\sp\\%i\\msp\\%i\\r\\%i\\m\\%s\\s\\%s",
+	len     = snprintf(configStr, infoLen - len, "n\\%s\\t\\%i\\c\\%i\\lc\\%i\\r\\%i\\m\\%s\\s\\%s",
 	                   client->pers.netname,
 	                   client->sess.sessionTeam,
 	                   client->sess.playerType,
 	                   client->sess.latchPlayerType,
-	                   Com_Clamp(0, (level.numSpawnPoints - 1), ent->client->sess.resolvedSpawnPointIndex) + 1,
-	                   client->sess.userMinorSpawnPointValue,
 	                   client->sess.rank,
 	                   medalStr,
 	                   skillStr
 	                   );
-
-#ifdef FEATURE_PRESTIGE
-	len += snprintf(configStr + len, infoLen - len, "\\p\\%i", client->sess.prestige);
-#endif
 
 	if (client->disguiseClientNum)
 	{
@@ -2440,7 +2434,12 @@ char *ClientConnect(int clientNum, qboolean firstTime, qboolean isBot)
 	}
 	else
 	{
-		G_ReadSessionData(client);
+		// read the session data, or initialize a fresh session
+		// if the stored session belongs to a different client
+		if (!G_ReadSessionData(client))
+		{
+			G_InitSessionData(client, userinfo);
+		}
 	}
 
 	// GeoIP
@@ -2565,19 +2564,6 @@ char *ClientConnect(int clientNum, qboolean firstTime, qboolean isBot)
 	if (g_skillRating.integer)
 	{
 		G_SkillRatingGetClientRating(client);
-		G_CalcRank(client);
-	}
-#endif
-
-#ifdef FEATURE_PRESTIGE
-	if (g_prestige.integer && g_gametype.integer != GT_WOLF_CAMPAIGN && g_gametype.integer != GT_WOLF_STOPWATCH && g_gametype.integer != GT_WOLF_LMS)
-	{
-		G_GetClientPrestige(client);
-
-		for (i = 0; i < SK_NUM_SKILLS; i++)
-		{
-			G_SetPlayerSkill(client, i);
-		}
 	}
 #endif
 
@@ -3557,13 +3543,6 @@ void ClientDisconnect(int clientNum)
 	if (g_skillRating.integer && !level.intermissiontime)
 	{
 		G_SkillRatingSetClientRating(ent->client);
-	}
-#endif
-
-#ifdef FEATURE_PRESTIGE
-	if (g_prestige.integer && !level.intermissiontime)
-	{
-		G_SetClientPrestige(ent->client, qfalse);
 	}
 #endif
 

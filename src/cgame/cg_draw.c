@@ -2306,23 +2306,6 @@ void CG_DrawCrosshairHealthBar(hudComponent_t *comp)
 			w -= comp->location.h;
 		}
 
-#ifdef FEATURE_PRESTIGE
-		if (cgs.prestige && cgs.clientinfo[clientNum].prestige > 0 && (comp->style & CROSSHAIR_BAR_PRESTIGE))
-		{
-			char  *s = va("%d", cgs.clientinfo[clientNum].prestige);
-			float h;
-
-			w -= CG_Text_Width_Ext_Float(s, comp->scale, 0, &cgs.media.limboFont2);
-			h  = CG_Text_Height_Ext(s, comp->scale, 0, &cgs.media.limboFont2);
-
-			CG_Text_Paint_Ext(comp->location.x + w, comp->location.y + (comp->location.h - h) * 0.5f, comp->scale, comp->scale, fadeColor, s, 0, 0, 0, &cgs.media.limboFont2);
-
-			w -= comp->location.h;
-
-			CG_DrawPic(x + w, comp->location.y, comp->location.h, comp->location.h, cgs.media.prestigePics[0]);
-		}
-#endif
-
 		if (cgs.clientinfo[clientNum].rank > 0 && (comp->style & CROSSHAIR_BAR_RANK))
 		{
 			w -= comp->location.h;
@@ -2396,34 +2379,6 @@ void CG_DrawCrosshairHealthBar(hudComponent_t *comp)
 	}
 
 	trap_R_SetColor(NULL);
-}
-
-/**
- * @brief CG_GetCrosshairNameString
- * @param[in] comp
- * @param[in] clientNum
- * @return a colorized or single color name string for crosshair info
- */
-static const char *CG_GetCrosshairNameString(hudComponent_t *comp, int clientNum)
-{
-	char colorized[MAX_NAME_LENGTH + 2] = { 0 };
-
-	// ensure the client is valid
-	if (!cgs.clientinfo[clientNum].infoValid)
-	{
-		return va("unknown");
-	}
-
-	if (comp->style & 1)
-	{
-		// Draw them with full colors
-		return cgs.clientinfo[clientNum].name;
-	}
-
-	// Draw them with a single color
-	Q_ColorizeString('*', cgs.clientinfo[clientNum].cleanname, colorized, MAX_NAME_LENGTH + 2);
-
-	return va("%s", colorized);
 }
 
 /**
@@ -2502,7 +2457,7 @@ void CG_DrawCrosshairNames(hudComponent_t *comp)
 						break;
 					}
 
-					s = va(CG_TranslateString("%s^*\'s %s"), CG_GetCrosshairNameString(comp, es->otherEntityNum), weaponText);
+					s = va(CG_TranslateString("%s^*\'s %s"), CG_GetClientNameString(es->otherEntityNum, comp->style & 1), weaponText);
 				}
 				break;
 			default:
@@ -2556,7 +2511,7 @@ void CG_DrawCrosshairNames(hudComponent_t *comp)
 	{
 		textColor[3] = color[3];
 
-		s = CG_GetCrosshairNameString(comp, clientNum);
+		s = CG_GetClientNameString(clientNum, comp->style & 1);
 		CG_DrawCompText(comp, s, textColor, comp->styleText, &cgs.media.limboFont2);
 	}
 }

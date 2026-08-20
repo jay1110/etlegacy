@@ -280,7 +280,7 @@ setup_sensible_defaults() {
         x86_build=false
 
         # Detect Apple Silicon (arm64) and set architecture accordingly
-        if [[ "$PLATFORMARCH" == "arm64" ]]; then
+        if [[ $(uname -m) == "arm64" ]]; then
             # Default to arm64 unless user overrides with --osx-arc
             MACOS_ARCHITECTURES=${MACOS_ARCHITECTURES:-arm64}
             einfo "Detected Apple Silicon (arm64). Defaulting to arm64 build."
@@ -565,7 +565,6 @@ generate_configuration() {
     FEATURE_EDV=${FEATURE_EDV:-1}
     FEATURE_ANTICHEAT=${FEATURE_ANTICHEAT:-1}
     FEATURE_RATING=${FEATURE_RATING:-1}
-    FEATURE_PRESTIGE=${FEATURE_PRESTIGE:-1}
     FEATURE_AUTOUPDATE=${FEATURE_AUTOUPDATE:-1}
     FEATURE_LUASQL=${FEATURE_LUASQL:-1}
     INSTALL_EXTRA=${INSTALL_EXTRA:-1}
@@ -627,7 +626,6 @@ generate_configuration() {
         "-DFEATURE_GETTEXT=${FEATURE_GETTEXT}"
         "-DFEATURE_DBMS=${FEATURE_DBMS}"
         "-DFEATURE_RATING=${FEATURE_RATING}"
-        "-DFEATURE_PRESTIGE=${FEATURE_PRESTIGE}"
         "-DFEATURE_AUTOUPDATE=${FEATURE_AUTOUPDATE}"
         "-DFEATURE_RENDERER1=${FEATURE_RENDERER1}"
         "-DFEATURE_RENDERER2=${FEATURE_RENDERER2}"

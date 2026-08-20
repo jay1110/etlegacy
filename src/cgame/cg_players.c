@@ -273,13 +273,16 @@ void CG_NewClientInfo(int clientNum)
 	// grabbing some older stuff, if it's a new client, tinfo will update within one second anyway, otherwise you get the health thing flashing red
 	// NOTE: why are we bothering to do all this setting up of a new clientInfo_t anyway? it was all for deffered clients iirc, which we dont have
 	VectorCopy(ci->location, newInfo.location);
-	newInfo.health       = ci->health;
-	newInfo.fireteamData = ci->fireteamData;
-	newInfo.clientNum    = clientNum;
-	newInfo.selected     = ci->selected;
-	newInfo.ammo         = ci->ammo;
-	newInfo.ammoclip     = ci->ammoclip;
-	newInfo.powerups     = ci->powerups;
+	newInfo.health        = ci->health;
+	newInfo.fireteamData  = ci->fireteamData;
+	newInfo.clientNum     = clientNum;
+	newInfo.selected      = ci->selected;
+	newInfo.ammo          = ci->ammo;
+	newInfo.ammoclip      = ci->ammoclip;
+	newInfo.powerups      = ci->powerups;
+	newInfo.currentWeapon = ci->currentWeapon;
+	newInfo.spawnpt       = ci->spawnpt;
+	newInfo.mspawnpt      = ci->mspawnpt;
 
 	// isolate the player's name
 	v = Info_ValueForKey(configstring, "n");
@@ -303,21 +306,18 @@ void CG_NewClientInfo(int clientNum)
 	v                  = Info_ValueForKey(configstring, "lc");
 	newInfo.latchedcls = Q_atoi(v);
 
-	v               = Info_ValueForKey(configstring, "sp");
-	newInfo.spawnpt = Q_atoi(v);
+	if (CG_IsDemoVersionBelow(2, 85, 0))
+	{
+		v               = Info_ValueForKey(configstring, "sp");
+		newInfo.spawnpt = Q_atoi(v);
 
-	v                = Info_ValueForKey(configstring, "msp");
-	newInfo.mspawnpt = Q_atoi(v);
+		v                = Info_ValueForKey(configstring, "msp");
+		newInfo.mspawnpt = Q_atoi(v);
+	}
 
 	// rank
 	v            = Info_ValueForKey(configstring, "r");
 	newInfo.rank = Q_atoi(v);
-
-#ifdef FEATURE_PRESTIGE
-	// prestige
-	v                = Info_ValueForKey(configstring, "p");
-	newInfo.prestige = Q_atoi(v);
-#endif
 
 	// fireteam
 	v                = Info_ValueForKey(configstring, "f");
@@ -474,61 +474,6 @@ void CG_NewClientInfo(int clientNum)
 						CG_PriorityCenterPrint(va(CG_TranslateString("You have been rewarded with %s"), CG_TranslateString(cg_skillRewards[i][newInfo.skill[i] - 1])), 99999);
 					}
 				}
-
-#ifdef FEATURE_PRESTIGE
-				if (cgs.prestige && cgs.gametype != GT_WOLF_STOPWATCH && cgs.gametype != GT_WOLF_LMS && cgs.gametype != GT_WOLF_CAMPAIGN)
-				{
-					int j;
-					int skillMax = 0, cnt = 0;
-
-					// check skill max level
-					for (j = NUM_SKILL_LEVELS - 1; j >= 0; j--)
-					{
-						if (GetSkillTableData(i)->skillLevels[j] >= 0)
-						{
-							skillMax = j;
-							break;
-						}
-					}
-
-					if (newInfo.skill[i] == skillMax)
-					{
-						// count the number of maxed out skills
-						for (j = 0; j < SK_NUM_SKILLS; j++)
-						{
-							int k;
-							skillMax = 0;
-
-							// check skill max level
-							for (k = NUM_SKILL_LEVELS - 1; k >= 0; k--)
-							{
-								if (GetSkillTableData(j)->skillLevels[k] >= 0)
-								{
-									skillMax = k;
-									break;
-								}
-							}
-
-							if (cgs.clientinfo[cg.clientNum].skill[j] >= skillMax)
-							{
-								cnt++;
-							}
-						}
-
-						if (!(CG_GetActiveHUD()->pmitemsbig.style & POPUP_BIG_FILTER_PRESTIGE))
-						{
-							if (cnt < SK_NUM_SKILLS)
-							{
-								CG_AddPMItemBig(PM_PRESTIGE, va(CG_TranslateString("Prestige point progression: %i/7"), cnt), cgs.media.prestigePics[1]);
-							}
-							else
-							{
-								CG_AddPMItemBig(PM_PRESTIGE, CG_TranslateString("Prestige point ready to be collected!"), cgs.media.prestigePics[2]);
-							}
-						}
-					}
-				}
-#endif
 			}
 		}
 
@@ -577,9 +522,12 @@ void CG_NewClientInfo(int clientNum)
 		CG_ToggleShoutcasterMode(newInfo.shoutcaster);
 	}
 
-	if (newInfo.spawnpt != ci->spawnpt || newInfo.mspawnpt != ci->mspawnpt)
+	if (CG_IsDemoVersionBelow(2, 85, 0))
 	{
-		newInfo.spawnChangedTime = cg.time;
+		if (newInfo.spawnpt != ci->spawnpt || newInfo.mspawnpt != ci->mspawnpt)
+		{
+			newInfo.spawnChangedTime = cg.time;
+		}
 	}
 
 	// passing the clientNum since that's all we need, and we
@@ -2313,7 +2261,7 @@ static void CG_PlayerSprites(centity_t *cent)
 
 		if (cg_drawSpectatorNames.integer > 0)
 		{
-			name = cg_drawSpectatorNames.integer == 1 ? ci->cleanname : ci->name;
+			name = CG_GetClientNameString(cent->currentState.clientNum, cg_drawSpectatorNames.integer);
 
 			if (cg_shoutcastDrawHealth.integer == 1 && cgs.clientinfo[cg.clientNum].shoutcaster)
 			{
@@ -2350,7 +2298,7 @@ static void CG_PlayerSprites(centity_t *cent)
 
 	if (cg.demoPlayback && cg_drawSpectatorNames.integer > 0)
 	{
-		CG_PlayerFloatText(cent, cg_drawSpectatorNames.integer == 1 ? ci->cleanname : ci->name, height + 8);
+		CG_PlayerFloatText(cent, CG_GetClientNameString(cent->currentState.clientNum, cg_drawSpectatorNames.integer == 1), height + 8);
 	}
 
 	if (cent->currentState.powerups & (1 << PW_INVULNERABLE))

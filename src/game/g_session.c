@@ -70,6 +70,7 @@ void G_WriteClientSessionData(gclient_t *client, qboolean restart)
 		Com_Error(ERR_FATAL, "Could not allocate memory for session data\n");
 	}
 
+	cJSON_AddStringToObject(root, "guid", client->pers.cl_guid);
 	cJSON_AddNumberToObject(root, "sessionTeam", client->sess.sessionTeam);
 	cJSON_AddNumberToObject(root, "spectatorTime", client->sess.spectatorTime);
 	cJSON_AddNumberToObject(root, "spectatorState", client->sess.spectatorState);
@@ -118,10 +119,6 @@ void G_WriteClientSessionData(gclient_t *client, qboolean restart)
 		cJSON_AddNumberToObject(ratingObj, "oldmu", client->sess.oldmu);
 		cJSON_AddNumberToObject(ratingObj, "oldsigma", client->sess.oldsigma);
 	}
-#endif
-
-#ifdef FEATURE_PRESTIGE
-	cJSON_AddNumberToObject(root, "prestige", client->sess.prestige);
 #endif
 
 #ifdef FEATURE_MULTIVIEW
@@ -262,43 +259,6 @@ void G_CalcRank(gclient_t *client)
 {
 	int i, j, highestskill = 0;
 
-#ifdef FEATURE_RATING
-	// rating values for rank levels
-	// lognormal(e, 2/e) for each 1/11th percentile
-	float rankRating[NUM_EXPERIENCE_LEVELS] = { 0.000001,
-		                                        5.674106, 7.766937,   9.712880,  11.724512, 13.933123,
-		                                        16.482425,19.587310,  23.644035, 29.567854, 40.473632 };
-
-	if (g_skillRating.integer)
-	{
-		for (i = 0; i < SK_NUM_SKILLS; i++)
-		{
-			G_SetPlayerSkill(client, i);
-		}
-
-		// set rank
-		for (i = 0; i < NUM_EXPERIENCE_LEVELS; i++)
-		{
-			if (client->sess.mu - 3 * client->sess.sigma <= rankRating[i])
-			{
-				client->sess.rank = i - 1;
-				break;
-			}
-			else
-			{
-				client->sess.rank = 10;
-			}
-		}
-
-		if (client->sess.rank < 0)
-		{
-			client->sess.rank = 0;
-		}
-
-		return;
-	}
-#endif
-
 	for (i = 0; i < SK_NUM_SKILLS; i++)
 	{
 		G_SetPlayerSkill(client, i);
@@ -343,18 +303,38 @@ void G_CalcRank(gclient_t *client)
 /**
  * @brief Called on a reconnect
  * @param[in] client
+ * @return qtrue if the session data was restored, qfalse if there is no
+ *         session file or it belongs to a different client (guid mismatch)
  */
-void G_ReadSessionData(gclient_t *client)
+qboolean G_ReadSessionData(gclient_t *client)
 {
-	char     fileName[MAX_QPATH] = { 0 };
-	cJSON    *root = NULL, *wstats = NULL, *campaign = NULL;
-	qboolean test, restoreStats = qtrue;
-	int      i = 0;
+	char       fileName[MAX_QPATH] = { 0 };
+	const char *guid;
+	cJSON      *root = NULL, *wstats = NULL, *campaign = NULL;
+	qboolean   test, restoreStats = qtrue;
+	int        i = 0;
 
 	Com_sprintf(fileName, sizeof(fileName), "session/client%02i.json", (int)(client - level.clients));
 	Com_Printf("Reading session file %s\n", fileName);
 
 	root = Q_FSReadJsonFrom(fileName);
+
+	// no session file (or unreadable/corrupt) - start with a fresh session
+	if (!root)
+	{
+		return qfalse;
+	}
+
+	// session files are stored per client slot - ensure the stored session
+	// actually belongs to this client (e.g. not to the previous slot occupant)
+	guid = Q_ReadStringValueJson(root, "guid");
+
+	if (!guid || Q_stricmp(guid, client->pers.cl_guid))
+	{
+		G_LogPrintf("G_ReadSessionData: guid mismatch for client %i, skipping session restore\n", (int)(client - level.clients));
+		cJSON_Delete(root);
+		return qfalse;
+	}
 
 	if (level.fResetStats)
 	{
@@ -435,10 +415,6 @@ void G_ReadSessionData(gclient_t *client)
 			Q_JsonError("Rating object missing\n");
 		}
 	}
-#endif
-
-#ifdef FEATURE_PRESTIGE
-	client->sess.prestige = Q_ReadIntValueJson(root, "prestige");
 #endif
 
 #ifdef FEATURE_MULTIVIEW
@@ -588,6 +564,8 @@ void G_ReadSessionData(gclient_t *client)
 		client->sess.startskillpoints[i] = client->sess.skillpoints[i];
 		client->sess.startxptotal       += client->sess.skillpoints[i];
 	}
+
+	return qtrue;
 }
 
 /**
@@ -731,15 +709,28 @@ void G_InitWorldSession(void)
 			{
 				char str[8];
 				char *l = strchr(c, ' ');
+				int  num;
 
 				if (!l)
 				{
 					break;
 				}
 				Q_strncpyz(str, c, l - c + 1);
-				str[l - c]                        = '\0';
-				level.fireTeams[i].joinOrder[j++] = Q_atoi(str);
-				c                                 = l + 1;
+				str[l - c]                      = '\0';
+				num                             = Q_atoi(str);
+				level.fireTeams[i].joinOrder[j] = num;
+				c                               = l + 1;
+
+				if (j < MAX_FIRETEAM_MEMBERS)
+				{
+					level.fireTeams[i].playerSlots[j] = num;
+					if (num != -1)
+					{
+						level.fireTeams[i].playerMask |= (1ULL << num);
+					}
+				}
+
+				j++;
 			}
 		}
 
