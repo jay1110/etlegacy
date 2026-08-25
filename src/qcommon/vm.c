@@ -793,8 +793,12 @@ intptr_t QDECL VM_CallFunc(vm_t *vm, int callNum, ...)
 		// no parameters for them - but on WebAssembly the call goes through a
 		// type-checked call_indirect, so a mismatched argument count traps at
 		// runtime. args[] beyond the caller's VM_CALL_END sentinel are zero.
+#ifdef __EMSCRIPTEN__
+		r = Sys_CallGameDll(vm->dllHandle, callNum, args);
+#else
 		r = vm->entryPoint(callNum, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7],
 		                   args[8], args[9], args[10], args[11]);
+#endif
 	}
 #if 0
 	else if (vm->compiled)

@@ -1062,10 +1062,43 @@ void *Sys_LoadGameDll(const char *name, qboolean extract,
 	}
 
 	Com_Printf("Sys_LoadDll(%s/%s) found vmMain function at %p\n", gamedir, name, *entryPoint);
+#ifdef __EMSCRIPTEN__
+	// Keep the actual WebAssembly.Function object, not only its shared table
+	// index. Loading another SIDE_MODULE can replace an existing table slot;
+	// calling the captured function directly keeps ui/cgame/qagame isolated.
+	EM_ASM({
+		globalThis.etlGameDllEntries = globalThis.etlGameDllEntries || new Map();
+		var entry = wasmTable.get($1);
+		if (typeof entry !== 'function')
+		{
+			throw new Error('Sys_LoadGameDll: vmMain table entry is not callable');
+		}
+		globalThis.etlGameDllEntries.set($0, entry);
+	}, libHandle, *entryPoint);
+#endif
 	dllEntry(systemcalls);
 
 	return libHandle;
 }
+
+#ifdef __EMSCRIPTEN__
+intptr_t Sys_CallGameDll(void *libHandle, int command, const intptr_t *args)
+{
+	return EM_ASM_INT({
+		var entries = globalThis.etlGameDllEntries;
+		var entry = entries && entries.get($0);
+		if (typeof entry !== 'function')
+		{
+			throw new Error('Sys_CallGameDll: captured vmMain export is missing');
+		}
+		var p = $2 >> 2;
+		return entry($1,
+			HEAP32[p], HEAP32[p + 1], HEAP32[p + 2], HEAP32[p + 3],
+			HEAP32[p + 4], HEAP32[p + 5], HEAP32[p + 6], HEAP32[p + 7],
+			HEAP32[p + 8], HEAP32[p + 9], HEAP32[p + 10], HEAP32[p + 11]) | 0;
+	}, libHandle, command, args);
+}
+#endif
 
 void Sys_ParseArgsDrawBanner(FILE *stream)
 {

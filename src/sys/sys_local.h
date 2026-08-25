@@ -96,6 +96,7 @@ void *Sys_LoadDll(const char *name, qboolean useSystemLib);
 // On Emscripten (wasm), variadic function pointers don't work correctly across MAIN_MODULE/SIDE_MODULE boundaries.
 #ifdef __EMSCRIPTEN__
 void *Sys_LoadGameDll(const char *name, qboolean extract, VM_EntryPoint_t *entryPoint, intptr_t (*systemcalls)(intptr_t *));
+intptr_t Sys_CallGameDll(void *libHandle, int command, const intptr_t *args);
 #else
 void *Sys_LoadGameDll(const char *name, qboolean extract, VM_EntryPoint_t *entryPoint, intptr_t (*systemcalls)(intptr_t, ...));
 #endif
