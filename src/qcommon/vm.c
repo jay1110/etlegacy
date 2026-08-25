@@ -769,15 +769,6 @@ intptr_t QDECL VM_CallFunc(vm_t *vm, int callNum, ...)
 	// if we have a dll loaded, call it directly
 	if (vm->entryPoint)
 	{
-#ifdef __EMSCRIPTEN__
-		VM_EntryPoint_t refreshedEntryPoint = Sys_RefreshGameDllEntryPoint(vm->dllHandle);
-
-		if (!refreshedEntryPoint)
-		{
-			Com_Error(ERR_DROP, "VM_Call: vmMain export disappeared after loading another wasm module");
-		}
-		vm->entryPoint = refreshedEntryPoint;
-#endif
 		// rcg010207 -  see dissertation at top of VM_DllSyscall() in this file.
 		intptr_t args[VM_SYSCALL_ARGS] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 		va_list  ap;
