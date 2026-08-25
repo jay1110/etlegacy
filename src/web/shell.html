@@ -5233,6 +5233,40 @@
                 });
             }
 
+            // A client download from an older dedicated server can leave a
+            // different release package in fs_homepath/<mod>. fs_homepath wins
+            // over the freshly installed browser package and the engine then
+            // mixes game logic from one release with data/configstrings from
+            // another. Remove only the mod's own release packages; map pk3s and
+            // unrelated add-ons in the same directory are deliberately kept.
+            function removeStaleHostedModPk3s(assets, releasePrefix) {
+                if (!releasePrefix || !assets || !assets.fsGame) { return; }
+                var keep = {};
+                (assets.pk3s || []).forEach(function (name) {
+                    keep[String(name).toLowerCase()] = true;
+                });
+                var prefix = String(releasePrefix).toLowerCase();
+                var dirs = [assets.dir, HOME_ETL_DIR + '/' + assets.fsGame];
+                dirs.forEach(function (dir) {
+                    try {
+                        Module.FS.readdir(dir).forEach(function (entry) {
+                            var lower = String(entry).toLowerCase();
+                            if (lower.indexOf(prefix) !== 0 || !/\.pk3$/i.test(entry) ||
+                                keep[lower]) {
+                                return;
+                            }
+                            try {
+                                Module.FS.unlink(dir + '/' + entry);
+                                if (console && console.warn) {
+                                    console.warn('Removed stale ' + assets.fsGame +
+                                        ' release package ' + dir + '/' + entry);
+                                }
+                            } catch (e) { /* the fresh package is still preferred */ }
+                        });
+                    } catch (e) { /* directory does not exist yet */ }
+                });
+            }
+
             // Extract a side module (cgame/ui/qagame) from one of the
             // already-downloaded pk3s in the mod's directory. Returns the module
             // bytes, or null if none of the pk3s contains it. The pk3 is the
@@ -5917,15 +5951,37 @@
                 return omniBotInstall;
             }
 
+            // IDBFS warns and can do redundant transactions when two callers
+            // enter syncfs at once. Startup/profile persistence and the periodic
+            // home flush share this single queue so exactly one transaction is
+            // in flight for all three mounted IDBFS trees.
+            var syncFsTail = Promise.resolve();
+            function queueSyncFs(populate) {
+                var sync = syncFsTail.catch(function () { /* keep queue alive */ })
+                    .then(function () {
+                        return new Promise(function (resolve) {
+                            try {
+                                Module.FS.syncfs(!!populate, function (err) {
+                                    if (err && console && console.warn) {
+                                        console.warn('IDBFS sync failed:', err);
+                                    }
+                                    resolve(err || null);
+                                });
+                            } catch (e) {
+                                if (console && console.warn) {
+                                    console.warn('IDBFS sync failed:', e);
+                                }
+                                resolve(e);
+                            }
+                        });
+                    });
+                syncFsTail = sync;
+                return sync;
+            }
+
             // Persist the etmain data to IndexedDB so subsequent loads are fast.
             function persist() {
-                return new Promise(function (resolve) {
-                    try {
-                        Module.FS.syncfs(false, function () { resolve(); });
-                    } catch (e) {
-                        resolve();
-                    }
-                });
+                return queueSyncFs(false);
             }
 
             // Mount IndexedDB-backed filesystems for the etmain and legacy
@@ -5942,10 +5998,7 @@
                         // Home dir: player profiles + in-game settings
                         // (profiles/<name>/etconfig.cfg) persist across sessions.
                         Module.FS.mount(Module.FS.filesystems.IDBFS, {}, HOME_ETL_DIR);
-                        Module.FS.syncfs(true, function (err) {
-                            if (err && console && console.warn) {
-                                console.warn('IDBFS initial sync failed:', err);
-                            }
+                        queueSyncFs(true).then(function () {
                             restoreEtkey();
                             resolve();
                         });
@@ -5980,23 +6033,13 @@
                         return;
                     }
                     syncing = true;
-                    try {
-                        Module.FS.syncfs(false, function (err) {
-                            syncing = false;
-                            if (err && console && console.warn) {
-                                console.warn('IDBFS sync failed:', err);
-                            }
-                            if (syncPending) {
-                                syncPending = false;
-                                syncHome();
-                            }
-                        });
-                    } catch (e) {
+                    queueSyncFs(false).then(function () {
                         syncing = false;
-                        if (console && console.warn) {
-                            console.warn('IDBFS sync failed:', e);
+                        if (syncPending) {
+                            syncPending = false;
+                            syncHome();
                         }
-                    }
+                    });
                 }
                 window.etlPersistFilesystem = syncHome;
                 setInterval(syncHome, 5000);
@@ -6378,6 +6421,7 @@
                              base: ETL_MIRROR_BASE + 'jaymod/' },
                 etjump:    { name: 'ETJump',     fsGame: 'etjump',    available: true,
                              pk3s: ['etjump-3.6.0.pk3'],
+                             releasePrefix: 'etjump-',
                              base: ETL_MIRROR_BASE + 'etjump/' },
                 etpub:     { name: 'ETPub',      fsGame: 'etpub',     available: true,
                              pk3s: ['etpubc-20100628.pk3'],
@@ -7179,7 +7223,15 @@
                 if (modInstalls[modKey]) { return modInstalls[modKey]; }
 
                 var assets = hostModAssets(mod, modKey);
-                var install = downloadModAssets(assets).catch(function (err) {
+                // Clean before the engine starts scanning fs_homepath. In
+                // particular, an old etjump-3.6.1.pk3 must not override the
+                // configured 3.6.0 package and its matching WASM modules.
+                removeStaleHostedModPk3s(assets, mod.releasePrefix);
+                var install = downloadModAssets(assets).then(function () {
+                    // downloadInto may have restored persisted files while the
+                    // install was running; enforce the same invariant once more.
+                    removeStaleHostedModPk3s(assets, mod.releasePrefix);
+                }).catch(function (err) {
                     // A failed install must not be remembered: the next attempt
                     // (after the file was uploaded, or on a better connection)
                     // has to try again.

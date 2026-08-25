@@ -1067,6 +1067,26 @@ void *Sys_LoadGameDll(const char *name, qboolean extract,
 	return libHandle;
 }
 
+#ifdef __EMSCRIPTEN__
+/**
+ * Resolve vmMain again after other Emscripten side modules have been loaded.
+ *
+ * A browser host loads ui, cgame and qagame into the same MAIN_MODULE. Loading
+ * another SIDE_MODULE can grow/update the shared indirect function table. Do
+ * not keep using a wrapper resolved before that update: resolve the export from
+ * its still-live dlopen handle immediately before dispatching into the VM.
+ */
+VM_EntryPoint_t Sys_RefreshGameDllEntryPoint(void *libHandle)
+{
+	if (!libHandle)
+	{
+		return NULL;
+	}
+
+	return (VM_EntryPoint_t)Sys_LoadFunction(libHandle, "vmMain");
+}
+#endif
+
 void Sys_ParseArgsDrawBanner(FILE *stream)
 {
 	static int alreadyDrawn = qfalse;

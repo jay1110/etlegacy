@@ -1817,6 +1817,12 @@ int R_TryStitchingPatch(int grid1num)
  */
 void R_StitchAllPatches(void)
 {
+#ifdef __EMSCRIPTEN__
+	// See renderer/tr_bsp.c. This optional LoD repair pass is unsafe with the
+	// wasm32 tail-allocated grid layout and is not needed for gameplay.
+	Ren_Print("stitched 0 LoD cracks (disabled for wasm32)\n");
+	return;
+#else
 	int           i, numstitches = 0;
 	srfGridMesh_t *grid1;
 	qboolean      stitched;
@@ -1846,6 +1852,7 @@ void R_StitchAllPatches(void)
 	}
 	while (stitched);
 	Ren_Print("stitched %d LoD cracks\n", numstitches);
+#endif
 }
 
 /**

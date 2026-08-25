@@ -2826,6 +2826,11 @@ static int R_TryStitchingPatch(int grid1num)
  */
 static void R_StitchAllPatches(void)
 {
+#ifdef __EMSCRIPTEN__
+	// Keep all renderer backends consistent with renderer/tr_bsp.c.
+	Ren_Developer("stitched 0 LoD cracks (disabled for wasm32)\n");
+	return;
+#else
 	int           i, numstitches = 0;
 	srfGridMesh_t *grid1;
 	qboolean      stitched;
@@ -2857,6 +2862,7 @@ static void R_StitchAllPatches(void)
 	}
 	while (stitched);
 	Ren_Developer("stitched %d LoD cracks\n", numstitches);
+#endif
 }
 
 /**

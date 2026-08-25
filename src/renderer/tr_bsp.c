@@ -1817,6 +1817,15 @@ int R_TryStitchingPatch(int grid1num)
  */
 void R_StitchAllPatches(void)
 {
+#ifdef __EMSCRIPTEN__
+	// Grid meshes use tail-allocated vertex arrays which the native renderer
+	// walks while inserting LoD columns/rows. With the wasm32 linear-memory
+	// layout that optional stitching pass can address beyond the allocated grid
+	// and trap the entire browser main loop. Stitching only hides occasional LoD
+	// hairline cracks; skipping it does not affect collision or gameplay.
+	Ren_Print("stitched 0 LoD cracks (disabled for wasm32)\n");
+	return;
+#else
 	int           i, numstitches = 0;
 	srfGridMesh_t *grid1;
 	qboolean      stitched;
@@ -1846,6 +1855,7 @@ void R_StitchAllPatches(void)
 	}
 	while (stitched);
 	Ren_Print("stitched %d LoD cracks\n", numstitches);
+#endif
 }
 
 /**
