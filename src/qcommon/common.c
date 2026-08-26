@@ -1569,6 +1569,9 @@ static hunkblock_t *hunkblocks;
 
 static hunkUsed_t hunk_low, hunk_high;
 static hunkUsed_t *hunk_permanent, *hunk_temp;
+#ifdef __EMSCRIPTEN__
+static unsigned int hunkClearToMarkGeneration;
+#endif
 
 static byte *s_hunkData = NULL;
 static int  s_hunkTotal;
@@ -2054,7 +2057,17 @@ void Hunk_ClearToMark(void)
 {
 	hunk_low.permanent  = hunk_low.temp = hunk_low.mark;
 	hunk_high.permanent = hunk_high.temp = hunk_high.mark;
+#ifdef __EMSCRIPTEN__
+	hunkClearToMarkGeneration++;
+#endif
 }
+
+#ifdef __EMSCRIPTEN__
+unsigned int Hunk_ClearToMarkGeneration(void)
+{
+	return hunkClearToMarkGeneration;
+}
+#endif
 
 /**
  * @brief Hunk_CheckMark

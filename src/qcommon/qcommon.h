@@ -1216,6 +1216,9 @@ void Hunk_Clear(void);
 void Hunk_ClearToMark(void);
 void Hunk_SetMark(void);
 qboolean Hunk_CheckMark(void);
+#ifdef __EMSCRIPTEN__
+unsigned int Hunk_ClearToMarkGeneration(void);
+#endif
 //void *Hunk_Alloc( int size );
 // void *Hunk_Alloc( int size, ha_pref preference );
 void Hunk_ClearTempMemory(void);

@@ -699,6 +699,9 @@ void SV_SpawnServer(const char *server)
 	unsigned int checksum;
 	qboolean     isBot;
 	const char   *p;
+#ifdef __EMSCRIPTEN__
+	unsigned int hunkClearGeneration;
+#endif
 
 #ifdef __EMSCRIPTEN__
 	// A browser page cannot load a second map: everything below tears the
@@ -822,6 +825,17 @@ void SV_SpawnServer(const char *server)
 	// the loading stage, so connected clients don't have
 	// to load during actual gameplay
 	sv.state = SS_LOADING;
+
+#ifdef __EMSCRIPTEN__
+	/*
+	 * A localhost browser client may finish its in-process reconnect from a
+	 * game syscall while GAME_INIT is still running.  Give that client a valid
+	 * server boundary before entering the game module so CL_FlushMemory cannot
+	 * release the collision map and other server hunk allocations.
+	 */
+	Hunk_SetMark();
+	hunkClearGeneration = Hunk_ClearToMarkGeneration();
+#endif
 
 	if (sv_serverTimeReset->integer)
 	{
@@ -985,7 +999,16 @@ void SV_SpawnServer(const char *server)
 		Com_Printf("Not sending heartbeats to master servers - disabled by sv_advert\n");
 	}
 
+#ifdef __EMSCRIPTEN__
+	// If no reentrant client clear occurred, include any game/botlib allocations
+	// made during server initialization in the normal final server boundary.
+	if (Hunk_ClearToMarkGeneration() == hunkClearGeneration)
+	{
+		Hunk_SetMark();
+	}
+#else
 	Hunk_SetMark();
+#endif
 
 	SV_UpdateConfigStrings();
 
