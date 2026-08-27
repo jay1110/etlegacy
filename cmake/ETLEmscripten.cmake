@@ -83,10 +83,13 @@ set(BUILD_SERVER_MOD ON CACHE BOOL "Build qagame as a wasm side module for Emscr
 set(FEATURE_LUA OFF CACHE BOOL "Disable Lua for the Emscripten server mod" FORCE)
 set(FEATURE_LUASQL OFF CACHE BOOL "Disable LuaSQL for the Emscripten server mod" FORCE)
 set(BUNDLED_LUA OFF CACHE BOOL "Do not build bundled Lua for Emscripten" FORCE)
-# The browser downloads the regular Legacy mod pk3 during startup. Keep the
-# packaging target enabled so its filename, the configured shell URL and the
-# cgame/ui modules inside the archive always use the same build version.
-set(BUILD_MOD_PK3 ON CACHE BOOL "Package the Legacy mod pk3 for Emscripten" FORCE)
+# The web workflow packages the Legacy pk3 after all wasm side modules have
+# finished linking (see .github/workflows/emscripten.yml).  Do not also enable
+# CMake's ALL mod_pk3 target here: that target is intended for native builds
+# and makes the parallel GNU Make build package the same output while the wasm
+# build is still running.  The shell and workflow still share the generated
+# etl_web_pk3_name.txt, so the downloaded pk3 keeps the exact build version.
+set(BUILD_MOD_PK3 OFF CACHE BOOL "Package the Legacy mod pk3 in the web release step" FORCE)
 
 #-----------------------------------------------------------------
 # Allow the cgame/ui SIDE_MODULEs to actually be linked as wasm
