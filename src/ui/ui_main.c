@@ -39,6 +39,7 @@
 uiInfo_t uiInfo;
 int      dll_com_trapGetValue;
 int      dll_trap_CvarSetDescription;
+extern qboolean bg_loadscreeninited;
 
 static const char *MonthAbbrev[] =
 {
@@ -8740,6 +8741,7 @@ void UI_Init(int etLegacyClient, int clientVersion)
 
 	UI_RegisterCvars();
 	UI_InitMemory();
+	bg_loadscreeninited = qfalse; // FIX WASM: force loading-panel font re-registration after Hunk_Clear
 	trap_PC_RemoveAllGlobalDefines();
 	UI_SetupExtensions();
 

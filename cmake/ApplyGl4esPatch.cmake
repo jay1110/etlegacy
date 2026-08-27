@@ -1,0 +1,26 @@
+if(NOT DEFINED GL4ES_SOURCE_DIR OR NOT DEFINED GL4ES_PATCH OR NOT DEFINED GIT_EXECUTABLE)
+	message(FATAL_ERROR "GL4ES_SOURCE_DIR, GL4ES_PATCH and GIT_EXECUTABLE are required")
+endif()
+
+set(TEXTURE_PARAMS "${GL4ES_SOURCE_DIR}/src/gl/texture_params.c")
+file(READ "${TEXTURE_PARAMS}" TEXTURE_PARAMS_CONTENT)
+
+string(FIND "${TEXTURE_PARAMS_CONTENT}" "if(drawing && tex->glname)" DRAWING_GUARD)
+string(FIND "${TEXTURE_PARAMS_CONTENT}" "if(tex->glname)\n            realize_1texture" REALIZE_GUARD)
+
+if(NOT DRAWING_GUARD EQUAL -1 AND NOT REALIZE_GUARD EQUAL -1)
+	message(STATUS "gl4es texture guards are already applied")
+	return()
+endif()
+
+execute_process(
+	COMMAND "${GIT_EXECUTABLE}" apply --whitespace=nowarn "${GL4ES_PATCH}"
+	WORKING_DIRECTORY "${GL4ES_SOURCE_DIR}"
+	RESULT_VARIABLE PATCH_RESULT
+	OUTPUT_VARIABLE PATCH_OUTPUT
+	ERROR_VARIABLE PATCH_ERROR
+)
+
+if(NOT PATCH_RESULT EQUAL 0)
+	message(FATAL_ERROR "Failed to apply gl4es texture guards: ${PATCH_OUTPUT}${PATCH_ERROR}")
+endif()

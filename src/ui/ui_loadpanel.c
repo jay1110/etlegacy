@@ -36,6 +36,7 @@
 #include "ui_shared.h"
 
 qboolean bg_loadscreeninited = qfalse;
+static qboolean bg_loadPanelOffsetApplied = qfalse;
 
 void UI_LoadPanel_RenderHeaderText(panel_button_t *button);
 void UI_LoadPanel_RenderLoadingText(panel_button_t *button);
@@ -179,7 +180,11 @@ void UI_DrawLoadPanel(qboolean ownerdraw, qboolean uihack)
 		RegisterSharedFonts();
 
 		BG_PanelButtonsSetup(loadpanelButtons);
-		C_PanelButtonsSetup(loadpanelButtons, Cui_WideXoffset());   // convert to possible widescreen coordinates..
+		if (!bg_loadPanelOffsetApplied)
+		{
+			C_PanelButtonsSetup(loadpanelButtons, Cui_WideXoffset());   // convert to possible widescreen coordinates..
+			bg_loadPanelOffsetApplied = qtrue;
+		}
 
 		bg_loadscreeninited = qtrue;
 	}

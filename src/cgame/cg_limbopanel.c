@@ -40,6 +40,8 @@
 #define SOUND_FILTER    SOUNDEVENT(cgs.media.sndLimboFilter)
 //#define SOUND_CANCEL    SOUNDEVENT(cgs.media.sndLimboCancel)
 
+static qboolean bg_limboPanelOffsetApplied = qfalse;
+
 void CG_DrawBorder(float x, float y, float w, float h, qboolean fill, qboolean drawMouseOver);
 
 const team_t teamOrder[3] =
@@ -3399,7 +3401,11 @@ void CG_LimboPanel_Setup(void)
 void CG_LimboPanel_Init(void)
 {
 	BG_PanelButtonsSetup(limboPanelButtons);
-	C_PanelButtonsSetup(limboPanelButtons, cgs.wideXoffset);    // convert to possible widescreen coordinates..
+	if (!bg_limboPanelOffsetApplied)
+	{
+		C_PanelButtonsSetup(limboPanelButtons, cgs.wideXoffset);    // convert to possible widescreen coordinates..
+		bg_limboPanelOffsetApplied = qtrue;
+	}
 }
 
 /**

@@ -43,6 +43,7 @@ void CG_Shutdown(void);
 qboolean CG_CheckExecKey(int key);
 extern itemDef_t *g_bindItem;
 extern qboolean  g_waitingForKey;
+extern qboolean  bg_loadscreeninited;
 
 int dll_com_trapGetValue;
 int dll_trap_SysFlashWindow;
@@ -1338,8 +1339,10 @@ static void CG_RegisterGraphics(void)
 
 	CG_LoadingString(" - heads-up display -");
 	CG_Hud_Setup();
+	bg_loadscreeninited = qfalse; // FIX WASM: force loading-panel font/button re-registration after Hunk_Clear
 
 	Com_Memset(cg_weapons, 0, sizeof(cg_weapons));
+	bg_loadscreeninited = qfalse; // FIX WASM: force loading-panel font/button re-registration after Hunk_Clear
 
 	CG_LoadingString(" - weapons -");
 	for (i = WP_KNIFE; i < WP_NUM_WEAPONS; i++)

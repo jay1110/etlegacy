@@ -37,6 +37,7 @@
 extern displayContextDef_t *DC;
 
 qboolean  bg_loadscreeninited = qfalse;
+static qboolean bg_loadPanelOffsetApplied = qfalse;
 qhandle_t bg_axispin;
 qhandle_t bg_alliedpin;
 qhandle_t bg_neutralpin;
@@ -318,7 +319,11 @@ void CG_DrawConnectScreen(qboolean interactive, qboolean forcerefresh)
 		bg_mappic = 0;
 
 		BG_PanelButtonsSetup(loadpanelButtons);
-		C_PanelButtonsSetup(loadpanelButtons, cgs.wideXoffset);
+		if (!bg_loadPanelOffsetApplied)
+		{
+			C_PanelButtonsSetup(loadpanelButtons, cgs.wideXoffset);
+			bg_loadPanelOffsetApplied = qtrue;
+		}
 
 		bg_loadscreeninited = qtrue;
 	}

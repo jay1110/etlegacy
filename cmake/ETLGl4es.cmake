@@ -17,6 +17,7 @@ if(NOT (FEATURE_GL4ES AND BUILD_CLIENT))
 endif()
 
 include(ExternalProject)
+find_package(Git REQUIRED)
 
 add_library(bundled_gl4es_int INTERFACE)
 
@@ -66,6 +67,11 @@ ExternalProject_Add(bundled_gl4es
 	# after re-verifying the browser build.
 	GIT_TAG 17f0894e19d1553e4176276c759915dab44c08e2
 	PREFIX "${GL4ES_PREFIX}"
+	PATCH_COMMAND ${CMAKE_COMMAND}
+		-DGL4ES_SOURCE_DIR=<SOURCE_DIR>
+		-DGL4ES_PATCH=${CMAKE_SOURCE_DIR}/cmake/patches/gl4es-texture-guards.patch
+		-DGIT_EXECUTABLE=${GIT_EXECUTABLE}
+		-P ${CMAKE_SOURCE_DIR}/cmake/ApplyGl4esPatch.cmake
 	BUILD_BYPRODUCTS "${GL4ES_LIBRARY}"
 	CMAKE_ARGS ${GL4ES_CMAKE_ARGS}
 	INSTALL_COMMAND ""
