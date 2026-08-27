@@ -2682,27 +2682,11 @@ static void CL_FrameHandleVideo(int *msec)
 void CL_Frame(int msec)
 {
 	int frameStart = 0;
-#ifdef __EMSCRIPTEN__
-	const qboolean traceETJumpFrame =
-		cls.state == CA_ACTIVE && !Q_stricmp(Cvar_VariableString("fs_game"), "etjump");
-#define ETJ_ENGINE_FRAME_CHECKPOINT(label) \
-	do \
-	{ \
-		if (traceETJumpFrame) \
-		{ \
-			Com_Printf("ETL-WASM client frame: %s\n", label); \
-		} \
-	} while (0)
-#else
-#define ETJ_ENGINE_FRAME_CHECKPOINT(label) do { } while (0)
-#endif
 
 	if (!com_cl_running->integer)
 	{
 		return;
 	}
-
-	ETJ_ENGINE_FRAME_CHECKPOINT("enter");
 
 	if (cls.state == CA_DISCONNECTED && !(cls.keyCatchers & KEYCATCH_UI)
 	    && !com_sv_running->integer)
@@ -2718,7 +2702,6 @@ void CL_Frame(int msec)
 	}
 
 	CL_FrameHandleVideo(&msec);
-	ETJ_ENGINE_FRAME_CHECKPOINT("video complete");
 
 	// save the msec before checking pause
 	cls.realFrametime = msec;
@@ -2735,47 +2718,35 @@ void CL_Frame(int msec)
 
 	// see if we need to update any userinfo
 	CL_CheckUserinfo();
-	ETJ_ENGINE_FRAME_CHECKPOINT("userinfo complete");
-
 	// if we haven't gotten a packet in a long time,
 	// drop the connection
 	CL_CheckTimeout();
-	ETJ_ENGINE_FRAME_CHECKPOINT("timeout complete");
 
 	// let the download system run its loop quick if there are open sockets
 	Com_WebDownloadLoop();
-	ETJ_ENGINE_FRAME_CHECKPOINT("downloads complete");
 
 	// send intentions now
 	CL_SendCmd();
-	ETJ_ENGINE_FRAME_CHECKPOINT("send command complete");
 
 	// resend a connection request if necessary
 	CL_CheckForResend();
-	ETJ_ENGINE_FRAME_CHECKPOINT("resend complete");
 
 	// request motd and update data from the master server
 	CL_RequestMasterData(qfalse);
-	ETJ_ENGINE_FRAME_CHECKPOINT("master data complete");
 
 	// decide on the serverTime to render
 	CL_SetCGameTime();
-	ETJ_ENGINE_FRAME_CHECKPOINT("cgame time complete");
 
 	// update the screen
 	SCR_UpdateScreen();
-	ETJ_ENGINE_FRAME_CHECKPOINT("screen complete");
 
 	// update the sound
 	S_Update();
-	ETJ_ENGINE_FRAME_CHECKPOINT("sound complete");
 
 	// advance local effects for next frame
 	SCR_RunCinematic();
-	ETJ_ENGINE_FRAME_CHECKPOINT("cinematic complete");
 
 	Con_RunConsole();
-	ETJ_ENGINE_FRAME_CHECKPOINT("console complete");
 
 	cls.framecount++;
 
@@ -2791,8 +2762,6 @@ void CL_Frame(int msec)
 		clc.demo.timedemo.frametime[(clc.demo.timedemo.timeFrames - 1) % MAX_TIMEDEMO_FRAMES] = Sys_Milliseconds() - frameStart;
 	}
 
-	ETJ_ENGINE_FRAME_CHECKPOINT("leave");
-#undef ETJ_ENGINE_FRAME_CHECKPOINT
 }
 
 //============================================================================
