@@ -83,7 +83,10 @@ set(BUILD_SERVER_MOD ON CACHE BOOL "Build qagame as a wasm side module for Emscr
 set(FEATURE_LUA OFF CACHE BOOL "Disable Lua for the Emscripten server mod" FORCE)
 set(FEATURE_LUASQL OFF CACHE BOOL "Disable LuaSQL for the Emscripten server mod" FORCE)
 set(BUNDLED_LUA OFF CACHE BOOL "Do not build bundled Lua for Emscripten" FORCE)
-set(BUILD_MOD_PK3 OFF CACHE BOOL "Do not pack a mod pk3 for Emscripten" FORCE)
+# The browser downloads the regular Legacy mod pk3 during startup. Keep the
+# packaging target enabled so its filename, the configured shell URL and the
+# cgame/ui modules inside the archive always use the same build version.
+set(BUILD_MOD_PK3 ON CACHE BOOL "Package the Legacy mod pk3 for Emscripten" FORCE)
 
 #-----------------------------------------------------------------
 # Allow the cgame/ui SIDE_MODULEs to actually be linked as wasm

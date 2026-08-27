@@ -387,6 +387,10 @@ if(BUILD_MOD_PK3)
 	add_custom_command(
 		OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${MODNAME}/${MODNAME}_${ETL_CMAKE_VERSION_SHORT}.pk3
 		COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/etmain ${CMAKE_CURRENT_BINARY_DIR}/${MODNAME}
+		# Emscripten side modules are linked next to etl.html. Refresh the staging
+		# copies before packaging so an old module can never leak into a new pk3.
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:cgame> ${CMAKE_CURRENT_BINARY_DIR}/${MODNAME}/$<TARGET_FILE_NAME:cgame>
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:ui> ${CMAKE_CURRENT_BINARY_DIR}/${MODNAME}/$<TARGET_FILE_NAME:ui>
 		# Version header is generated in the build tree and staged into ui/ for menu includes.
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_BINARY_DIR}/etmain/ui/version_generated.h ${CMAKE_CURRENT_BINARY_DIR}/${MODNAME}/ui/version_generated.h
 		COMMAND ${CMAKE_COMMAND} -E tar c ${CMAKE_CURRENT_BINARY_DIR}/${MODNAME}/${MODNAME}_${ETL_CMAKE_VERSION_SHORT}.pk3 --format=zip $<TARGET_FILE_NAME:cgame> $<TARGET_FILE_NAME:ui> ${ETMAIN_FILES_SHALLOW_REL} ui/version_generated.h
