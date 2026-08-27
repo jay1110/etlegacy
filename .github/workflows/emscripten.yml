@@ -46,28 +46,28 @@ jobs:
           # "git describe" and the mod pk3 is named after its result (see
           # ETL_MOD_PK3_NAME in cmake/ETLBuildMod.cmake). Without this the
           # shallow checkout has no tags, git describe returns nothing and
-          # every build produces the same "legacy_2.84-dirty.pk3" - so two
+          # every build produces the same "legacy_<version>-dirty.pk3" - so two
           # servers with different content end up with an identical pk3 name
           # and clients cannot tell them apart (a client that already has one
           # of them refuses to connect to the other).
           fetch-depth: 0
 
       # A unique, version-based pk3 name in every case. With tags present
-      # "git describe" already produces one (e.g. v2.84.0-21-g7a784b4);
-      # a repository without tags (a fresh fork, for instance) falls back to
-      # the version from VERSION.txt plus the commit count and the commit
-      # hash, which is just as unique. ETLVersion.cmake reads both variables.
+      # VERSION.txt is the authoritative release version. Restrict git describe
+      # to that version's tag: an old tag left in a fork must never make a 2.85
+      # build identify itself (and its mod pk3) as 2.84. If the expected tag is
+      # absent, synthesize a unique development version from VERSION.txt.
+      # ETLVersion.cmake reads both variables below.
       - name: Determine version
         run: |
-          DESCRIBE="$(git describe --abbrev=7 2>/dev/null || true)"
-          TAG="$(git describe --abbrev=0 2>/dev/null || true)"
+          MAJOR="$(sed -n 's/^VERSION_MAJOR \([0-9]*\).*/\1/p' VERSION.txt)"
+          MINOR="$(sed -n 's/^VERSION_MINOR \([0-9]*\).*/\1/p' VERSION.txt)"
+          PATCH="$(sed -n 's/^VERSION_PATCH \([0-9]*\).*/\1/p' VERSION.txt)"
+          TAG="v${MAJOR}.${MINOR}.${PATCH}"
+          DESCRIBE="$(git describe --abbrev=7 --match "${TAG}" 2>/dev/null || true)"
           if [ -z "${DESCRIBE}" ]; then
-            MAJOR="$(sed -n 's/^VERSION_MAJOR \([0-9]*\).*/\1/p' VERSION.txt)"
-            MINOR="$(sed -n 's/^VERSION_MINOR \([0-9]*\).*/\1/p' VERSION.txt)"
-            PATCH="$(sed -n 's/^VERSION_PATCH \([0-9]*\).*/\1/p' VERSION.txt)"
             COUNT="$(git rev-list --count HEAD)"
             SHA="$(git rev-parse --short=7 HEAD)"
-            TAG="v${MAJOR}.${MINOR}.${PATCH}"
             DESCRIBE="${TAG}-${COUNT}-g${SHA}"
           fi
           echo "CI_ETL_DESCRIBE=${DESCRIBE}" >> "$GITHUB_ENV"
