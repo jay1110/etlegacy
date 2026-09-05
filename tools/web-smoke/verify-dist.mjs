@@ -243,7 +243,10 @@ if (mapListPresent) {
         const bad = names.filter((name) => {
             const url = list[name];
             if (typeof url !== 'string') return true;
-            if (!/^[A-Za-z0-9_-]+$/.test(name)) return true;
+            // ET maps in the wild use punctuation such as !, #, brackets,
+            // parentheses and apostrophes. Match the launcher's safety rule:
+            // block path/control/console separators, not valid BSP basenames.
+            if (!name || name.length > 64 || /[\x00-\x20\x7f\\/;"]/.test(name)) return true;
             if (url === '') return false;
             if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(url) && !/^https?:/i.test(url)) return true;
             return !/\.pk3$/.test(url.split('?')[0].split('#')[0]);

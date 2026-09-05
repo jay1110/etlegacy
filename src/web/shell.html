@@ -5371,7 +5371,11 @@
                 var count = 0;
                 Object.keys(raw).forEach(function (name) {
                     var url = raw[name];
-                    if (!/^[A-Za-z0-9_-]{1,64}$/.test(name)) { return; }
+                    // Real ET maps are not limited to [A-Za-z0-9_-]: released
+                    // BSPs use !, #, brackets, parentheses, apostrophes and
+                    // other printable filename characters. Reject only values
+                    // that can escape a path or the quoted rotation command.
+                    if (!name || name.length > 64 || /[\x00-\x20\x7f\\/;"]/.test(name)) { return; }
                     if (typeof url !== 'string') { return; }
                     url = url.trim();
                     if (url && /^[A-Za-z][A-Za-z0-9+.-]*:/.test(url) &&
@@ -5416,8 +5420,16 @@
             // is what the engine's pure/checksum handling and any later update
             // of the map list key on.
             function pk3NameForUrl(url) {
-                var name = url.split('?')[0].split('#')[0].split('/').pop();
-                return /^[A-Za-z0-9._-]+\.pk3$/.test(name) ? name : null;
+                var name;
+                try {
+                    name = new URL(url, window.location.href).pathname.split('/').pop();
+                    name = decodeURIComponent(name);
+                } catch (e) { return null; }
+                // Keep the real archive basename. Parentheses, brackets,
+                // spaces and punctuation are valid in existing ET pk3 names;
+                // path separators and control characters are not.
+                return name && name.length <= 255 && /\.pk3$/i.test(name) &&
+                    !/[\x00-\x1f\x7f\\/]/.test(name) ? name : null;
             }
 
             // Make sure the map can be loaded: stock maps are already in the
