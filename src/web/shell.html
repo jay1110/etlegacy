@@ -2285,6 +2285,8 @@
             <div class="settings-group active" id="game-basic" role="tabpanel"
                  aria-labelledby="game-tab-basic">
                 <label for="game-map">Map rotation (up to 10 maps)</label>
+                <input id="game-map-search" class="map-search" type="search"
+                       placeholder="Search maps (for example: oas)" autocomplete="off">
                 <div class="map-picker">
                     <select id="game-map"></select>
                     <button class="control-btn" type="button" id="game-map-add">Add</button>
@@ -2583,6 +2585,8 @@
             <h2>Quick single game</h2>
             <div class="panel-body">
                 <label for="quick-map">Map</label>
+                <input id="quick-map-search" class="map-search" type="search"
+                       placeholder="Search maps (for example: oas)" autocomplete="off">
                 <select id="quick-map"></select>
                 <label for="quick-bots">Bots (0 - 31)</label>
                 <input id="quick-bots" type="number" value="4" min="0" max="31">
@@ -2659,6 +2663,8 @@
                 <div class="settings-group active" id="host-basic" role="tabpanel"
                      aria-labelledby="host-tab-basic">
                     <label for="host-map">Map rotation (up to 10 maps)</label>
+                    <input id="host-map-search" class="map-search" type="search"
+                           placeholder="Search maps (for example: oas)" autocomplete="off">
                     <div class="map-picker">
                         <select id="host-map"></select>
                         <button class="control-btn" type="button" id="host-map-add">Add</button>
@@ -5359,6 +5365,11 @@
 
             var mapList = null;
 
+            function safeMapName(name) {
+                return typeof name === 'string' && name.length > 0 && name.length <= 64 &&
+                    !/[\x00-\x20\x7f\\/;"]/.test(name);
+            }
+
             // Accept only what can safely become a map name / a download: a bsp
             // name the engine would accept, and a link that is either an
             // http(s) URL, a protocol relative "//host/path" one or relative to
@@ -5375,7 +5386,7 @@
                     // BSPs use !, #, brackets, parentheses, apostrophes and
                     // other printable filename characters. Reject only values
                     // that can escape a path or the quoted rotation command.
-                    if (!name || name.length > 64 || /[\x00-\x20\x7f\\/;"]/.test(name)) { return; }
+                    if (!safeMapName(name)) { return; }
                     if (typeof url !== 'string') { return; }
                     url = url.trim();
                     if (url && /^[A-Za-z][A-Za-z0-9+.-]*:/.test(url) &&
@@ -8822,21 +8833,34 @@
 
             // Fill a <select> with the map list. withRandom adds the "Random
             // map" entry the host can pick instead of a specific map.
-            function fillMapSelect(select, selected, withRandom) {
+            function fillMapSelect(select, selected, withRandom, query) {
                 select.innerHTML = '';
-                if (withRandom) {
+                query = String(query || '').toLowerCase().trim();
+                if (withRandom && !query) {
                     var random = document.createElement('option');
                     random.value = RANDOM_MAP;
                     random.textContent = 'Random map';
                     select.appendChild(random);
                 }
                 mapNames().forEach(function (name) {
+                    if (query && name.toLowerCase().indexOf(query) === -1) { return; }
                     var opt = document.createElement('option');
                     opt.value = name;
                     opt.textContent = name + ((mapList && mapList[name]) ? ' (download)' : '');
                     select.appendChild(opt);
                 });
-                if (selected) { select.value = selected; }
+                if (selected && Array.prototype.some.call(select.options, function (option) {
+                    return option.value === selected;
+                })) { select.value = selected; }
+            }
+
+            function setupMapSearch(inputId, selectId, withRandom) {
+                var input = byId(inputId);
+                var select = byId(selectId);
+                if (!input || !select) { return; }
+                input.oninput = function () {
+                    fillMapSelect(select, select.value, withRandom, input.value);
+                };
             }
 
             // What the player is currently playing: used by the in-game sidebar
@@ -9191,6 +9215,7 @@
                 var host = session && session.role !== 'client';
                 byId('game-host-settings').style.display = host ? 'block' : 'none';
                 if (host && settings) {
+                    byId('game-map-search').value = '';
                     fillMapSelect(byId('game-map'), settings.map, true);
                     editedRotation = (settings.rotation || [settings.map]).slice();
                     renderEditedRotation();
@@ -9426,6 +9451,32 @@
                 var rotation = sanitiseRotation(editedRotation || settings.rotation,
                     settings.map);
 
+                // Maps added while the server is already running were not
+                // part of startHosting()'s initial download. Do not publish or
+                // program the new rotation until every archive is safely in
+                // IndexedDB; otherwise the next map command reloads the host
+                // into a BSP it cannot open and all peers only see a restart.
+                var signature = JSON.stringify(rotation);
+                if (applyGameSettings.readyRotation !== signature) {
+                    if (applyGameSettings.installing) { return; }
+                    applyGameSettings.installing = true;
+                    byId('game-apply').disabled = true;
+                    gameMessage('Downloading maps for the new rotation...');
+                    installRotation(rotation).then(function () {
+                        applyGameSettings.readyRotation = signature;
+                        applyGameSettings.installing = false;
+                        byId('game-apply').disabled = false;
+                        applyGameSettings();
+                    }).catch(function (err) {
+                        applyGameSettings.installing = false;
+                        byId('game-apply').disabled = false;
+                        gameMessage('Could not apply the rotation: ' +
+                            (err && err.message || err));
+                    });
+                    return;
+                }
+                applyGameSettings.readyRotation = null;
+
                 // A number field of the panel, clamped to the range the input
                 // allows; anything unusable keeps the value the game runs with.
                 function num(id, def, min, max) {
@@ -9580,8 +9631,8 @@
                 // The engine hands us the map it was about to spawn; it is used
                 // to build a command line again, so it is filtered down to what
                 // a map name can be.
-                var clean = String(map || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
-                if (!clean) { return false; }
+                var clean = String(map || '').slice(0, 64);
+                if (!safeMapName(clean) || mapNames().indexOf(clean) === -1) { return false; }
                 if (restartingHostedGame) { return true; }   // already on the way
 
                 var settings = gameSettings();
@@ -9886,6 +9937,8 @@
                     renderEditedRotation();
                     gameMessage('Press "Apply" to use the new rotation.');
                 };
+
+                setupMapSearch('game-map-search', 'game-map', true);
 
                 // Program the rotation into the running game (a single map
                 // simply restarts, exactly as before) and follow the engine
@@ -10555,6 +10608,8 @@
                         fillMapSelect(document.getElementById('host-map'), 'oasis', true);
                         fillMapSelect(document.getElementById('quick-map'), 'oasis', true);
                         fillMapSelect(document.getElementById('game-map'), null, true);
+                        setupMapSearch('host-map-search', 'host-map', true);
+                        setupMapSearch('quick-map-search', 'quick-map', true);
                     });
 
                     // What this tab was doing before it reloaded (hosting a
