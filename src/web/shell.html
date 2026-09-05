@@ -931,14 +931,15 @@
             border-bottom: 1px solid #35354a;
         }
         .live-server-row:last-child { border-bottom: 0; }
-        .live-server-row.offline { opacity: .55; }
         .server-favorite { border: 0; background: none; color: #777; cursor: pointer; padding: 2px; font-size: 1.15rem; }
         .server-favorite.active { color: #e2bd48; }
         .server-main { min-width: 0; cursor: pointer; }
         .server-name { color: #eee; overflow-wrap: anywhere; }
         .server-address, .server-meta { color: #8e8ea7; font-size: .72rem; }
         .server-players { color: #e2bd48; text-align: center; white-space: nowrap; }
-        .server-join { margin: 0; padding: 6px 8px; min-width: 0; }
+        .server-actions { display: flex; flex-direction: column; gap: 4px; }
+        .server-join, .server-share { margin: 0; padding: 5px 6px; min-width: 0; font-size: .72rem; }
+        .server-join.unsupported { font-size: .58rem; padding-left: 2px; padding-right: 2px; }
         .server-details { grid-column: 2 / -1; padding: 9px; border: 1px solid #3f3f59; background: #202039; color: #bbb; line-height: 1.45; }
         .server-player-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 7px; }
         .server-player-groups strong { color: #e2bd48; }
@@ -5058,7 +5059,6 @@
             var LIVE_SERVER_FAVORITES = 'et_server_favs';
             var liveServers = [];
             var liveServerJoin = null;
-            var liveServerRenderLimit = 100;
 
             function stripEtColors(value) {
                 return String(value || '').replace(/\^[0-9A-Za-z]/g, '').trim();
@@ -5120,6 +5120,54 @@
                 return node;
             }
 
+            function appendEtColoredText(parent, className, value) {
+                var node = document.createElement('div');
+                var colors = {
+                    '0': '#000000', '1': '#e64545', '2': '#52cf52', '3': '#e4d34d',
+                    '4': '#5e78e8', '5': '#55d5df', '6': '#d35ad9', '7': '#eeeeee',
+                    '8': '#ef9f43', '9': '#999999', 'a': '#ef9f43', 'b': '#72c7ef',
+                    'c': '#b068e0', 'd': '#77bc68', 'e': '#c8c8c8', 'f': '#eeeeee'
+                };
+                var text = String(value || '');
+                var parts = text.split(/(\^[0-9A-Za-z])/);
+                var color = '#eeeeee';
+                node.className = className;
+                parts.forEach(function (part) {
+                    var match = /^\^([0-9A-Za-z])$/.exec(part);
+                    if (match) { color = colors[match[1].toLowerCase()] || color; return; }
+                    if (!part) { return; }
+                    var span = document.createElement('span');
+                    span.style.color = color;
+                    span.textContent = part;
+                    node.appendChild(span);
+                });
+                parent.appendChild(node);
+                return node;
+            }
+
+            function liveServerShareUrl(address, modKey) {
+                var url = new URL(window.location.href);
+                ['join', 'connect', 'connectmod', 'modgame', 'map', 'host'].forEach(function (key) {
+                    url.searchParams.delete(key);
+                });
+                url.hash = '';
+                url.searchParams.set('connect', address);
+                if (modKey) { url.searchParams.set('connectmod', modKey); }
+                return url.href;
+            }
+
+            function copyServerShareLink(button, address, modKey) {
+                var link = liveServerShareUrl(address, modKey);
+                var copied = navigator.clipboard && window.isSecureContext ?
+                    navigator.clipboard.writeText(link) : Promise.reject(new Error('clipboard unavailable'));
+                copied.then(function () {
+                    button.textContent = 'Copied';
+                    setTimeout(function () { button.textContent = 'Share'; }, 1400);
+                }).catch(function () {
+                    window.prompt('Copy this server link:', link);
+                });
+            }
+
             function renderServerDetails(row, server) {
                 var old = row.querySelector('.server-details');
                 if (old) { old.remove(); return; }
@@ -5176,25 +5224,23 @@
                 var box = document.getElementById('live-server-list');
                 var summary = document.getElementById('live-server-summary');
                 var favorites = serverFavorites();
-                var filtered = liveServers.filter(liveFilterMatch).sort(function (a, b) {
+                var filtered = liveServers.filter(function (server) {
+                    return liveServerOnline(server) && liveFilterMatch(server);
+                }).sort(function (a, b) {
                     var af = favorites.indexOf(liveServerAddress(a)) !== -1 ? 1 : 0;
                     var bf = favorites.indexOf(liveServerAddress(b)) !== -1 ? 1 : 0;
                     if (af !== bf) { return bf - af; }
-                    if (liveServerOnline(a) !== liveServerOnline(b)) { return liveServerOnline(b) ? 1 : -1; }
                     return (Number(b.numplayers || 0) - serverBotCount(b)) -
                         (Number(a.numplayers || 0) - serverBotCount(a));
                 });
                 box.innerHTML = '';
-                var visible = filtered.slice(0, liveServerRenderLimit);
-                summary.textContent = visible.length + ' of ' + filtered.length + ' matching servers shown (' +
-                    liveServers.length + ' total).';
-                visible.forEach(function (server) {
+                summary.textContent = filtered.length + ' online servers shown.';
+                filtered.forEach(function (server) {
                     var address = liveServerAddress(server);
                     if (!address) { return; }
-                    var online = liveServerOnline(server);
                     var modKey = liveServerMod(server);
                     var row = document.createElement('div');
-                    row.className = 'live-server-row' + (online ? '' : ' offline');
+                    row.className = 'live-server-row';
                     var favorite = document.createElement('button');
                     favorite.type = 'button';
                     favorite.className = 'server-favorite' + (favorites.indexOf(address) !== -1 ? ' active' : '');
@@ -5208,7 +5254,7 @@
                     };
                     row.appendChild(favorite);
                     var main = appendServerText(row, 'server-main', '');
-                    appendServerText(main, 'server-name', stripEtColors(server.hostname || address));
+                    appendEtColoredText(main, 'server-name', server.hostname || address);
                     appendServerText(main, 'server-address', address);
                     main.onclick = function () { renderServerDetails(row, server); };
                     appendServerText(row, 'server-map', stripEtColors(server.map || '-'));
@@ -5217,24 +5263,25 @@
                     var real = Math.max(0, Number(server.numplayers || 0) - bots);
                     appendServerText(row, 'server-players', real + (bots ? '+' + bots : '') + '/' + Number(server.maxplayers || 0));
                     appendServerText(row, 'server-country', countryFlag(server.country) + ' ' + String(server.country || '--').toUpperCase());
+                    var actions = document.createElement('div');
+                    actions.className = 'server-actions';
                     var join = document.createElement('button');
                     join.type = 'button'; join.className = 'control-btn server-join';
                     join.textContent = modKey ? 'Join' : 'Unsupported';
-                    join.disabled = !modKey || !online;
-                    join.title = !modKey ? 'This mod has no browser WASM modules.' : (!online ? 'Server is offline.' : 'Join ' + address);
+                    if (!modKey) { join.classList.add('unsupported'); }
+                    join.disabled = !modKey;
+                    join.title = !modKey ? 'This mod has no browser WASM modules.' : 'Join ' + address;
                     join.onclick = function () { if (liveServerJoin) { liveServerJoin(address, modKey); } };
-                    row.appendChild(join);
+                    actions.appendChild(join);
+                    var share = document.createElement('button');
+                    share.type = 'button'; share.className = 'control-btn server-share';
+                    share.textContent = 'Share'; share.title = 'Copy server link';
+                    share.onclick = function () { copyServerShareLink(share, address, modKey); };
+                    actions.appendChild(share);
+                    row.appendChild(actions);
                     box.appendChild(row);
                 });
                 if (!filtered.length) { appendServerText(box, 'launcher-hint', 'No servers match these filters.'); }
-                if (visible.length < filtered.length) {
-                    var more = document.createElement('button');
-                    more.type = 'button'; more.className = 'control-btn';
-                    more.textContent = 'Show 100 more servers';
-                    more.style.margin = '9px auto'; more.style.display = 'block';
-                    more.onclick = function () { liveServerRenderLimit += 100; renderLiveServers(); };
-                    box.appendChild(more);
-                }
             }
 
             function populateLiveServerFilters() {
