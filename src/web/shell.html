@@ -10602,36 +10602,38 @@
                             'launcher-host', 'host-hint');
                     };
 
-                    // The map pickers are filled from maplist.json; until it has
-                    // been read they only offer the built-in (stock) maps.
+                    // Restore/join decisions must wait for maplist.json too.
+                    // takeHostSession() validates the remembered rotation
+                    // against mapNames(); doing that while only FALLBACK_MAPLIST
+                    // exists discards every hosted custom map and makes this
+                    // tab follow its own ?join= link as if it were a client.
                     loadMapList().then(function () {
                         fillMapSelect(document.getElementById('host-map'), 'oasis', true);
                         fillMapSelect(document.getElementById('quick-map'), 'oasis', true);
                         fillMapSelect(document.getElementById('game-map'), null, true);
                         setupMapSearch('host-map-search', 'host-map', true);
                         setupMapSearch('quick-map-search', 'quick-map', true);
-                    });
 
-                    // What this tab was doing before it reloaded (hosting a
-                    // game, or restarting one to change the map).
-                    var stored = takeHostSession();
+                        // What this tab was doing before it reloaded (hosting a
+                        // game, or restarting one to change the map).
+                        var stored = takeHostSession();
 
                     // A hosted game that changed its map reloaded this page on
                     // purpose (see etlRestartHostedGame): put it straight back
                     // up on the new map. With a room in the lobby that room is
                     // taken back over below, so nothing about the invite link
                     // or the players in it changes.
-                    if (stored && stored.restart && (!joinParam || stored.roomId === joinParam)) {
-                        showLoading('Loading "' + stored.settings.map + '"...');
-                        startFlow(startHosting(stored.settings, stored.roomId ? {
-                            roomId: stored.roomId,
-                            hostToken: stored.hostToken
-                        } : null), 'launcher-host', 'host-hint');
-                        return;
-                    }
+                        if (stored && stored.restart && (!joinParam || stored.roomId === joinParam)) {
+                            showLoading('Loading "' + stored.settings.map + '"...');
+                            startFlow(startHosting(stored.settings, stored.roomId ? {
+                                roomId: stored.roomId,
+                                hostToken: stored.hostToken
+                            } : null), 'launcher-host', 'host-hint');
+                            return;
+                        }
 
                     // An invite link (?join=<roomId>) skips the menu entirely.
-                    if (joinParam) {
+                        if (joinParam) {
                         // The host's own address bar carries that link too (see
                         // showInviteInAddressBar), so a reload by the host puts
                         // the game back on the air instead of trying to join the
@@ -10639,39 +10641,40 @@
                         // is taken back over with the token stored for this tab,
                         // which keeps the id - every invite link handed out so
                         // far stays valid and the players in it are only paused.
-                        if (stored && stored.roomId === joinParam) {
-                            showLoading('Restarting your hosted game...');
-                            startFlow(startHosting(stored.settings, {
-                                roomId: joinParam,
-                                hostToken: stored.hostToken
-                            }), 'launcher-host', 'host-hint');
-                            return;
-                        }
-                        if (!p2p) {
-                            showLauncherPanel('launcher-menu');
-                        } else {
-                            showLoading('Looking for the game you were invited to...');
-                            p2p.listRooms().then(function (rooms) {
-                                var room = null;
-                                rooms.forEach(function (r) {
-                                    if (r.roomId === joinParam) { room = r; }
-                                });
+                            if (stored && stored.roomId === joinParam) {
+                                showLoading('Restarting your hosted game...');
+                                startFlow(startHosting(stored.settings, {
+                                    roomId: joinParam,
+                                    hostToken: stored.hostToken
+                                }), 'launcher-host', 'host-hint');
+                                return;
+                            }
+                            if (!p2p) {
+                                showLauncherPanel('launcher-menu');
+                            } else {
+                                showLoading('Looking for the game you were invited to...');
+                                p2p.listRooms().then(function (rooms) {
+                                    var room = null;
+                                    rooms.forEach(function (r) {
+                                        if (r.roomId === joinParam) { room = r; }
+                                    });
                                 // A private game is not listed, but it can still
                                 // be joined with its id - that is what the invite
                                 // link is for.
-                                startFlow(joinRoom(room || { roomId: joinParam, map: 'oasis' }),
-                                    'launcher-join', 'join-hint');
-                            }).catch(function (err) {
-                                showLauncherPanel('launcher-menu');
-                                document.getElementById('join-hint').textContent =
-                                    'The invite link could not be used: ' +
-                                    (err && err.message || err);
-                            });
-                            return;
+                                    startFlow(joinRoom(room || { roomId: joinParam, map: 'oasis' }),
+                                        'launcher-join', 'join-hint');
+                                }).catch(function (err) {
+                                    showLauncherPanel('launcher-menu');
+                                    document.getElementById('join-hint').textContent =
+                                        'The invite link could not be used: ' +
+                                        (err && err.message || err);
+                                });
+                                return;
+                            }
                         }
-                    }
 
-                    showLauncherPanel('launcher-menu');
+                        showLauncherPanel('launcher-menu');
+                    });
                 });
             }
 
