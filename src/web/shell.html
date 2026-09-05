@@ -903,13 +903,53 @@
             gap: 7px 14px;
             margin-top: 9px;
         }
-        #etl-serverlist-frame {
-            width: 100%;
-            height: min(52vh, 560px);
-            min-height: 300px;
-            border: 1px solid #555;
+        .server-browser-toolbar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+            gap: 7px;
+            margin: 8px 0;
+        }
+        .server-browser-toolbar input,
+        .server-browser-toolbar select,
+        .server-browser-toolbar button { margin: 0; min-width: 0; }
+        .server-filter-state[data-state="1"] { border-color: #79bd72; color: #a9e5a4; }
+        .server-filter-state[data-state="2"] { border-color: #bb6767; color: #ef9c9c; }
+        #live-server-summary { margin: 7px 0; }
+        #live-server-list {
+            border: 1px solid #444;
             border-radius: 5px;
-            background: #fff;
+            max-height: min(48vh, 520px);
+            overflow: auto;
+            background: #171729;
+        }
+        .live-server-row {
+            display: grid;
+            grid-template-columns: 30px minmax(190px, 2fr) minmax(95px, 1fr) 85px 70px 75px 80px;
+            gap: 8px;
+            align-items: center;
+            padding: 8px;
+            border-bottom: 1px solid #35354a;
+        }
+        .live-server-row:last-child { border-bottom: 0; }
+        .live-server-row.offline { opacity: .55; }
+        .server-favorite { border: 0; background: none; color: #777; cursor: pointer; padding: 2px; font-size: 1.15rem; }
+        .server-favorite.active { color: #e2bd48; }
+        .server-main { min-width: 0; cursor: pointer; }
+        .server-name { color: #eee; overflow-wrap: anywhere; }
+        .server-address, .server-meta { color: #8e8ea7; font-size: .72rem; }
+        .server-players { color: #e2bd48; text-align: center; white-space: nowrap; }
+        .server-join { margin: 0; padding: 6px 8px; min-width: 0; }
+        .server-details { grid-column: 2 / -1; padding: 9px; border: 1px solid #3f3f59; background: #202039; color: #bbb; line-height: 1.45; }
+        .server-player-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 7px; }
+        .server-player-groups strong { color: #e2bd48; }
+        .server-player-groups div { overflow-wrap: anywhere; }
+        @media (max-width: 720px) {
+            .live-server-row { grid-template-columns: 28px minmax(120px, 1fr) 65px 72px; }
+            .live-server-row > .server-map,
+            .live-server-row > .server-country,
+            .live-server-row > .server-meta { display: none; }
+            .server-details { grid-column: 1 / -1; }
+            .server-player-groups { grid-template-columns: 1fr; }
         }
 
         /* Buttons in an action row share the row and shrink with it, so a row
@@ -2558,16 +2598,19 @@
         <div class="launcher-panel" id="launcher-servers">
             <h2>Dedicated serverlist</h2>
             <div class="panel-body">
-                <div class="launcher-hint">
-                    Live-Serverliste von etclan.de, nach Spielerzahl sortiert.
-                    <a href="https://etclan.de/serverlist.php?sort=players&amp;order=desc"
-                       target="_blank" rel="noopener noreferrer">In neuem Tab öffnen</a>
+                <div class="launcher-hint">Live-Serverliste für den Browser-Client. Favoriten und Filter werden lokal gespeichert.</div>
+                <div class="server-browser-toolbar">
+                    <button class="control-btn server-filter-state" id="server-filter-empty" type="button" data-state="0">Empty: all</button>
+                    <button class="control-btn server-filter-state" id="server-filter-full" type="button" data-state="0">Full: all</button>
+                    <button class="control-btn server-filter-state" id="server-filter-password" type="button" data-state="0">Password: all</button>
+                    <button class="control-btn server-filter-state" id="server-filter-bots" type="button" data-state="0">Bots: all</button>
+                    <select id="server-filter-mod" aria-label="Filter by mod"><option value="">All mods</option></select>
+                    <select id="server-filter-country" aria-label="Filter by country"><option value="">All countries</option></select>
+                    <input id="server-filter-search" type="search" placeholder="Server, map, address..." autocomplete="off">
+                    <button class="control-btn" id="server-refresh" type="button">Refresh list</button>
                 </div>
-                <iframe id="etl-serverlist-frame"
-                        title="ETClan Enemy Territory server list"
-                        src="https://etclan.de/serverlist.php?sort=players&amp;order=desc"
-                        loading="lazy"></iframe>
-                <div id="server-list"></div>
+                <div class="launcher-hint" id="live-server-summary">Server list has not been loaded yet.</div>
+                <div id="live-server-list" aria-live="polite"></div>
                 <label for="servers-address">Other server (host:port)</label>
                 <input id="servers-address" type="text" placeholder="etclan.de:27966" autocomplete="off">
                 <label for="servers-mod">Server mod</label>
@@ -5010,6 +5053,223 @@
                 // Add more compatible servers here, e.g.:
                 // { name: 'My Jaymod server', address: '203.0.113.10:27960', mod: 'jaymod' }
             ];
+
+            var LIVE_SERVER_API = 'https://etclan.de/scripts/servers_api.php?sort=players&order=desc';
+            var LIVE_SERVER_FAVORITES = 'et_server_favs';
+            var liveServers = [];
+            var liveServerJoin = null;
+            var liveServerRenderLimit = 100;
+
+            function stripEtColors(value) {
+                return String(value || '').replace(/\^[0-9A-Za-z]/g, '').trim();
+            }
+
+            function liveServerAddress(server) {
+                return etlCleanServerAddress(String(server.ip || '') + ':' +
+                    String(server.port || 27960));
+            }
+
+            function liveServerMod(server) {
+                var raw = String(server.gamename || server.mod || '').toLowerCase().trim();
+                if (raw === 'nq' || raw.indexOf('noquarter') !== -1) { return 'noquarter'; }
+                if (raw.indexOf('legacy') !== -1) { return 'legacy'; }
+                var keys = Object.keys(HOST_MODS);
+                for (var i = 0; i < keys.length; i++) {
+                    if (raw === keys[i] || raw === HOST_MODS[keys[i]].fsGame.toLowerCase()) {
+                        return HOST_MODS[keys[i]].available ? keys[i] : null;
+                    }
+                }
+                return null;
+            }
+
+            function serverFavorites() {
+                try {
+                    var value = JSON.parse(localStorage.getItem(LIVE_SERVER_FAVORITES) || '[]');
+                    return Array.isArray(value) ? value : [];
+                } catch (e) { return []; }
+            }
+
+            function saveServerFavorites(value) {
+                try { localStorage.setItem(LIVE_SERVER_FAVORITES, JSON.stringify(value)); }
+                catch (e) { /* private browsing may reject localStorage */ }
+            }
+
+            function liveServerOnline(server) {
+                var timestamp = Number(server.timestamp || 0);
+                return timestamp > 0 && Math.floor(Date.now() / 1000) - timestamp <= 180;
+            }
+
+            function serverBotCount(server) {
+                return (Array.isArray(server.players) ? server.players : []).filter(function (player) {
+                    return Number(player.ping) === 0;
+                }).length;
+            }
+
+            function countryFlag(code) {
+                code = String(code || '').toUpperCase();
+                if (!/^[A-Z]{2}$/.test(code)) { return '\ud83c\udf10'; }
+                return String.fromCodePoint(code.charCodeAt(0) + 127397,
+                    code.charCodeAt(1) + 127397);
+            }
+
+            function appendServerText(parent, className, text) {
+                var node = document.createElement('div');
+                node.className = className;
+                node.textContent = text;
+                parent.appendChild(node);
+                return node;
+            }
+
+            function renderServerDetails(row, server) {
+                var old = row.querySelector('.server-details');
+                if (old) { old.remove(); return; }
+                var details = appendServerText(row, 'server-details', '');
+                appendServerText(details, 'server-meta',
+                    'Address: ' + liveServerAddress(server) + '  |  Version: ' +
+                    stripEtColors(server.version || '-') + '  |  Game type: ' +
+                    stripEtColors(server.gametype || '-') + '  |  Mod version: ' +
+                    stripEtColors(server.mod_version || '-'));
+                var groups = document.createElement('div');
+                groups.className = 'server-player-groups';
+                ['ALLIES', 'AXIS', 'SPECTATOR'].forEach(function (team) {
+                    var group = document.createElement('div');
+                    var title = document.createElement('strong');
+                    title.textContent = team === 'SPECTATOR' ? 'Spectators' : team;
+                    group.appendChild(title);
+                    var players = (Array.isArray(server.players) ? server.players : []).filter(function (p) {
+                        var value = String(p.team || '').toUpperCase();
+                        return team === 'SPECTATOR' ? value !== 'ALLIES' && value !== 'AXIS' : value === team;
+                    });
+                    appendServerText(group, 'server-meta', players.length ? players.map(function (p) {
+                        return stripEtColors(p.name || 'Player') + ' (' + Number(p.score || 0) +
+                            ', ' + (Number(p.ping) === 0 ? 'bot' : Number(p.ping) + ' ms') + ')';
+                    }).join(', ') : 'No players');
+                    groups.appendChild(group);
+                });
+                details.appendChild(groups);
+            }
+
+            function liveFilterMatch(server) {
+                function tri(id, condition) {
+                    var state = Number(document.getElementById(id).dataset.state || 0);
+                    return state === 0 || (state === 1 ? condition : !condition);
+                }
+                var total = Number(server.numplayers || 0);
+                var bots = serverBotCount(server);
+                var real = Math.max(0, total - bots);
+                var max = Math.max(0, Number(server.maxplayers || 0) - Number(server.sv_privateclients || 0));
+                var mod = document.getElementById('server-filter-mod').value;
+                var country = document.getElementById('server-filter-country').value;
+                var query = document.getElementById('server-filter-search').value.toLowerCase().trim();
+                var haystack = [server.hostname, server.map, server.gamename, server.mod_version,
+                    server.ip, server.port].join(' ').toLowerCase();
+                return tri('server-filter-empty', real === 0) &&
+                    tri('server-filter-full', max > 0 && real >= max) &&
+                    tri('server-filter-password', Number(server.needpass || 0) !== 0) &&
+                    tri('server-filter-bots', bots > 0) &&
+                    (!mod || String(server.gamename || '').toLowerCase() === mod) &&
+                    (!country || String(server.country || '').toUpperCase() === country) &&
+                    (!query || haystack.indexOf(query) !== -1);
+            }
+
+            function renderLiveServers() {
+                var box = document.getElementById('live-server-list');
+                var summary = document.getElementById('live-server-summary');
+                var favorites = serverFavorites();
+                var filtered = liveServers.filter(liveFilterMatch).sort(function (a, b) {
+                    var af = favorites.indexOf(liveServerAddress(a)) !== -1 ? 1 : 0;
+                    var bf = favorites.indexOf(liveServerAddress(b)) !== -1 ? 1 : 0;
+                    if (af !== bf) { return bf - af; }
+                    if (liveServerOnline(a) !== liveServerOnline(b)) { return liveServerOnline(b) ? 1 : -1; }
+                    return (Number(b.numplayers || 0) - serverBotCount(b)) -
+                        (Number(a.numplayers || 0) - serverBotCount(a));
+                });
+                box.innerHTML = '';
+                var visible = filtered.slice(0, liveServerRenderLimit);
+                summary.textContent = visible.length + ' of ' + filtered.length + ' matching servers shown (' +
+                    liveServers.length + ' total).';
+                visible.forEach(function (server) {
+                    var address = liveServerAddress(server);
+                    if (!address) { return; }
+                    var online = liveServerOnline(server);
+                    var modKey = liveServerMod(server);
+                    var row = document.createElement('div');
+                    row.className = 'live-server-row' + (online ? '' : ' offline');
+                    var favorite = document.createElement('button');
+                    favorite.type = 'button';
+                    favorite.className = 'server-favorite' + (favorites.indexOf(address) !== -1 ? ' active' : '');
+                    favorite.textContent = '\u2605';
+                    favorite.title = 'Toggle favorite';
+                    favorite.onclick = function () {
+                        var next = serverFavorites();
+                        var index = next.indexOf(address);
+                        if (index === -1) { next.push(address); } else { next.splice(index, 1); }
+                        saveServerFavorites(next); renderLiveServers();
+                    };
+                    row.appendChild(favorite);
+                    var main = appendServerText(row, 'server-main', '');
+                    appendServerText(main, 'server-name', stripEtColors(server.hostname || address));
+                    appendServerText(main, 'server-address', address);
+                    main.onclick = function () { renderServerDetails(row, server); };
+                    appendServerText(row, 'server-map', stripEtColors(server.map || '-'));
+                    appendServerText(row, 'server-meta', stripEtColors(server.gamename || server.mod || '-'));
+                    var bots = serverBotCount(server);
+                    var real = Math.max(0, Number(server.numplayers || 0) - bots);
+                    appendServerText(row, 'server-players', real + (bots ? '+' + bots : '') + '/' + Number(server.maxplayers || 0));
+                    appendServerText(row, 'server-country', countryFlag(server.country) + ' ' + String(server.country || '--').toUpperCase());
+                    var join = document.createElement('button');
+                    join.type = 'button'; join.className = 'control-btn server-join';
+                    join.textContent = modKey ? 'Join' : 'Unsupported';
+                    join.disabled = !modKey || !online;
+                    join.title = !modKey ? 'This mod has no browser WASM modules.' : (!online ? 'Server is offline.' : 'Join ' + address);
+                    join.onclick = function () { if (liveServerJoin) { liveServerJoin(address, modKey); } };
+                    row.appendChild(join);
+                    box.appendChild(row);
+                });
+                if (!filtered.length) { appendServerText(box, 'launcher-hint', 'No servers match these filters.'); }
+                if (visible.length < filtered.length) {
+                    var more = document.createElement('button');
+                    more.type = 'button'; more.className = 'control-btn';
+                    more.textContent = 'Show 100 more servers';
+                    more.style.margin = '9px auto'; more.style.display = 'block';
+                    more.onclick = function () { liveServerRenderLimit += 100; renderLiveServers(); };
+                    box.appendChild(more);
+                }
+            }
+
+            function populateLiveServerFilters() {
+                [['server-filter-mod', 'gamename', 'All mods'], ['server-filter-country', 'country', 'All countries']].forEach(function (spec) {
+                    var select = document.getElementById(spec[0]);
+                    var selected = select.value;
+                    var values = liveServers.map(function (s) { return String(s[spec[1]] || '').trim(); })
+                        .filter(Boolean).filter(function (value, index, all) { return all.indexOf(value) === index; })
+                        .sort(function (a, b) { return a.localeCompare(b); });
+                    select.innerHTML = '';
+                    var all = document.createElement('option'); all.value = ''; all.textContent = spec[2]; select.appendChild(all);
+                    values.forEach(function (value) {
+                        var option = document.createElement('option');
+                        option.value = spec[1] === 'country' ? value.toUpperCase() : value.toLowerCase();
+                        option.textContent = spec[1] === 'country' ? countryFlag(value) + ' ' + value.toUpperCase() : value;
+                        select.appendChild(option);
+                    });
+                    select.value = selected;
+                });
+            }
+
+            function loadLiveServers() {
+                var summary = document.getElementById('live-server-summary');
+                summary.textContent = 'Loading live server list...';
+                return fetch(downloadFetchUrl(LIVE_SERVER_API), { cache: 'no-store' }).then(function (response) {
+                    if (!response.ok) { throw new Error('HTTP ' + response.status); }
+                    return response.json();
+                }).then(function (data) {
+                    liveServers = Array.isArray(data) ? data : (Array.isArray(data.servers) ? data.servers : []);
+                    populateLiveServerFilters(); renderLiveServers();
+                }).catch(function (err) {
+                    summary.textContent = 'Server list could not be loaded: ' + (err && err.message || err);
+                    document.getElementById('live-server-list').innerHTML = '';
+                });
+            }
 
             // Accept only what an address can be - a hostname or IP with an
             // optional port - so a typed address cannot smuggle anything else
@@ -9760,30 +10020,33 @@
                         }), 'launcher-quick', 'quick-hint');
                     };
 
-                    // Dedicated servers: the manually maintained list plus a
-                    // field for any other address.
-                    document.getElementById('menu-servers').onclick = function () {
-                        var box = document.getElementById('server-list');
-                        box.innerHTML = '';
-                        SERVER_LIST.forEach(function (srv) {
-                            var b = document.createElement('button');
-                            b.className = 'launcher-btn';
-                            b.type = 'button';
-                            b.textContent = srv.name + ' \u2014 ' + srv.address;
-                            b.onclick = function () {
-                                startFlow(remoteConnectArgs(srv.address, srv.mod),
-                                    'launcher-servers', 'servers-hint');
+                    // Dedicated servers: load the ETClan data into this page.
+                    // Joining stays inside the current deployment and uses the
+                    // launcher's normal WASM-mod preload path; no hard-coded
+                    // nit.html or etclan.de page is generated.
+                    liveServerJoin = function (address, mod) {
+                        startFlow(remoteConnectArgs(address, mod),
+                            'launcher-servers', 'servers-hint');
+                    };
+                    ['server-filter-mod', 'server-filter-country'].forEach(function (id) {
+                        document.getElementById(id).onchange = renderLiveServers;
+                    });
+                    document.getElementById('server-filter-search').oninput = renderLiveServers;
+                    [['server-filter-empty', 'Empty'], ['server-filter-full', 'Full'],
+                        ['server-filter-password', 'Password'], ['server-filter-bots', 'Bots']]
+                        .forEach(function (spec) {
+                            document.getElementById(spec[0]).onclick = function () {
+                                var state = (Number(this.dataset.state || 0) + 1) % 3;
+                                this.dataset.state = String(state);
+                                this.textContent = spec[1] + ': ' + (state === 0 ? 'all' : (state === 1 ? 'only' : 'hide'));
+                                renderLiveServers();
                             };
-                            box.appendChild(b);
                         });
-                        if (!SERVER_LIST.length) {
-                            var empty = document.createElement('p');
-                            empty.className = 'launcher-hint';
-                            empty.textContent = 'No servers configured. Add entries ' +
-                                'to SERVER_LIST in this page, or type an address below.';
-                            box.appendChild(empty);
-                        }
+                    document.getElementById('server-refresh').onclick = loadLiveServers;
+                    document.getElementById('menu-servers').onclick = function () {
                         showLauncherPanel('launcher-servers');
+                        if (liveServers.length) { renderLiveServers(); }
+                        else { loadLiveServers(); }
                     };
                     document.getElementById('servers-back').onclick = function () {
                         showLauncherPanel('launcher-menu');
