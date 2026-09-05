@@ -825,6 +825,59 @@
             font-size: clamp(0.78rem, 1.8vmin, 0.9rem);
         }
 
+        #launcher-files {
+            width: min(860px, 100%);
+        }
+        .file-toolbar, .file-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        #file-path {
+            flex: 1 1 300px;
+            margin: 0;
+            font-family: monospace;
+        }
+        #file-list {
+            margin: 10px 0;
+            border: 1px solid #444;
+            background: #171729;
+            min-height: 150px;
+            max-height: 34vh;
+            overflow: auto;
+        }
+        .file-row {
+            display: grid;
+            grid-template-columns: minmax(160px, 1fr) auto auto;
+            gap: 8px;
+            align-items: center;
+            padding: 7px 9px;
+            border-bottom: 1px solid #333;
+        }
+        .file-row:last-child { border-bottom: 0; }
+        .file-name {
+            color: #ddd;
+            overflow-wrap: anywhere;
+            cursor: pointer;
+        }
+        .file-name.directory { color: #e2bd48; }
+        .file-size { color: #888; font-size: .78rem; white-space: nowrap; }
+        #file-editor {
+            display: none;
+            width: 100%;
+            min-height: 220px;
+            resize: vertical;
+            margin-top: 8px;
+            padding: 9px;
+            background: #111122;
+            color: #eee;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-family: monospace;
+            line-height: 1.35;
+        }
+
         /* Buttons in an action row share the row and shrink with it, so a row
            of actions never grows wider than the panel. */
         .launcher-actions {
@@ -2306,6 +2359,7 @@
             <option value="etpub">ETPub</option>
             <option value="noquarter">No Quarter</option>
             <option value="etbloat">ETBloat</option>
+            <option value="nitmod">Nitmod experimental</option>
         </select>
         <div class="hint">The page asks the server which mod it runs before starting. Choose a mod here only when that query is blocked or the server does not answer it.</div>
         <div class="panel-actions">
@@ -2427,6 +2481,11 @@
                             Player profile
                             <span class="launcher-btn-sub">Create or change your in-game profile (player name) before starting.</span>
                         </button>
+                        <button class="launcher-btn" type="button" id="menu-files">
+                            <span class="launcher-btn-icon" aria-hidden="true">&#128193;</span>
+                            Browser files
+                            <span class="launcher-btn-sub">Manage downloaded pk3/module files and edit local configs.</span>
+                        </button>
                         <a class="launcher-btn" id="menu-download"
                            href="https://www.etlegacy.com/download" target="_blank"
                            rel="noopener noreferrer">
@@ -2473,6 +2532,7 @@
                     <option value="etpub">ETPub</option>
                     <option value="noquarter">No Quarter</option>
                     <option value="etbloat">ETBloat</option>
+                    <option value="nitmod">Nitmod experimental</option>
                 </select>
                 <div class="launcher-hint" id="servers-hint">
                     The server's mod is normally detected before the game starts.
@@ -2547,6 +2607,7 @@
                         <option value="noquarter">No Quarter</option>
                         <option value="etbloat">ETBloat</option>
                         <option value="etpub">ETPub</option>
+                        <option value="nitmod">Nitmod experimental</option>
                     </select>
                     <div class="setting-hint" id="host-mod-hint">
                         The mod the hosted game runs. It is downloaded the first
@@ -2690,6 +2751,40 @@
             <div class="launcher-actions">
                 <button class="control-btn" type="button" id="profile-back">Back</button>
                 <button class="control-btn" type="button" id="profile-save">Save profile</button>
+            </div>
+        </div>
+
+        <!-- Browser-visible view of the persistent Emscripten filesystem. -->
+        <div class="launcher-panel" id="launcher-files">
+            <h2>Browser files</h2>
+            <div class="panel-body">
+                <div class="file-toolbar">
+                    <button class="control-btn" type="button" id="file-up">Up</button>
+                    <input id="file-path" type="text" value="/home/web_user/.etlegacy"
+                           aria-label="Filesystem path" autocomplete="off" spellcheck="false">
+                    <button class="control-btn" type="button" id="file-open">Open</button>
+                    <button class="control-btn" type="button" id="file-refresh">Refresh</button>
+                </div>
+                <div id="file-list"></div>
+                <div class="file-actions">
+                    <button class="control-btn" type="button" id="file-upload">Upload files</button>
+                    <input id="file-upload-input" type="file" multiple hidden>
+                    <button class="control-btn" type="button" id="file-download" disabled>Download</button>
+                    <button class="control-btn" type="button" id="file-delete" disabled>Delete</button>
+                    <button class="control-btn" type="button" id="file-edit" disabled>Edit text</button>
+                </div>
+                <textarea id="file-editor" spellcheck="false"></textarea>
+                <div class="file-actions" id="file-editor-actions" style="display:none">
+                    <button class="control-btn" type="button" id="file-save">Save</button>
+                    <button class="control-btn" type="button" id="file-cancel-edit">Cancel</button>
+                </div>
+                <div class="launcher-hint" id="file-hint">
+                    Files are stored by this browser in IndexedDB. Deleting a pk3 or
+                    wasm module makes the page download it again when it is needed.
+                </div>
+            </div>
+            <div class="launcher-actions">
+                <button class="control-btn" type="button" id="files-back">Back</button>
             </div>
         </div>
     </div>
@@ -5998,6 +6093,18 @@
                         // Home dir: player profiles + in-game settings
                         // (profiles/<name>/etconfig.cfg) persist across sessions.
                         Module.FS.mount(Module.FS.filesystems.IDBFS, {}, HOME_ETL_DIR);
+                        // Third-party mod packages used to live only in MEMFS,
+                        // which made an uploaded/downloaded pk3 disappear on the
+                        // next reload. Give every enabled mod its own IDBFS mount
+                        // just like etmain/legacy. This also makes the filesystem
+                        // manager useful for installing a mod package manually.
+                        Object.keys(HOST_MODS || {}).forEach(function (key) {
+                            var game = HOST_MODS[key].fsGame;
+                            var dir = INSTALL_DIR + '/' + game;
+                            if (dir === LEGACY_DIR) { return; }
+                            Module.FS.mkdirTree(dir);
+                            Module.FS.mount(Module.FS.filesystems.IDBFS, {}, dir);
+                        });
                         queueSyncFs(true).then(function () {
                             restoreEtkey();
                             resolve();
@@ -6067,6 +6174,122 @@
                         reject(reader.error || new Error('could not read ' + file.name));
                     };
                     reader.readAsArrayBuffer(file);
+                });
+            }
+
+            // --- Browser filesystem manager -------------------------------
+            // Expose only the install tree and fs_homepath. These are the two
+            // persistent game-data trees; Emscripten runtime internals remain
+            // hidden and cannot accidentally be removed from this panel.
+            var FILE_BROWSER_ROOTS = [INSTALL_DIR, HOME_ETL_DIR];
+            var fileBrowserPath = HOME_ETL_DIR;
+            var fileBrowserSelection = null;
+            var FILE_EDITOR_LIMIT = 2 * 1024 * 1024;
+
+            function normaliseFileBrowserPath(value) {
+                var parts = String(value || '').replace(/\\/g, '/').split('/');
+                var clean = [];
+                parts.forEach(function (part) {
+                    if (!part || part === '.') { return; }
+                    if (part === '..') { clean.pop(); }
+                    else { clean.push(part); }
+                });
+                var path = '/' + clean.join('/');
+                var allowed = FILE_BROWSER_ROOTS.some(function (root) {
+                    return path === root || path.indexOf(root + '/') === 0;
+                });
+                return allowed ? path : HOME_ETL_DIR;
+            }
+
+            function fileBrowserIsRoot(path) {
+                return FILE_BROWSER_ROOTS.indexOf(path) !== -1;
+            }
+
+            function humanFileSize(size) {
+                if (size < 1024) { return size + ' B'; }
+                if (size < 1024 * 1024) { return (size / 1024).toFixed(1) + ' KB'; }
+                return (size / (1024 * 1024)).toFixed(1) + ' MB';
+            }
+
+            function setFileBrowserSelection(path, isDir) {
+                fileBrowserSelection = path ? { path: path, directory: !!isDir } : null;
+                document.getElementById('file-download').disabled = !path || isDir;
+                document.getElementById('file-delete').disabled = !path || fileBrowserIsRoot(path);
+                document.getElementById('file-edit').disabled = !path || isDir ||
+                    !/\.(cfg|config|txt|json|menu|script|arena|campaign|shader|log)$/i.test(path);
+            }
+
+            function renderFileBrowser(path) {
+                var hint = document.getElementById('file-hint');
+                var list = document.getElementById('file-list');
+                path = normaliseFileBrowserPath(path);
+                try {
+                    var stat = Module.FS.stat(path);
+                    if (!Module.FS.isDir(stat.mode)) { throw new Error('not a directory'); }
+                    fileBrowserPath = path;
+                    document.getElementById('file-path').value = path;
+                    list.innerHTML = '';
+                    setFileBrowserSelection(null, false);
+                    Module.FS.readdir(path).filter(function (name) {
+                        return name !== '.' && name !== '..';
+                    }).map(function (name) {
+                        var full = path.replace(/\/$/, '') + '/' + name;
+                        var itemStat = Module.FS.stat(full);
+                        return { name: name, path: full,
+                            directory: Module.FS.isDir(itemStat.mode), size: itemStat.size || 0 };
+                    }).sort(function (a, b) {
+                        return (b.directory - a.directory) || a.name.localeCompare(b.name);
+                    }).forEach(function (item) {
+                        var row = document.createElement('div');
+                        row.className = 'file-row';
+                        var name = document.createElement('span');
+                        name.className = 'file-name' + (item.directory ? ' directory' : '');
+                        name.textContent = (item.directory ? '\uD83D\uDCC1 ' : '') + item.name;
+                        name.onclick = function () {
+                            if (item.directory) { renderFileBrowser(item.path); }
+                            else {
+                                Array.prototype.forEach.call(list.children, function (child) {
+                                    child.style.background = '';
+                                });
+                                row.style.background = '#303052';
+                                setFileBrowserSelection(item.path, false);
+                            }
+                        };
+                        var size = document.createElement('span');
+                        size.className = 'file-size';
+                        size.textContent = item.directory ? 'folder' : humanFileSize(item.size);
+                        var pick = document.createElement('button');
+                        pick.className = 'control-btn small';
+                        pick.type = 'button';
+                        pick.textContent = item.directory ? 'Open' : 'Select';
+                        pick.onclick = name.onclick;
+                        row.appendChild(name); row.appendChild(size); row.appendChild(pick);
+                        list.appendChild(row);
+                    });
+                    if (!list.children.length) {
+                        list.textContent = 'This folder is empty.';
+                    }
+                    hint.textContent = 'Showing ' + path + '.';
+                } catch (e) {
+                    hint.textContent = 'Cannot open ' + path + ': ' + (e.message || e);
+                }
+            }
+
+            function removeBrowserFsEntry(path) {
+                var stat = Module.FS.stat(path);
+                if (!Module.FS.isDir(stat.mode)) { Module.FS.unlink(path); return; }
+                Module.FS.readdir(path).forEach(function (name) {
+                    if (name !== '.' && name !== '..') {
+                        removeBrowserFsEntry(path + '/' + name);
+                    }
+                });
+                Module.FS.rmdir(path);
+            }
+
+            function persistBrowserFiles(message) {
+                return persist().then(function () {
+                    renderFileBrowser(fileBrowserPath);
+                    document.getElementById('file-hint').textContent = message;
                 });
             }
 
@@ -6144,7 +6367,7 @@
             // stall via window.etlLauncherWaiting.
             var LAUNCHER_PANELS = ['launcher-setup', 'launcher-menu',
                 'launcher-quick', 'launcher-servers', 'launcher-host',
-                'launcher-join', 'launcher-profile'];
+                'launcher-join', 'launcher-profile', 'launcher-files'];
 
             // Which panel is on screen right now ('' while the launcher is
             // closed). Panels are switched with a class instead of an inline
@@ -6435,6 +6658,10 @@
                              requireOwnLogic: true,
                              pk3s: ['etbloat_etbloat-e5a79c6b.pk3'],
                              base: ETL_MIRROR_BASE + 'etbloat/' },
+                nitmod:    { name: 'Nitmod experimental', fsGame: 'nitmod', available: true,
+                             requireOwnLogic: true,
+                             pk3s: ['nitmod.pk3'],
+                             base: ETL_MIRROR_BASE + 'nitmod/' },
             };
             var DEFAULT_MOD = 'legacy';
 
@@ -6823,7 +7050,8 @@
                 // No Quarter has its own server cvars and menu scripts.
                 noquarter: [],
                 // ETBloat ships its own game logic and cvar set.
-                etbloat: []
+                etbloat: [],
+                nitmod: []
             };
 
             // The groups the settings are shown in, in this order. A category
@@ -7286,7 +7514,7 @@
                 var key = knownModKey(raw);
                 if (!key) {
                     throw new Error('Unknown connectmod "' + raw +
-                        '". Use legacy, xmod, jaymod, etjump, etpub, noquarter or etbloat.');
+                        '". Use legacy, xmod, jaymod, etjump, etpub, noquarter, etbloat or nitmod.');
                 }
                 return key;
             }
@@ -7503,7 +7731,7 @@
                         var forced = knownModKey(explicitMod);
                         if (!forced) {
                             throw new Error('Unknown server mod "' + explicitMod +
-                                '". Use legacy, xmod, jaymod, etjump, etpub, noquarter or etbloat.');
+                                '". Use legacy, xmod, jaymod, etjump, etpub, noquarter, etbloat or nitmod.');
                         }
                         return forced;
                     }
@@ -9727,7 +9955,120 @@
                         roomCount.textContent = 'not available';
                     }
 
-                    // Button 5: create/change the player profile before starting.
+                    // Persistent browser filesystem: upload/download game files,
+                    // remove stale pk3/side modules and edit text configs.
+                    document.getElementById('menu-files').onclick = function () {
+                        showLauncherPanel('launcher-files');
+                        document.getElementById('file-editor').style.display = 'none';
+                        document.getElementById('file-editor-actions').style.display = 'none';
+                        renderFileBrowser(fileBrowserPath);
+                    };
+                    document.getElementById('files-back').onclick = function () {
+                        showLauncherPanel('launcher-menu');
+                    };
+                    document.getElementById('file-open').onclick = function () {
+                        renderFileBrowser(document.getElementById('file-path').value);
+                    };
+                    document.getElementById('file-refresh').onclick = function () {
+                        renderFileBrowser(fileBrowserPath);
+                    };
+                    document.getElementById('file-up').onclick = function () {
+                        if (fileBrowserIsRoot(fileBrowserPath)) {
+                            fileBrowserPath = fileBrowserPath === HOME_ETL_DIR ? INSTALL_DIR : HOME_ETL_DIR;
+                            renderFileBrowser(fileBrowserPath);
+                            return;
+                        }
+                        renderFileBrowser(fileBrowserPath.slice(0,
+                            fileBrowserPath.lastIndexOf('/')) || HOME_ETL_DIR);
+                    };
+                    document.getElementById('file-path').onkeydown = function (event) {
+                        if (event.key === 'Enter') { renderFileBrowser(this.value); }
+                    };
+                    var browserUpload = document.getElementById('file-upload-input');
+                    document.getElementById('file-upload').onclick = function () {
+                        browserUpload.value = '';
+                        browserUpload.click();
+                    };
+                    browserUpload.onchange = function () {
+                        var files = Array.prototype.slice.call(browserUpload.files || []);
+                        files.reduce(function (chain, file) {
+                            return chain.then(function () {
+                                var name = String(file.name || '').split(/[\\/]/).pop();
+                                if (!name || name === '.' || name === '..') { return; }
+                                return readFileBytes(file).then(function (bytes) {
+                                    Module.FS.writeFile(fileBrowserPath + '/' + name, bytes);
+                                });
+                            });
+                        }, Promise.resolve()).then(function () {
+                            return persistBrowserFiles(files.length + ' file(s) uploaded.');
+                        }).catch(function (err) {
+                            document.getElementById('file-hint').textContent =
+                                'Upload failed: ' + (err.message || err);
+                        });
+                    };
+                    document.getElementById('file-download').onclick = function () {
+                        if (!fileBrowserSelection || fileBrowserSelection.directory) { return; }
+                        try {
+                            var bytes = Module.FS.readFile(fileBrowserSelection.path);
+                            var blob = new Blob([bytes], { type: 'application/octet-stream' });
+                            var url = URL.createObjectURL(blob);
+                            var a = document.createElement('a');
+                            a.href = url;
+                            a.download = fileBrowserSelection.path.split('/').pop();
+                            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                            setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+                        } catch (e) {
+                            document.getElementById('file-hint').textContent =
+                                'Download failed: ' + (e.message || e);
+                        }
+                    };
+                    document.getElementById('file-delete').onclick = function () {
+                        if (!fileBrowserSelection || fileBrowserIsRoot(fileBrowserSelection.path)) { return; }
+                        var target = fileBrowserSelection.path;
+                        if (!window.confirm('Delete "' + target + '" from browser storage?')) { return; }
+                        try {
+                            removeBrowserFsEntry(target);
+                            persistBrowserFiles('Deleted ' + target + '.');
+                        } catch (e) {
+                            document.getElementById('file-hint').textContent =
+                                'Delete failed: ' + (e.message || e);
+                        }
+                    };
+                    document.getElementById('file-edit').onclick = function () {
+                        if (!fileBrowserSelection || fileBrowserSelection.directory) { return; }
+                        try {
+                            var stat = Module.FS.stat(fileBrowserSelection.path);
+                            if (stat.size > FILE_EDITOR_LIMIT) {
+                                throw new Error('text editor limit is 2 MB');
+                            }
+                            document.getElementById('file-editor').value =
+                                Module.FS.readFile(fileBrowserSelection.path, { encoding: 'utf8' });
+                            document.getElementById('file-editor').style.display = 'block';
+                            document.getElementById('file-editor-actions').style.display = 'flex';
+                        } catch (e) {
+                            document.getElementById('file-hint').textContent =
+                                'Cannot edit this file: ' + (e.message || e);
+                        }
+                    };
+                    document.getElementById('file-save').onclick = function () {
+                        if (!fileBrowserSelection) { return; }
+                        try {
+                            Module.FS.writeFile(fileBrowserSelection.path,
+                                document.getElementById('file-editor').value);
+                            document.getElementById('file-editor').style.display = 'none';
+                            document.getElementById('file-editor-actions').style.display = 'none';
+                            persistBrowserFiles('Saved ' + fileBrowserSelection.path + '.');
+                        } catch (e) {
+                            document.getElementById('file-hint').textContent =
+                                'Save failed: ' + (e.message || e);
+                        }
+                    };
+                    document.getElementById('file-cancel-edit').onclick = function () {
+                        document.getElementById('file-editor').style.display = 'none';
+                        document.getElementById('file-editor-actions').style.display = 'none';
+                    };
+
+                    // Create/change the player profile before starting.
                     document.getElementById('menu-profile').onclick = function () {
                         var current = etlDefaultProfile();
                         document.getElementById('profile-current').textContent =
