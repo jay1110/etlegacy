@@ -1,0 +1,166 @@
+//==========================================================================================
+//
+//	crph_beta1.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	14 January 2018
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	castle_gate_Planted = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 0, "DYNAMITE_Maingate" );
+		Util.MapDebugPrint( "castle_gate_Planted" );
+	},
+	castle_gate_Defused = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "DYNAMITE_Maingate" );
+		Util.MapDebugPrint( "castle_gate_Defused" );
+	},
+	castle_gate_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 0, "DYNAMITE_Maingate" );
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"CHECKPOINT_forwardspawn",
+		});
+		SetAvailableMapGoals( 0, 1, "CAMP_r1_.*" );
+
+		Util.MapDebugPrint( "castle_gate_Destroyed" );
+	},
+
+	docs_Taken = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"CAPPOINT_docs",
+		});
+		Util.MapDebugPrint( "docs_Taken" );
+	},
+
+	docs_Returned = function()
+	{
+		Util.MapDebugPrint( "docs_Returned" );
+	},
+
+	docs_Secured = function()
+	{
+		Util.MapDebugPrint( "docs_Secured" );
+	},
+
+	forwardspawn_Axis_Captured = function()
+	{
+		SetAvailableMapGoals( 0, 1, "CAMP_r1_.*" );
+		SetAvailableMapGoals( 0, 0, "CAMP_r2_.*" );
+		Util.MapDebugPrint( "forwardspawn_Axis_Captured" );
+	},
+
+	forwardspawn_Allies_Captured = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"FLAG_docs",
+		});
+		SetAvailableMapGoals( 0, 0, "CAMP_r1_.*" );
+		SetAvailableMapGoals( 0, 1, "CAMP_r2_.*" );
+
+		Util.MapDebugPrint( "forwardspawn_Allies_Captured" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "Planted at ^2the Castle gate.", Map.castle_gate_Planted );
+	OnTrigger( "Defused at ^2the Castle gate.", Map.castle_gate_Defused );
+	OnTrigger( "^2Allies have destroyed the castle gate!", Map.castle_gate_Destroyed );
+
+	OnTrigger( "Allies have stolen ^2the documents intels!", Map.docs_Taken );
+	OnTrigger( "Axis have returned ^2the documents intels!", Map.docs_Returned );
+	OnTrigger( "^2The allies have secured the documents intels!", Map.docs_Secured );
+	//"^2The allies escape with the documents intels!"
+
+	OnTrigger( "^2Axis re-captured the spawn", Map.forwardspawn_Axis_Captured );
+	OnTrigger( "^2Allied captured the spawn", Map.forwardspawn_Allies_Captured );
+
+	Util.DisableGoal( ".*", true ); // all but routes
+
+	//Allies
+	SetAvailableMapGoals( TEAM.ALLIES, 1, {
+		"DYNAMITE_Maingate",
+	});
+
+	//Axis
+	SetAvailableMapGoals( TEAM.AXIS, 1, {
+		"CHECKPOINT_forwardspawn",
+	});
+
+	// Max users per goal
+	//Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+
+	// Camp times
+	//SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		DYNAMITE_Maingate =
+		{
+			ROUTE_Alli_Spawn =
+			{
+				ROUTE_Gate = {},
+			},
+		},
+
+		CHECKPOINT_forwardspawn =
+		{
+			ROUTE_Gate =
+			{
+				ROUTE_Forward_Spawn = {},
+			},
+		},
+
+		FLAG_docs =
+		{
+			ROUTE_Alli_Spawn =
+			{
+				ROUTE_Gate =
+				{
+					ROUTE_Inner_1 =
+					{
+						ROUTE_Forward_Spawn =
+						{
+							ROUTE_Docs_X = {},
+						},
+					},
+				},
+			},
+		},
+
+		CAPPOINT_docs =
+		{
+			ROUTE_Docs_X =
+			{
+				ROUTE_Forward_Spawn =
+				{
+					ROUTE_Inner_1 =
+					{
+						ROUTE_Gate =
+						{
+							ROUTE_Cap_Docs = {},
+						},
+					},
+				},
+			},
+		},
+	};
+	Util.Routes(MapRoutes);
+};

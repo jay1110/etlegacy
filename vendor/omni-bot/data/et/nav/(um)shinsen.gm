@@ -1,0 +1,479 @@
+//==========================================================================================
+//
+//	(um)shinsen.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	17 November 2017	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	DefendingTeam = TEAM.ALLIES,
+
+	Entrance_Fence_Intact = 1, //intact
+	Entrance_Fence_Dyno = 0,
+	Entrance_Fence_Count = 0, //rebuild counter
+
+	Master_Hall_Door_Dyno = 0,
+	Master_Hall_Door_Count = 0, //rebuild counter
+
+	Wall_Fence = 1, //intact
+	Wall_Fence_Dyno = 0,
+
+	Small_Bridge_Built = 0,
+	Small_Bridge_Dyno = 0,
+
+	Navigation =
+	{
+		shore_mg_ladder =
+		{
+			navigate = function(_this)
+			{
+				wpTable = {};
+				Wp.GetWaypointByName("shore_mg_ladder", wpTable);
+				_this.AddAimRequest(Priority.High, "facing", wpTable.position);
+				_this.Bot.HoldButton(BTN.FORWARD, 2);
+				sleep(2);
+			},
+		},
+	},
+
+	Camp_MG_Built = function()
+	{
+		Util.MapDebugPrint( "Camp_MG_Built" );
+	},
+	Camp_MG_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Camp_MG_Destroyed" );
+	},
+
+	Entrance_Fence_Built = function()
+	{
+		Map.Entrance_Fence_Intact = 1;
+		SetAvailableMapGoals( TEAM.ALLIES, 0, "BUILD_Entrance_Fence" );
+		Util.MapDebugPrint( "Entrance_Fence_Built" );
+	},
+	Entrance_Fence_Planted = function()
+	{
+		Map.Entrance_Fence_Dyno += 1;
+		SetAvailableMapGoals( TEAM.AXIS, 0, "PLANT_Entrance_Fence" );
+		Util.MapDebugPrint( "Entrance_Fence_Planted" );
+	},
+	Entrance_Fence_Destroyed = function()
+	{
+		Map.Entrance_Fence_Intact = 0;
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "BUILD_Entrance_Fence" );
+
+		SetAvailableMapGoals( TEAM.AXIS, 0, "CALLARTILLERY_Centre" );
+		SetAvailableMapGoals( TEAM.AXIS, 1, "PLANT_Master_Hall_Door" );
+
+		Util.MapDebugPrint( "Entrance_Fence_Destroyed" );
+	},
+
+	Master_Hall_Door_Built = function()
+	{
+		Master_Hall_Door_Count += 1;
+		//add code to disable rebuild if > 10 times destroyed
+		Util.MapDebugPrint( "Master_Hall_Door_Built" );
+	},
+	Master_Hall_Door_Planted = function()
+	{
+		Map.Master_Hall_Door_Dyno += 1;
+		SetAvailableMapGoals( TEAM.AXIS, 0, "PLANT_Master_Hall_Door" );
+		Util.MapDebugPrint( "Master_Hall_Door_Planted" );
+	},
+	Master_Hall_Door_Defused = function()
+	{
+		Map.Master_Hall_Door_Dyno -= 1;
+		Util.MapDebugPrint( "Master_Hall_Door_Defused" );
+	},
+	Master_Hall_Door_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "BUILD_Master_Hall_Door" );
+		SetAvailableMapGoals( TEAM.AXIS, 1, {
+			"FLAG_.*",
+			"CAPPOINT.*",
+		});
+		Util.MapDebugPrint( "Master_Hall_Door_Destroyed" );
+	},
+
+	Shore_MG_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, 0, "BUILD_Shore_MG" );
+		SetAvailableMapGoals( TEAM.AXIS, 1, "MOUNTMG42_Shore_MG" );
+		Util.MapDebugPrint( "Shore_MG_Built" );
+	},
+	Shore_MG_Destroyed = function()
+	{
+		if (Map.Entrance_Fence_Intact)
+		{
+			SetAvailableMapGoals( TEAM.AXIS, 1, "BUILD_Shore_MG" );
+		}
+		Util.MapDebugPrint( "Shore_MG_Destroyed" );
+	},
+
+	Small_Bridge_Built = function()
+	{
+		Map.Small_Bridge_Built = 1;
+		SetAvailableMapGoals( TEAM.AXIS, 1, "PLANT_Wall_Fence" );
+		Util.AddUsePoint("PLANT_Wall_Fence", Vec3(1400,-2439,-20) );
+		Util.LimitToClass("PLANT_Wall_Fence", TEAM.AXIS, CLASS.COVERTOPS);
+		//Util.EnableGroup("Axis_Bravo", TEAM.AXIS);
+
+		Util.MapDebugPrint( "Small_Bridge_Built" );
+	},
+	Small_Bridge_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Small_Bridge_Destroyed" );
+	},
+
+	Wall_Fence_Built = function()
+	{
+		Map.Wall_Fence = 1;
+		if (Map.Small_Bridge_Built || !Map.Entrance_Fence_Intact)
+		{
+			SetAvailableMapGoals( TEAM.AXIS, 1, "PLANT_Wall_Fence" );
+		}
+		Util.MapDebugPrint( "Wall_Fence_Built" );
+	},
+	Wall_Fence_Destroyed = function()
+	{
+		Map.Wall_Fence = 0;
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "BUILD_Wall_Fence" );
+		SetAvailableMapGoals( TEAM.AXIS, 0, "PLANT_Wall_Fence" );
+
+		SetAvailableMapGoals( TEAM.AXIS, 1, {
+			"PLANT_Allied_Command_Post",
+			"PLANT_Master_Hall_Door",
+		});
+
+		Util.MapDebugPrint( "Wall_Fence_Destroyed" );
+	},
+
+	radarbox1_Taken = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, 1, "CAPPOINT_Truck" );
+		Util.MapDebugPrint( "radarbox1_Taken" );
+	},
+	radarbox1_Returned = function()
+	{
+		Util.MapDebugPrint( "radarbox1_Returned" );
+	},
+
+	radarbox2_Taken = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, 1, "CAPPOINT_Truck" );
+		Util.MapDebugPrint( "radarbox2_Taken" );
+	},
+	radarbox2_Returned = function()
+	{
+		Util.MapDebugPrint( "radarbox2_Returned" );
+	},
+
+	radarbox1_Secured = function()
+	{
+		Util.MapDebugPrint( "radarbox1_Secured" );
+	},
+	radarbox2_Secured = function()
+	{
+		Util.MapDebugPrint( "radarbox2_Secured" );
+	},
+
+
+	// Dual Command Post
+
+	Allied_CP_Built = function()
+	{
+		Util.MapDebugPrint( "Allied_CP_Built" );
+	},
+	Allied_CP_Planted = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, 0, "PLANT_Allied_Command_Post" );
+		Util.MapDebugPrint( "Allied_CP_Planted" );
+	},
+	Allied_CP_Defused = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_Axis_Command_Post" );
+		Util.MapDebugPrint( "Allied_CP_Defused" );
+	},
+	Allied_CP_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "BUILD_Allied_Command_Post" );
+		Util.MapDebugPrint( "Allied_CP_Destroyed" );
+	},
+	Axis_CP_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, 0, "BUILD_Axis_Command_Post" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_Axis_Command_Post" );
+
+		SetAvailableMapGoals( TEAM.AXIS, 1, {
+			"BUILD_Shore_MG",
+			"PLANT_Entrance_Fence",
+			"BUILD_Small_Bridge",
+		});
+
+		Util.MapDebugPrint( "Axis_CP_Built" );
+	},
+	Axis_CP_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, 1, "BUILD_Axis_Command_Post" );
+		Util.MapDebugPrint( "Axis_CP_Destroyed" );
+	},
+
+
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+
+	OnTrigger( "Allied team has constructed the Camp MG Next!", Map.Camp_MG_Built );
+	OnTrigger( "Axis team has destroyed the Camp MG Nest!", Map.Camp_MG_Destroyed );
+
+	OnTrigger( "Allied team has built the Entrance Fence!", Map.Entrance_Fence_Built );
+	OnTrigger( "Planted at the Entrance Fence.", Map.Entrance_Fence_Planted );
+	OnTrigger( "Axis team has destroyed the Entrance Fence!", Map.Entrance_Fence_Destroyed );
+
+	OnTrigger( "Allied team has built the Master Hall Door!", Map.Master_Hall_Door_Built );
+	OnTrigger( "Planted at the Master Hall Door.", Map.Master_Hall_Door_Planted );
+	OnTrigger( "Defused at the Master Hall Door.", Map.Master_Hall_Door_Defused );
+	OnTrigger( "Axis team has destroyed the Master Hall Door!", Map.Master_Hall_Door_Destroyed );
+
+	OnTrigger( "Axis team has constructed the Shore MG!", Map.Shore_MG_Built );
+	OnTrigger( "Allied team has destroyed the Shore MG!", Map.Shore_MG_Destroyed );
+
+	OnTrigger( "Axis team has built the Small Bridge!", Map.Small_Bridge_Built );
+	OnTrigger( "Allied team has destroyed the Small Bridge!", Map.Small_Bridge_Destroyed );
+
+	OnTrigger( "Allied team has built the Wall Fence!", Map.Wall_Fence_Built );
+	OnTrigger( "Axis team has destroyed the Wall Fence!", Map.Wall_Fence_Destroyed );
+
+	OnTrigger( "Axis team has stolen the First Idol!", Map.radarbox1_Taken );
+	OnTrigger( "Allies have returned the First Idol!", Map.radarbox1_Returned );
+	OnTrigger( "Axis have secured the First Idol!", Map.radarbox1_Secured );
+
+	OnTrigger( "Axis team has stolen the Second Idol!", Map.radarbox2_Taken );
+	OnTrigger( "Allies have returned the Second Idol!", Map.radarbox2_Returned );
+	OnTrigger( "Axis have secured the Second Idol!", Map.radarbox2_Secured );
+
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!",  Map.Allied_CP_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!",          Map.Allied_CP_Destroyed );
+
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!",    Map.Axis_CP_Built );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!",          Map.Axis_CP_Destroyed );
+
+
+	Util.DisableGoal( ".*", 1 ); // all but routes
+
+	// ALL TEAMS
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+	Util.SetMaxUsers( 1, "BUILD_.*" );
+
+	Util.ExcludeClass( "MOUNTMG42_.*", 0, 3 ); //free up engys
+
+	// Camp times
+	SetGoalPriority( "MOUNTMG42_.*", 0.65 );
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=30, MaxCampTime=90} );
+
+	Util.AddUsePoint("PLANT_Master_Hall_Door", Vec3(-152,1151,20));
+	Util.AddUsePoint( "PLANT_Entrance_Fence", Vec3( 498, 1163, 16 ));
+
+	//Allies
+	SetAvailableMapGoals( TEAM.ALLIES, 1, {
+		"DEFEND_.*",
+		"MOUNTMG42_.*",
+		"BUILD_Allied_Command_Post",
+		"BUILD_Camp_MG",
+		"SNIPE_b_.*",
+		"PLANTMINE_.*",
+	});
+	SetGoalPriority( "PLANTMINE_.*", 0.7 );
+
+	Util.LimitToClass( "PLANT_Axis_Command_Post", TEAM.ALLIES, CLASS.COVERTOPS );
+	Util.ExcludeClass( "MOUNTMG42_.*", TEAM.ALLIES, CLASS.MEDIC, CLASS.ENGINEER );
+
+	//Axis
+	SetAvailableMapGoals( TEAM.AXIS, 1, {
+		"ATTACK_.*",
+		"BUILD_Axis_Command_Post",
+		"CALLARTILLERY_Centre",
+		"ARTILLERY_.*",
+		"SNIPE_r_.*",
+	});
+	SetGoalPriority( "BUILD_Axis_Command_Post", 0.95 );
+	SetGoalPriority( "BUILD_Shore_MG"         , 0.94 );
+	SetGoalPriority( "BUILD_Small_Bridge"     , 0.93 );
+	SetGoalPriority( "PLANT_Entrance_Fence"   , 0.92 );
+
+	Util.LimitToClass("PLANT_Allied_Command_Post", TEAM.AXIS, CLASS.COVERTOPS);
+	Util.ExcludeClass("MOUNTMG42_.*", TEAM.AXIS, CLASS.MEDIC, CLASS.ENGINEER);
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	sleep(0.1);
+
+	if (bot) //ensure the bot is set
+	{
+		if (bot.GetClass() == CLASS.COVERTOPS)
+		{
+			if (bot.GetTeam() == TEAM.AXIS)
+			{
+				bot.ChangePrimaryWeapon(WEAPON.K43);
+			}
+			else
+			{
+				bot.ChangePrimaryWeapon(WEAPON.GARAND);
+			}
+		}
+	};
+
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		BUILD_Master_Hall_Door =
+		{
+			ROUTE_Centre = {},
+		},
+		PLANT_Master_Hall_Door =
+		{
+			ROUTE_Centre = {},
+		},
+
+		BUILD_Entrance_Fence =
+		{
+			ROUTE_AlSp =
+			{
+				ROUTE_AlSp_Left_1 =
+				{
+					ROUTE_Centre = {},
+				},
+			},
+		},
+
+		PLANT_Entrance_Fence =
+		{
+			ROUTE_AxSp =
+			{
+				ROUTE_Entrance_Fence = {},
+			},
+		},
+
+		BUILD_Small_Bridge =
+		{
+			ROUTE_AxSp =
+			{
+				ROUTE_Ax_Tower =
+				{
+					ROUTE_Small_Bridge_X = {},
+				},
+			},
+		},
+
+		BUILD_Camp_MG =
+		{
+			ROUTE_AlSp =
+			{
+				ROUTE_Camp_MG_X = {},
+			},
+		},
+		PLANT_Camp_MG = {},
+
+		BUILD_Shore_MG =
+		{
+			ROUTE_AxSp =
+			{
+				ROUTE_Ax_Tower = {},
+			},
+		},
+		PLANT_Shore_MG = {},
+
+		BUILD_Axis_Command_Post =
+		{
+			ROUTE_AxSp = {},
+		},
+
+		PLANT_Axis_Command_Post =
+		{
+			ROUTE_Al_CP_1 =
+			{
+				ROUTE_Al_CP_2 = {},
+			},
+		},
+
+		BUILD_Allied_Command_Post = {},
+
+		PLANT_Allied_Command_Post =
+		{
+			ROUTE_Wall_Fence_X =
+			{
+				ROUTE_Camp_MG_X = {},
+			},
+		},
+
+		FLAG_radarbox1 =
+		{
+			ROUTE_AxSp =
+			{
+				ROUTE_Entrance_Fence =
+				{
+					ROUTE_Centre =
+					{
+						ROUTE_radarbox1_X = {},
+					},
+				},
+			},
+		},
+		FLAG_radarbox2 =
+		{
+			ROUTE_Centre =
+			{
+				ROUTE_radarbox2_X = {},
+			},
+		},
+
+		BUILD_Wall_Fence =
+		{
+			ROUTE_Camp_MG_X =
+			{
+				ROUTE_AlSp_Small_Bridge = {},
+			},
+		},
+		PLANT_Wall_Fence =
+		{
+			ROUTE_AxSp =
+			{
+				ROUTE_Ax_Tower =
+				{
+					ROUTE_Wall_Fence_X = {},
+				},
+			},
+		},
+
+		CAPPOINT_Truck =
+		{
+			ROUTE_Centre =
+			{
+				ROUTE_Entrance_Fence =
+				{
+					ROUTE_Ax_Tower =
+					{
+						ROUTE_Truck = {},
+					},
+				},
+			},
+		},
+	};
+	Util.Routes(MapRoutes);
+};

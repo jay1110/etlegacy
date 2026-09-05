@@ -1,0 +1,207 @@
+//==========================================================================================
+//
+//	fabase.gm (fabase_v2.pk3)
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	01 November 2017	Initial Script
+//	palota	27 June 2025	ATTACK, DEFEND, priorities
+//==========================================================================================
+//
+
+global Map =
+{
+	Depot_Fence_Count = 3, //max times Axis can to build it
+	Depot_Gate_Alive = true,
+	Wooden_Ramp_Count = 0,
+
+	Wooden_Ramp_Built = function()
+	{
+		SetGoalPriority("BUILD_Wooden_Ramp", 0.81);
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Depot_Fence" );
+
+		Util.MapDebugPrint( "Wooden_Ramp_Built" );
+	},
+	Wooden_Ramp_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Depot_Fence" );
+
+		if ( ++Map.Wooden_Ramp_Count == 3 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Wooden_Ramp" );
+		}
+		if ( !Map.Depot_Gate_Alive )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Wooden_Ramp");
+		}
+
+		Util.MapDebugPrint( "Wooden_Ramp_Destroyed" );
+	},
+
+
+	Depot_Fence_Built = function()
+	{
+		Util.MapDebugPrint( "Depot_Fence_Built" );
+	},
+	//changed to satchel only!!
+	Depot_Fence_Destroyed = function()
+	{
+		//don't build forever!
+		if ( --Map.Depot_Fence_Count < 1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Depot_Fence" );
+		}
+
+		Util.MapDebugPrint( "Depot_Fence_Destroyed " + Map.Depot_Fence_Count + " times!" );
+	},
+
+
+	Depot_Gate_Destroyed = function()
+	{
+		Map.Depot_Gate_Alive = false;
+		SetAvailableMapGoals( TEAM.AXIS, false, ".*MG42_194");
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Main_Bridge",
+			"BUILD_Foot_Bridge",
+			"MOUNTMG42_419",
+			"ATTACK_b.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"PLANT_Wooden_Ramp",
+			"DEFEND_gate.*",
+			"BUILD_Depot_Fence",
+		});
+
+		Util.MapDebugPrint( "Depot_Gate_Destroyed" );
+	},
+
+	Foot_Bridge_Built = function()
+	{
+		Util.MapDebugPrint( "Foot_Bridge_Built" );
+	},
+
+	Foot_Bridge_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Foot_Bridge_Destroyed" );
+	},
+
+	Main_Bridge_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Main_Base_Entrance",
+			"PLANT_Side_Base_Entrance",
+		});
+
+		Util.MapDebugPrint( "Main_Bridge_Built" );
+	},
+
+	Main_Bridge_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Main_Bridge_Destroyed" );
+	},
+
+
+	Main_Base_Entrance_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "FLAG_docs_scriptname");
+
+		Util.MapDebugPrint( "Main_Base_Entrance_Destroyed" );
+	},
+
+	Side_Base_Entrance_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "FLAG_docs_scriptname");
+
+		Util.MapDebugPrint( "Side_Base_Entrance_Destroyed" );
+	},
+
+
+	docs_Taken = function()
+	{
+		Util.MapDebugPrint( "docs_Taken" );
+	},
+
+	docs_Returned = function()
+	{
+		Util.MapDebugPrint( "docs_Returned" );
+	},
+
+	docs_Secured = function()
+	{
+		Util.MapDebugPrint( "docs_Secured" );
+	},
+};
+
+global OnMapLoad = function()
+{
+//"^5the_bunker is forced Axis.."
+
+	OnTrigger( "^4Allied team has constructed the Wooden Ramp!", Map.Wooden_Ramp_Built );
+	OnTrigger( "^1Axis team has destroyed the Wooden Ramp!", Map.Wooden_Ramp_Destroyed );
+
+	OnTrigger( "^1Axis team has constructed the Depot Fence!", Map.Depot_Fence_Built );
+	OnTrigger( "^4Allied team has destroyed the Depot Fence!", Map.Depot_Fence_Destroyed );
+
+//"^5The Allies will now spawn at the Forward Bunker! Getting closer and closer to Antichrist's Porn!"
+	OnTrigger( "^4The Allies have destroyed the Depot Gates!", Map.Depot_Gate_Destroyed );
+
+	OnTrigger( "^4Allied team has constructed the Main Bridge!", Map.Main_Bridge_Built );
+	OnTrigger( "^1Axis team has destroyed the Main Bridge!", Map.Main_Bridge_Destroyed );
+
+	OnTrigger( "^4Allied team has constructed the Foot Bridge!", Map.Foot_Bridge_Built );
+	OnTrigger( "^1Axis team has destroyed the Foot Bridge!", Map.Foot_Bridge_Destroyed );
+
+	OnTrigger( "^4The Allies have destroyed the Side Entrance to the base!", Map.Side_Base_Entrance_Destroyed );
+	OnTrigger( "^4The Allies have destroyed the Main Entrance to the base!", Map.Main_Base_Entrance_Destroyed );
+
+	OnTrigger( "Allies have stolen AntiChrist's Porn!", Map.docs_Taken );
+	OnTrigger( "Axis have returned AntiChrist's Porn!", Map.docs_Returned );
+	OnTrigger( "^5The Allies have secured Antichrist's Midget Chicken and Shemale Donkey PORN! JayC will be happy!", Map.docs_Secured );
+
+	Util.DisableGoal( ".*", true );
+	Util.EnableGoal({ ".*CAB_.*"});
+
+	//Allies
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_Wooden_Ramp",
+		"PLANT_Depot_Gate",
+		"CAPPOINT_Docs",
+		".*MG42_194",
+	});
+
+	//Axis
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"BUILD_Depot_Fence",
+		"PLANT_Wooden_Ramp",
+		"PLANT_Main_Bridge",
+		"DEFEND_gate.*",
+	});
+
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+
+	SetMapGoalProperties( "MOUNTMG42_.*" , {MinCampTime=15, MaxCampTime=90} );
+	SetMapGoalProperties( "DEFEND.*" , {MinCampTime=10, MaxCampTime=30} );
+
+	Util.AddUsePoint( "PLANT_Depot_Fence"       , Vec3( -1903, 2972, 100 ) );
+	Util.AddUsePoint( "PLANT_Side_Base_Entrance", Vec3( -1631, 9584,  68 ) );
+	Util.AddUsePoint( "PLANT_Main_Base_Entrance", Vec3( -1049, 9205,  76 ) );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 120.0;
+	weaps = { WEAPON.THOMPSON, WEAPON.MP40, WEAPON.SHOTGUN, WEAPON.M97, WEAPON.M7, WEAPON.GARAND, WEAPON.K43, WEAPON.BAR, WEAPON.STEN, WEAPON.MP34, WEAPON.BAR, WEAPON.STG44, WEAPON.FG42};
+
+	foreach( id and weap in weaps )
+	{
+		w = bot.GetWeapon(weap);
+		w.PrimaryFire.SetTargetBias(CLASS.BREAKABLE, 1.2);
+	}
+
+	// crapshoot: lower priority of knife at close range so they keep shooting breakables with primary
+	w = bot.GetWeapon(WEAPON.KNIFE);
+	w.PrimaryFire.SetDesirabilityRange(0, 48, 0.6);
+};

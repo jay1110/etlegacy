@@ -1,0 +1,313 @@
+//==========================================================================================
+//
+//	lays_of_schwarzwald_b1.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	12 September 2018	Basic working script
+//
+//	TODO: attack/defend goals, routes, better game logic
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	DefendingTeam = TEAM.AXIS,
+
+	Switches =
+	{
+		SWITCH_Detonator =
+		{
+			Enabled = 0,
+			WaypointName = "detonator",
+			LimitBots = 1,
+			LimitTeam = TEAM.ALLIES,
+			LimitClass = 0, //(1<<CLASS.ENGINEER),
+			Priority = 0.99,
+		},
+	},
+
+	//Allies need to place 4 charges
+	Exp_Counter = 0,
+	Exp_Accum = function( )
+	{
+		Map.Exp_Counter += 1;
+		if ( Map.Exp_Counter == 4 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, 1, "BUILD_Detonator" );
+		}
+	},
+
+	//Tank
+	Tank_Built = function()
+	{
+		Util.MapDebugPrint( "Tank_Built" );
+	},
+	Tank_Damaged = function()
+	{
+		Util.MapDebugPrint( "Tank_Damaged" );
+	},
+
+	Tank_Barrier_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_Tank_Barrier" );
+		SetAvailableMapGoals( TEAM.AXIS, 1, "BUILD_Command_Post" );
+		Util.MapDebugPrint( "Tank_Barrier_Built" );
+	},
+	Tank_Barrier_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "BUILD_Command_Post" );
+		Util.MapDebugPrint( "Tank_Barrier_Destroyed" );
+	},
+
+	Tunnel_Secure = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 0, {
+			"BUILD_Tank",
+			"ESCORT_Tank",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"FLAG_.*",
+			"CAPPOINT_.*",
+		});
+		Util.MapDebugPrint( "Tunnel_Secure" );
+	},
+
+	//Detonator
+	Detonator_Built = function()
+	{
+		//end round
+		sleep(3);
+		Map.Switches.SWITCH_Detonator.Enabled = 1;
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "SWITCH_Detonator" );
+		Util.MapDebugPrint( "Detonator_Built" );
+	},
+	Detonator_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Detonator_Destroyed" );
+	},
+
+	//Explosive 1
+	expl_mat1_Taken = function()
+	{
+		Util.MapDebugPrint( "expl_mat1_Taken" );
+	},
+	expl_mat1_Returned = function()
+	{
+		Util.MapDebugPrint( "expl_mat1_Returned" );
+	},
+	expl_mat1_Secured = function()
+	{
+		Map.Exp_Accum();
+		Util.MapDebugPrint( "expl_mat1_Secured" );
+	},
+
+	//Explosive 2
+	expl_mat2_Taken = function()
+	{
+		Util.MapDebugPrint( "expl_mat2_Taken" );
+	},
+	expl_mat2_Returned = function()
+	{
+		Util.MapDebugPrint( "expl_mat2_Returned" );
+	},
+	expl_mat2_Secured = function()
+	{
+		Map.Exp_Accum();
+		Util.MapDebugPrint( "expl_mat2_Secured" );
+	},
+
+	//Explosive 3
+	expl_mat3_Taken = function()
+	{
+		Util.MapDebugPrint( "expl_mat3_Taken" );
+	},
+	expl_mat3_Returned = function()
+	{
+		Util.MapDebugPrint( "expl_mat3_Returned" );
+	},
+	expl_mat3_Secured = function()
+	{
+		Map.Exp_Accum();
+		Util.MapDebugPrint( "expl_mat3_Secured" );
+	},
+
+	//Explosive 4
+	expl_mat4_Taken = function()
+	{
+		Util.MapDebugPrint( "expl_mat4_Taken" );
+	},
+	expl_mat4_Returned = function()
+	{
+		Util.MapDebugPrint( "expl_mat4_Returned" );
+	},
+	expl_mat4_Secured = function()
+	{
+		Map.Exp_Accum();
+		Util.MapDebugPrint( "expl_mat4_Secured" );
+	},
+
+
+	// Neutral Command Post
+	CP_Owner = 0,
+	CP_Dyno = 0,
+
+	Set_CP = function(_p) // p = TEAM.ALLIES or TEAM.AXIS or 0 (unbuilt)
+	{
+		switch(_p)
+		{
+			case 0:
+			{
+				Map.CP_Owner = 0;
+				SetAvailableMapGoals( TEAM.ALLIES, 1, "BUILD_Command_Post" );
+				SetAvailableMapGoals( TEAM.ALLIES, 0, "PLANT_Command_Post" );
+				SetAvailableMapGoals( TEAM.AXIS,   1, "BUILD_Command_Post" );
+				SetAvailableMapGoals( TEAM.AXIS,   0, "PLANT_Command_Post" );
+			}
+			case TEAM.ALLIES:
+			{
+				Map.CP_Owner = TEAM.ALLIES;
+				SetAvailableMapGoals( TEAM.ALLIES, 0, {
+					"BUILD_Command_Post",
+					"PLANT_Command_Post",
+				});
+				SetAvailableMapGoals( TEAM.AXIS,   1, "PLANT_Command_Post" );
+				SetAvailableMapGoals( TEAM.AXIS,   0, "BUILD_Command_Post" );
+			}
+			case TEAM.AXIS:
+			{
+				Map.CP_Owner = TEAM.AXIS;
+				SetAvailableMapGoals( TEAM.ALLIES, 0, "BUILD_Command_Post" );
+				SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_Command_Post" );
+				SetAvailableMapGoals( TEAM.AXIS,   0, {
+					"PLANT_Command_Post",
+					"BUILD_Command_Post",
+				});
+			}
+		}
+		Util.MapDebugPrint("CP Owner: " + Map.CP_Owner );
+	},
+	Allied_CP_Built = function()
+	{
+		Map.Set_CP(TEAM.ALLIES);
+		Util.MapDebugPrint( "Allied_CP_Built" );
+	},
+	Allied_CP_Destroyed = function()
+	{
+		Map.CP_Dyno = 0;
+		Map.Set_CP(0);
+		Util.MapDebugPrint( "Allied_CP_Destroyed" );
+	},
+	Axis_CP_Built = function()
+	{
+		Map.Set_CP(TEAM.AXIS);
+		Util.MapDebugPrint( "Axis_CP_Built" );
+	},
+	Axis_CP_Destroyed = function()
+	{
+		Map.CP_Dyno = 0;
+		Map.Set_CP(0);
+		Util.MapDebugPrint( "Axis_CP_Destroyed" );
+	},
+	CP_Planted = function()
+	{
+		Map.CP_Dyno += 1;
+		Util.MapDebugPrint( "CP_Planted" );
+	},
+	CP_Defused = function()
+	{
+		Map.CP_Dyno -= 1;
+		Util.MapDebugPrint( "CP_Defused" );
+	},
+
+// Command Post END
+
+
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+
+	OnTrigger( "^aThe tank has been repaired.", Map.Tank_Built );
+	OnTrigger( "^aThe tank has been damaged.", Map.Tank_Damaged );
+
+	OnTrigger( "^aTank Barrier has been constructed.", Map.Tank_Barrier_Built );
+	OnTrigger( "MISSING_STRING", Map.Tank_Barrier_Destroyed );
+	//"^aThe tank has passed the barrier!"
+
+	//"^aThe tank is approaching to the Tunnel Gate!"
+	//"^aTunnel gate has been destroyed!"
+	//"^aAllies lost control over the Tunnel!" "^aAxis foward spawns are now available!"
+
+	OnTrigger( "^aAllies have permanently secured the tunnel!", Map.Tunnel_Secure );
+	//"^aAllies Have secured the Tunnel!"
+
+	OnTrigger( "^aDynamite detonator has been constructed.", Map.Detonator_Built );
+	OnTrigger( "MISSING_STRING", Map.Detonator_Destroyed );
+
+	//Explosive 1
+	OnTrigger( "^aExplosion Materials have been stolen!", Map.expl_mat1_Taken );
+	OnTrigger( "^aExplosion Materials have been returned!", Map.expl_mat1_Returned );
+	OnTrigger( "^aExplosion Materials have been delivered to Rocket Base!", Map.expl_mat1_Secured );
+
+	//Explosive 2 same wm_announce as mat1
+	OnTrigger( "MISSING_STRING", Map.expl_mat2_Taken );
+	OnTrigger( "MISSING_STRING", Map.expl_mat2_Returned );
+	OnTrigger( "MISSING_STRING", Map.expl_mat2_Secured );
+
+	//Explosive 3 same wm_announce as mat1
+	OnTrigger( "MISSING_STRING", Map.expl_mat3_Taken );
+	OnTrigger( "MISSING_STRING", Map.expl_mat3_Returned );
+	OnTrigger( "MISSING_STRING", Map.expl_mat3_Secured );
+
+	//Explosive 4 same wm_announce as mat1
+	OnTrigger( "MISSING_STRING", Map.expl_mat4_Taken );
+	OnTrigger( "MISSING_STRING", Map.expl_mat4_Returned );
+	OnTrigger( "MISSING_STRING", Map.expl_mat4_Secured );
+
+	//"^aAllied team set up all explosion materials!"
+
+	OnTrigger( "^aAllied Command Post constructed. Charge speed increased!",  Map.Allied_CP_Built );
+	OnTrigger( "^aAxis team has destroyed the Allied Command Post!",          Map.Allied_CP_Destroyed );
+	OnTrigger( "^aAxis Command Post constructed. Charge speed increased!",    Map.Axis_CP_Built );
+	OnTrigger( "^aAllied team has destroyed the Axis Command Post!",          Map.Axis_CP_Destroyed );
+	OnTrigger( "Planted at the Command Post.",                              Map.CP_Planted  );
+	OnTrigger( "Defused at the Command Post.",                              Map.CP_Defused  );
+
+
+	// Setup Map Start
+	//--------------------------------------------------------------
+
+	Util.DisableGoal( ".*", true ); // all but routes
+
+	Util.UpdateSwitchData();
+
+	//Allies -------------------------------------------------------
+	SetAvailableMapGoals( TEAM.ALLIES, 1, {
+		"ATTACK_.*",
+		"BUILD_Tank",
+		"ESCORT_Tank",
+	});
+	Util.SetMaxUsers( 4, "ESCORT_Tank" );
+
+	//Axis ---------------------------------------------------------
+	SetAvailableMapGoals( TEAM.AXIS, 1, {
+		"DEFEND_.*",
+		"BUILD_Tank_Barrier",
+		"ESCORT_Tank",
+	});
+
+	//Common -------------------------------------------------------
+	Util.LimitToClass( "PLANT_Command_Post", 0, 5 );
+
+	// Max users per goal
+	//Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+
+	// Camp times
+	//SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};

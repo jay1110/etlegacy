@@ -1,0 +1,116 @@
+//==========================================================================================
+//
+//	syphonfilter.gm (syphonfilter_beta3.pk3)
+//
+//	Who              	When		What
+//------------------------------------------------------------------------------------------
+//	^1W^4OLF ^1E^4NSTEIN	19 February 2019	Initial Script
+//	palota	20 July 2025
+//==========================================================================================
+//
+
+global Map =
+{
+	Wood_Fence_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		Util.DisableGoal("DEFEND_Wooden_Gate.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "PLANT_Wooden_Fence");
+
+		Util.EnableGoal({
+			"AMMOCAB.*",
+			"HEALTHCAB.*",
+			".*_Command_Post",
+			"DEFEND_Rocket.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"FLAG_key1",
+			"CAPPOINT_lab",
+			"PLANT_The_R9_Devytka",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"DEFEND_Command_Post.*",
+			"DEFEND_Key.*",
+		});
+		Util.MapDebugPrint("Wood_Fence_Destroyed");
+	},
+
+	key1_Taken = function()
+	{
+		Util.MapDebugPrint("key1_Taken");
+	},
+
+	key1_Returned = function()
+	{
+		SetGoalPriority("DEFEND_Key.*", 0.5);
+		Util.MapDebugPrint("key1_Returned");
+	},
+
+	key1_Secured = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"FLAG_key1",
+			"CAPPOINT_lab",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"FLAG_docs",
+			"CAPPOINT_truck",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_Key.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_doc.*");
+		Util.MapDebugPrint("key1_Secured");
+	},
+
+	docs_Taken = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_doc.*");
+		SetAvailableMapGoals(0, true, "DEFEND_truck.*");
+		Util.MapDebugPrint("docs_Taken");
+	},
+
+	docs_Returned = function()
+	{
+		SetAvailableMapGoals(0, false, "DEFEND_truck.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_doc.*");
+		Util.MapDebugPrint("docs_Returned");
+	},
+
+	docs_Secured = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_truck.*");
+		Util.MapDebugPrint("docs_Secured");
+	},
+
+	The_R9_Devytka_Destroyed = function()
+	{
+		Util.DisableGoal("DEFEND_Rocket.*");
+		Util.MapDebugPrint("The_R9_Devytka_Destroyed");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("^2The Agency picked up the syphonfilter virus documents!", Map.docs_Taken);
+	OnTrigger("^2The Agency picked up the Laboratory key", Map.key1_Taken);
+	OnTrigger("^2Terrorist returned the syphonfilter virus documents!", Map.docs_Returned);
+	OnTrigger("^2Terrorist returned the Armor key", Map.key1_Returned);
+	OnTrigger("^2The Agency have secured the syphonfilter virus documents!", Map.docs_Secured);
+	OnTrigger("^2Laboratory door has been opened", Map.key1_Secured);
+	OnTrigger("^2The Agency have destroyed the woodfence!", Map.Wood_Fence_Destroyed);
+	OnTrigger("^2The Agency have destroyed the R9 Devyatka!", Map.The_R9_Devytka_Destroyed);
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal("DEFEND_Wooden_Gate.*");
+	SetAvailableMapGoals(TEAM.ALLIES, true, "PLANT_Wooden_Fence");
+
+	SetGoalPriority("BUILD_Command_Post", 0.81);
+	SetGoalPriority("DEFEND_Key.*", 0.51);
+
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=30, MaxCampTime=120});
+
+	Util.SetMaxUsers(1, "PLANT_Wooden_Fence");
+	
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};

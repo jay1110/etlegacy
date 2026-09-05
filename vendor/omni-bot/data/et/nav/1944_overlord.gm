@@ -1,0 +1,1709 @@
+//==========================================================================================
+//
+//  1944 Overlord - 1944_overlord.gm
+//
+//  Who         When            What
+//------------------------------------------------------------------------------------------
+//  Mateos      19/01/2020      Moved to nav
+//  Mateos      02/09/2014      Lot of fixes required, was an incomplete 0.71 work...
+//  jaskot      04/02/2009      Added paththrough for transmitter ladder for
+//                              unopposed offense and added tank MOVER and BUILD
+//                              offset sync
+//  jaskot      03/02/2009      Converted old script to new format
+//
+//==========================================================================================
+//
+
+/****************************************************
+Path mapping updated and script by Mateos
+Correspondant WAY file size: 80,5 Ko (82 478 octets)
+Last update: 19th January 2020
+****************************************************/
+
+/*
+ * TODO:
+ * - Add weapon goals
+ * - Turn some ATTACK_Axis_Generator spots into CAMP (5 to 10)?
+ * - Allied Transmitter: Find a way to protect it against Axis without FF issues
+ * - Rear Entrance: Can jump through window to get in (testbot fails it...)
+ * - Allies: Find an efficient way to clear the obj rooms (or smoke?)
+ * - Manage the post-Axis Generator SNIPE goals
+ *       -> Also that SNIPE_Allied_Road_Bottom_Right...
+ */
+
+// Idea: Once the Tank is at the 2nd/3rd area, some Allies could spawn at the Beach (west spawn)...
+//      -> Distance is roughly the same, or just routing to travel through the hill?
+//          -> Hill way is longer though safer than road
+
+global Spawns =
+{
+	ALLIED_LANDER_SPAWN1 = 1,
+	AXIS_BUNKER_SPAWN = 2,
+	ALLIED_TRANSMITTER_SPAWN = 3,
+	AXIS_RESERVE_SPAWN = 4,
+	ALLIED_LANDER_SPAWN2 = 5,
+};
+
+global TankOffsets =
+{
+	Build =
+	{
+		Back = 0,
+		LeftBack = 1,
+		LeftFront = 2,
+	},
+};
+
+global MapProgress =
+{
+	TankLocation =
+	{
+		FirstArea = 0,
+		SecondArea = 1,
+		ThirdArea = 2,
+		Escorted = 3,
+	},
+};
+
+global Goals =
+{
+	Allies =
+	{
+		Bunker = { "ATTACK_Axis_Generator.*", "PLANT_Axis_Generator" },
+		Library = { "FLAG_documents_2" },
+	},
+
+	Axis =
+	{
+		AlliedTransmitter = { "CAMP_Allied_Transmitter.*" },
+
+		Library =
+		{
+			Bottom = { "DEFEND_Lower_Docs.*" },
+			Top = { "DEFEND_Upper_Docs.*" },
+		},
+	},
+};
+
+global Roles =
+{
+	Allies =
+	{
+		Bunker = ROLE.ATTACKER2,
+		Library = ROLE.ATTACKER3,
+	},
+
+	Axis =
+	{
+		AlliedTransmitter = ROLE.DEFENDER3, // Idea from native12's waypoints
+
+		Library =
+		{
+			Bottom = ROLE.DEFENDER1,
+			Top = ROLE.DEFENDER2,
+		},
+	},
+};
+
+global Map =
+{
+	// ************************************************************************
+
+	// Objectives status
+	areForwardBunkerDoorsBuilt = false,
+	hasAlliedTransmitterBeenBuiltOnce = false,
+	isAlliedTransmitterBuilt = false,
+	isAxisBunkerWallDestroyed = false,
+	isAxisGeneratorDestroyed = false,
+	isLibraryRearDoorBuilt = true,
+
+	// A variable to control the wm_announce spam upon Allied Transmitter construction...
+	iAlliedTransmitterCount = 0,
+
+	// How many documents are in the nature (stolen or dropped)
+	iDocumentsCount = 0,
+
+	iDocumentsSecured = 0,
+
+	// Track what documents are secured or still available
+	areLowerDocumentsAvailable = false,
+	areUpperDocumentsAvailable = false,
+
+	// Special case of upper documents
+	areUpperDocumentsReachable = false,
+	areUpperDocumentsSecured = false,
+
+	areLowerDocumentsSecured = false,
+
+	// Tank-related variables
+	isTankBuilt = false,
+	isTankEscorted = false,
+	isTankStolen = false,
+
+	tankLocation = MapProgress.TankLocation.FirstArea,
+
+	Axis_Bunker_Wall_Dyno = 0, // Simply to avoid friendly artillery accident...
+
+	// ************************************************************************
+
+	Allied_Lander_Spawn_Trigger =
+	{
+		Name = "Allied_Lander_Spawn_Trigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+
+		OnEnter = function( ent )
+		{
+			Map.ClearRole( ent, Roles.Allies.Bunker );
+
+			// In case the Allied Transmitter Spawn got unavailable meanwhile!
+			Map.ClearRole( ent, Roles.Allies.Library );
+		},
+	},
+
+	Allied_Transmitter_Spawn_Trigger =
+	{
+		Name = "Allied_Transmitter_Spawn_Trigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+
+		OnEnter = function( ent )
+		{
+			Map.ClearRole( ent, Roles.Allies.Library );
+		},
+	},
+
+	/**
+	 * Clears a role from an entity,
+	 * if that entity is a bot.
+	 */
+	ClearRole = function( ent, role )
+	{
+		bot = Util.IsBot( ent );
+		if ( bot && bot.HasRole( role ) )
+		{
+			bot.ClearRoles( role );
+			Util.MapDebugPrint( bot.Name + "^b got his role removed", true );
+		}
+	},
+
+	// ************************************************************************
+
+	Tank_At_First_Tunnel =
+	{
+		Name = "Tank_At_First_Tunnel",
+		TriggerOnClass = { CLASS.VEHICLE, CLASS.VEHICLE_HVY },
+
+		OnEnter = function( ent )
+		{
+			Map.tankLocation = MapProgress.TankLocation.SecondArea;
+
+			Map.ManageAirstrikeGoals();
+
+			Map.ManagePostGeneratorCampingGoals();
+
+			Util.MapDebugPrint( "Tank_At_First_Tunnel" );
+		},
+	},
+
+	Tank_At_Second_Tunnel =
+	{
+		Name = "Tank_At_Second_Tunnel",
+		TriggerOnClass = { CLASS.VEHICLE, CLASS.VEHICLE_HVY },
+
+		OnEnter = function( ent )
+		{
+			Map.tankLocation = MapProgress.TankLocation.ThirdArea;
+
+			Map.ManageAirstrikeGoals();
+
+			Map.ManagePostGeneratorCampingGoals();
+
+			Util.MapDebugPrint( "Tank_At_Second_Tunnel" );
+		},
+	},
+
+	TankTriggerInfo =
+	{
+		Name = "TankTrigger",
+		TriggerOnClass = { CLASS.VEHICLE, CLASS.VEHICLE_HVY },
+
+		OnEnter = function( ent )
+		{
+			Map.tankLocation = MapProgress.TankLocation.Escorted;
+
+			Map.areLowerDocumentsAvailable = true;
+			Map.isTankEscorted = true;
+
+			// If Axis still spawn at their Bunker, move to the other spawn
+			// Only if no objective in the nature
+			if ( Map.iDocumentsCount == 0 )
+			{
+				Util.ChangeSpawn( TEAM.AXIS, Spawns.AXIS_RESERVE_SPAWN );
+			}
+
+			// Wait until the Tank shoots
+			// and the blockwall flags update
+			sleep ( 5 );
+
+			Map.UpdateAreUpperDocumentsReachable();
+
+			Map.ManageAirstrikeGoals();
+
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Command_Post" ); // Here too
+
+			// Manage CAMP and DEFEND spots for Axis
+			// in case some objective is already stolen
+			Map.Documents_Returned_Or_Secured();
+
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"ATTACK_Third_Area.*",
+				"BUILD_Tank",
+				"ESCORT_Tank",
+				"MOUNT_Tank",
+			});
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"FLAG_documents_.*",
+				"PLANT_Axis_Library_Rear_Door",
+			});
+
+			// Manage eventually trapped bots
+			Map.ManageLibraryTrappedAlliedBots();
+
+			Functions.Print( "Axis_Wall_Destroyed", true );
+		},
+	},
+
+	// ************************************************************************
+
+	Navigation =
+	{
+		beach_ramp =
+		{
+			navigate = function( _this )
+			{
+				// Aim...
+				_this.AddAimRequest( Priority.High, "facing", Vec3( 0.00, -0.80, 0.60 ) );
+
+				// And go!
+				wpTable = {};
+				Wp.GetWaypointByName( "beach_ramp_top", wpTable );
+				_this.Goto( wpTable.position );
+			},
+		},
+
+		jump =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.HoldButton( BTN.JUMP, 0.50 );
+				sleep( 0.50 );
+			},
+		},
+
+		transmitterladder =
+		{
+			navigate = function( _this )
+			{
+				_this.Bot.HoldButton( BTN.FORWARD, 1 );
+				sleep( 1 );
+			},
+		},
+	},
+
+	// ************************************************************************
+
+	Roles =
+	{
+		AXIS =
+		{
+			AllBots = true,
+
+			DEFENDER =
+			{
+				voice = "defend",
+				numbots = 4,
+			},
+
+			DEFENDER1 =
+			{
+				voice = "defend",
+				numbots = 6,
+			},
+
+			DEFENDER2 =
+			{
+				voice = "defend",
+				numbots = 8,
+			},
+
+			DEFENDER3 =
+			{
+				voice = "defend",
+				numbots = 4,
+			},
+		},
+
+		ALLIES =
+		{
+			ATTACKER =
+			{
+				voice = "attack",
+				spawnpt = Spawns.ALLIED_LANDER_SPAWN2,
+				numbots = 5,
+				crucialClass = CLASS.COVERTOPS,
+			},
+		},
+	},
+
+	// ************************************************************************
+
+	distanceBetweenCapPointAndFurthestCampGoal,
+
+	/**
+	 * Very specific suicide strategy for Allies:
+	 * - Both obj are being taken OR one is secured and the other just got stolen;
+	 * - The Allied spawn time is close;
+	 * - The bot doesn't hold an obj (obviously);
+	 * - The bot isn't close to the one holding the obj (in other words, he's not escorting the bot having stolen it);
+	 * - (Extra?) The bot isn't close to the area to defend already (+ check HP? low HP = suicide).
+	 *
+	 * Here we do hope (for now) that the stolen obj isn't currently dropped...
+	 */
+	AlliedSuicideUponObjTaken = function()
+	{
+		// Leave some time to OB to write to the bot object that he's carrying a flag... Yeah.
+		sleep( .5 );
+
+		condition =
+			Map.iDocumentsCount == 2
+			|| Map.iDocumentsCount == 1 && ( Map.areLowerDocumentsSecured || Map.areUpperDocumentsSecured );
+		if ( !condition )
+		{
+			return;
+		}
+
+		alliedSpawnTime = ETUtil.GetReinforceTime( TEAM.ALLIES );
+		if ( alliedSpawnTime > 10 )
+		{
+			return;
+		}
+
+		// Get the list of bots holding an obj
+		index = 0;
+		alliedBotsWithObj = table();
+		foreach ( id and bot in BotTable )
+		{
+			if ( bot.GetTeam() == TEAM.ALLIES && bot.HasEntityFlag( ENTFLAG.CARRYINGGOAL ) )
+			{
+				alliedBotsWithObj[ index ] = bot;
+				index += 1;
+			}
+		}
+
+		// Cycle through Allied bots
+		// Close to obj holder? Fine
+		// Low HP or not close to dropoff? Selfkill
+		foreach ( id and bot in BotTable )
+		{
+			if ( bot.GetTeam() == TEAM.AXIS )
+			{
+				continue;
+			}
+
+			shouldBotStayAlive = false;
+			foreach ( objBot in alliedBotsWithObj )
+			{
+				if ( bot == objBot )
+				{
+					Util.MapDebugPrint( bot.Name + "^b holds an objective", true );
+
+					shouldBotStayAlive = true;
+
+					// Exit this loop
+					break;
+				}
+
+				// Test the current bot
+				distanceFromObjBot = Functions.GetDistance( objBot, bot );
+				if ( distanceFromObjBot < 1000. )
+				{
+					Util.MapDebugPrint( bot.Name + "^b is close to " + objBot.Name, true );
+
+					shouldBotStayAlive = true;
+
+					// Exit this loop
+					break;
+				}
+			}
+
+			if ( shouldBotStayAlive )
+			{
+				// Next bot
+				continue;
+			}
+
+			// Here, the current bot doesn't hold an obj, and isn't close to any bot holding one
+			if ( bot.Health <= 40 )
+			{
+				Util.MapDebugPrint( bot.Name + "^b selfkilled because he's low hp (" + bot.Health + ")", true );
+				bot.ExecCommand( "kill" );
+				break;
+			}
+
+			distanceFromDropoff = Functions.GetDistance( GetGoal( "CAPPOINT_Transmitter" ), bot );
+			if ( distanceFromDropoff > Map.distanceBetweenCapPointAndFurthestCampGoal )
+			{
+				bot.ExecCommand( "kill" );
+				Util.MapDebugPrint( bot.Name + "^b selfkilled because he's too far away from the Transmitter (" + distanceFromDropoff + ")", true );
+			}
+		}
+	},
+
+	libraryAxisDoorX = -3345,
+	libraryRailingX  = -3085,
+	libraryRearDoorY = GetGoal( "PLANT_Axis_Library_Rear_Door" ).GetPosition().y,
+
+	/**
+	 * Indicates if a bot is either inside the Library or not.
+	 */
+	IsBotInsideLibrary = function( bot )
+	{
+		botPosition = bot.GetPosition();
+		return
+			botPosition.x <= Map.libraryAxisDoorX // Inside
+			|| botPosition.x <= Map.libraryRailingX && botPosition.y <= Map.libraryRearDoorY; // Balcony
+	},
+
+	/**
+	 * Indicates if the Tank is escortable.
+	 */
+	IsTankEscortable = function()
+	{
+		return !Map.isTankEscorted && Map.isTankBuilt;
+	},
+
+	/**
+	 * Manages the AIRSTRIKE goals for Axis, after their Generator destruction
+	 */
+	ManageAirstrikeGoals = function()
+	{
+		// Stays disabled if no documents in the nature and Tank is escorted
+		SetAvailableMapGoals( TEAM.AXIS, false, "AIRSTRIKE_Area.*" );
+
+		if ( Map.tankLocation == MapProgress.TankLocation.FirstArea || Map.iDocumentsCount > 0 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "AIRSTRIKE_Area1" );
+		}
+		else if ( Map.tankLocation == MapProgress.TankLocation.SecondArea )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "AIRSTRIKE_Area2" );
+		}
+		else if ( Map.tankLocation == MapProgress.TankLocation.ThirdArea )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "AIRSTRIKE_Area3" );
+		}
+	},
+
+	/**
+	 * Manages the CAPPOINT goals for Allies, depending on their Transmitter status.
+	 */
+	ManageCappointGoals = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, Map.isAlliedTransmitterBuilt, "CAPPOINT_Transmitter" );
+		SetAvailableMapGoals( TEAM.ALLIES, !Map.isAlliedTransmitterBuilt, "CAPPOINT_TempCampUntilTransmitterGetsAvailable.*" );
+	},
+
+	/**
+	 * Manages the Bunker goals when some Allied bot is trapped inside it,
+	 * In other words, the Axis Bunker Wall isn't destroyed AND the Forward Bunker Doors are built.
+	 * Only if this is the correct step of the map progress.
+	 */
+	ManageBunkerTrappedAlliedBots = function()
+	{
+		// Only if Allies spawn at the Beach
+		if ( Map.isAlliedTransmitterBuilt )
+		{
+			ClearGoalRole( Goals.Allies.Bunker, Roles.Allies.Bunker );
+			return;
+		}
+
+		// If the Axis Generator is destroyed,
+		// other goals are already managed
+		if ( Map.isAxisGeneratorDestroyed )
+		{
+			ClearGoalRole( Goals.Allies.Bunker, Roles.Allies.Bunker );
+			return;
+		}
+
+		// Case when both Axis Bunker Wall and Forward Bunker Doors are up only
+		// Otherwise we exit
+		if ( Map.isAxisBunkerWallDestroyed || !Map.areForwardBunkerDoorsBuilt )
+		{
+			ClearGoalRole( Goals.Allies.Bunker, Roles.Allies.Bunker );
+			return;
+		}
+
+		forwardBunkerDoorsY = GetGoal( "PLANT_Forward_Bunker_Doors" ).GetPosition().y;
+
+		index = 0;
+		trappedAlliedBots = table();
+
+		// Cycle through the bot table
+		foreach ( id and bot in BotTable )
+		{
+			if ( bot.GetTeam() == TEAM.ALLIES && bot.GetPosition().y < forwardBunkerDoorsY )
+			{
+				// The current bot is trapped
+				trappedAlliedBots[ index ] = bot;
+				index += 1;
+			}
+		}
+
+		if ( index > 0 )
+		{
+			// Assign a role to the inside goals
+			SetGoalRole( Goals.Allies.Bunker, Roles.Allies.Bunker );
+
+			// Cycle through the trapped bots
+			// in order to give them the role
+			foreach ( index and bot in trappedAlliedBots )
+			{
+				bot.SetRoles( Roles.Allies.Bunker );
+				Util.MapDebugPrint( bot.Name + "^b is trapped but kept his goals active!", true );
+			}
+
+			// Finally, enable these goals
+			SetAvailableMapGoals( TEAM.ALLIES, true, Goals.Allies.Bunker );
+		}
+	},
+
+	/**
+	 * Manages the Library (upper documents) when some Allied bot is trapped inside it.
+	 * In other words, the Tank hasn't been escorted yet AND the Library Rear Door is built.
+	 * Only if this is the correct step of the map progress.
+	 */
+	ManageLibraryTrappedAlliedBots = function()
+	{
+		// If the objective is already secured...
+		// Dunno why Allied bots would hang in there but heh
+		if ( Map.areUpperDocumentsSecured )
+		{
+			ClearGoalRole( Goals.Allies.Library, Roles.Allies.Library );
+			return;
+		}
+
+		// Only if Allies spawn at the Transmitter
+		if ( !Map.isAlliedTransmitterBuilt )
+		{
+			ClearGoalRole( Goals.Allies.Library, Roles.Allies.Library );
+			return;
+		}
+
+		// Case when both Tank not yet escorted and Library Rear Door is up only
+		// Otherwise we exit
+		if ( Map.isTankEscorted || !Map.isLibraryRearDoorBuilt )
+		{
+			ClearGoalRole( Goals.Allies.Library, Roles.Allies.Library );
+			return;
+		}
+
+		index = 0;
+		trappedAlliedBots = table();
+
+		// Cycle through the bot table
+		foreach ( id and bot in BotTable )
+		{
+			if ( bot.GetTeam() == TEAM.ALLIES && Map.IsBotInsideLibrary( bot ) )
+			{
+				// The current bot is trapped
+				trappedAlliedBots[ index ] = bot;
+				index += 1;
+			}
+		}
+
+		if ( index > 0 )
+		{
+			// Assign a role to the inside goals
+			SetGoalRole( Goals.Allies.Library, Roles.Allies.Library );
+
+			// Cycle through the trapped bots
+			// in order to give them the role
+			foreach ( index and bot in trappedAlliedBots )
+			{
+				bot.SetRoles( Roles.Allies.Library );
+				Util.MapDebugPrint( bot.Name + "^b is trapped but kept his goal active!", true );
+			}
+
+			// Finally, enable these goals
+			SetAvailableMapGoals( TEAM.ALLIES, true, Goals.Allies.Library );
+		}
+	},
+
+	/**
+	 * Manages the camping goals (ATTACK, CAMP, DEFEND) of the map
+	 * after the Axis Generator (area between Transmitter and Library).
+	 * Is taken into account both availability and role assignment.
+	 */
+	ManagePostGeneratorCampingGoals = function()
+	{
+		// Simply disable everything
+		Util.DisableGoal( "CAMP_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_.*" );
+
+		// If documents are in the nature,
+		// just camp the Transmitter
+		if ( Map.iDocumentsCount > 0 )
+		{
+			SetGoalPriority( "CAMP_Allied_Transmitter.*", 0.78 ); // Below FLAG goals
+			ClearGoalRole( Goals.Axis.AlliedTransmitter, Roles.Axis.AlliedTransmitter );
+			Util.EnableGoal( "CAMP_Allied_Transmitter.*" );
+			return;
+		}
+
+		// Always available for Axis
+		SetAvailableMapGoals( TEAM.AXIS, true, "CAMP_Allied_Transmitter.*" );
+		SetGoalPriority( "CAMP_Allied_Transmitter.*", 0.5 ); // Default
+		SetGoalRole( Goals.Axis.AlliedTransmitter, Roles.Axis.AlliedTransmitter );
+
+		// Depending on Documents availability and reachability
+		if ( Map.areLowerDocumentsAvailable )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Lower_Docs.*" );
+		}
+
+		if ( Map.areUpperDocumentsReachable )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Upper_Docs.*" );
+		}
+
+		// Tank location-related camping goals
+		// The role for DEFEND spots is handled in the OnMapLoad section
+		if ( Map.tankLocation == MapProgress.TankLocation.FirstArea )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_First_Area.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_First_Area.*" );
+		}
+		else if ( Map.tankLocation == MapProgress.TankLocation.SecondArea )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Second_Area.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Second_Area.*" );
+		}
+		else if ( Map.tankLocation == MapProgress.TankLocation.ThirdArea )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Third_Area.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Third_Area.*" );
+		}
+	},
+
+	/**
+	 * Sets (or unsets) the Beach roles for Allies.
+	 */
+	SetBeachRoles = function( bSet )
+	{
+		goalTable = { ".*_Beach_East.*", "PLANT_Forward_Bunker_Doors" };
+		role = ROLE.ATTACKER;
+
+		if ( bSet )
+		{
+			SetGoalRole( goalTable, role );
+		}
+		else
+		{
+			ClearGoalRole( goalTable, role );
+		}
+	},
+
+	/**
+	 * Updates the value of Map.areUpperDocumentsReachable,
+	 * and make available or unavailable FLAG_documents_2.
+	 */
+	UpdateAreUpperDocumentsReachable = function()
+	{
+		Map.areUpperDocumentsReachable =
+			!Map.areUpperDocumentsSecured
+			&& ( !Map.isLibraryRearDoorBuilt || Map.isTankEscorted );
+
+		SetAvailableMapGoals( TEAM.ALLIES, Map.areUpperDocumentsReachable, "FLAG_documents_2" );
+
+		// After Axis Generator destruction but before Allied Transmitter first construction,
+		// if the Allies destroy the Library Rear Door, the upper documents are enabled,
+		// but there isn't any CAPPOINT goal available yet...
+		// Handle this particular case just here, instead of upon objective stealing...
+		// but without condition overkill, simply the upper documents availability
+		if ( Map.areUpperDocumentsReachable )
+		{
+			Map.ManageCappointGoals();
+		}
+	},
+
+	// ************************************************************************
+
+	/**
+	 * Handles Axis spawn if possible when an objective gets stolen.
+	 * Also enables CAMP spots around the Allied Transmitter for everyone.
+	 */
+	Documents_Taken = function()
+	{
+		// If the Axis Bunker Spawn is still available, move there
+		if ( !Map.isAxisGeneratorDestroyed )
+		{
+			Util.ChangeSpawn( TEAM.AXIS, Spawns.AXIS_BUNKER_SPAWN );
+		}
+
+		Map.ManageAirstrikeGoals();
+
+		Map.ManagePostGeneratorCampingGoals();
+	},
+
+	/**
+	 * Upon returning or securing an objective, if no one is still in the nature,
+	 * Axis should move their spawn back to the Reserve.
+	 * Also disables the CAMP spots around the Allied Transmitter if needed,
+	 * and re-enables DEFEND spots for Axis.
+	 */
+	Documents_Returned_Or_Secured = function()
+	{
+		if ( Map.iDocumentsCount == 0 )
+		{
+			Util.ChangeSpawn( TEAM.AXIS, Spawns.AXIS_RESERVE_SPAWN );
+		}
+
+		Map.ManageAirstrikeGoals();
+
+		Map.ManagePostGeneratorCampingGoals();
+	},
+
+	// ************************************************************************
+
+	// *** TRIGGER CALLBACKS ***
+	Alllied_Transmitter_Built = function( trigger )
+	{
+		Map.iAlliedTransmitterCount += 1;
+
+		// Just exec the rest once, upon the fifth call in a row
+		if ( Map.iAlliedTransmitterCount < 5 )
+		{
+			return;
+		}
+
+		// Reset the counter for the next time (if destroyed)
+		Map.iAlliedTransmitterCount = 0;
+
+		Map.isAlliedTransmitterBuilt = true;
+
+		// Just upon the first time
+		if ( !Map.hasAlliedTransmitterBeenBuiltOnce )
+		{
+			// Important step, simply reset the available goals list
+			Util.DisableGoal( ".*", true );
+
+			Util.EnableGoal( "AMMOCAB_.*" );
+			Util.EnableGoal( "HEALTHCAB_.*" );
+
+			Map.ManageAirstrikeGoals();
+
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_Axis_Library_Rear_Door",
+				"PLANT_Alllied_Transmitter",
+			});
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"BUILD_Tank",
+				"PLANT_Axis_Library_Rear_Door",
+				"SNIPE_Allied_Road_Bottom_Right",
+			});
+
+			SetAvailableMapGoals( TEAM.ALLIES, Map.IsTankEscortable(), {
+				"ESCORT_Tank",
+				"MOUNT_Tank",
+			});
+
+			// Check if PLANT_Axis_Generator is still available (it moves Axis spawn back)
+			if ( !Map.isAxisGeneratorDestroyed )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Generator" );
+			}
+
+			// Because Allies are moved to a new spawn,
+			// make the ones not in the Transmitter area selfkill
+			Functions.SetSpawnForTeam( TEAM.ALLIES, Spawns.ALLIED_TRANSMITTER_SPAWN );
+			foreach ( id and bot in BotTable )
+			{
+				if ( bot.GetTeam() == TEAM.ALLIES && bot.GetPosition().x < 1900 )
+				{
+					bot.ExecCommand( "kill" );
+				}
+			}
+
+			Map.ManagePostGeneratorCampingGoals();
+
+			Util.MapDebugPrint( "Alllied_Transmitter_Built_For_The_First_Time", true );
+		}
+
+		Map.ManageCappointGoals();
+
+		// The Allied Transmitter Spawn is available
+		// Also indicates that the Transmitter has been built at least once
+		Map.hasAlliedTransmitterBeenBuiltOnce = true;
+
+		// Manage Beach PLANT goals if the Transmitter was built already once
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"PLANT_Axis_Bunker_Wall",
+			"PLANT_Forward_Bunker_Doors",
+		});
+
+		Util.MapDebugPrint( "Alllied_Transmitter_Built" );
+	},
+
+	Axis_Command_Post_Built = function( trigger )
+	{
+		// Its location is hardly reachable by Allies...
+
+		Util.MapDebugPrint( "Axis_Command_Post_Built", true );
+	},
+
+	/**
+	 * Both Bunker Doors and Library Rear Door having the same wm_announce,
+	 * this function dispatches to the correct function depending on the entity name
+	 */
+	Axis_Doors_Built_Dispatch = function( trigger )
+	{
+		entName = GetEntityName( trigger.Entity );
+		if ( entName == "bunkerdoors" )
+		{
+			Map.Forward_Bunker_Doors_Built( trigger );
+		}
+		else if ( entName == "axis_rear_door" )
+		{
+			Map.Axis_Library_Rear_Door_Built( trigger );
+		}
+		else
+		{
+			Util.MapDebugPrint( "Unexpected entity name: " + entName, true );
+		}
+	},
+
+	Axis_Library_Rear_Door_Built = function( trigger )
+	{
+		Map.isLibraryRearDoorBuilt = true;
+		Map.UpdateAreUpperDocumentsReachable();
+		Map.ManagePostGeneratorCampingGoals();
+
+		// Manage eventually trapped bots
+		Map.ManageLibraryTrappedAlliedBots();
+
+		Util.MapDebugPrint( "Axis_Library_Rear_Door_Built" );
+	},
+
+	Forward_Bunker_Doors_Built = function( trigger )
+	{
+		Map.areForwardBunkerDoorsBuilt = true;
+
+		if ( !Map.isAxisBunkerWallDestroyed )
+		{
+			Util.DisableGoal( "ROUTE_GeneratorNode2" );
+
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"ATTACK_Axis_Generator.*",
+				"PLANT_Axis_Generator",
+			});
+		}
+
+		Util.DisableGoal( "ROUTE_GeneratorNode1" );
+
+		if ( !Map.hasAlliedTransmitterBeenBuiltOnce && !Map.isAxisGeneratorDestroyed )
+		{
+			Map.SetBeachRoles( true );
+		}
+
+		// Manage eventually trapped bots
+		Map.ManageBunkerTrappedAlliedBots();
+
+		Util.MapDebugPrint( "Forward_Bunker_Doors_Built" );
+	},
+
+	Tank_Built = function( trigger )
+	{
+		Map.isTankBuilt = true;
+
+		// Only the first time
+		if ( !Map.isTankStolen )
+		{
+			ETUtil.SetStartIndex( "BUILD_Tank", TankOffsets.Build.Back );
+
+			// So it moves a bit for reachability reasons
+			sleep( 4 );
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, Map.IsTankEscortable(), {
+			"ESCORT_Tank",
+			"MOUNT_Tank",
+		});
+
+		Util.MapDebugPrint( "Tank_Built" );
+	},
+
+	// ************************************************************************
+
+	Axis_Bunker_Wall_Planted = function( trigger )
+	{
+		Map.Axis_Bunker_Wall_Dyno += 1;
+
+		if ( !Map.isAxisGeneratorDestroyed )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "ARTILLERY_S_Axis_Wall" );
+		}
+
+		Util.MapDebugPrint( "Axis_Bunker_Wall_Planted" );
+	},
+
+	Axis_Bunker_Wall_Defused = function( trigger )
+	{
+		Map.Axis_Bunker_Wall_Dyno -= 1;
+
+		if ( Map.Axis_Bunker_Wall_Dyno == 0 && !Map.isAxisGeneratorDestroyed )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "ARTILLERY_S_Axis_Wall" );
+		}
+
+		Util.MapDebugPrint( "Axis_Bunker_Wall_Defused" );
+	},
+
+	// ************************************************************************
+
+	Alllied_Transmitter_Destroyed = function( trigger )
+	{
+		Map.iAlliedTransmitterCount += 1;
+
+		// Just exec the rest once, upon the fifth call in a row
+		if ( Map.iAlliedTransmitterCount < 5 )
+		{
+			return;
+		}
+
+		// Reset the counter for the next time (if destroyed)
+		Map.iAlliedTransmitterCount = 0;
+
+		Map.isAlliedTransmitterBuilt = false;
+
+		Map.ManageCappointGoals();
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Alllied_Transmitter" );
+
+		// Allies are pushed back at the Beach,
+		// re-enable the related PLANT goals
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Forward_Bunker_Doors" );
+		if ( !Map.isAxisBunkerWallDestroyed )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Bunker_Wall" );
+		}
+
+		Util.MapDebugPrint( "Alllied_Transmitter_Destroyed" );
+	},
+
+	Axis_Bunker_Wall_Destroyed = function( trigger )
+	{
+		Map.isAxisBunkerWallDestroyed = true;
+
+		// blockwall flags refresh
+		sleep( 1 );
+
+		Util.EnableGoal( "ROUTE_AlliedWestLanderNode3" );
+
+		// In case Allies focus on this
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Library_Rear_Door" );
+
+		// If Allies still spawn at the Beach,
+		// no matter which spawn Axis have at this moment
+		if ( !hasAlliedTransmitterBeenBuiltOnce )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_AxisBunkerWall.*" );
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Alllied_Transmitter" );
+
+		if ( !Map.isAxisGeneratorDestroyed )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "ARTILLERY_S_Axis_Wall" );
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"ATTACK_Axis_Generator.*",
+				"PLANT_Axis_Generator",
+			});
+		}
+
+		// Manage eventually trapped bots
+		Map.ManageBunkerTrappedAlliedBots();
+
+		Functions.Print( "Axis_Bunker_Wall_Destroyed", true );
+	},
+
+	Axis_Command_Post_Destroyed = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Command_Post" );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+	Axis_Generator_Destroyed = function( trigger )
+	{
+		// TODO: What if this happens when the Tank is already escorted?
+		// TODO: What if this happens while the obj is stolen?
+		Map.isAxisGeneratorDestroyed = true;
+
+		Util.DisableGoal( ".*", true );
+
+		Util.EnableGoal( "AMMOCAB_.*" );
+		Util.EnableGoal( "HEALTHCAB_.*" );
+
+		Map.ManageAirstrikeGoals();
+
+		// The only moment Axis can build their CP,
+		// because it is at the bottom of the map...
+		// But don't let Allies waste efforts trying to reach it
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"BUILD_Axis_Command_Post",
+			"MOBILEMG42_.*",
+			"SNIPE_Axis_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Alllied_Transmitter",
+			"BUILD_Tank",
+			"PLANT_Axis_Library_Rear_Door",
+			"PLANT_Forward_Bunker_Doors",
+		});
+		if ( !Map.isAxisBunkerWallDestroyed )
+		{
+			// In case it never happens during the map progress...
+			Util.EnableGoal( "ROUTE_AlliedWestLanderNode3" );
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Bunker_Wall" );
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, Map.IsTankEscortable(), {
+			"ESCORT_Tank",
+			"MOUNT_Tank",
+		});
+
+		Map.ManagePostGeneratorCampingGoals();
+
+		// Finally, clear roles
+		Map.SetBeachRoles( false );
+
+		Functions.Print( "Axis_Generator_Destroyed", true );
+	},
+
+	Axis_Library_Rear_Door_Destroyed = function( trigger )
+	{
+		Map.isLibraryRearDoorBuilt = false;
+
+		// TODO: Check if Allies try to reach that goal even though it isn't available
+		//SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_Library_Rear_Door" );
+
+		Map.UpdateAreUpperDocumentsReachable();
+		Map.ManagePostGeneratorCampingGoals();
+
+		// Manage eventually trapped bots
+		Map.ManageLibraryTrappedAlliedBots();
+
+		Util.MapDebugPrint( "Axis_Library_Rear_Door_Destroyed" );
+	},
+
+	Forward_Bunker_Doors_Destroyed = function( trigger )
+	{
+		Map.areForwardBunkerDoorsBuilt = false;
+
+		// Let the blockwall flags update
+		sleep( 2 );
+
+		Util.EnableGoal( "ROUTE_GeneratorNode.*" );
+
+		if ( !Map.isAxisGeneratorDestroyed )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"PLANT_Axis_Generator",
+				"ATTACK_Axis_Generator.*",
+			});
+		}
+
+		Map.SetBeachRoles( false );
+
+		// Manage eventually trapped bots
+		Map.ManageBunkerTrappedAlliedBots();
+
+		Util.MapDebugPrint( "Forward_Bunker_Doors_Destroyed" );
+	},
+
+	Tank_Destroyed = function( trigger )
+	{
+		Map.isTankBuilt = false;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ESCORT_Tank",
+			"MOUNT_Tank",
+		});
+
+		Util.MapDebugPrint( "Tank_Destroyed" );
+	},
+
+	Tank_Stolen = function( trigger )
+	{
+		Map.isTankStolen = true;
+
+		Util.MapDebugPrint( "Tank_Stolen", true );
+	},
+
+	// ************************************************************************
+
+	documents_1_Taken = function( trigger )
+	{
+		Map.areLowerDocumentsAvailable = false;
+		Map.iDocumentsCount += 1;
+
+		Map.Documents_Taken();
+
+		Map.AlliedSuicideUponObjTaken();
+
+		Util.MapDebugPrint( "documents_1_Taken" );
+	},
+
+	documents_2_Taken = function( trigger )
+	{
+		Map.areUpperDocumentsAvailable = false;
+		Map.iDocumentsCount += 1;
+
+		Map.Documents_Taken();
+
+		Map.AlliedSuicideUponObjTaken();
+
+		Util.MapDebugPrint( "documents_2_Taken" );
+	},
+
+	documents_1_Returned = function( trigger )
+	{
+		Map.areLowerDocumentsAvailable = true;
+		Map.iDocumentsCount -= 1;
+
+		Map.Documents_Returned_Or_Secured();
+
+		Util.MapDebugPrint( "documents_1_Returned" );
+	},
+
+	documents_2_Returned = function( trigger )
+	{
+		Map.areUpperDocumentsAvailable = true;
+		Map.iDocumentsCount -= 1;
+
+		Map.Documents_Returned_Or_Secured();
+
+		Util.MapDebugPrint( "documents_2_Returned" );
+	},
+
+	documents_1_Secured = function( trigger )
+	{
+		Map.iDocumentsSecured += 1;
+
+		if ( Map.iDocumentsSecured < 2 )
+		{
+			Map.areLowerDocumentsSecured = true;
+
+			Map.iDocumentsCount -= 1;
+
+			Map.Documents_Returned_Or_Secured();
+
+			Functions.Print( "documents_1_Secured", true );
+		}
+		else
+		{
+			Functions.Print( "Endgame" );
+		}
+	},
+
+	documents_2_Secured = function( trigger )
+	{
+		Map.iDocumentsSecured += 1;
+
+		if ( Map.iDocumentsSecured < 2 )
+		{
+			Map.areUpperDocumentsSecured = true;
+
+			Map.iDocumentsCount -= 1;
+
+			Map.Documents_Returned_Or_Secured();
+
+			// Disable Axis Library Rear Door goals
+			SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Axis_Library_Rear_Door" );
+			SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_Library_Rear_Door" );
+
+			Functions.Print( "documents_2_Secured", true );
+		}
+		else
+		{
+			Functions.Print( "Endgame" );
+		}
+	},
+};
+
+global OnMapLoad = function()
+{
+	Functions.timeLimitInMinutes = Ceil( GetGameTimeLeft() ) / 60;
+
+	// *** TRIGGERS ***
+	OnTrigger( "Allied Transmitter constructed. Charge speed increased!", Map.Alllied_Transmitter_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+
+	OnTrigger( "the Forward Bunker Doors have been constructed.", Map.Axis_Doors_Built_Dispatch );
+
+	OnTrigger( "The Tank has been repaired!", Map.Tank_Built );
+
+	OnTrigger( "Planted at The Axis Bunker Wall.", Map.Axis_Bunker_Wall_Planted );
+	OnTrigger( "Defused at The Axis Bunker Wall.", Map.Axis_Bunker_Wall_Defused );
+
+	OnTrigger( "Axis team has destroyed the Allied Transmitter!", Map.Alllied_Transmitter_Destroyed );
+	OnTrigger( "The Axis Bunker Wall has been destroyed.", Map.Axis_Bunker_Wall_Destroyed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "The Axis Generator has been destroyed.", Map.Axis_Generator_Destroyed );
+	OnTrigger( "The Axis Library Rear Door has been destroyed.", Map.Axis_Library_Rear_Door_Destroyed );
+	OnTrigger( "the Forward Bunker Doors have been destroyed.", Map.Forward_Bunker_Doors_Destroyed );
+	OnTrigger( "The Tank has been damaged!", Map.Tank_Destroyed );
+
+	OnTrigger( "Allied team has stolen the Tank!", Map.Tank_Stolen );
+
+	OnTrigger( "Allies have stolen the documents set 1!", Map.documents_1_Taken );
+	OnTrigger( "Allies have stolen the documents set 2!", Map.documents_2_Taken );
+	OnTrigger( "Documents set 1 returned!", Map.documents_1_Returned );
+	OnTrigger( "Documents set 2 returned!", Map.documents_2_Returned );
+	OnTrigger( "Allies have transmitted the documents set 1!", Map.documents_1_Secured );
+	OnTrigger( "Allies have transmitted the documents set 2!", Map.documents_2_Secured );
+
+	// *** CLEAR ALL GOALS FOR BOTH TEAMS ***
+	Util.DisableGoal( ".*", true ); // All but routes
+	Util.DisableGoal( "ROUTE_AlliedWestLanderNode3" );
+
+	// *** AXIS GOALS ***
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		".*ARTILLERY_.*Axis_Wall.*",
+		"BUILD_Forward_Bunker_Doors",
+		"DEFEND_Alpha.*",
+		"MOUNTMG42_1003",
+		"REPAIRMG42_1003",
+		"SNIPE_Axis_Ramp",
+	});
+
+	// *** ALLIED GOALS ***
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		".*ARTILLERY_.*Beach_.*",
+		"ATTACK_Axis_Generator.*",
+		"ATTACK_Beach_.*",
+		"PLANT_Axis_Bunker_Wall",
+		"PLANT_Axis_Generator",
+		"PLANT_Forward_Bunker_Doors",
+		"SNIPE_Beach_.*",
+	});
+
+	// *** ROLES ***
+	Map.SetBeachRoles( true );
+	SetGoalRole( "DEFEND_AxisBunkerWall.*", ROLE.DEFENDER );
+	ClearGoalRole( Goals.Allies.Bunker, Roles.Allies.Bunker );
+
+	// For later regarding the Tank protection
+	SetGoalRole( "DEFEND_.*_Area.*", ROLE.DEFENDER2 );
+
+	// Also for later, since Axis also defend the Allied Transmitter
+	SetGoalRole( Goals.Axis.Library.Bottom, Roles.Axis.Library.Bottom );
+	SetGoalRole( Goals.Axis.Library.Top, Roles.Axis.Library.Top );
+
+	// *** GOAL PROPERTIES ***
+	OnTriggerRegion( AABB( 1535.888, -2560.875, 321.125, 1928.433, -2303.135, 395.125 ), Map.Tank_At_First_Tunnel );
+	OnTriggerRegion( AABB( -768.937, -2688.875, 313.125, -248.788, -2431.136, 387.125 ), Map.Tank_At_Second_Tunnel );
+	OnTriggerRegion( AABB( -1951, -2564, 344, -1905, -2306, 408 ), Map.TankTriggerInfo );
+
+	// Spawn triggers so Allied bots
+	// who died inside the Bunker
+	// while both Bunker Wall and Forward Bunker Doors are there
+	// get their inner Bunker goals disabled
+	OnTriggerRegion( AABB( -1901.688, 3133.092, 41.125, -1723.998, 3343.194, 115.125 ), Map.Allied_Lander_Spawn_Trigger );
+	OnTriggerRegion( AABB(  1065.164, 2620.570, 41.337,  1256.277, 2902.938, 115.337 ), Map.Allied_Lander_Spawn_Trigger );
+
+	// Same as above, but for the Library goals
+	OnTriggerRegion( AABB( 4168.330, -2168.071, 641.125, 4670.734, -1755.702, 843.125 ), Map.Allied_Transmitter_Spawn_Trigger );
+
+	ETUtil.SetStartIndex( "BUILD_Tank", TankOffsets.Build.LeftFront );
+
+	SetGoalPriority( "PLANT_Axis_Generator",        0.91 ); // Above BUILD_Alllied_Transmitter
+	SetGoalPriority( "BUILD_Tank",                  0.89 ); // Below BUILD_Alllied_Transmitter
+	SetGoalPriority( "FLAG_documents_1",            0.79 ); // Below FLAG_documents_2
+	SetGoalPriority( "BUILD_Axis_Command_Post",     0.77 ); // Below FLAG goals _AND_ CAMP_Allied_Transmitter.*
+	SetGoalPriority( "ESCORT_Tank",                 0.77 ); // Below MOUNT_Tank
+	SetGoalPriority( "ATTACK_Axis_Generator.*",     0.71 ); // Above ATTACK_Beach_.* and SNIPE (not (CALL)ARTILLERY)
+
+	Util.AddUsePoint( "BUILD_Alllied_Transmitter", Vec3( 3320, 5, 500 ) );
+	Util.AddUsePoint( "PLANT_Alllied_Transmitter", Vec3( 2890, -50, 505 ) );
+	Util.AddUsePoint( "PLANT_Axis_Generator", Vec3( 1370, -834, 648 ) );
+	Util.AddUsePoint( "PLANT_Axis_Library_Rear_Door", Vec3( -3310, -1750, 675 ) );
+	Util.AddUsePoint( "PLANT_Forward_Bunker_Doors", Vec3( 400, -365, 585 ) );
+
+	Util.LimitToClass( "PLANT_Axis_Library_Rear_Door", TEAM.ALLIES, CLASS.COVERTOPS );
+
+	Util.SetMaxUsersInProgress( 3, "FLAG_.*" );
+
+	// Init that field here, else the parser doesn't like it...
+	Map.distanceBetweenCapPointAndFurthestCampGoal =
+		Functions.GetDistance(
+			GetGoal( "CAPPOINT_Transmitter" ),
+			GetGoal( "CAMP_Allied_Transmitter1" ) ) + 100;
+
+	TankArtilleryManagement.Init();
+
+	Util.MapDebugPrint( "Omni-Bot 0.8x map script for 1944 Overlord by Mateos executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_Axis_Generator =
+		{
+			ROUTE_AlliedWestLanderSpawn =
+			{
+				ROUTE_AlliedWestLanderNode1 =
+				{
+					ROUTE_AlliedWestLanderNode2 =
+					{
+						ROUTE_AlliedWestLanderNode3 =
+						{
+							ROUTE_GeneratorNode2 = {},
+						},
+
+						ROUTE_GeneratorNode1 =
+						{
+							ROUTE_GeneratorNode2 = {},
+						},
+					},
+				},
+
+				ROUTE_GeneratorNode1 =
+				{
+					ROUTE_GeneratorNode2 = {},
+				},
+			},
+
+			ROUTE_AlliedIsolatedBeachSpawn =
+			{
+				ROUTE_AlliedWestLanderNode1 =
+				{
+					ROUTE_AlliedWestLanderNode2 =
+					{
+						ROUTE_AlliedWestLanderNode3 =
+						{
+							ROUTE_GeneratorNode2 = {},
+						},
+
+						ROUTE_GeneratorNode1 =
+						{
+							ROUTE_GeneratorNode2 = {},
+						},
+					},
+				},
+
+				ROUTE_GeneratorNode1 =
+				{
+					ROUTE_GeneratorNode2 = {},
+				},
+			},
+		},
+
+
+		PLANT_Axis_Library_Rear_Door =
+		{
+			ROUTE_Allied_Transmitter_Spawn1 =
+			{
+				ROUTE_Transmitter_Hill =
+				{
+					ROUTE_Second_Area_Top =
+					{
+						ROUTE_AlliedWestLanderNode3 = {},
+					},
+				},
+			},
+
+			ROUTE_Allied_Transmitter_Spawn2 =
+			{
+				ROUTE_Transmitter_Hill =
+				{
+					ROUTE_Second_Area_Top =
+					{
+						ROUTE_AlliedWestLanderNode3 = {},
+					},
+				},
+			},
+		},
+
+
+		// Route to avoid the deadly road...
+		DEFEND_First_Area1 =
+		{
+			ROUTE_Axis_Barn_Spawn =
+			{
+				ROUTE_AlliedWestLanderNode3 =
+				{
+					ROUTE_Second_Area_Top = {},
+				},
+			},
+
+			ROUTE_Axis_Reserve_Spawn =
+			{
+				ROUTE_AlliedWestLanderNode3 =
+				{
+					ROUTE_Second_Area_Top = {},
+				},
+			},
+		},
+	};
+
+	// Copy some routes
+	MapRoutes.ATTACK_Axis_Generator1 = MapRoutes.PLANT_Axis_Generator;
+	MapRoutes.ATTACK_Axis_Generator2 = MapRoutes.PLANT_Axis_Generator;
+	MapRoutes.ATTACK_Axis_Generator3 = MapRoutes.PLANT_Axis_Generator;
+	MapRoutes.ATTACK_Axis_Generator4 = MapRoutes.PLANT_Axis_Generator;
+	MapRoutes.ATTACK_Axis_Generator5 = MapRoutes.PLANT_Axis_Generator;
+	MapRoutes.ATTACK_Axis_Generator1 = MapRoutes.PLANT_Axis_Generator;
+	MapRoutes.ATTACK_Axis_Generator7 = MapRoutes.PLANT_Axis_Generator;
+	MapRoutes.ATTACK_Axis_Generator8 = MapRoutes.PLANT_Axis_Generator;
+	MapRoutes.ATTACK_Axis_Generator9 = MapRoutes.PLANT_Axis_Generator;
+	MapRoutes.ATTACK_Axis_Generator10 = MapRoutes.PLANT_Axis_Generator;
+
+	// Even moar routes
+	MapRoutes.DEFEND_First_Area2 = MapRoutes.DEFEND_First_Area1;
+	MapRoutes.DEFEND_First_Area3 = MapRoutes.DEFEND_First_Area1;
+	MapRoutes.DEFEND_First_Area4 = MapRoutes.DEFEND_First_Area1;
+	MapRoutes.DEFEND_First_Area5 = MapRoutes.DEFEND_First_Area1;
+	MapRoutes.DEFEND_First_Area6 = MapRoutes.DEFEND_First_Area1;
+	MapRoutes.DEFEND_First_Area7 = MapRoutes.DEFEND_First_Area1;
+	MapRoutes.DEFEND_First_Area8 = MapRoutes.DEFEND_First_Area1;
+
+	MapRoutes.DEFEND_Second_Area1 = MapRoutes.DEFEND_First_Area1;
+	MapRoutes.DEFEND_Second_Area2 = MapRoutes.DEFEND_First_Area1;
+	MapRoutes.DEFEND_Second_Area3 = MapRoutes.DEFEND_First_Area1;
+	MapRoutes.DEFEND_Second_Area4 = MapRoutes.DEFEND_First_Area1;
+	MapRoutes.DEFEND_Second_Area5 = MapRoutes.DEFEND_First_Area1;
+	MapRoutes.DEFEND_Second_Area6 = MapRoutes.DEFEND_First_Area1;
+	MapRoutes.DEFEND_Second_Area7 = MapRoutes.DEFEND_First_Area1;
+	MapRoutes.DEFEND_Second_Area8 = MapRoutes.DEFEND_First_Area1;
+	MapRoutes.DEFEND_Second_Area9 = MapRoutes.DEFEND_First_Area1;
+
+	Util.Routes( MapRoutes );
+};
+
+/**
+ * Artillery automatic management section
+ * As long as the Tank is moving, just keep the nearest ARTILLERY_D/ARTILLERY_S enabled
+ * From their position, look for their reachable CALLARTILLERY, and have them enabled
+ * Note: Air strike isn't here because it's fine to just have one per road section
+ */
+global TankArtilleryManagement =
+{
+	/** Artillery goal list */
+	ARTILLERY_GOAL_LIST,
+
+	/** CallArtillery goal list */
+	CALLARTILLERY_GOAL_LIST,
+
+	/** Distance from Tank position within which the artillery goals are enabled */
+	DISTANCE_FROM_TANK,
+
+	/** Tank entity, from which MOVER_tank position is monitored */
+	TANK_ENTITY,
+
+	/** Last recorded Tank position */
+	tankPreviousPosition,
+
+	Init = function()
+	{
+		OnTrigger( "Start tank", TankArtilleryManagement.Tank_Moving );
+
+		TankArtilleryManagement.ARTILLERY_GOAL_LIST = Util.GoalTable( "ARTILLERY_.*Road.*" );
+		TankArtilleryManagement.CALLARTILLERY_GOAL_LIST = Util.GoalTable( "CALLARTILLERY_Road.*" );
+
+		TankArtilleryManagement.DISTANCE_FROM_TANK = 256 + 128;
+
+		TankArtilleryManagement.TANK_ENTITY = GetEntityByName( "tank" );
+		TankArtilleryManagement.tankPreviousPosition = GetEntPosition( TankArtilleryManagement.TANK_ENTITY );
+	},
+
+	Tank_Moving = function( trigger )
+	{
+		//Util.MapDebugPrint( "Tank starts moving...", true );
+		sleep( 1.5 ); // Let the Tank actually start moving a bit...
+		TankArtilleryManagement.TrackTankMovement();
+	},
+
+	TrackTankMovement = function()
+	{
+		// This is a recursive loop, so let the other triggers actually happen
+		yield();
+
+		tankCurrentPosition = GetEntPosition(TankArtilleryManagement.TANK_ENTITY);
+		if ( tankCurrentPosition != TankArtilleryManagement.tankPreviousPosition )
+		{
+			//Util.MapDebugPrint( "Tank is moving!", true );
+			TankArtilleryManagement.tankPreviousPosition = tankCurrentPosition;
+			sleep( 0.5 ); // Entity position refresh
+			TankArtilleryManagement.ManageArtilleryGoals();
+			TankArtilleryManagement.TrackTankMovement();
+		}
+		else
+		{
+			//Util.MapDebugPrint( "Tank stopped!", true );
+		}
+	},
+
+	ManageArtilleryGoals = function()
+	{
+		// First step: disable all artillery and call artillery goals
+		foreach ( artilleryGoal in TankArtilleryManagement.ARTILLERY_GOAL_LIST )
+		{
+			artilleryGoal.SetAvailable( TEAM.AXIS, false );
+		}
+
+		foreach ( artilleryGoal in TankArtilleryManagement.CALLARTILLERY_GOAL_LIST )
+		{
+			artilleryGoal.SetAvailable( TEAM.AXIS, false );
+		}
+
+		// Second step: enable the artillery goals
+		// Third step: enable the call artillery goals that can reach the previously enabled artillery ones
+		foreach ( artilleryGoal in TankArtilleryManagement.ARTILLERY_GOAL_LIST )
+		{
+			if ( DistanceBetween( artilleryGoal, TankArtilleryManagement.TANK_ENTITY ) <= TankArtilleryManagement.DISTANCE_FROM_TANK )
+			{
+				artilleryGoal.SetAvailable( TEAM.AXIS, true );
+				TankArtilleryManagement.EnableCallArtilleryGoalsForArtilleryGoal( artilleryGoal );
+			}
+		}
+	},
+
+	// Note: Also renders a trace line between the CALLARTILLERY goal to its ARTILLERY goal
+	EnableCallArtilleryGoalsForArtilleryGoal = function( artilleryGoal )
+	{
+		artilleryGoalPosition = artilleryGoal.GetPosition();
+		foreach ( callArtilleryGoal in TankArtilleryManagement.CALLARTILLERY_GOAL_LIST )
+		{
+			// If the goal is already enabled, skip it!
+			// Comment this out to draw all the debug lines
+			if ( callArtilleryGoal.IsAvailable( TEAM.AXIS ) )
+			{
+				continue;
+			}
+
+			// Trace from the eyes!
+			// callArtilleryGoal.GetEntity() sadly returns null, since it's not a game entity...
+			// so it can't be used with GetEntEyePosition :'(
+			callArtilleryGoalPosition = callArtilleryGoal.GetPosition();
+			callArtilleryGoalEyePosition = Vector3( callArtilleryGoalPosition.x, callArtilleryGoalPosition.y, callArtilleryGoalPosition.z + 64 );
+
+			tr = TraceLine( callArtilleryGoalEyePosition, artilleryGoalPosition, null, TRACE.FLOODFILL, 0, true );
+			if ( tr.fraction == 1 )
+			{
+				callArtilleryGoal.SetAvailable( TEAM.AXIS, true );
+
+				// Draw a line to see what's going on!
+				DrawDebugLine( callArtilleryGoalEyePosition, artilleryGoalPosition, COLOR.GREEN, 5 );
+			}
+			else
+			{
+				// For testing purposes
+				//DrawDebugLine( callArtilleryGoalEyePosition, artilleryGoalPosition, COLOR.YELLOW, 5 );
+			}
+		}
+	},
+};
+
+global Functions =
+{
+	/**
+	 * Map time limit.
+	 */
+	timeLimitInMinutes,
+
+	/**
+	 * Prints a text with elapsed and left times.
+	 * Does not print active goals.
+	 * @param text Text to print.
+	 */
+	Print = function( text )
+	{
+		Functions.Print( text, false );
+	},
+
+	/**
+	 * Prints a text with elapsed and left times.
+	 * @param text Text to print.
+	 * @param printActiveGoals Either print or not active goals.
+	 */
+	Print = function( text, printActiveGoals )
+	{
+		Util.MapDebugPrint( text + Functions.GetFormattedElaspedTime() + Functions.GetFormattedTimeLeft(), !printActiveGoals );
+	},
+
+	/**
+	 * Builds and returns the elapsed time since the round has started.
+	 */
+	GetFormattedElaspedTime = function()
+	{
+		totalTimeInSeconds = Functions.timeLimitInMinutes * 60;
+		gameTimeLeftInSeconds = Floor( GetGameTimeLeft() );
+		elapsedTimeInSeconds = totalTimeInSeconds - gameTimeLeftInSeconds;
+
+		elapsedTimeMinutes = Floor( elapsedTimeInSeconds / 60 );
+		elapsedTimeSeconds = elapsedTimeInSeconds - elapsedTimeMinutes * 60;
+		if ( elapsedTimeSeconds < 10 )
+		{
+			elapsedTimeSeconds = "0" + elapsedTimeSeconds;
+		}
+
+		return " (" + elapsedTimeMinutes + ":" + elapsedTimeSeconds + " elapsed)";
+	},
+
+	/**
+	 * Builds and returns the game time left, formatted as mm:ss.
+	 */
+	GetFormattedTimeLeft = function()
+	{
+		gameTimeLeft = Floor( GetGameTimeLeft() );
+		minutes = Floor( gameTimeLeft / 60 );
+		seconds = gameTimeLeft - minutes * 60;
+		if ( seconds < 10 )
+		{
+			seconds = "0" + seconds;
+		}
+
+		return " (" + minutes + ":" + seconds + " left)";
+	},
+
+	GetDistance = function( ent1, ent2 )
+	{
+		ent1Position = ent1.GetPosition();
+		ent2Position = ent2.GetPosition();
+		x = ent1Position.x - ent2Position.x;
+		y = ent1Position.y - ent2Position.y;
+		return Sqrt( x * x + y * y );
+	},
+
+	SetSpawnForTeam = function( team, spawn )
+	{
+		foreach( bot in BotTable )
+		{
+			if ( bot.GetTeam() == team )
+			{
+				bot.ChangeSpawnPoint( spawn );
+			}
+		}
+	},
+};

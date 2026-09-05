@@ -1,0 +1,1985 @@
+//==========================================================================================
+//
+//	sub_base_final.gm
+//
+//	Who      	When		What
+//------------------------------------------------------------------------------------------
+//	Qiki		29.7.2019	Initial Script & waypoints
+//	Native12	26.01.2020	Ready to test
+//	Native12	29.01.2020	Fixed stuckages, released
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	Allied_Bunker_Defenses = false,
+	Allied_Bunker_Defenses_Dyno = 0,
+	Allied_CP = false,
+	Allied_CP_Dyno = 0,
+	Axis_CP = false,
+	Axis_CP_Dyno = 0,
+	Main_Entrance = true,
+	Main_Entrance_Dyno = 0,
+	Rear_Entrance = true,
+	Rear_Entrance_Dyno = 0,
+	Forward_Bunker_Axis = false,
+	Gate_1_Opened = false,
+	Gate_1_Opening = false,
+	Gate_1_Closed = true,
+	Gate_1_Closing = false,
+	Gate_2_Opened = false,
+	Gate_2_Opening = false,
+	Gate_2_Closed = true,
+	Gate_2_Closing = false,
+	Enigma_Machine_Taken = false,
+	Enigma_Machine_Dropped = false,
+	WindowExploded = false,
+	AxisIns = 0,
+	AxisOut = 0,
+	AxEngPlant = 0,
+	Carry1 = 0,
+	Carry2 = 0,
+	Carry3 = 0,
+
+	Roles =
+	{
+		AXIS =
+		{
+			AllBots = true, // each bot is considered for a role
+			ATTACKER =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER1 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER2 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.COVERTOPS,
+			},
+			ATTACKER3 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.COVERTOPS,
+			},
+		},
+
+		ALLIES =
+		{
+			AllBots = true, // each bot is considered for a role
+			DEFENDER =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER1 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER2 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.SOLDIER,
+			},
+			DEFENDER3 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.SOLDIER,
+			},
+		},
+	},
+
+	Navigation =
+	{
+		//	/bot waypoint_setproperty paththrough Navigation_PT:jump_wait
+		jump_wait =
+		{
+			navigate = function(_this)
+			{
+				sleep(0.25);
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:jump
+		jump =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+	},
+
+	Allied_Bunker_Defenses_Built = function()
+	{
+		Map.Allied_Bunker_Defenses = true;
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Wp.SetWaypointFlag( "Allied_Bunker_Defenses_1", "allies", true );
+		Wp.SetWaypointFlag( "Allied_Bunker_Defenses_1", "door", true );
+		Wp.SetWaypointFlag( "Allied_Bunker_Defenses_2", "allies", true );
+		Wp.SetWaypointFlag( "Allied_Bunker_Defenses_2", "door", true );
+
+		Util.DisableGoal( "ROUTE_AxisHut_Right6" );
+		Util.DisableGoal( "ROUTE_AxisHut_Right7" );
+		Util.DisableGoal( "ROUTE_ForwardBunker_Right1" );
+		Util.DisableGoal( "ROUTE_ForwardBunker_Right2" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"BUILD_Allied_Bunker_Defenses",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"PLANT_Allied_Bunker_Defenses",
+		});
+
+		Util.MapDebugPrint( "Allied_Bunker_Defenses_Built" );
+	},
+
+	Allied_Bunker_Defenses_Planted = function()
+	{
+		Map.Allied_Bunker_Defenses_Dyno += 1;
+
+		if ( Map.Enigma_Machine_Taken or Map.AxisIns > 0 or !Map.Rear_Entrance )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"DEFUSE_Allied_Bunker_Defenses_.*",
+			});
+		}
+
+		Util.MapDebugPrint( "Allied_Bunker_Defenses_Planted" );
+	},
+
+	Allied_Bunker_Defenses_Defused = function()
+	{
+		Map.Allied_Bunker_Defenses_Dyno -= 1;
+
+		Util.MapDebugPrint( "Allied_Bunker_Defenses_Defused" );
+	},
+
+	Allied_Bunker_Defenses_Destroyed = function()
+	{
+		if ( Map.Allied_Bunker_Defenses_Dyno != 0 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"DEFUSE_Allied_Bunker_Defenses_.*",
+			});
+		}
+
+		Map.Allied_Bunker_Defenses = false;
+		Map.Allied_Bunker_Defenses_Dyno = 0;
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Wp.SetWaypointFlag( "Allied_Bunker_Defenses_1", "allies", false );
+		Wp.SetWaypointFlag( "Allied_Bunker_Defenses_1", "door", false );
+		Wp.SetWaypointFlag( "Allied_Bunker_Defenses_2", "allies", false );
+		Wp.SetWaypointFlag( "Allied_Bunker_Defenses_2", "door", false );
+
+		Util.EnableGoal( "ROUTE_AxisHut_Right6" );
+		Util.EnableGoal( "ROUTE_AxisHut_Right7" );
+		Util.EnableGoal( "ROUTE_ForwardBunker_Right1" );
+		Util.EnableGoal( "ROUTE_ForwardBunker_Right2" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"PLANT_Allied_Bunker_Defenses",
+		});
+
+		if ( !Map.Enigma_Machine_Taken )
+		{
+			if ( Map.AxisIns < 1 )
+			{
+				if ( Map.Rear_Entrance )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"BUILD_Allied_Bunker_Defenses",
+					});
+				}
+			}
+		}
+
+		Util.MapDebugPrint( "Allied_Bunker_Defenses_Destroyed" );
+	},
+
+	Allied_CP_Built = function()
+	{
+		Map.Allied_CP = true;
+
+		Util.DisableGoal( {
+			"BUILD_Command_Post",
+		});
+
+		if ( Map.Forward_Bunker_Axis or !Map.Main_Entrance )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"PLANT_Command_Post",
+			});
+		}
+
+		Util.MapDebugPrint( "Allied_CP_Built" );
+	},
+
+	Axis_CP_Built = function()
+	{
+		Map.Axis_CP = true;
+
+		Map.SetSpawn();
+
+		SetGoalRole( "PLANT_Command_Post", ROLE.INFILTRATOR );
+
+		Util.DisableGoal( {
+			"BUILD_Command_Post",
+		});
+
+		if ( !Map.Enigma_Machine_Taken )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"PLANT_Command_Post",
+			});
+		}
+
+		Util.MapDebugPrint( "Axis_CP_Built" );
+	},
+
+	Command_Post_Planted = function()
+	{
+		Util.SetGoalRange( "DEFUSE_Command_Post_.*", 2700);
+
+		if ( Map.Axis_CP )
+		{
+			Map.Axis_CP_Dyno += 1;
+
+			Util.MapDebugPrint( "Axis_CP_Planted" );
+		}
+		else
+		{
+			Map.Allied_CP_Dyno += 1;
+
+			Util.MapDebugPrint( "Allied_CP_Planted" );
+		}
+	},
+
+	Command_Post_Defused = function()
+	{
+		if ( Map.Axis_CP )
+		{
+			Map.Axis_CP_Dyno -= 1;
+
+			Util.MapDebugPrint( "Axis_CP_Defused" );
+		}
+		else
+		{
+			Map.Allied_CP_Dyno -= 1;
+
+			Util.MapDebugPrint( "Allied_CP_Defused" );
+		}
+	},
+
+	Allied_CP_Destroyed = function()
+	{
+		Map.Allied_CP = false;
+		Map.Allied_CP_Dyno = 0;
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"PLANT_Command_Post",
+		});
+
+		if ( Map.Forward_Bunker_Axis or !Map.Main_Entrance )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_Command_Post",
+			});
+		}
+
+		if ( !Map.Enigma_Machine_Taken )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"BUILD_Command_Post",
+			});
+		}
+
+		Util.MapDebugPrint( "Allied_CP_Destroyed" );
+	},
+
+	Axis_CP_Destroyed = function()
+	{
+		Map.Axis_CP = false;
+		Map.Axis_CP_Dyno = 0;
+
+		Map.SetSpawn();
+
+		ClearGoalRole( "PLANT_Command_Post", ROLE.INFILTRATOR );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"PLANT_Command_Post",
+		});
+
+		if ( Map.Forward_Bunker_Axis or !Map.Main_Entrance )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_Command_Post",
+			});
+		}
+
+		if ( !Map.Enigma_Machine_Taken )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"BUILD_Command_Post",
+			});
+		}
+
+		Util.MapDebugPrint( "Axis_CP_Destroyed" );
+	},
+
+	Main_Entrance_Planted = function()
+	{
+		Map.Main_Entrance_Dyno += 1;
+
+		if ( Map.Enigma_Machine_Taken or Map.AxisIns > 0 or !Map.Rear_Entrance )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"DEFUSE_Main_Entrance_.*"
+			});
+		}
+
+		Util.MapDebugPrint( "Main_Entrance_Planted" );
+	},
+
+	Main_Entrance_Defused = function()
+	{
+		Map.Main_Entrance_Dyno -= 1;
+
+		Util.MapDebugPrint( "Main_Entrance_Defused" );
+	},
+
+	Main_Entrance_Destroyed = function()
+	{
+		if ( Map.Main_Entrance_Dyno != 0 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"DEFUSE_Main_Entrance_.*"
+			});
+		}
+
+		Map.Main_Entrance = false;
+		Map.Main_Entrance_Dyno = 0;
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Util.EnableGoal ( "ROUTE_MainEntrance.*" );
+
+		ClearGoalRole( "FLAG_radarbox1", { ROLE.ATTACKER2, ROLE.ATTACKER3 } );
+
+		if ( Map.Rear_Entrance )
+		{
+			ClearGoalRole( "CHECKPOINT_roadbunker", { ROLE.ATTACKER2, ROLE.ATTACKER3, ROLE.DEFENDER, ROLE.DEFENDER1 } );
+			Util.SetMaxUsers( 4, "CHECKPOINT_roadbunker" );
+
+			SetGoalPriority( "PLANT_Rear_Entrance", 0.82, TEAM.AXIS, CLASS.ENGINEER );
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"PLANT_Main_Entrance*",
+			".*_Axis_MainEntrance_.*"
+		});
+
+		if ( Map.Allied_CP )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"PLANT_Command_Post",
+			});
+		}
+
+		if ( !Map.Allied_CP and !Map.Axis_CP )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_Command_Post",
+			});
+		}
+
+		if ( !Map.Forward_Bunker_Axis )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"MOBILEMORTAR_.*",
+				"SMOKEBOMB_Axis_MainEntrance_.*",
+			});
+		}
+
+		Util.MapDebugPrint( "Main_Entrance_Destroyed" );
+	},
+
+	Rear_Entrance_Planted = function()
+	{
+		Map.Rear_Entrance_Dyno += 1;
+
+		if ( Map.Enigma_Machine_Taken )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"DEFUSE_Rear_Entrance_.*"
+			});
+		}
+
+		Util.MapDebugPrint( "Rear_Entrance_Planted" );
+	},
+
+	Rear_Entrance_Defused = function()
+	{
+		Map.Rear_Entrance_Dyno -= 1;
+
+		Util.MapDebugPrint( "Rear_Entrance_Defused" );
+	},
+
+	Rear_Entrance_Destroyed = function()
+	{
+		if ( Map.Rear_Entrance_Dyno != 0 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"DEFUSE_Rear_Entrance_.*"
+			});
+		}
+
+		Map.Rear_Entrance = false;
+		Map.Rear_Entrance_Dyno = 0;
+		Map.Forward_Bunker_Axis = true;
+
+		Map.SetSpawn();
+
+		WeaponTable.SetWeaponTeamAvailability ( TEAM.AXIS, CLASS.SOLDIER, WEAPON.MORTAR, false );
+
+		SetGoalRole( ".*_Allies_EnigmaMachine_.*", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2, ROLE.DEFENDER3 } );
+
+		Util.EnableGoal ( "ROUTE_ForwardBunker_Left1" );
+		Util.EnableGoal ( "ROUTE_ForwardBunker_Left2" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"DEFEND_Allies_RearEntrance_.*"
+		});
+
+		if ( !Map.Allied_Bunker_Defenses )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"BUILD_Allied_Bunker_Defenses",
+			});
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*_mg42_3",
+			".*_Allies_Bunker_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"MOBILEMORTAR_.*",
+			"SMOKEBOMB_Axis_MainEntrance_.*",
+		});
+
+		if ( Map.Main_Entrance )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				".*_Axis_MainEntrance_.*"
+			});
+		}
+
+		if ( !Map.Enigma_Machine_Taken )
+		{
+			if ( Map.AxisIns < 1 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					".*_Allies_Between_.*",
+				});
+			}
+
+			if ( !Map.Gate_2_Opened )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"SWITCH_Gate_2",
+				});
+			}
+
+			if ( !Map.Gate_1_Opened )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"SWITCH_Gate_1",
+				});
+			}
+
+			if ( Map.WindowExploded )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"SMOKEBOMB_Axis_EnigmaMachine_00",
+				});
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"GRENADE_Window",
+				});
+			}
+
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"SMOKEBOMB_Axis_EnigmaMachine_01",
+			});
+		}
+
+		if ( Map.Allied_CP )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"PLANT_Command_Post",
+			});
+		}
+
+		if ( !Map.Allied_CP and !Map.Axis_CP )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_Command_Post",
+			});
+		}
+
+		Util.MapDebugPrint( "Rear_Entrance_Destroyed" );
+	},
+
+	radarbox1_Taken = function()
+	{
+		Map.Enigma_Machine_Taken = true;
+		Map.Enigma_Machine_Dropped = false;
+
+		OnTriggerRegion(AABB(1415.125,463.264,-714.384,3251.470,2888.875,-84.875), Map.Escort1);	//Inside
+		OnTriggerRegion(AABB(1111.126,1343.125,-696.272,1415.108,2888.875,-75.984), Map.Escort1);	//Inside
+		OnTriggerRegion(AABB(-186.125,1727.125,-670.844,1111.088,2888.875,-95.649), Map.Escort1);	//Inside
+		OnTriggerRegion(AABB(847.125,1511.125,-581.830,1008.875,1731.205,-426.705), Map.Escort1);	//Inside
+		OnTriggerRegion(AABB(1106.125,500.125,-406.875,1415.085,1024.875,-156.024), Map.Escort1);	//Inside
+		OnTriggerRegion(AABB(-2496.875,501.000,-700.000,-224.125,3072.875,170.401), Map.Escort2);	//Outside
+		OnTriggerRegion(AABB(-2232.875,-792.875,-221.677,-775.126,515.423,109.529), Map.Escort2);	//Outside
+		OnTriggerRegion(AABB(-3192.872,-3186.329,-129.512,-1400.834,-786.133,146.875), Map.Escort2);	//Outside
+		OnTriggerRegion(AABB(-147.190,463.127,-407.649,1067.295,1729.179,-183.341), Map.Escort3);	//Around spawns
+		OnTriggerRegion(AABB(-760.875,-440.875,-399.464,163.724,477.508,129.456), Map.Escort3);	//Around spawns
+
+		Util.DisableGoal( {
+			"SWITCH_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"DEFEND_Allies_RearEntrance_.*",
+			"DEFUSE_.*",
+			".*_Allies_EnigmaMachine_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"FLAG_radarbox1",
+			"SMOKEBOMB_Axis_EnigmaMachine_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"CAPPOINT_Transmitter"
+		});
+
+		if ( Map.Carry1 == 0 and Map.Carry2 == 0 and Map.Carry3 == 0 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				".*_Axis_CappPlace_.*"
+			});
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				".*_Allies_CappPlace_.*"
+			});
+		}
+
+		Util.MapDebugPrint( "radarbox1_Taken" );
+	},
+
+	Escort1 =
+	{
+		Name = "Escort1",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+			{
+				Map.Carry1 += 1;
+
+				Util.MapDebugPrint( "Carry1:	" +Map.Carry1 );
+				Util.MapDebugPrint( "Carry2:	" +Map.Carry2 );
+				Util.MapDebugPrint( "Carry3:	" +Map.Carry3 );
+
+				Util.DisableGoal( {
+					".*_CappPlace_.*"
+				});
+
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					".*_Allies_GoToCapp_Esc1_.*"
+				});
+
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					".*_Axis_GoToCapp_Esc1_.*"
+				});
+			}
+		},
+		OnExit = function(ent)
+		{
+			if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+			{
+				Map.Carry1 -= 1;
+
+				if ( Map.Carry1 < 1 )
+				{
+					Util.DisableGoal( {
+						".*_GoToCapp_Esc1_.*"
+					});
+				}
+
+				if ( Map.Carry1 == 0 and Map.Carry2 == 0 and Map.Carry3 == 0 and Map.Enigma_Machine_Taken )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						".*_Axis_CappPlace_.*"
+					});
+
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						".*_Allies_CappPlace_.*"
+					});
+				}
+
+				Util.MapDebugPrint( "Carry1:	" +Map.Carry1 );
+				Util.MapDebugPrint( "Carry2:	" +Map.Carry2 );
+				Util.MapDebugPrint( "Carry3:	" +Map.Carry3 );
+			}
+		},
+	},
+
+	Escort2 =
+	{
+		Name = "Escort2",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+			{
+				Map.Carry2 += 1;
+
+				Util.MapDebugPrint( "Carry2:	" +Map.Carry2 );
+				Util.MapDebugPrint( "Carry1:	" +Map.Carry1 );
+				Util.MapDebugPrint( "Carry3:	" +Map.Carry3 );
+
+				Util.DisableGoal( {
+					".*_CappPlace_.*"
+				});
+
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					".*_Allies_GoToCapp_Esc2_.*"
+				});
+
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					".*_Axis_GoToCapp_Esc2_.*"
+				});
+			}
+		},
+		OnExit = function(ent)
+		{
+			if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+			{
+				Map.Carry2 -= 1;
+
+				if ( Map.Carry2 < 1 )
+				{
+					Util.DisableGoal( {
+						".*_GoToCapp_Esc2_.*"
+					});
+				}
+
+				if ( Map.Carry1 == 0 and Map.Carry2 == 0 and Map.Carry3 == 0 and Map.Enigma_Machine_Taken )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						".*_Axis_CappPlace_.*"
+					});
+
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						".*_Allies_CappPlace_.*"
+					});
+				}
+
+				Util.MapDebugPrint( "Carry2:	" +Map.Carry2 );
+				Util.MapDebugPrint( "Carry1:	" +Map.Carry1 );
+				Util.MapDebugPrint( "Carry3:	" +Map.Carry3 );
+			}
+		},
+	},
+
+	Escort3 =
+	{
+		Name = "Escort3",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+			{
+				Map.Carry3 += 1;
+
+				Util.MapDebugPrint( "Carry3:	" +Map.Carry3 );
+				Util.MapDebugPrint( "Carry1:	" +Map.Carry1 );
+				Util.MapDebugPrint( "Carry2:	" +Map.Carry2 );
+
+				Util.DisableGoal( {
+					".*_CappPlace_.*"
+				});
+
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					".*_Allies_GoToCapp_Esc3_.*"
+				});
+
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					".*_Axis_GoToCapp_Esc3_.*"
+				});
+			}
+		},
+		OnExit = function(ent)
+		{
+			if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+			{
+				Map.Carry3 -= 1;
+
+				if ( Map.Carry3 < 1 )
+				{
+					Util.DisableGoal( {
+						".*_GoToCapp_Esc3_.*"
+					});
+				}
+
+				if ( Map.Carry1 == 0 and Map.Carry2 == 0 and Map.Carry3 == 0 and Map.Enigma_Machine_Taken )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						".*_Axis_CappPlace_.*"
+					});
+
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						".*_Allies_CappPlace_.*"
+					});
+				}
+
+				Util.MapDebugPrint( "Carry3:	" +Map.Carry3 );
+				Util.MapDebugPrint( "Carry1:	" +Map.Carry1 );
+				Util.MapDebugPrint( "Carry2:	" +Map.Carry2 );
+			}
+		},
+	},
+
+	radarbox1_Dropped = function()
+	{
+		Map.Carry1 = 0;
+		Map.Carry2 = 0;
+		Map.Carry3 = 0;
+		Util.MapDebugPrint( "Carry1:	" +Map.Carry1 );
+		Util.MapDebugPrint( "Carry2:	" +Map.Carry2 );
+		Util.MapDebugPrint( "Carry3:	" +Map.Carry3 );
+
+		DeleteTriggerRegion("Escort1");
+		DeleteTriggerRegion("Escort2");
+		DeleteTriggerRegion("Escort3");
+
+		Map.Enigma_Machine_Dropped = true;
+
+		Util.DisableGoal( {
+			".*_GoToCapp_Esc.*",
+			".*_CappPlace_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"CAPPOINT_Transmitter"
+		});
+
+		Util.MapDebugPrint( "radarbox1_Dropped" );
+	},
+
+	radarbox1_Returned = function()
+	{
+		Map.Enigma_Machine_Taken = false;
+		Map.Enigma_Machine_Dropped = false;
+
+		if ( Map.AxisIns > 0 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				".*_Allies_EnigmaMachine_.*",
+			});
+		}
+
+		if ( Map.Gate_1_Opened )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"SWITCH_Gate_1",
+			});
+		}
+		else
+		{
+			if ( Map.Forward_Bunker_Axis )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+				"SWITCH_Gate_1",
+			});
+			}
+		}
+
+		if ( Map.Gate_2_Opened )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"SWITCH_Gate_2",
+			});
+		}
+		else
+		{
+			if ( Map.Forward_Bunker_Axis )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+				"SWITCH_Gate_2",
+			});
+			}
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"FLAG_radarbox1",
+		});
+
+		if ( Map.Forward_Bunker_Axis )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"SMOKEBOMB_Axis_EnigmaMachine_01",
+			});
+
+			if ( Map.WindowExploded )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"SMOKEBOMB_Axis_EnigmaMachine_00",
+				});
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"GRENADE_Window",
+				});
+			}
+		}
+
+		if ( Map.Axis_CP )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"PLANT_Command_Post",
+			});
+		}
+
+		if ( !Map.Allied_CP and !Map.Axis_CP )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"BUILD_Command_Post",
+			});
+		}
+
+		if ( Map.Rear_Entrance_Dyno > 0 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"DEFUSE_Rear_Entrance_.*"
+			});
+		}
+
+		if ( Map.Forward_Bunker_Axis and Map.Rear_Entrance )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"CHECKPOINT_roadbunker",
+			});
+		}
+
+		if ( Map.AxisIns < 1 )
+		{
+			if ( !Map.Forward_Bunker_Axis )
+			{
+				if ( !Map.Allied_Bunker_Defenses )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"BUILD_Allied_Bunker_Defenses",
+					});
+				}
+
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					".*_mg42_3",
+					".*_Allies_Bunker_.*",
+				});
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					".*_Allies_Between_.*",
+				});
+			}
+
+			if ( Map.Main_Entrance_Dyno > 0 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"DEFUSE_Main_Entrance_.*"
+				});
+			}
+
+			if ( Map.Allied_Bunker_Defenses_Dyno > 0 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"DEFUSE_Allied_Bunker_Defenses_.*",
+				});
+			}
+		}
+
+		if ( Map.AxisOut > 0 )
+		{
+			if ( Map.Rear_Entrance )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"DEFEND_Allies_RearEntrance_.*"
+				});
+			}
+		}
+
+		Util.MapDebugPrint( "radarbox1_Returned" );
+	},
+
+	radarbox1_Secured = function()
+	{
+		ETUtil.WinningChat( TEAM.AXIS );
+		ETUtil.LosingChat( TEAM.ALLIES );
+
+		Util.MapDebugPrint( "radarbox1_Secured" );
+	},
+
+	roadbunker_Axis_Captured = function()
+	{
+		Map.Forward_Bunker_Axis = true;
+
+		Map.SetSpawn();
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"CHECKPOINT_roadbunker",
+			"MOBILEMORTAR_.*",
+			"SMOKEBOMB_Axis_MainEntrance_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*_mg42_3",
+			".*_Allies_Bunker_.*",
+		});
+
+		if ( !Map.Enigma_Machine_Taken )
+		{
+			if ( Map.Rear_Entrance )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"CHECKPOINT_roadbunker",
+				});
+			}
+
+			if ( Map.AxisIns < 1 )
+			{
+				if ( !Map.Allied_Bunker_Defenses )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"BUILD_Allied_Bunker_Defenses",
+					});
+				}
+
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					".*_Allies_Between_.*",
+				});
+			}
+
+			if ( !Map.Gate_2_Opened )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"SWITCH_Gate_2",
+				});
+			}
+
+			if ( !Map.Gate_1_Opened )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"SWITCH_Gate_1",
+				});
+			}
+
+			if ( Map.WindowExploded )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"SMOKEBOMB_Axis_EnigmaMachine_00",
+				});
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"GRENADE_Window",
+				});
+			}
+
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"SMOKEBOMB_Axis_EnigmaMachine_01",
+			});
+		}
+
+		Util.MapDebugPrint( "roadbunker_Axis_Captured" );
+	},
+
+	roadbunker_Allies_Captured = function()
+	{
+		Map.Forward_Bunker_Axis = false;
+
+		Map.SetSpawn();
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CHECKPOINT_roadbunker",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"SMOKEBOMB_Axis_EnigmaMachine_.*",
+			"GRENADE_Window",
+		});
+
+		if ( !Map.Gate_2_Opened )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"SWITCH_Gate_2",
+			});
+		}
+
+		if ( !Map.Gate_1_Opened )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"SWITCH_Gate_1",
+			});
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"CHECKPOINT_roadbunker",
+			"MOBILEMORTAR_.*",
+			"SMOKEBOMB_Axis_MainEntrance_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*_Allies_Between_.*",
+		});
+
+		if ( !Map.Enigma_Machine_Taken )
+		{
+			if ( Map.AxisIns < 1 )
+			{
+				if ( !Map.Allied_Bunker_Defenses )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"BUILD_Allied_Bunker_Defenses",
+					});
+				}
+
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					".*_mg42_3",
+					".*_Allies_Bunker_.*",
+				});
+			}
+
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"CHECKPOINT_roadbunker",
+			});
+		}
+
+		Util.MapDebugPrint( "roadbunker_Allies_Captured" );
+	},
+
+	Gate2_Open = function()
+	{
+		Map.Gate_2_Opening = true;
+		Map.Gate_2_Closed = false;
+
+		Util.EnableGoal ( "ROUTE_ForwardBunker_Left1" );
+		Util.EnableGoal ( "ROUTE_ForwardBunker_Left2" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"SWITCH_Gate_2",
+		});
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Util.MapDebugPrint( "Gate_2_Opening" );
+
+		sleep(11);
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Map.Gate_2_Opening = false;
+		Map.Gate_2_Opened = true;
+
+		if ( !Map.Enigma_Machine_Taken )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"SWITCH_Gate_2",
+			});
+		}
+
+		Util.MapDebugPrint( "Gate_2_Opened" );
+	},
+
+	Gate2_Close = function()
+	{
+		Map.Gate_2_Opened = false;
+		Map.Gate_2_Closing = true;
+
+		if ( Map.Rear_Entrance and Map.Gate_1_Closed )
+		{
+			Util.DisableGoal ( "ROUTE_ForwardBunker_Left1" );
+			Util.DisableGoal ( "ROUTE_ForwardBunker_Left2" );
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"SWITCH_Gate_2",
+		});
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Util.MapDebugPrint( "Gate_2_Closing" );
+
+		sleep(11);
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Map.Gate_2_Closed = true;
+		Map.Gate_2_Closing = false;
+
+		if ( !Map.Enigma_Machine_Taken )
+		{
+			if ( Map.Forward_Bunker_Axis )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"SWITCH_Gate_2",
+				});
+			}
+		}
+
+		Util.MapDebugPrint( "Gate_2_Closed" );
+	},
+
+	Gate1_Open = function()
+	{
+		Map.Gate_1_Opening = true;
+		Map.Gate_1_Closed = false;
+
+		Util.EnableGoal ( "ROUTE_ForwardBunker_Left1" );
+		Util.EnableGoal ( "ROUTE_ForwardBunker_Left2" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"SWITCH_Gate_1",
+		});
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Util.MapDebugPrint( "Gate_1_Opening" );
+
+		sleep(11);
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Map.Gate_1_Opening = false;
+		Map.Gate_1_Opened = true;
+
+		if ( !Map.Enigma_Machine_Taken )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"SWITCH_Gate_1",
+			});
+		}
+
+		Util.MapDebugPrint( "Gate_1_Opened" );
+	},
+
+	Gate1_Close = function()
+	{
+		Map.Gate_1_Opened = false;
+		Map.Gate_1_Closing = true;
+
+		if ( Map.Rear_Entrance and Map.Gate_2_Closed )
+		{
+			Util.DisableGoal ( "ROUTE_ForwardBunker_Left1" );
+			Util.DisableGoal ( "ROUTE_ForwardBunker_Left2" );
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"SWITCH_Gate_1",
+		});
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Util.MapDebugPrint( "Gate_1_Closing" );
+
+		sleep(11);
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Map.Gate_1_Closed = true;
+		Map.Gate_1_Closing = false;
+
+		if ( !Map.Enigma_Machine_Taken )
+		{
+			if ( Map.Forward_Bunker_Axis )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"SWITCH_Gate_1",
+				});
+			}
+		}
+
+		Util.MapDebugPrint( "Gate_1_Closed" );
+	},
+
+	Inside =
+	{
+		Name = "Inside",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.AXIS )
+			{
+				Map.AxisIns += 1;
+
+				Util.MapDebugPrint( "Axis Inside: " +Map.AxisIns );
+			}
+
+			if ( Map.AxisIns > 0 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, {
+					"BUILD_Allied_Bunker_Defenses",
+					".*_mg42_3",
+					".*_Allies_Bunker_.*",
+					".*_Allies_Between_.*",
+				});
+
+				if ( !Map.Enigma_Machine_Taken )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						".*_Allies_EnigmaMachine_.*",
+					});
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.AXIS )
+			{
+				Map.AxisIns -= 1;
+
+				Util.MapDebugPrint( "Axis Inside: " +Map.AxisIns );
+			}
+
+			if ( Map.AxisIns < 1 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, {
+					".*_Allies_EnigmaMachine_.*",
+				});
+
+				if ( !Map.Enigma_Machine_Taken )
+				{
+					if ( Map.Main_Entrance_Dyno > 0 )
+					{
+						SetAvailableMapGoals( TEAM.ALLIES, true, {
+							"DEFUSE_Main_Entrance_.*"
+						});
+					}
+
+					if ( Map.Allied_Bunker_Defenses_Dyno > 0 )
+					{
+						SetAvailableMapGoals( TEAM.ALLIES, true, {
+							"DEFUSE_Allied_Bunker_Defenses_.*",
+						});
+					}
+
+					if ( Map.Axis_CP )
+					{
+						SetAvailableMapGoals( TEAM.ALLIES, true, {
+							"PLANT_Command_Post",
+						});
+					}
+
+					if ( !Map.Allied_CP and !Map.Axis_CP )
+					{
+						SetAvailableMapGoals( TEAM.ALLIES, true, {
+							"BUILD_Command_Post",
+						});
+					}
+
+					if ( !Map.Forward_Bunker_Axis )
+					{
+						SetAvailableMapGoals( TEAM.ALLIES, true, {
+							".*_mg42_3",
+							".*_Allies_Bunker_.*",
+						});
+
+						if ( !Map.Allied_Bunker_Defenses )
+						{
+							SetAvailableMapGoals( TEAM.ALLIES, true, {
+								"BUILD_Allied_Bunker_Defenses",
+							});
+						}
+					}
+					else
+					{
+						SetAvailableMapGoals( TEAM.ALLIES, true, {
+							".*_Allies_Between_.*",
+						});
+					}
+				}
+			}
+		},
+	},
+
+	Outside =
+	{
+		Name = "Outside",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.AXIS )
+			{
+				Map.AxisOut += 1;
+			}
+
+			if ( Map.AxisOut > 0 )
+			{
+				if ( !Map.Enigma_Machine_Taken )
+				{
+					if ( Map.Rear_Entrance )
+					{
+						ClearGoalRole( ".*_Allies_EnigmaMachine_.*", ROLE.DEFENDER );
+
+						SetAvailableMapGoals( TEAM.ALLIES, true, {
+							"DEFEND_Allies_RearEntrance_.*"
+						});
+					}
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.AXIS )
+			{
+				Map.AxisOut -= 1;
+			}
+
+			if ( Map.AxisOut < 1 )
+			{
+				SetGoalRole( ".*_Allies_EnigmaMachine_.*", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2, ROLE.DEFENDER3 } );
+
+				SetAvailableMapGoals( TEAM.ALLIES, false, {
+					"DEFEND_Allies_RearEntrance_.*"
+				});
+
+			}
+		},
+	},
+
+	PlantTrigger =
+	{
+		Name = "PlantTrigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.AXIS )
+			{
+				Map.AxEngPlant += 1;
+
+				GetGoal("MOBILEMORTAR_Axis_MainEntrance_20").MortarAim =
+				{ Vec3(-0.919, 0.360, 0.139), Vec3(-0.905, 0.397, 0.160), Vec3(-0.868, 0.451, 0.207), Vec3(-0.969, 0.158, 0.189) };
+
+				Util.MapDebugPrint( "Axis in plant trigger: " +Map.AxEngPlant );
+			}
+		},
+		OnExit = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.AXIS )
+			{
+				Map.AxEngPlant -= 1;
+
+				if ( Map.AxEngPlant < 1 )
+				{
+					GetGoal("MOBILEMORTAR_Axis_MainEntrance_20").MortarAim =
+					{ Vec3(-0.979, 0.179, 0.101), Vec3(-0.919, 0.360, 0.139), Vec3(-0.905, 0.397, 0.160), Vec3(-0.985, 0.076, 0.157), Vec3(-0.868, 0.451, 0.207), Vec3(-0.969, 0.158, 0.189) };
+				}
+
+				if ( Map.AxEngPlant < 0 )
+				{
+					Map.AxEngPlant = 0;
+				}
+
+				Util.MapDebugPrint( "Axis in plant trigger: " +Map.AxEngPlant );
+			}
+		},
+	},
+
+	Window_Exploded = function()
+	{
+		Map.WindowExploded = true;
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"GRENADE_Window",
+		});
+
+		if ( !Map.Enigma_Machine_Taken and Map.Forward_Bunker_Axis )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"SMOKEBOMB_Axis_EnigmaMachine_00",
+			});
+		}
+
+		Util.MapDebugPrint( "Window_Exploded" );
+	},
+
+	SetSpawn1 = function(bot)
+	{
+		if (bot.GetTeam() == TEAM.AXIS)
+		{
+			if ( Map.Axis_CP )
+			{
+				if ( !Map.Forward_Bunker_Axis )
+				{
+					bot.ChangeSpawnPoint(3);
+				}
+				else
+				{
+					r = RandRange(0,2);
+					if( r < 1 )
+					{
+						bot.ChangeSpawnPoint(3);
+					}
+					else
+					{
+						bot.ChangeSpawnPoint(0);
+					}
+				}
+			}
+			else
+			{
+				bot.ChangeSpawnPoint(0);
+			}
+		}
+	},
+
+	SetSpawn = function()
+	{
+		foreach(bot in BotTable)
+		{
+			Map.SetSpawn1(bot);
+		}
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "The Allies have fortified the Bunker", Map.Allied_Bunker_Defenses_Built );
+	OnTrigger( "Planted at the Allied Bunker Defenses.", Map.Allied_Bunker_Defenses_Planted );
+	OnTrigger( "Defused at the Allied Bunker Defenses.", Map.Allied_Bunker_Defenses_Defused );
+	OnTrigger( "The Axis have breeched the depot defenses.", Map.Allied_Bunker_Defenses_Destroyed );
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_CP_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_CP_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_CP_Destroyed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_CP_Destroyed );
+	OnTrigger( "Planted at the Command Post.", Map.Command_Post_Planted );
+	OnTrigger( "Defused at the Command Post.", Map.Command_Post_Defused );
+	OnTrigger( "Planted at Main Entrance.", Map.Main_Entrance_Planted );
+	OnTrigger( "Defused at Main Entrance.", Map.Main_Entrance_Defused );
+	OnTrigger( "Axis have destroyed the Road Entrance", Map.Main_Entrance_Destroyed );
+	OnTrigger( "Planted at the Rear Entrance.", Map.Rear_Entrance_Planted );
+	OnTrigger( "Defused at the Rear Entrance.", Map.Rear_Entrance_Defused );
+	OnTrigger( "Axis have destroyed the Rear Door", Map.Rear_Entrance_Destroyed );
+	OnTrigger( "Axis have stolen the Enigma Machine!", Map.radarbox1_Taken );
+	OnTrigger( "NAM have stolen the Enigma Machine!", Map.radarbox1_Taken );	//ETNam
+	OnTrigger( "Flag dropped radarbox1!", Map.radarbox1_Dropped );
+	OnTrigger( "Flag returned radarbox1!", Map.radarbox1_Returned );
+	OnTrigger( "Axis captured truck_exitpoint", Map.radarbox1_Secured );
+	OnTrigger( "Axis reclaim the Forward Bunker!", Map.roadbunker_Axis_Captured );
+	OnTrigger( "Allies capture the Forward Bunker!", Map.roadbunker_Allies_Captured );
+	OnTrigger( "Gate 2 is opening!", Map.Gate2_Open );
+	OnTrigger( "Gate 1 is opening!", Map.Gate1_Open );
+	OnTrigger( "Gate 2 is closing!", Map.Gate2_Close );
+	OnTrigger( "Gate 1 is closing!", Map.Gate1_Close );
+	OnTrigger( "GRENADE_Window Exploded.", Map.Window_Exploded );
+
+	if ( Map.Debug )
+	{
+		Util.DebugColorString = "^3";
+	}
+
+	Util.DisableGoal( ".*", true );
+
+	Util.DisableGoal ( "ROUTE_ForwardBunker_Left1" );
+	Util.DisableGoal ( "ROUTE_ForwardBunker_Left2" );
+	Util.DisableGoal ( "ROUTE_MainEntrance.*" );
+
+
+	Util.EnableGoal( {
+		"HEALTHCAB_.*",
+		"AMMOCAB_.*",
+	});
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"CHECKPOINT_roadbunker",
+		"PLANT_Main_Entrance",
+		"PLANT_Rear_Entrance",
+		"FLAG_radarbox1",
+		".*_Axis_MainEntrance_.*",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_Allied_Bunker_Defenses",
+		"BUILD_Command_Post",
+		".*_mg42_3",
+		".*_Allies_Bunker_.*",
+	});
+
+	SetGoalRole( "DEFEND_Allies_RearEntrance_.*", ROLE.DEFENDER );
+	SetGoalRole( ".*_Allies_Bunker_In_.*", { ROLE.DEFENDER, ROLE.DEFENDER1 } );
+	SetGoalRole( ".*_Allies_Bunker_Out_.*", { ROLE.DEFENDER2, ROLE.DEFENDER3 } );
+	SetGoalRole( ".*_Allies_Between_.*", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2, ROLE.DEFENDER3 } );
+	SetGoalRole( ".*_Allies_EnigmaMachine_.*", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2, ROLE.DEFENDER3 } );
+
+	SetGoalRole( "CHECKPOINT_roadbunker", { ROLE.ATTACKER2, ROLE.ATTACKER3, ROLE.DEFENDER, ROLE.DEFENDER1 } );
+	SetGoalRole( "ATTACK_Axis_MainEntrance_.*", { ROLE.ATTACKER, ROLE.ATTACKER1 } );
+	SetGoalRole( "FLAG_radarbox1", { ROLE.ATTACKER2, ROLE.ATTACKER3 } );
+
+	SetGoalPriority( ".*_GoToCapp_Esc.*", 0.54, 0, 0 );
+	SetGoalPriority( ".*_CappPlace_.*", 0.54, 0, 0 );
+
+	SetGoalPriority( "DEFEND_Allies_Bunker_In_25", 0.51, TEAM.ALLIES, 0 );
+	SetGoalPriority( "DEFEND_Allies_Bunker_In_29", 0.51, TEAM.ALLIES, 0 );
+	SetGoalPriority( "DEFEND_Allies_RearEntrance_.*", 0.52, TEAM.ALLIES, 0 );
+	SetGoalPriority( "BUILD_Command_Post", 0.89, TEAM.ALLIES, CLASS.ENGINEER );
+
+	SetGoalPriority( "SWITCH_.*", 0.69, TEAM.AXIS, 0 );
+	SetGoalPriority( "FLAG_radarbox1", 0.69, TEAM.AXIS, 0 );
+	SetGoalPriority( "SWITCH_.*", 0.59, TEAM.AXIS, CLASS.COVERTOPS );
+	SetGoalPriority( "FLAG_radarbox1", 0.59, TEAM.AXIS, CLASS.COVERTOPS );
+	SetGoalPriority( "CHECKPOINT_roadbunker", 0.6, TEAM.AXIS, CLASS.COVERTOPS );
+	SetGoalPriority( "PLANT_Rear_Entrance", 0.79, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Allied_Bunker_Defenses", 0.8, TEAM.AXIS, CLASS.COVERTOPS );
+	SetGoalPriority( "SMOKEBOMB_.*", 0.81, TEAM.AXIS, CLASS.COVERTOPS );
+	SetGoalPriority( "PLANT_Main_Entrance", 0.82, TEAM.AXIS, CLASS.ENGINEER );
+
+	Util.LimitToClass( "BUILD_Command_Post", 0, CLASS.ENGINEER );
+	Util.LimitToClass( "PLANT_Command_Post", 0, CLASS.ENGINEER, CLASS.COVERTOPS );
+
+	Util.LimitToClass( "PLANT_Main_Entrance", TEAM.AXIS, CLASS.ENGINEER );
+	Util.LimitToClass( "PLANT_Rear_Entrance", TEAM.AXIS, CLASS.ENGINEER );
+	Util.LimitToClass( "PLANT_Allied_Bunker_Defenses", TEAM.AXIS, CLASS.ENGINEER, CLASS.COVERTOPS );
+
+	Util.SetMaxUsers( 1, "DEFEND_.*" );
+	Util.SetMaxUsers( 1, "ATTACK_.*" );
+	Util.SetMaxUsers( 1, "SWITCH_.*" );
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+	Util.SetMaxUsers( 1, "GRENADE_.*" );
+	Util.SetMaxUsers( 1, ".*_Command_Post" );
+
+	Util.AddUseWp( "CHECKPOINT_roadbunker", "Flag_1" );
+	Util.AddUseWp( "CHECKPOINT_roadbunker", "Flag_2" );
+	Util.AddUseWp( "CHECKPOINT_roadbunker", "Flag_3" );
+	Util.AddUseWp( "CHECKPOINT_roadbunker", "Flag_4" );
+
+	Util.AddUseWp( "PLANT_Rear_Entrance", "Rear_Entrance_1" );
+	Util.AddUseWp( "PLANT_Rear_Entrance", "Rear_Entrance_2" );
+
+	Util.AddUseWp( "PLANT_Main_Entrance", "Main_Entrance_1" );
+	Util.AddUseWp( "PLANT_Main_Entrance", "Main_Entrance_2" );
+
+	Util.AddUseWp( "PLANT_Allied_Bunker_Defenses", "Allied_Bunker_Defenses_3" );
+	Util.AddUseWp( "PLANT_Allied_Bunker_Defenses", "Allied_Bunker_Defenses_4" );
+
+	Wp.SetWaypointFlag( "Allied_Bunker_Defenses_1", "allies", false );
+	Wp.SetWaypointFlag( "Allied_Bunker_Defenses_1", "door", false );
+	Wp.SetWaypointFlag( "Allied_Bunker_Defenses_2", "allies", false );
+	Wp.SetWaypointFlag( "Allied_Bunker_Defenses_2", "door", false );
+
+	RegionTrigger.Create(AABB(132.758,-738.875,25.125,220.889,-679.513,99.125), "DisableCombatMovement", "Allies_Bunker_In_00");
+	RegionTrigger.Create(AABB(132.758,-738.875,25.125,220.889,-679.513,99.125), "DisableBotPush", "");
+	RegionTrigger.Create(AABB(-362.888,-847.791,-22.875,-324.888,-809.791,19.125), "DisableCombatMovement", "Allies_Bunker_In_03");
+	RegionTrigger.Create(AABB(-362.888,-847.791,-22.875,-324.888,-809.791,19.125), "DisableBotPush", "");
+	RegionTrigger.Create(AABB(115.292,-826.196,25.125,154.741,-728.299,99.125), "DisableCombatMovement", "Allies_Bunker_In_23");
+	RegionTrigger.Create(AABB(115.292,-826.196,25.125,154.741,-728.299,99.125), "DisableBotPush", "");
+	RegionTrigger.Create(AABB(200.125,-804.190,25.125,247.272,-734.207,99.125), "DisableCombatMovement", "Allies_Bunker_In_24");
+	RegionTrigger.Create(AABB(200.125,-804.190,25.125,247.272,-734.207,99.125), "DisableBotPush", "");
+	RegionTrigger.Create(AABB(402.277,-720.125,25.125,440.277,-682.125,99.125), "DisableCombatMovement", "Allies_Bunker_In_25");
+	RegionTrigger.Create(AABB(402.277,-720.125,25.125,440.277,-682.125,99.125), "DisableBotPush", "");
+	RegionTrigger.Create(AABB(-358.372,1670.756,-406.782,-223.125,1743.290,-284.875), "DisableCombatMovement", "Allies_RearEntrance_03");
+	RegionTrigger.Create(AABB(-358.372,1670.756,-406.782,-223.125,1743.290,-284.875), "DisableBotPush", "");
+	RegionTrigger.Create(AABB(590.527,916.979,-406.875,789.268,1186.966,-257.381), "DisableCombatMovement", "Allies_Between_03_04");
+	RegionTrigger.Create(AABB(590.527,916.979,-406.875,789.268,1186.966,-257.381), "DisableBotPush", "");
+	RegionTrigger.Create(AABB(965.742,929.990,-328.875,1079.875,1024.875,-254.875), "DisableCombatMovement", "Allies_Between_05");
+	RegionTrigger.Create(AABB(965.742,929.990,-328.875,1079.875,1024.875,-254.875), "DisableBotPush", "");
+	RegionTrigger.Create(AABB(1223.093,674.743,-334.675,1308.539,852.580,-212.875), "DisableCombatMovement", "Allies_Between_07");
+	RegionTrigger.Create(AABB(1223.093,674.743,-334.675,1308.539,852.580,-212.875), "DisableBotPush", "");
+	RegionTrigger.Create(AABB(40.156,1562.445,-406.760,216.802,1723.916,-284.875), "DisableCombatMovement", "Allies_Between_22");
+	RegionTrigger.Create(AABB(40.156,1562.445,-406.760,216.802,1723.916,-284.875), "DisableBotPush", "");
+	RegionTrigger.Create(AABB(1111.125,1585.828,-406.875,1226.050,1731.943,-284.875), "DisableCombatMovement", "Allies_EnigmaMachine_18");
+	RegionTrigger.Create(AABB(1111.125,1585.828,-406.875,1226.050,1731.943,-284.875), "DisableBotPush", "");
+	RegionTrigger.Create(AABB(1540.159,-1806.022,-225.265,1923.306,-1445.089,-41.661), "DisableCombatMovement", "River_Wall");
+	RegionTrigger.Create(AABB(1540.159,-1806.022,-225.265,1923.306,-1445.089,-41.661), "DisableBotPush", "");
+
+	RegionTrigger.Create(AABB(-840.875,-2391.177,-104.121,-527.125,-2144.464,55.346), "DisableCombatMovement", "Hatch");
+	RegionTrigger.Create(AABB(1070.228,1042.847,-334.875,1315.180,1320.875,-260.875), "DisableCombatMovement", "Window");
+
+	RegionTrigger.Create(AABB(3682.242,-2703.615,-239.256,3772.361,-2620.368,-164.672), "DisableBotPush", "Axis_MainEntrance_20");
+
+	OnTriggerRegion(AABB(1415.125,463.264,-714.384,3251.470,2888.875,-84.875), Map.Inside);
+	OnTriggerRegion(AABB(1111.126,1343.125,-696.272,1415.108,2888.875,-75.984), Map.Inside);
+	OnTriggerRegion(AABB(-186.125,1727.125,-670.844,1111.088,2888.875,-95.649), Map.Inside);
+	OnTriggerRegion(AABB(847.125,1511.125,-581.830,1008.875,1731.205,-426.705), Map.Inside);
+	OnTriggerRegion(AABB(1106.125,500.125,-406.875,1415.085,1024.875,-156.024), Map.Inside);
+
+	OnTriggerRegion(AABB(-2496.875,501.000,-700.000,-224.125,3072.875,170.401), Map.Outside);
+
+	OnTriggerRegion(AABB(-1328.875,-2295.098,-326.873,-527.125,-1591.125,-28.875), Map.PlantTrigger);
+	OnTriggerRegion(AABB(-678.875,-2386.373,-302.635,-161.678,-2287.125,-189.378), Map.PlantTrigger);
+
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.FLAMETHROWER, false );
+
+	WeaponTable.SetWeaponTeamAvailability ( TEAM.ALLIES, CLASS.SOLDIER, WEAPON.MORTAR, false );
+	WeaponTable.SetWeaponTeamAvailability ( TEAM.AXIS, CLASS.SOLDIER, WEAPON.MOBILE_MG42, false );
+
+	print( "^3Omni-bot map script and waypoints by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12 ^3for ^1" + GetMapName() + " ^3loaded." );
+
+	Util.BotChat( 0, "say", "^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12 ^3for ^3map ^7" + GetMapName(), 1 );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 130;
+
+	Map.SetSpawn1(bot);
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_Rear_Entrance =
+		{
+			ROUTE_AxisHut_Spawn1 =
+			{
+				ROUTE_AxisHut_Middle1 =
+				{
+					ROUTE_AxisHut_Middle2 =
+					{
+						ROUTE_AxisHut_Middle3 =
+						{
+							ROUTE_AxisHut_Middle4 = {},
+							ROUTE_MainEntrance1 =
+							{
+								ROUTE_MainEntrance2 = {},
+							},
+						},
+					},
+				},
+				ROUTE_AxisHut_Right1 =
+				{
+					ROUTE_AxisHut_Right2 =
+					{
+						ROUTE_AxisHut_Right3 =
+						{
+							ROUTE_AxisHut_Right4 =
+							{
+								ROUTE_AxisHut_Right5 = {},
+								ROUTE_AxisHut_Right6 = {},
+							},
+						},
+					},
+				},
+				ROUTE_AxisHut_Left1 =
+				{
+					ROUTE_AxisHut_Left2 =
+					{
+						ROUTE_AxisHut_Left3 =
+						{
+							ROUTE_AxisHut_Middle4 = {},
+							ROUTE_MainEntrance1 =
+							{
+								ROUTE_MainEntrance2 = {},
+							},
+						},
+					},
+				},
+			},
+			ROUTE_AxisHut_Spawn2 =
+			{
+				ROUTE_AxisHut_Middle1 =
+				{
+					ROUTE_AxisHut_Middle2 =
+					{
+						ROUTE_AxisHut_Middle3 =
+						{
+							ROUTE_AxisHut_Middle4 = {},
+							ROUTE_MainEntrance1 =
+							{
+								ROUTE_MainEntrance2 = {},
+							},
+						},
+					},
+				},
+				ROUTE_AxisHut_Right1 =
+				{
+					ROUTE_AxisHut_Right2 =
+					{
+						ROUTE_AxisHut_Right3 =
+						{
+							ROUTE_AxisHut_Right4 =
+							{
+								ROUTE_AxisHut_Right5 = {},
+								ROUTE_AxisHut_Right6 = {},
+							},
+						},
+					},
+				},
+				ROUTE_AxisHut_Left1 =
+				{
+					ROUTE_AxisHut_Left2 =
+					{
+						ROUTE_AxisHut_Left3 =
+						{
+							ROUTE_AxisHut_Middle4 = {},
+							ROUTE_MainEntrance1 =
+							{
+								ROUTE_MainEntrance2 = {},
+							},
+						},
+					},
+				},
+			},
+		},
+		FLAG_radarbox1 =
+		{
+			ROUTE_ForwardBunker_Spawn1 =
+			{
+				ROUTE_ForwardBunker_Middle1 =
+				{
+					ROUTE_ForwardBunker_Middle2R = {},
+					ROUTE_ForwardBunker_Middle2M = {},
+					ROUTE_ForwardBunker_Middle2L = {},
+				},
+				ROUTE_ForwardBunker_Left1 =
+				{
+					ROUTE_ForwardBunker_Left2 = {},
+				},
+			},
+			ROUTE_ForwardBunker_Spawn2 =
+			{
+				ROUTE_ForwardBunker_Right1 =
+				{
+					ROUTE_ForwardBunker_Right2 = {},
+				},
+				ROUTE_ForwardBunker_Middle1 =
+				{
+					ROUTE_ForwardBunker_Middle2R = {},
+					ROUTE_ForwardBunker_Middle2M = {},
+					ROUTE_ForwardBunker_Middle2L = {},
+				},
+				ROUTE_ForwardBunker_Left1 =
+				{
+					ROUTE_ForwardBunker_Left2 = {},
+				},
+			},
+			ROUTE_WestBunker_Spawn =
+			{
+				ROUTE_WestBunker_1 =
+				{
+					ROUTE_ForwardBunker_Left2 = {},
+					ROUTE_ForwardBunker_Middle1 =
+					{
+						ROUTE_ForwardBunker_Middle2R = {},
+						ROUTE_ForwardBunker_Middle2M = {},
+						ROUTE_ForwardBunker_Middle2L = {},
+					},
+				},
+				ROUTE_ForwardBunker_Right1 =
+				{
+					ROUTE_ForwardBunker_Right2 = {},
+				},
+			},
+		},
+		PLANT_Main_Entrance =
+		{
+			ROUTE_AxisHut_Spawn1 =
+			{
+				ROUTE_AxisHut_Middle1 =
+				{
+					ROUTE_AxisHut_Middle2 =
+					{
+						ROUTE_AxisHut_Middle3 = {},
+					},
+				},
+				ROUTE_AxisHut_Right1 =
+				{
+					ROUTE_AxisHut_Right2 =
+					{
+						ROUTE_AxisHut_Right3 = {},
+					},
+				},
+				ROUTE_AxisHut_Left1 =
+				{
+					ROUTE_AxisHut_Left2 =
+					{
+						ROUTE_AxisHut_Left3 = {},
+					},
+				},
+			},
+			ROUTE_AxisHut_Spawn2 =
+			{
+				ROUTE_AxisHut_Middle1 =
+				{
+					ROUTE_AxisHut_Middle2 =
+					{
+						ROUTE_AxisHut_Middle3 = {},
+					},
+				},
+				ROUTE_AxisHut_Right1 =
+				{
+					ROUTE_AxisHut_Right2 =
+					{
+						ROUTE_AxisHut_Right3 = {},
+					},
+				},
+				ROUTE_AxisHut_Left1 =
+				{
+					ROUTE_AxisHut_Left2 =
+					{
+						ROUTE_AxisHut_Left3 = {},
+					},
+				},
+			},
+		},
+		CHECKPOINT_roadbunker =
+		{
+			ROUTE_AxisHut_Spawn1 =
+			{
+				ROUTE_AxisHut_Middle1 =
+				{
+					ROUTE_AxisHut_Middle2 =
+					{
+						ROUTE_AxisHut_Middle3 =
+						{
+							ROUTE_AxisHut_Middle4 = {},
+						},
+						ROUTE_AxisHut_Right4 =
+						{
+							ROUTE_AxisHut_Right5 = {},
+							ROUTE_AxisHut_Right6 =
+							{
+								ROUTE_AxisHut_Right7 = {},
+							},
+						},
+					},
+				},
+				ROUTE_AxisHut_Right1 =
+				{
+					ROUTE_AxisHut_Right2 =
+					{
+						ROUTE_AxisHut_Right3 =
+						{
+							ROUTE_AxisHut_Right4 =
+							{
+								ROUTE_AxisHut_Right5 = {},
+								ROUTE_AxisHut_Right6 =
+								{
+									ROUTE_AxisHut_Right7 = {},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_AxisHut_Left1 =
+				{
+					ROUTE_AxisHut_Left2 =
+					{
+						ROUTE_AxisHut_Left3 =
+						{
+							ROUTE_AxisHut_Middle4 = {},
+						},
+					},
+				},
+			},
+			ROUTE_AxisHut_Spawn2 =
+			{
+				ROUTE_AxisHut_Middle1 =
+				{
+					ROUTE_AxisHut_Middle2 =
+					{
+						ROUTE_AxisHut_Middle3 =
+						{
+							ROUTE_AxisHut_Middle4 = {},
+						},
+						ROUTE_AxisHut_Right4 =
+						{
+							ROUTE_AxisHut_Right5 = {},
+							ROUTE_AxisHut_Right6 =
+							{
+								ROUTE_AxisHut_Right7 = {},
+							},
+						},
+					},
+				},
+				ROUTE_AxisHut_Right1 =
+				{
+					ROUTE_AxisHut_Right2 =
+					{
+						ROUTE_AxisHut_Right3 =
+						{
+							ROUTE_AxisHut_Right4 =
+							{
+								ROUTE_AxisHut_Right5 = {},
+								ROUTE_AxisHut_Right6 =
+								{
+									ROUTE_AxisHut_Right7 = {},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_AxisHut_Left1 =
+				{
+					ROUTE_AxisHut_Left2 =
+					{
+						ROUTE_AxisHut_Left3 =
+						{
+							ROUTE_AxisHut_Middle4 = {},
+						},
+					},
+				},
+			},
+		},
+		PLANT_Command_Post =
+		{
+			ROUTE_AxisHut_Spawn1 =
+			{
+				ROUTE_AxisHut_Left1 =
+				{
+					ROUTE_AxisHut_Left2 =
+					{
+						ROUTE_AxisHut_Left3 = {},
+					},
+				},
+			},
+			ROUTE_AxisHut_Spawn2 =
+			{
+				ROUTE_AxisHut_Left1 =
+				{
+					ROUTE_AxisHut_Left2 =
+					{
+						ROUTE_AxisHut_Left3 = {},
+					},
+				},
+			},
+		},
+	};
+
+	MapRoutes["ATTACK_Axis_MainEntrance_.*"] = MapRoutes.PLANT_Main_Entrance;
+
+	Util.Routes(MapRoutes);
+};

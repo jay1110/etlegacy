@@ -1,0 +1,1803 @@
+//=============================================================================
+//
+//	Chateau Voilegarde (Beta 3) - voilegarde_b3.gm
+//
+//	Who			When			What
+//-----------------------------------------------------------------------------
+//	Mateos		23/04/2024		Great revision of everything
+//	Mateos		01/10/2010		Finished for OB 0.71
+//
+//=============================================================================
+
+/****************************************************
+Path mapping updated and script by Mateos
+Correspondant WAY file hash: -
+Last update: 23rd August 2024
+****************************************************/
+
+/*
+ * TODO:
+ *	- More aggressive Axis on Truck (tracking system with CAMP spots all along)
+ *		* Limit CALLARTILLERY distance, otherwise Axis Fops can visit the Castle again to get to the upper spots...
+ *			Not only Fops... Roles added; distance? (for case like Medics going for revive at ground level but having upper level role)
+ *			Perhaps even disable upper ones, so no more roles needed...
+ *	- Stuckages
+ *
+ *	- Add class-specific goals:
+ *		* Check MOBILEMG42 ones;
+ *		* Call Artillery, Mortar and Snipe are done
+ *		* Axis landmines to slow Allied troops outside the castle
+ *		* Tripmines?
+ */
+
+global Spawn =
+{
+	GUEST_HOUSE	= 1,
+	LABORATORY	= 2,
+	COURTYARD	= 3,
+
+	alliedSplit = false,
+
+	Split_Allied_Spawn = function ( active )
+	{
+		if ( active )
+		{
+			Util.MapDebugPrint( "Enabling Allied spawn split", true );
+		}
+		else
+		{
+			Util.MapDebugPrint( "Disabling Allied spawn split", true );
+		}
+
+		Spawn.alliedSplit = active;
+		foreach ( bot in BotTable )
+		{
+			Spawn.Move_Bot( bot );
+		}
+	},
+
+	Move_Bot = function( bot )
+	{
+		if ( bot.GetTeam() != TEAM.ALLIES ) { return; }
+
+		spawn;
+		if ( Spawn.alliedSplit )
+		{
+			if ( RandInt( 0, 9 ) < 5 ) { spawn = Spawn.COURTYARD; } else { spawn = Spawn.GUEST_HOUSE; }
+		}
+		else
+		{
+			spawn = Spawn.COURTYARD;
+		}
+
+		//Util.MapDebugPrint( "Moving " + bot.Name + Util.DebugColorString + " to " + Spawn.Get_Name( spawn ) + "...", true );
+		bot.ChangeSpawnPoint( spawn );
+	},
+
+	Get_Name = function( spawnId )
+	{
+		switch ( spawnId )
+		{
+			case Spawn.GUEST_HOUSE:	{ return "Guest House"; }
+			case Spawn.LABORATORY:	{ return "Laboratory"; }
+			case Spawn.COURTYARD:	{ return "Courtyard"; }
+		}
+
+		return "{Unknown spawn ID: " + spawnId + "}";
+	}
+};
+
+global DoorStatus =
+{
+	CLOSED	= 0,
+	OPENING	= 1,
+	OPENED	= 2
+};
+
+global Map =
+{
+	// Global variables indicating the map progress
+	isAssaultRampBuilt		= false,
+	isGeneratorDestroyed	= false,
+	isMainEntranceDestroyed	= false,
+	isRadarPartStolen		= false,
+	isSideGateDestroyed		= false,
+	isTruckBarrierBuilt		= false,
+
+	Roles =
+	{
+		AXIS =
+		{
+			AllBots = true,
+
+			// Lower Laboratory level + one node upstairs
+			// Ground level end section
+			DEFENDER =
+			{
+				numbots = 5,
+				voice = "defend"
+			},
+
+			// Upper Laboratory level
+			// Ditto
+			DEFENDER1 =
+			{
+				numbots = 6,
+				voice = "defend"
+			},
+
+			// Enforce MOBILEMORTAR_Vehicle usage
+			DEFENDER2 =
+			{
+				crucialClass = CLASS.SOLDIER,
+				MinBotsForRole = 4,
+				numbots = 1,
+				voice = "defend"
+			}
+		}
+	},
+
+	// -------------------------------------------------------------------------
+
+	RightLabDoorStatus	= DoorStatus.CLOSED,
+	EastAutoDoorStatus	= DoorStatus.CLOSED,
+	SouthAutoDoorStatus	= DoorStatus.CLOSED,
+	Switches =
+	{
+		// The metallic roller shutter door, behind the Generator, behind an Axis-only regular door
+		// /bot waypoint_setproperty paththrough UseSwitch_PT:right_lab_door
+		right_lab_door =
+		{
+			Enabled = true,
+			Priority = 0, // Always set to 0 when using path through
+			WaypointName = "right_lab_door_switch",
+			AimPosition = Vec3( -2400, 272, 17 ), // Use /bot aim_pos to get aim vector; replaces the unreliable waypoint facing
+			ExitConditions = // Optional; used to continue to press the button until exit conditions are true
+			{
+				f = function( bot )
+				{
+					// Return true to stop pressing the button
+					return Map.RightLabDoorStatus > DoorStatus.CLOSED;
+				}
+			},
+			Wait = function() // Optional; used to have the bot wait a bit for slow moving doors/elevators
+			{
+				// Return true to finish the path through and go through the door
+				return Map.RightLabDoorStatus == DoorStatus.OPENED;
+			}
+		},
+
+		// Couple of sliding doors, useful for the last map section for Axis at ground level
+		// /bot waypoint_setproperty paththrough UseSwitch_PT:east_auto_door
+		east_auto_door =
+		{
+			Enabled = true,
+			Priority = 0, // Always set to 0 when using path through
+			WaypointName = "east_auto_door_switch",
+			AimPosition = Vec3( -520, -1021, 17 ), // Use /bot aim_pos to get aim vector; replaces the unreliable waypoint facing
+			ExitConditions = // Optional; used to continue to press the button until exit conditions are true
+			{
+				f = function( bot )
+				{
+					// Return true to stop pressing the button
+					return Map.EastAutoDoorStatus > DoorStatus.CLOSED;
+				}
+			},
+			Wait = function() // Optional; used to have the bot wait a bit for slow moving doors/elevators
+			{
+				// Return true to finish the path through and go through the door
+				return Map.EastAutoDoorStatus == DoorStatus.OPENED;
+			}
+		},
+
+		// /bot waypoint_setproperty paththrough UseSwitch_PT:south_auto_door
+		south_auto_door =
+		{
+			Enabled = true,
+			Priority = 0, // Always set to 0 when using path through
+			WaypointName = "south_auto_door_switch",
+			AimPosition = Vec3( -767, -1168, 16 ), // Use /bot aim_pos to get aim vector; replaces the unreliable waypoint facing
+			ExitConditions = // Optional; used to continue to press the button until exit conditions are true
+			{
+				f = function( bot )
+				{
+					// Return true to stop pressing the button
+					return Map.SouthAutoDoorStatus > DoorStatus.CLOSED;
+				}
+			},
+			Wait = function() // Optional; used to have the bot wait a bit for slow moving doors/elevators
+			{
+				// Return true to finish the path through and go through the door
+				return Map.SouthAutoDoorStatus == DoorStatus.OPENED;
+			}
+		},
+
+		// ---
+
+		/*
+		 * Elevator switches
+		 */
+		e1_top1 =
+		{
+			Enabled = false,
+			Priority = 0.0,
+			WaypointName = "e1_top1",
+			Timeout = 8000,
+
+			Wait = function()
+			{
+				// Return true to finish the paththrough and go through the doors
+				return Map.ElevatorDoorsSFStatus == "opened";
+			}
+		},
+		e1_top2 =
+		{
+			Enabled = true,
+			Priority = 0.0,
+			WaypointName = "e1_top2",
+			Timeout = 8000,
+
+			Wait = function()
+			{
+				if ( Map.Elevator1Pos == "bottom" )
+				{
+					sleep(1);
+					return true;
+				}
+				return false;
+			}
+		},
+		e1_bot1 =
+		{
+			Enabled = true,
+			Priority = 0.0,
+			WaypointName = "e1_bot1",
+			Timeout = 8000,
+
+			Wait = function()
+			{
+				// Return true to finish the paththrough and go through the doors
+				return Map.ElevatorDoorsFFStatus == "opened";
+			}
+		},
+		e1_bot2 =
+		{
+			Enabled = false,
+			Priority = 0.0,
+			WaypointName = "e1_bot2",
+			Timeout = 8000,
+
+			Wait = function()
+			{
+				if ( Map.Elevator1Pos == "top" )
+				{
+					sleep(1);
+					return true;
+				}
+				return false;
+			}
+		}
+	},
+
+	Right_Lab_Door_Button_Moving = function( trigger )
+	{
+		if ( Map.RightLabDoorStatus == DoorStatus.CLOSED )
+		{
+			Map.RightLabDoorStatus = DoorStatus.OPENING;
+		}
+	},
+
+	Right_Lab_Door_Moving = function( trigger )
+	{
+		vel = ToVector( trigger.Action );
+		if ( vel.z > 0 )
+		{
+			sleep( 0.9 ); // Wait 0.9 seconds while the door is opening
+			Map.RightLabDoorStatus = DoorStatus.OPENED;
+			Map.Switches.right_lab_door.Enabled = false;
+		}
+		else
+		{
+			Map.RightLabDoorStatus = DoorStatus.CLOSED;
+			Map.Switches.right_lab_door.Enabled = true;
+		}
+	},
+
+	East_Auto_Door_Button_Moving = function( trigger )
+	{
+		if ( Map.EastAutoDoorStatus == DoorStatus.CLOSED )
+		{
+			Map.EastAutoDoorStatus = DoorStatus.OPENING;
+		}
+	},
+
+	East_Auto_Door_Moving = function( trigger )
+	{
+		vel = ToVector( trigger.Action );
+		if ( vel.y > 0 )
+		{
+			sleep( 0.9 ); // Wait 0.9 seconds while the door is opening
+			Map.EastAutoDoorStatus = DoorStatus.OPENED;
+			Map.Switches.east_auto_door.Enabled = false;
+		}
+		else
+		{
+			Map.EastAutoDoorStatus = DoorStatus.CLOSED;
+			Map.Switches.east_auto_door.Enabled = true;
+		}
+	},
+
+	South_Auto_Door_Button_Moving = function( trigger )
+	{
+		if ( Map.SouthAutoDoorStatus == DoorStatus.CLOSED )
+		{
+			Map.SouthAutoDoorStatus = DoorStatus.OPENING;
+		}
+	},
+
+	South_Auto_Door_Moving = function( trigger )
+	{
+		vel = ToVector( trigger.Action );
+		if ( vel.x < 0 )
+		{
+			sleep( 0.9 ); // Wait 0.9 seconds while the door is opening
+			Map.SouthAutoDoorStatus = DoorStatus.OPENED;
+			Map.Switches.south_auto_door.Enabled = false;
+		}
+		else
+		{
+			Map.SouthAutoDoorStatus = DoorStatus.CLOSED;
+			Map.Switches.south_auto_door.Enabled = true;
+		}
+	},
+
+	Elevator1Pos = "top",
+	Elevator1 = function( trigger )
+	{
+		// Elevator doors can be closed at once on both floors, but not opened at once on both floors
+		while ( Map.ElevatorDoorsFFStatus == Map.ElevatorDoorsSFStatus ) { yield(); }
+
+		vel = ToVector( trigger.Action );
+		if ( vel.z < 0 )
+		{
+			Map.Elevator1Pos = "bottom";
+			Map.Switches.e1_top1.Enabled = true;
+			Map.Switches.e1_bot2.Enabled = true;
+			Util.MapDebugPrint( "Elevator at bottom", true );
+		}
+		else
+		{
+			Map.Elevator1Pos = "top";
+			Map.Switches.e1_bot1.Enabled = true;
+			Map.Switches.e1_top2.Enabled = true;
+			Util.MapDebugPrint( "Elevator at top", true );
+		}
+	},
+
+	ElevatorDoorsFFStatus = "closed",
+	First_Floor_Left_Door_Moving = function( trigger )
+	{
+		vel = ToVector( trigger.Action );
+		if ( vel.x < 0 )
+		{
+			Map.ElevatorDoorsFFStatus = "opened";
+			Util.MapDebugPrint( "First floor elevator doors opening", true );
+		}
+		else
+		{
+			Map.ElevatorDoorsFFStatus = "closed";
+			Util.MapDebugPrint( "First floor elevator doors closing", true );
+			Map.Elevator_Moving();
+		}
+	},
+
+	ElevatorDoorsSFStatus = "opened",
+	Second_Floor_Left_Door_Moving = function( trigger )
+	{
+		vel = ToVector( trigger.Action );
+		if ( vel.x < 0 )
+		{
+			Map.ElevatorDoorsSFStatus = "opened";
+			Util.MapDebugPrint( "Second floor elevator doors opening", true );
+		}
+		else
+		{
+			Map.ElevatorDoorsSFStatus = "closed";
+			Util.MapDebugPrint( "Second floor elevator doors closing", true );
+			Map.Elevator_Moving();
+		}
+	},
+
+	Elevator_Moving = function()
+	{
+		Map.Elevator1Pos = "moving";
+		Util.MapDebugPrint( "Elevator moving", true );
+
+		Map.Switches.e1_top1.Enabled = false;
+		Map.Switches.e1_top2.Enabled = false;
+		Map.Switches.e1_bot1.Enabled = false;
+		Map.Switches.e1_bot2.Enabled = false;
+	},
+
+	// -------------------------------------------------------------------------
+
+	// Avoid spawn exit bottleneck
+	// Only care about bots...
+	// Class/weapon not taken into account (aka heavy weaps slowing down first movements)
+	lab_spawn =
+	{
+		Name = "lab_spawn",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		closestBot,
+		mutex = false,
+		botList = {},
+		OnEnter = function( ent )
+		{
+			if ( !Map.isRadarPartStolen ) { return; }
+
+			bot = Util.IsBot( ent );
+			if ( !bot ) { return; }
+
+			bot.Enable( false ); // Don't move
+			Map.lab_spawn.botList[ bot ] = 1;
+
+			// Little sleep to let all spawning bots be listed
+			sleep ( .1 );
+
+			while ( bot && Map.lab_spawn.mutex )
+			{
+				// Don't move until it's your turn to enter the mutex
+				yield();
+			}
+
+			Map.lab_spawn.mutex = true;
+
+			// Determine the closest bot from the exit, remove it from the list, make it go, sleep a bit, free the mutex, exit
+			// If the current bot isn't the one, free the mutex and loop until it's the case...
+			Map.lab_spawn.closestBot = Map.DetermineClosestBot( Map.lab_spawn.botList );
+			if ( bot && bot.Name != Map.lab_spawn.closestBot.Name )
+			{
+				Map.lab_spawn.mutex = false;
+				while ( bot && bot.Name != Map.lab_spawn.closestBot.Name )
+				{
+					// Stay still until it's your turn to move out
+					yield();
+				}
+
+				// Now the current bot is the closest bot, take back the mutex
+				Map.lab_spawn.mutex = true;
+			}
+
+			if ( bot )
+			{
+				bot.Enable( true ); // Move
+				Map.lab_spawn.botList[ bot ] = null;
+			}
+
+			// Only look for the next closest bot if the one we just cleared wasn't the last of the list...
+			if ( Map.CountTriggerBots() > 0 )
+			{
+				// Let the bot move towards the exit before checking for the next one to move
+				sleep( .5 );
+
+				Map.lab_spawn.closestBot = Map.DetermineClosestBot( Map.lab_spawn.botList );
+			}
+
+			Util.MapDebugPrint( "Exiting mutex as it is " + bot.Name + Util.DebugColorString + "'s turn", true );
+
+			Map.lab_spawn.mutex = false;
+		},
+		OnExit = function( ent )
+		{
+			// As we don't wait for the bot to surely exit the spawn
+			// (we just leave a bit of time between each bot, so they follow each other in single line),
+			// no need for OnExit (botList filled and cleared exclusively in OnEnter)
+		}
+	},
+
+	CountTriggerBots = function()
+	{
+		botCount = 0;
+		foreach ( bot and val in Map.lab_spawn.botList )
+		{
+			if ( !bot ) { Map.lab_spawn.botList[ bot ] = 0; continue; }
+			if ( val == 1 ) { botCount += 1; }
+		}
+
+		return botCount;
+	},
+
+	DetermineClosestBot = function( list )
+	{
+		closestBot;
+		dist = 500;
+
+		wpTable = {};
+		w = Wp.GetWaypointByName( "axis_spawn_double_doors", wpTable );
+		wpos = wpTable.position;
+
+		foreach ( bot and val in list )
+		{
+			if ( !bot ) { val = 0; continue; } // Disconnected meanwhile
+			if ( val != 1 ) { continue; }
+
+			currentDist = DistanceBetween( bot.GetPosition(), wpos );
+			if ( currentDist < dist )
+			{
+				closestBot = bot;
+				dist = currentDist;
+			}
+		}
+
+		return closestBot;
+	},
+
+	// -------------------------------------------------------------------------
+
+	Assault_Ramp_Built = function( trigger )
+	{
+		Map.isAssaultRampBuilt = true;
+
+		Map.Manage_Courtyard_Flag_Allies();
+
+		if ( !Map.isGeneratorDestroyed )
+		{
+			// blockbridge flags update
+			sleep( .1 );
+			Wp.CheckBlockable();
+
+			Groups.EnableAxis( Groups.group3 );
+		}
+
+		Util.MapDebugPrint( "Assault_Ramp_Built" );
+	},
+
+	Command_Post_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Command_Post_Built", true );
+	},
+
+	Courtyard_MG_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Courtyard_MG_Built", true );
+	},
+
+	Electric_Floor_Controls_Built = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_radarpart" );
+
+		Util.MapDebugPrint( "Electric_Floor_Controls_Built" );
+	},
+
+	Side_Gate_Built = function( trigger )
+	{
+		Map.isSideGateDestroyed = false;
+
+		Map.Manage_Side_Gate_Route_Nodes();
+
+		Util.MapDebugPrint( "Side_Gate_Built", true );
+	},
+
+	Truck_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Truck_Built", true );
+	},
+
+	Truck_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Truck_Destroyed", true );
+	},
+
+	Truck_Barrier_Built = function( trigger )
+	{
+		Map.isTruckBarrierBuilt = true;
+
+		Util.MapDebugPrint( "Truck_Barrier_Built", true );
+	},
+
+	Assault_Ramp_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Assault_Ramp_Planted", true );
+	},
+
+	Command_Post_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Command_Post_Planted", true );
+	},
+
+	Courtyard_MG_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Courtyard_MG_Planted", true );
+	},
+
+	Electric_Floor_Controls_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Electric_Floor_Controls_Planted", true );
+	},
+
+	Generator_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Generator_Planted", true );
+	},
+
+	Main_Entrance_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Main_Entrance_Planted", true );
+	},
+
+	Side_Gate_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Side_Gate_Planted", true );
+	},
+
+	Truck_Barrier_Planted = function( trigger )
+	{
+		if ( VehicleTrackingSystem.run )
+		{
+			thread( VehicleTrackingSystem.ManageVehicleArtyAndMortarShootingOnBarrierPlanted );
+		}
+
+		Util.MapDebugPrint( "Truck_Barrier_Planted", true );
+	},
+
+	Assault_Ramp_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Assault_Ramp_Defused", true );
+	},
+
+	Command_Post_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Command_Post_Defused", true );
+	},
+
+	Courtyard_MG_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Courtyard_MG_Defused", true );
+	},
+
+	Electric_Floor_Controls_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Electric_Floor_Controls_Defused", true );
+	},
+
+	Generator_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Generator_Defused", true );
+	},
+
+	Main_Entrance_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Main_Entrance_Defused", true );
+	},
+
+	Side_Gate_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Side_Gate_Defused", true );
+	},
+
+	Truck_Barrier_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Truck_Barrier_Defused", true );
+	},
+
+	Assault_Ramp_Destroyed = function( trigger )
+	{
+		Map.isAssaultRampBuilt = false;
+
+		Map.Manage_Courtyard_Flag_Allies();
+
+		if ( !Map.isMainEntranceDestroyed )
+		{
+			Groups.DisableAxis(Groups.group3);
+		}
+
+		Util.MapDebugPrint( "Assault_Ramp_Destroyed" );
+	},
+
+	Command_Post_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Command_Post_Destroyed", true );
+	},
+
+	Courtyard_MG_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Courtyard_MG_Destroyed", true );
+	},
+
+	Electric_Floor_Controls_Destroyed = function( trigger )
+	{
+		if ( !Map.isRadarPartStolen )
+		{
+			sleep( 3 );
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"CAPPOINT_Truck",
+				"FLAG_radarpart"
+			});
+		}
+
+		Util.MapDebugPrint( "Electric_Floor_Controls_Destroyed" );
+	},
+
+	Generator_Destroyed = function( trigger )
+	{
+		Map.isGeneratorDestroyed = true;
+
+		Map.Switches.right_lab_door.Enabled = false;
+
+		// Axis can move right now
+		SetAvailableMapGoals( TEAM.AXIS, false, ".*" );
+		Groups.EnableAxis( Groups.group4 );
+
+		Util.MapDebugPrint( "Generator_Destroyed", true );
+
+		sleep( 13 );
+
+		Wp.CheckBlockable();
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, ".*" );
+
+		Util.EnableGoal( "AMMOCAB_ammorack1" );
+		Util.EnableGoal( "AMMOCAB_ammorack2" );
+		Util.EnableGoal( "HEALTHCAB_healthrack1" );
+		Util.EnableGoal( "ROUTE.*" );
+
+		Map.Manage_Side_Gate_Route_Nodes();
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ATTACK_Bravo.*",
+			"PLANT_Electric_Floor_Controls",
+			"PLANT_Side_Gate"
+		});
+
+		if ( !Map.isMainEntranceDestroyed )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Main_Entrance" );
+		}
+
+		Util.MapDebugPrint( "Generator_Hidden_Gate_Opened" );
+	},
+
+	Main_Entrance_Destroyed = function( trigger )
+	{
+		Map.isMainEntranceDestroyed = true;
+
+		sleep( .1 );
+		Wp.CheckBlockable();
+
+		Groups.DisableAxis( Groups.group2 );
+
+		Map.Manage_Courtyard_Flag_Allies();
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Charlie.*" );
+
+		if ( !Map.isGeneratorDestroyed )
+		{
+			Groups.EnableAxis( Groups.group3 );
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"ATTACK_Dyna.*",
+				"HEALTHCAB_kitchenhealthrack",
+				"PLANT_Generator"
+			});
+		}
+
+		Util.MapDebugPrint( "Main_Entrance_Destroyed" );
+	},
+
+	Side_Gate_Destroyed = function( trigger )
+	{
+		Map.isSideGateDestroyed = true;
+
+		Map.Manage_Side_Gate_Route_Nodes();
+
+		Util.MapDebugPrint( "Side_Gate_Destroyed", true );
+	},
+
+	Truck_Barrier_Destroyed = function( trigger )
+	{
+		Map.isTruckBarrierBuilt = false;
+
+		Util.MapDebugPrint( "Truck_Barrier_Destroyed", true );
+	},
+
+	radarpart_Taken = function( trigger )
+	{
+		Map.isRadarPartStolen = true;
+
+		Spawn.Split_Allied_Spawn( true );
+
+		Groups.DisableAxis( Groups.group4 );
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Hotel.*" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Hotel.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_Bravo.*",
+			"PLANT_Electric_Floor_Controls"
+		});
+
+		Util.MapDebugPrint( "radarpart_Taken" );
+	},
+
+	radarpart_Returned = function( trigger )
+	{
+		Map.isRadarPartStolen = false;
+
+		Spawn.Split_Allied_Spawn( false );
+
+		Groups.EnableAxis( Groups.group4 );
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Hotel.*" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ATTACK_Bravo.*",
+			"PLANT_Electric_Floor_Controls"
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Hotel.*" );
+
+		Util.MapDebugPrint( "radarpart_Returned" );
+	},
+
+	radarpart_Secured = function( trigger )
+	{
+		// Map.isRadarPartStolen stays true
+
+		Spawn.Split_Allied_Spawn( false );
+
+		Util.DisableGoal( ".*", true ); // All but routes
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_Delta.*",
+			"BUILD_Truck_Barrier",
+			"MOBILEMG42_AxisOut1",
+			"MOBILEMG42_AxisOut3"
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ESCORT_truck",
+			"BUILD_Truck",
+			"PLANT_Truck_Barrier",
+			"SNIPE_AlliedHood2"
+		});
+
+		if ( !Map.isMainEntranceDestroyed )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Main_Entrance" );
+		}
+
+		VehicleTrackingSystem.Start( "MOVER_truck", "MOBILEMORTAR_Vehicle" );
+
+		Util.MapDebugPrint( "radarpart_Secured" );
+	},
+
+	// Note: flag is gone upon Generator_Destroyed
+	courtyardflag_Axis_Captured = function( trigger )
+	{
+		SetGoalPriority( "PLANT_Generator", 0.85 );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "MOBILEMORTAR_AxisStart" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Assault_Ramp",
+			"MOBILEMORTAR_AlliedStart"
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Flag.*" );
+
+		Util.MapDebugPrint( "courtyardflag_Axis_Captured" );
+	},
+
+	// Note: flag is gone upon Generator_Destroyed
+	courtyardflag_Allies_Captured = function( trigger )
+	{
+		SetGoalPriority( "PLANT_Generator", 1.0 );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_courtyardflag" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "MOBILEMORTAR_AxisStart" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Flag.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"BUILD_Assault_Ramp",
+			"MOBILEMORTAR_AlliedStart",
+		});
+
+		Util.MapDebugPrint( "courtyardflag_Allies_Captured" );
+	},
+
+	truck_region_1 = function( trigger )
+	{
+		Util.ChangeSpawn( TEAM.ALLIES, 1 ); // Guest House
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"ARTILLERY_S_AxisEnd",
+			"CALLARTILLERY_AxisEnd",
+			"MOUNTMG42_240",
+			"DEFEND_End.*",
+			"MOBILEMG42_AxisEnd",
+			"MOBILEMORTAR_AxisEnd",
+			"REPAIRMG42_240"
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_Delta.*",
+			"MOBILEMG42_AxisOut[13]"
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ARTILLERY_S_AlliedEnd",
+			"ATTACK_Golf.*",
+			"CALLARTILLERY_AlliedEnd",
+			"MOBILEMG42_AlliedEnd",
+			"MOBILEMORTAR_AlliedEnd"
+		});
+
+		Util.MapDebugPrint( "truck_region_1" );
+	},
+
+	truck_region_2 = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Truck_Barrier" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "SNIPE_AlliedHood2" );
+
+		Util.MapDebugPrint( "truck_region_2" );
+	},
+
+	Exists_Goal = function( goalExpr )
+	{
+		t = Util.GoalTable( goalExpr );
+		return tableCount( t ) > 0;
+	},
+
+	Get_Vehicle_Defuse_Goal_Table = function()
+	{
+		return Util.GoalTable( "DEFUSE_Truck_Barrier.*" );
+	},
+
+	Is_Vehicle_Barrier_Built_And_Planted = function()
+	{
+		return Map.isTruckBarrierBuilt && Map.Exists_Goal( "DEFUSE_Truck_Barrier.*" );
+	},
+
+	// Note: not considering Side Gate on purpose (considered too far as a path to Courtyard)
+	Manage_Courtyard_Flag_Allies = function()
+	{
+		if ( Map.isGeneratorDestroyed ) { return; }
+		SetAvailableMapGoals( TEAM.ALLIES, Map.isMainEntranceDestroyed || Map.isAssaultRampBuilt, "CHECKPOINT_courtyardflag" );
+	},
+
+	Manage_Side_Gate_Route_Nodes = function()
+	{
+		if ( !Map.isGeneratorDestroyed ) { return; }
+		SetAvailableMapGoals( TEAM.ALLIES, Map.isSideGateDestroyed, "ROUTE_GuestHouseWest[12]" );
+	}
+};
+
+global OnMapLoad = function()
+{
+	// *** TRIGGERS ***
+	OnTrigger( "Allies have built the Assault Ramp!", Map.Assault_Ramp_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Command_Post_Built );
+	OnTrigger( "Axis have constructed the Courtyard MG!", Map.Courtyard_MG_Built );
+	OnTrigger( "Axis have repaired the Electric Floor Controls!", Map.Electric_Floor_Controls_Built );
+	OnTrigger( "Axis have constructed the Side Gate!", Map.Side_Gate_Built );
+	OnTrigger( "The Truck has been repaired!", Map.Truck_Built );
+	OnTrigger( "The Truck has been damaged!", Map.Truck_Destroyed );
+	OnTrigger( "Axis have built the Truck Barrier!", Map.Truck_Barrier_Built );
+	OnTrigger( "Planted at the Assault Ramp.", Map.Assault_Ramp_Planted );
+	OnTrigger( "Planted at the Axis Command Post.", Map.Command_Post_Planted );
+	OnTrigger( "Planted at the Courtyard MG.", Map.Courtyard_MG_Planted );
+	OnTrigger( "Planted at the Electric Floor Controls.", Map.Electric_Floor_Controls_Planted );
+	OnTrigger( "Planted at the Generator.", Map.Generator_Planted );
+	OnTrigger( "Planted at the Main Entrance.", Map.Main_Entrance_Planted );
+	OnTrigger( "Planted at the Side Gate.", Map.Side_Gate_Planted );
+	OnTrigger( "Planted at the Truck Barrier.", Map.Truck_Barrier_Planted );
+	OnTrigger( "Defused at the Assault Ramp.", Map.Assault_Ramp_Defused );
+	OnTrigger( "Defused at the Axis Command Post.", Map.Command_Post_Defused );
+	OnTrigger( "Defused at the Courtyard MG.", Map.Courtyard_MG_Defused );
+	OnTrigger( "Defused at the Electric Floor Controls.", Map.Electric_Floor_Controls_Defused );
+	OnTrigger( "Defused at the Generator.", Map.Generator_Defused );
+	OnTrigger( "Defused at the Main Entrance.", Map.Main_Entrance_Defused );
+	OnTrigger( "Defused at the Side Gate.", Map.Side_Gate_Defused );
+	OnTrigger( "Defused at the Truck Barrier.", Map.Truck_Barrier_Defused );
+	OnTrigger( "Axis have destroyed the Assault Ramp!", Map.Assault_Ramp_Destroyed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Command_Post_Destroyed );
+	OnTrigger( "Allies have destroyed the Courtyard MG!", Map.Courtyard_MG_Destroyed );
+	OnTrigger( "Allies have disabled the Electric Floor Controls!", Map.Electric_Floor_Controls_Destroyed );
+	OnTrigger( "Allies have destroyed the Generator and secured the Courtyard Spawn!", Map.Generator_Destroyed );
+	OnTrigger( "Allies have destroyed the Main Entrance!", Map.Main_Entrance_Destroyed );
+	OnTrigger( "Allies have destroyed the Side Gate!", Map.Side_Gate_Destroyed );
+	OnTrigger( "Allies have destroyed the Truck Barrier!", Map.Truck_Barrier_Destroyed );;
+	OnTrigger( "Allies have taken the Radar Parts!", Map.radarpart_Taken );
+	OnTrigger( "Axis have returned the Radar Parts!", Map.radarpart_Returned );
+	OnTrigger( "Allies have secured the Radar Parts to the Truck!", Map.radarpart_Secured );
+	OnTrigger( "Axis reclaim the Courtyard!", Map.courtyardflag_Axis_Captured );
+	OnTrigger( "Allies capture the Courtyard!", Map.courtyardflag_Allies_Captured );
+
+	// Doors Stuff
+	OnTrigger( "rightlabdoor_button_Moving", Map.Right_Lab_Door_Button_Moving );
+	OnTrigger( "rightlabdoor_goto", Map.Right_Lab_Door_Moving );
+
+	OnTrigger( "eastautodoor_button_Moving", Map.East_Auto_Door_Button_Moving );
+	OnTrigger( "eastautodoor_goto", Map.East_Auto_Door_Moving );
+
+	OnTrigger( "southautodoor_button_Moving", Map.South_Auto_Door_Button_Moving );
+	OnTrigger( "southautodoor_goto", Map.South_Auto_Door_Moving );
+
+	// Elevator Stuff
+	OnTrigger( "elevator_goto", Map.Elevator1 );
+	OnTrigger( "1fleftdoor_goto", Map.First_Floor_Left_Door_Moving );
+	OnTrigger( "2fleftdoor_goto", Map.Second_Floor_Left_Door_Moving );
+
+	// Other
+	OnTriggerRegion( AABB( -1400.116, -336.875, -30.875, -1151.125, 0.875, 43.125 ), Map.lab_spawn );
+
+	// *** INITIAL AVAILABILITY OF GOALS ***
+	Util.DisableGoal( ".*", true ); // All but routes
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"ATTACK_Charlie.*",
+		"BUILD_Assault_Ramp",
+		"MOBILEMORTAR_AlliedStart",
+		"PLANT_Main_Entrance",
+		"PLANT_Side_Gate",
+		"SNIPE_AlliedHood"
+	});
+
+	Groups.EnableAxis( Groups.group1 );
+	Groups.EnableAxis( Groups.group2 );
+
+	// *** PRIORITY ***
+	SetGoalPriority( "BUILD_Electric_Floor_Controls", 0.95 );
+	SetGoalPriority( "PLANT_Main_Entrance", 0.9 );
+	SetGoalPriority( "PLANT_Electric_Floor_Controls", 0.9 );
+	SetGoalPriority( "PLANT_Generator", 0.85 );
+	SetGoalPriority( "CHECKPOINT_courtyardflag", 0.82 );
+	SetGoalPriority( "BUILD_Command_Post", 0.8 );
+	SetGoalPriority( "PLANT_Command_Post", 0.8 );
+	SetGoalPriority( "BUILD_Assault_Ramp", 0.75 );
+	SetGoalPriority( "PLANT_Side_Gate", 0.75 );
+	SetGoalPriority( "ATTACK_Dyna.*", 0.6 );
+	SetGoalPriority( "ATTACK_Flag.*", 0.6 );
+
+	// *** ROLES ***
+	ClearGoalRole( ".*", ROLE );
+	SetGoalRole( { "BUILD_Side_Gate", "DEFEND_Alpha[1-5]" }, ROLE.DEFENDER );
+	SetGoalRole( { "BUILD_Electric_Floor_Controls", "DEFEND_Alpha[6-9]", "DEFEND_Alpha1[01]" }, ROLE.DEFENDER1 ); // 6 to 11
+	SetGoalRole( "MOBILEMORTAR_Vehicle", ROLE.DEFENDER2 );
+
+	SetGoalRole( {
+		"DEFEND_Delta[124-6]",
+		"DEFEND_End.*",
+		"CALLARTILLERY_Vehicle[1-367]",
+		"MOBILEMG42_AxisOut.*",
+		"SNIPE_AxisEnd",
+		"SNIPE_AxisHood",
+	}, ROLE.DEFENDER ); // Ground level
+	SetGoalRole( {
+		"CALLARTILLERY_AxisEnd",
+		"CALLARTILLERY_Vehicle[45]",
+		"DEFEND_Delta3",
+		"MOBILEMORTAR_AxisEnd",
+		"MOUNTMG42_240",
+		"REPAIRMG42_240"
+	}, ROLE.DEFENDER1 ); // Upper level
+
+	// *** MAX USERS PER GOAL ***
+	Util.SetMaxUsersInProgress( 2, "BUILD_.*" );
+	Util.SetMaxUsersInProgress( 2, "FLAG_.*" );
+	Util.SetMaxUsersInProgress( 1, "ATTACK_.*" );
+	Util.SetMaxUsersInProgress( 1, "DEFEND_.*" );
+	Util.SetMaxUsersInProgress( 1, "PLANT_.*" );
+
+	Util.AddUsePoint( "BUILD_Truck_Barrier",	Vec3(   710, -2330,  -50 ) );
+	Util.AddUsePoint( "PLANT_Generator",		Vec3( -2875,  -600,  -10 ) ); // Front
+	Util.AddUsePoint( "PLANT_Main_Entrance",	Vec3( -2780, -2510,  -50 ) ); // Outside
+	Util.AddUsePoint( "PLANT_Main_Entrance",	Vec3( -2780, -2420,  -50 ) ); // Inside
+	Util.AddUsePoint( "PLANT_Side_Gate",		Vec3( -3215, -1105, -160 ) ); // Outside
+	Util.AddUsePoint( "PLANT_Side_Gate",		Vec3( -3215, -1035, -160 ) ); // Inside
+
+	Util.SetGoalOffset( -100,   0, 250, "PLANT_Assault_Ramp" );
+	Util.SetGoalOffset( -30, -100,   0, "PLANT_Truck_Barrier" );
+
+	Util.OnTriggerPosition( "MOVER_truck", "region1", 200.0, Map.truck_region_1 );
+	Util.OnTriggerPosition( "MOVER_truck", "region2", 200.0, Map.truck_region_2 );
+
+	OnTriggerRegion( AABB( -2728.875, -2581.125, -70.875, -2304.264, -2543.125,   3.125 ), RegionTrigger.DisableCombatMovement ); // Front ledge, east of Main Entrance
+	OnTriggerRegion( AABB( -3436.875, -2528.875, 241.125, -2315.125, -2484.718, 315.125 ), RegionTrigger.DisableCombatMovement ); // Front rampart
+
+	// TODO: What's this?
+	Util.FixMoverPos( "truck", Vec3( -1881.500, -5193.000, -151.500 ), Vec3( -1736.000, -5192.000, -208.000 ) );
+
+	Util.MapDebugPrint( "Omni-bot 0.9x map script for Chateau Voilegarde (Beta 3) by Mateos" );
+};
+
+global OnBotJoin = function( bot )
+{
+	Spawn.Move_Bot( bot );
+
+	bot.TargetBreakableDist = 90.0;
+	weaps = { WEAPON.THOMPSON, WEAPON.MP40, WEAPON.SHOTGUN, WEAPON.M97,
+			  WEAPON.M7, WEAPON.GARAND, WEAPON.K43, WEAPON.BAR, WEAPON.STEN,
+			  WEAPON.MP34, WEAPON.BAR, WEAPON.STG44, WEAPON.FG42 };
+
+	foreach( id and weap in weaps )
+	{
+		bot.GetWeapon( weap ).PrimaryFire.SetTargetBias( CLASS.BREAKABLE, 1.2 );
+	}
+
+	bot.GetWeapon( WEAPON.KNIFE ).PrimaryFire.SetDesirabilityRange( 0, 48, 0.6 );
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		BUILD_Assault_Ramp =
+		{
+			ROUTE_GuestHouse1 =
+			{
+				ROUTE_GuestHouseEast1 =
+				{
+					ROUTE_GuestHouseEast2 = {}
+				}
+			},
+			ROUTE_GuestHouse2 =
+			{
+				ROUTE_GuestHouseEast1 =
+				{
+					ROUTE_GuestHouseEast2 = {}
+				}
+			},
+			ROUTE_GuestHouse3 =
+			{
+				ROUTE_GuestHouseEast1 =
+				{
+					ROUTE_GuestHouseEast2 = {}
+				}
+			}
+		},
+
+		CAPPOINT_Truck =
+		{
+			ROUTE_PartTaken =
+			{
+				ROUTE_Escape1 =
+				{
+					ROUTE_Escape2 =
+					{
+						ROUTE_BunkerWay1 =
+						{
+							ROUTE_Generator = {},
+							ROUTE_GuestHouseWest2 =
+							{
+								ROUTE_GuestHouseWest1 = {}
+							}
+						}
+					},
+					ROUTE_BunkerBis2 =
+					{
+						ROUTE_BunkerBis1 =
+						{
+							ROUTE_BunkerWay1 =
+							{
+								ROUTE_Generator = {},
+								ROUTE_GuestHouseWest2 =
+								{
+									ROUTE_GuestHouseWest1 = {}
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+
+		CHECKPOINT_courtyardflag =
+		{
+			ROUTE_Laboratory =
+			{
+				ROUTE_FlagRecovery1 =
+				{
+					ROUTE_FlagRecovery2 =
+					{
+						ROUTE_FlagRecovery3 = {}
+					},
+					ROUTE_FlagRecoveryD1 =
+					{
+						ROUTE_FlagRecoveryD2 = {}
+					}
+				},
+
+				ROUTE_Generator = {}
+			}
+		},
+
+		DEFEND_Alpha6 =
+		{
+			ROUTE_Laboratory =
+			{
+				ROUTE_AxisAvoidElevator = {}
+			}
+		},
+
+		PLANT_Electric_Floor_Controls =
+		{
+			ROUTE_Courtyard =
+			{
+				Weight = 1,
+				ROUTE_BunkerWay1 =
+				{
+					Weight = 1,
+					ROUTE_BunkerStairs1 =
+					{
+						ROUTE_BunkerStairs2 = {}
+					},
+					Weight = 4,
+					ROUTE_BunkerBis1 =
+					{
+						ROUTE_BunkerBis2 = {}
+					}
+				},
+				Weight = 4,
+				ROUTE_HouseWay1 =
+				{
+					ROUTE_HouseWay2 =
+					{
+						ROUTE_HouseWay3 = {}
+					}
+				}
+			}
+		},
+
+		PLANT_Side_Gate =
+		{
+			ROUTE_GuestHouse1 =
+			{
+				ROUTE_GuestHouseWest1 =
+				{
+					ROUTE_GuestHouseWest2 = {}
+				}
+			},
+			ROUTE_GuestHouse2 =
+			{
+				ROUTE_GuestHouseWest1 =
+				{
+					ROUTE_GuestHouseWest2 = {}
+				}
+			},
+			ROUTE_GuestHouse3 =
+			{
+				ROUTE_GuestHouseWest1 =
+				{
+					ROUTE_GuestHouseWest2 = {}
+				}
+			}
+		}
+	};
+
+	// Copy routes
+	MapRoutes.CHECKPOINT_courtyardflag.ROUTE_GuestHouse1 = MapRoutes.BUILD_Assault_Ramp.ROUTE_GuestHouse1;
+	MapRoutes.CHECKPOINT_courtyardflag.ROUTE_GuestHouse2 = MapRoutes.BUILD_Assault_Ramp.ROUTE_GuestHouse2;
+	MapRoutes.CHECKPOINT_courtyardflag.ROUTE_GuestHouse3 = MapRoutes.BUILD_Assault_Ramp.ROUTE_GuestHouse3;
+
+	MapRoutes[ "DEFUSE_Electric_Floor_Controls.*" ] = MapRoutes.DEFEND_Alpha6;
+	MapRoutes[ "DEFEND_Alpha[7-9]" ] = MapRoutes.DEFEND_Alpha6;
+	MapRoutes[ "DEFEND_Alpha1[01]" ] = MapRoutes.DEFEND_Alpha6;
+
+	MapRoutes[ "ATTACK_Bravo.*" ] = MapRoutes.PLANT_Electric_Floor_Controls;
+	MapRoutes.FLAG_radarpart = MapRoutes.PLANT_Electric_Floor_Controls;
+
+	Util.Routes( MapRoutes );
+};
+
+global Groups =
+{
+	// Command Post
+	group1 =
+	{
+		"BUILD_Command_Post",
+		"PLANT_Command_Post"
+	},
+
+	// Axis Part 1: Map beginning
+	group2 =
+	{
+		"ARTILLERY_S_AssaultRamp",
+		"ARTILLERY_S_MainEntrance",
+		"BUILD_Courtyard_MG",
+		"BUILD_Side_Gate",
+		"CALLARTILLERY_AxisStart.*",
+		"DEFEND_start.*",
+		"MOBILEMG42_AxisOut1",
+		"MOBILEMG42_AxisOut2",
+		"MOBILEMG42_AxisOut3",
+		"MOBILEMORTAR_AxisStart",
+		"PLANT_Assault_Ramp",
+		"SNIPE_AxisHood",
+		"SNIPE_CastleFrontLeft",
+		"SNIPE_CastleFrontRight",
+		"SNIPE_CastleLeft"
+	},
+
+	// Axis Part 2: Main Entrance destroyed
+	group3 =
+	{
+		"ARTILLERY_S_AssaultRamp",
+		"ARTILLERY_S_MainEntrance",
+		"BUILD_Courtyard_MG",
+		"BUILD_Side_Gate",
+		"CALLARTILLERY_AxisStart.*",
+		"DEFEND_Foxtrot.*",
+		"HEALTHCAB_kitchenhealthrack",
+		"MOBILEMG42_AxisIn1",
+		"MOBILEMG42_AxisIn2",
+		"MOUNTMG42_Courtyard_MG",
+		"PLANT_Assault_Ramp",
+		"REPAIRMG42_Courtyard_MG",
+		"SNIPE_MainDoor"
+	},
+
+	// Axis Part 3: Generator destroyed
+	group4 =
+	{
+		"BUILD_Side_Gate",
+		"BUILD_Electric_Floor_Controls",
+		"DEFEND_Alpha.*",
+		"MOBILEMG42_AxisBunker1",
+		"MOBILEMG42_AxisBunker2"
+	},
+
+	EnableAllies = function( group )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, group );
+	},
+
+	EnableAxis = function( group )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, group );
+	},
+
+	DisableAllies = function( group )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, group );
+	},
+
+	DisableAxis = function(group)
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, group );
+	}
+};
+
+/** Make the bots follow the Truck all along its journey */
+// TODO: Add CAMP_Vehicle goals + drawing system (currently commented-out and scattered)
+global VehicleTrackingSystem =
+{
+	ENTITY,					/** Entity to track the position of */
+	MAP_GOAL_NAME,			/** MapGoal name for prints */
+	RADIUS,					/** Radius around the entity to enable the goals from */
+	GOAL_LIST,				/** List of the goals to manage */
+	CHECK_INTERVAL,			/** Check interval */
+	TEAM,					/** Team for which handle the CAMP goals availability */
+	DEFENCE_TEAM,			/** Team for which handle the defensive Vehicle goals availability */
+	AVAILABLE_GOAL_COLOR,
+	PAUSED_GOAL_COLOR,		/** Used while the managed Mortar goal has DontShootMortar on */
+
+	MORTAR_GOAL,
+	MORTAR_RADIUS,
+	VEHICLE_ARTILLERY,
+	VEHICLE_ARTILLERY_Y_OFFSET,
+	VEHICLE_CALL_ARTILLERY,
+
+	entityPreviousPosition,	/** Entity last position, to detect if it's either moving or not */
+	mortarTargetPos,
+	run,					/** Flag that indicates if the thread can run or not */
+
+	// *************************************************************************
+
+	Start = function( mapGoalName, mortarMapGoalName )
+	{
+		VehicleTrackingSystem.Init( mapGoalName, mortarMapGoalName );
+
+		VehicleTrackingSystem.VEHICLE_ARTILLERY.SetAvailable( VehicleTrackingSystem.DEFENCE_TEAM, true );
+		SetAvailableMapGoals( VehicleTrackingSystem.DEFENCE_TEAM, true, VehicleTrackingSystem.VEHICLE_CALL_ARTILLERY );
+
+		VehicleTrackingSystem.MORTAR_GOAL.SetAvailable( VehicleTrackingSystem.DEFENCE_TEAM, true );
+
+		thread( VehicleTrackingSystem.TrackMovement );
+	},
+
+	Init = function( mapGoalName, mortarMapGoalName )
+	{
+		VehicleTrackingSystem.ENTITY		= GetGoal( mapGoalName ).GetEntity();
+		VehicleTrackingSystem.MAP_GOAL_NAME	= GetGoal( mapGoalName ).GetName();
+		VehicleTrackingSystem.GOAL_LIST		= Util.GoalTable( "CAMP_Vehicle.*"  );
+
+		VehicleTrackingSystem.RADIUS = 768;
+
+		VehicleTrackingSystem.CHECK_INTERVAL = 0.1;
+
+		VehicleTrackingSystem.TEAM			= TEAM.AXIS & TEAM.ALLIES; // Both teams
+		VehicleTrackingSystem.DEFENCE_TEAM	= TEAM.AXIS;
+
+		VehicleTrackingSystem.AVAILABLE_GOAL_COLOR	= COLOR.CYAN;
+		VehicleTrackingSystem.PAUSED_GOAL_COLOR		= COLOR.ORANGE;
+
+		// Note: No need to force DontShootMortar, as it is not saved in _goals.gm file
+		VehicleTrackingSystem.MORTAR_GOAL = GetGoal( mortarMapGoalName );
+		VehicleTrackingSystem.MORTAR_RADIUS = 400;
+		VehicleTrackingSystem.VEHICLE_ARTILLERY = GetGoal( "ARTILLERY_S_Vehicle" );
+		VehicleTrackingSystem.VEHICLE_ARTILLERY_Y_OFFSET = 250;
+		VehicleTrackingSystem.VEHICLE_CALL_ARTILLERY = "CALLARTILLERY_Vehicle.*";
+
+		// ---
+
+		VehicleTrackingSystem.run = true;
+	},
+
+	TrackMovement = function()
+	{
+		Util.MapDebugPrint(
+			format( "Starting %s defence management thread.", VehicleTrackingSystem.MAP_GOAL_NAME ),
+			true );
+
+		while ( VehicleTrackingSystem.run )
+		{
+			entityCurrentPosition = GetEntPosition( VehicleTrackingSystem.ENTITY );
+			if ( entityCurrentPosition != VehicleTrackingSystem.entityPreviousPosition )
+			{
+				VehicleTrackingSystem.entityPreviousPosition = entityCurrentPosition;
+				VehicleTrackingSystem.ManageGoals();
+			}
+			/*else
+			{
+				// For debug purposes
+				foreach ( goal in VehicleTrackingSystem.GOAL_LIST )
+				{
+					VehicleTrackingSystem.DrawDebugGoal( goal );
+				}
+			}*/
+
+			// ---
+
+			// For debug purposes
+
+			// Map goal radius
+			/*DrawRadius(
+				entityCurrentPosition,
+				VehicleTrackingSystem.RADIUS,
+				COLOR.BROWN,
+				VehicleTrackingSystem.CHECK_INTERVAL );*/
+
+			// Artillery
+			color;
+			if ( VehicleTrackingSystem.VEHICLE_ARTILLERY.IsAvailable( VehicleTrackingSystem.DEFENCE_TEAM ) )
+			{
+				color = VehicleTrackingSystem.AVAILABLE_GOAL_COLOR;
+			}
+			else
+			{
+				color = VehicleTrackingSystem.PAUSED_GOAL_COLOR;
+			}
+
+			DrawRadius(
+				VehicleTrackingSystem.VEHICLE_ARTILLERY.GetPosition(),
+				VehicleTrackingSystem.VEHICLE_ARTILLERY.GetRadius(),
+				color,
+				VehicleTrackingSystem.CHECK_INTERVAL );
+
+			// Mortar
+			VehicleTrackingSystem.DrawMortar();
+
+			sleep( VehicleTrackingSystem.CHECK_INTERVAL );
+		}
+
+		Util.MapDebugPrint(
+			format( "Stopping %s defence management thread...", VehicleTrackingSystem.MAP_GOAL_NAME ),
+			true );
+
+		VehicleTrackingSystem.VEHICLE_ARTILLERY.SetAvailable( VehicleTrackingSystem.DEFENCE_TEAM, false );
+		SetAvailableMapGoals( VehicleTrackingSystem.DEFENCE_TEAM, false, VehicleTrackingSystem.VEHICLE_CALL_ARTILLERY );
+		VehicleTrackingSystem.MORTAR_GOAL.SetAvailable( VehicleTrackingSystem.DEFENCE_TEAM, false );
+		foreach ( goal in VehicleTrackingSystem.GOAL_LIST )
+		{
+			goal.SetAvailable( VehicleTrackingSystem.TEAM, false );
+		}
+
+		Util.MapDebugPrint(
+			format( "%s defence management thread stopped.", VehicleTrackingSystem.MAP_GOAL_NAME ),
+			true );
+	},
+
+	ManageGoals = function()
+	{
+		VehicleTrackingSystem.ManageArtilleryAndMortar();
+		/*foreach ( goal in VehicleTrackingSystem.GOAL_LIST )
+		{
+			shouldGoalBeEnabled =
+				DistanceBetween( goal, VehicleTrackingSystem.ENTITY ) <= VehicleTrackingSystem.RADIUS;
+			goal.SetAvailable( VehicleTrackingSystem.TEAM, shouldGoalBeEnabled );
+
+			// For debug purposes
+			VehicleTrackingSystem.DrawDebugGoal( goal );
+		}*/
+	},
+
+	ManageArtilleryAndMortar = function()
+	{
+		artilleryPos =
+			GroundPoint(
+				GetEntityWorldSpace( VehicleTrackingSystem.ENTITY, Vec3( 0, VehicleTrackingSystem.VEHICLE_ARTILLERY_Y_OFFSET, 0 ) ) );
+		VehicleTrackingSystem.VEHICLE_ARTILLERY.SetPosition( artilleryPos );
+		VehicleTrackingSystem.RunTraceLineFromSkyToArtyTargetPos();
+
+		VehicleTrackingSystem.ManageMortar();
+	},
+
+	RunTraceLineFromSkyToArtyTargetPos = function()
+	{
+		artyTargetPos = VehicleTrackingSystem.VEHICLE_ARTILLERY.GetPosition(); // Shorter local var name
+		artyTargetSkyPos = Vec3( artyTargetPos.x, artyTargetPos.y, 1024 );
+
+		// Adapted from et_utilities.TraceArty
+		tr = TraceLine( artyTargetSkyPos, artyTargetPos, null, TRACE.FLOODFILL, 0, false );
+
+		// Affect trace line result to artillery availability
+		currentArtyTargetAvailability	= VehicleTrackingSystem.VEHICLE_ARTILLERY.IsAvailable( VehicleTrackingSystem.DEFENCE_TEAM );
+		newDontArtyTargetAvailability	= tr.fraction == 1;
+		if ( newDontArtyTargetAvailability != currentArtyTargetAvailability )
+		{
+			VehicleTrackingSystem.VEHICLE_ARTILLERY.SetAvailable( VehicleTrackingSystem.DEFENCE_TEAM, newDontArtyTargetAvailability );
+
+			if ( currentArtyTargetAvailability )
+			{
+				Util.MapDebugPrint( "Resuming " + VehicleTrackingSystem.VEHICLE_ARTILLERY.GetName(), true );
+			}
+			else
+			{
+				Util.MapDebugPrint( "Pausing "  + VehicleTrackingSystem.VEHICLE_ARTILLERY.GetName(), true );
+			}
+		}
+	},
+
+	ManageMortar = function()
+	{
+		VehicleTrackingSystem.mortarTargetPos =
+			GroundPoint( GetEntityWorldSpace( VehicleTrackingSystem.ENTITY, Vec3( 0, 150, 0 ) ) );
+		tbl =
+			CalcTrajectory(
+				VehicleTrackingSystem.MORTAR_GOAL.GetPosition() + Vector3( 0, 0, 32 ),
+				VehicleTrackingSystem.mortarTargetPos,
+				2350,
+				1 );
+		if ( tbl )
+		{
+			dir = tbl[ tableCount( tbl ) - 1 ];
+			playerFace = Vec3FromSpherical( dir.GetYaw(), dir.GetPitch() - DegToRad( 60 ) );
+			VehicleTrackingSystem.MORTAR_GOAL.MortarAim[ 0 ] = playerFace;
+			//Util.MapDebugPrint( VehicleTrackingSystem.MORTAR_GOAL.GetName() + " aim set to " + ToString( playerFace ), true );
+			VehicleTrackingSystem.MORTAR_GOAL.AdjustOrientation();
+			VehicleTrackingSystem.RunTraceLineFromSkyToMortarTargetPos();
+		}
+		else
+		{
+			// Log warning
+			Util.MapDebugPrint(
+				format(
+					"%s %s %s",
+					"^8Mortar trajectory not found for target",
+					VehicleTrackingSystem.MAP_GOAL_NAME,
+					ToString( GetEntPosition( VehicleTrackingSystem.ENTITY ) ) ),
+				2 );
+		}
+	},
+
+	RunTraceLineFromSkyToMortarTargetPos = function()
+	{
+		mortarTargetPos = VehicleTrackingSystem.mortarTargetPos; // Shorter local var name
+		mortarTargetSkyPos = Vec3( mortarTargetPos.x, mortarTargetPos.y, 1024 );
+
+		// Adapted from et_utilities.TraceArty
+		// TRACE.FLOODFILL to ignore entities (e. g. Tank barrel)
+		tr = TraceLine( mortarTargetSkyPos, mortarTargetPos, null, TRACE.FLOODFILL, 0, false );
+		/*if ( tr.fraction < 1 )
+		{
+			DrawDebugLine(
+				mortarTargetSkyPos,
+				tr.end,
+				COLOR.PINK,
+				VehicleTrackingSystem.CHECK_INTERVAL );
+			DrawRadius(
+				tr.end,
+				35,
+				VehicleTrackingSystem.AVAILABLE_GOAL_COLOR,
+				VehicleTrackingSystem.CHECK_INTERVAL );
+			DrawDebugLine(
+				tr.end,
+				mortarTargetPos,
+				COLOR.RED,
+				VehicleTrackingSystem.CHECK_INTERVAL );
+		}
+		else
+		{
+			DrawDebugLine(
+				mortarTargetSkyPos,
+				mortarTargetPos,
+				COLOR.GREEN,
+				VehicleTrackingSystem.CHECK_INTERVAL );
+		}*/
+
+		// Affect trace line result to mortar ability to shoot
+		currentDontShootMortar	= VehicleTrackingSystem.MORTAR_GOAL.DontShootMortar;
+		newDontShootMortar		= tr.fraction < 1;
+		if ( newDontShootMortar != currentDontShootMortar )
+		{
+			VehicleTrackingSystem.MORTAR_GOAL.DontShootMortar = newDontShootMortar;
+
+			if ( currentDontShootMortar )
+			{
+				Util.MapDebugPrint( "Resuming " + VehicleTrackingSystem.MORTAR_GOAL.GetName() + " shooting", true );
+			}
+			else
+			{
+				Util.MapDebugPrint( "Pausing "  + VehicleTrackingSystem.MORTAR_GOAL.GetName() + " shooting", true );
+			}
+		}
+	},
+
+	DrawDebugGoal = function( goal )
+	{
+		goalPosition = goal.GetPosition();
+		goalEyePosition = Vector3( goalPosition.x, goalPosition.y, goalPosition.z + 64 );
+
+		color;
+		if ( goal.IsAvailable( TEAM.AXIS ) || goal.IsAvailable( TEAM.ALLIES ) )
+		{
+			color = VehicleTrackingSystem.AVAILABLE_GOAL_COLOR;
+		}
+		else
+		{
+			color = VehicleTrackingSystem.PAUSED_GOAL_COLOR;
+		}
+
+		DrawDebugLine( goalPosition, goalEyePosition, color, VehicleTrackingSystem.CHECK_INTERVAL );
+	},
+
+	// Adapted from mapgoal_mobilemortar.Render
+	DrawMortar = function()
+	{
+		goalBasePos	= VehicleTrackingSystem.MORTAR_GOAL.GetPosition();
+		goalPos		= goalBasePos + Vector3( 0, 0, 64 );
+		firePos		= goalBasePos + Vector3( 0, 0, 32 );
+
+		color;
+		if ( VehicleTrackingSystem.MORTAR_GOAL.DontShootMortar )
+		{
+			color = VehicleTrackingSystem.PAUSED_GOAL_COLOR;
+		}
+		else
+		{
+			color = VehicleTrackingSystem.AVAILABLE_GOAL_COLOR;
+		}
+
+		DrawRadius(
+			goalBasePos,
+			VehicleTrackingSystem.MORTAR_GOAL.GetRadius(),
+			color,
+			VehicleTrackingSystem.CHECK_INTERVAL );
+
+		DrawLine(
+			goalPos,
+			goalBasePos,
+			color,
+			VehicleTrackingSystem.CHECK_INTERVAL );
+
+		dir			= VehicleTrackingSystem.MORTAR_GOAL.MortarAim[ 0 ];
+		yaw			= dir.GetYaw();
+		pitch		= dir.GetPitch() + DegToRad( 60 );
+		mortarDir	= Vec3FromSpherical( yaw, pitch );
+
+		trajectory = {};
+		trajectory.Velocity =
+			Vector3(
+				mortarDir.x * 3000.0 * 1.1,
+				mortarDir.y * 3000.0 * 1.1,
+				mortarDir.z * 1500.0 * 1.1 );
+		trajectory.Position = firePos;
+		//trajectory.StopAtHit = true;
+		trajectory.TraceBounce = false;
+		trajectory.Duration = 30;
+		trajectory.Interval = 0.25;
+
+		DrawTrajectory(
+			trajectory,
+			color,
+			VehicleTrackingSystem.CHECK_INTERVAL );
+	},
+
+	// ---
+
+	ManageVehicleArtyAndMortarShootingOnBarrierPlanted = function()
+	{
+		// Allow only one execution at once
+		if ( VehicleTrackingSystem.mutex )
+		{
+			Util.MapDebugPrint( "ManageVehicleArtyAndMortarShootingOnBarrierPlanted already running, exiting", true );
+			return;
+		}
+
+		VehicleTrackingSystem.mutex = true;
+
+		SetAvailableMapGoals( VehicleTrackingSystem.DEFENCE_TEAM, true, "SMOKEBOMB_Defuse_Vehicle_Barrier" );
+
+		while ( Map.Is_Vehicle_Barrier_Built_And_Planted() )
+		{
+			// If no Axis Engi close enough, just keep shooting to keep the Truck damaged (RIP other teammates for now)
+			if ( VehicleTrackingSystem.AnyDefendingEngiCloseToAnyVehicleBarrierDyno() )
+			{
+				VehicleTrackingSystem.MORTAR_GOAL.DontShootMortar = true;
+			}
+			// Else, if any dynamite is within mortar splash damage range, have mortar shooting off
+			else if ( VehicleTrackingSystem.AnyDynamiteWithinVehicleMortarRadius() )
+			{
+				VehicleTrackingSystem.MORTAR_GOAL.DontShootMortar = true;
+			}
+			else
+			{
+				VehicleTrackingSystem.MORTAR_GOAL.DontShootMortar = false;
+			}
+
+			SetAvailableMapGoals(
+				VehicleTrackingSystem.DEFENCE_TEAM,
+				!VehicleTrackingSystem.MORTAR_GOAL.DontShootMortar,
+				"ARTILLERY_S_Vehicle" );
+
+			sleep ( 1 );
+		}
+
+		// If the Barrier got destroyed, or all dynamites got defused since the last loop, reset the flag
+		VehicleTrackingSystem.MORTAR_GOAL.DontShootMortar = false;
+		SetAvailableMapGoals( VehicleTrackingSystem.DEFENCE_TEAM, true, "ARTILLERY_S_Vehicle" );
+
+		SetAvailableMapGoals( VehicleTrackingSystem.DEFENCE_TEAM, false, "SMOKEBOMB_Defuse_Vehicle_Barrier" );
+
+		VehicleTrackingSystem.mutex = false;
+	},
+
+	AnyDefendingEngiCloseToAnyVehicleBarrierDyno = function()
+	{
+		t = Map.Get_Vehicle_Defuse_Goal_Table();
+		foreach ( bot in BotTable )
+		{
+			if ( bot.GetTeam() != VehicleTrackingSystem.DEFENCE_TEAM || bot.GetClass() != CLASS.ENGINEER ) { continue; }
+			foreach ( defuse in t )
+			{
+				if ( DistanceBetween( bot.GetPosition(), defuse.GetPosition() ) <= 1000 )
+				{
+					DrawDebugLine( bot.GetPosition(), defuse.GetPosition(), COLOR.RED, 1 );
+					return true;
+				}
+			}
+		}
+
+		return false;
+	},
+
+	// No need to specify a particular DEFUSE goal name, only barriers are along Tank path
+	AnyDynamiteWithinVehicleMortarRadius = function()
+	{
+		t = Map.Get_Vehicle_Defuse_Goal_Table();
+		foreach ( defuse in t )
+		{
+			if ( DistanceBetween( VehicleTrackingSystem.MORTAR_GOAL, defuse ) <= VehicleTrackingSystem.MORTAR_RADIUS )
+			{
+				DrawDebugLine( VehicleTrackingSystem.MORTAR_GOAL.GetPosition(), defuse.GetPosition(), COLOR.RED, 1 );
+				return true;
+			}
+		}
+
+		return false;
+	},
+
+	// ---
+
+	Stop = function()
+	{
+		VehicleTrackingSystem.run = false;
+	}
+};

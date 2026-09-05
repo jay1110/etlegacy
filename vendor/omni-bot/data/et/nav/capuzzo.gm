@@ -1,0 +1,1243 @@
+//==========================================================================================
+//
+//	capuzzo.gm
+//
+//	Who      	When		What
+//------------------------------------------------------------------------------------------
+//	Qiki	    03.04.2022	Initial Script & Waypoints
+//	Native12    27.10.2022	Test
+//	Qiki        12.11.2022	Stuckages
+//	Native12    21.11.2022	Released
+//	Native12    26.11.2022	Changed OnTrigger for Tank_Past_Barrier_1
+//	Native12    14.06.2023	Correction in trigger Seafire_Landed - thx. Mateos
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	Tank_First_Death = false,
+	Allied_Command_Post = false,
+	Seafire = true,
+	Seafire_Ready = false,
+	Tank = true,
+	Tank_Barrier_1 = true,
+	Tank_Barrier_2 = false,
+	Documents_Taken = false,
+	Sending_In_Progress = false,
+	Sending_Complete = false,
+	Tank_Near_Airport = false,
+	Fw_190 = true,
+	Command_House_Wall = true,
+	Tank_At_First_Barrier = false,
+	Tank_Past_First_Barrier = false,
+	Tank_At_Second_Barrier = false,
+	Tank_Past_Second_Barrier = false,
+	Tank_on_the_End = false,
+
+	Roles =
+	{
+		ALLIES =
+		{
+			AllBots = true, // each bot is considered for a role
+			ATTACKER =
+			{
+				numbots = 5,
+				//crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER1 =
+			{
+				numbots = 5,
+				//crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER2 =
+			{
+				numbots = 5,
+				//crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER3 =
+			{
+				numbots = 5,
+				//crucialClass = CLASS.ENGINEER,
+			},
+		},
+
+		AXIS =
+		{
+			AllBots = true, // each bot is considered for a role
+			DEFENDER =
+			{
+				numbots = 5,
+				//crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER1 =
+			{
+				numbots = 5,
+				//crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER2 =
+			{
+				numbots = 5,
+				//crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER3 =
+			{
+				numbots = 5,
+				//crucialClass = CLASS.ENGINEER,
+			},
+		},
+	},
+
+	Navigation =
+	{
+		//  /bot waypoint_setproperty paththrough Navigation_PT:jump
+		jump =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+
+		//  /bot waypoint_setproperty paththrough Navigation_PT:jump_wait
+		jump_wait =
+		{
+			navigate = function(_this)
+			{
+				sleep(0.25);
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+
+		//  /bot waypoint_setproperty paththrough Navigation_PT:jump_on_building
+		jump_on_building =
+		{
+			navigate = function(_this)
+			{
+				_this.Goto(_this.Bot.GetPosition());
+				_this.AddAimRequest(Priority.High, "facing", Vector3(-0.976, 0.017, -0.216));
+				sleep(1);
+				_this.Bot.PressButton(BTN.JUMP);
+				sleep(0.15);
+				_this.Bot.HoldButton(BTN.FORWARD, 1.5);
+				_this.Bot.HoldButton(BTN.SPRINT, 1.5);
+				sleep(0.6);
+				_this.Bot.HoldButton(BTN.JUMP, 1);
+				sleep(1);
+				if ( _this.Bot.GetPosition().z < 200 )
+				{
+					Util.MapDebugPrint( "path failed" );
+					return;
+				}
+				else
+				{
+					Util.MapDebugPrint( "path success" );
+				}
+			},
+		},
+	},
+
+	Tank_Built = function()
+	{
+		Map.Tank = true;
+
+		Util.MapDebugPrint( "Tank_Built" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Tank" );
+
+		if ( !Map.Tank_on_the_End )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"MOUNT_Tank",
+				"ESCORT_Tank",
+			});
+		}
+	},
+
+	Tank_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Tank_Destroyed" );
+
+		Map.Tank = false;
+
+		if ( !Map.Tank_At_First_Barrier and !Map.Tank_At_Second_Barrier and !Map.Tank_on_the_End )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank" );
+		}
+		else
+		{
+			if ( Map.Tank_At_First_Barrier and !Map.Tank_Barrier_1 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank" );
+			}
+			else if ( Map.Tank_At_Second_Barrier and !Map.Tank_Barrier_2 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank" );
+			}
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"MOUNT_Tank",
+			"ESCORT_Tank",
+		});
+	},
+
+	Tank_Entered_City = function()
+	{
+		Util.MapDebugPrint( "Tank_Entered_City" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_CitySpawn_15",
+			".*_Axis_CitySpawn_19",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*_Axis_CitySpawn_6.*",
+			".*_Axis_CitySpawn_7.*",
+		});
+
+		GetGoal("MOBILEMORTAR_Axis_CitySpawn_80").MortarAim = {
+			Vec3(-0.125, -0.981, 0.147),
+			Vec3(-0.149, -0.965, 0.214),
+			Vec3(-0.150, -0.952, 0.266),
+			Vec3(-0.195, -0.924, 0.327),
+			Vec3(0.366, -0.904, 0.222),
+		};
+	},
+
+	Tank_Barrier_1_Built = function()
+	{
+		Map.Tank_Barrier_1 = true;
+
+		Wp.SetWaypointFlag( "Wood_Bridge_.*", "closed", false );
+
+		Util.MapDebugPrint( "Tank_Barrier_1_Built" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Tank_Barrier_1" );
+
+		if ( !Map.Tank and Map.Tank_At_First_Barrier )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Tank" );
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Tank_Barrier_1" );
+	},
+
+	Tank_Barrier_1_Planted = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_1_Planted" );
+	},
+
+	Tank_Barrier_1_Defused = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_1_Defused" );
+	},
+
+	Tank_Barrier_1_Destroyed = function()
+	{
+		Map.Tank_Barrier_1 = false;
+
+		Wp.SetWaypointFlag( "Wood_Bridge_.*", "closed", true );
+
+		Util.MapDebugPrint( "Tank_Barrier_1_Destroyed" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Tank_Barrier_1" );
+
+		if ( !Map.Tank and Map.Tank_At_First_Barrier )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank" );
+		}
+
+		if ( !Map.Tank_Past_First_Barrier )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Tank_Barrier_1" );
+		}
+	},
+
+	Tank_Near_Barrier_1 =
+	{
+		Name = "Tank_Near_Barrier_1",
+		TriggerOnEntity = GetGoal("MOVER_tank").GetEntity(),
+		OnEnter = function(ent)
+		{
+			Util.MapDebugPrint( "Tank_Near_Barrier_1" );
+
+			GetGoal("MOBILEMORTAR_Axis_CitySpawn_80").MortarAim = {
+				Vec3(-0.125, -0.981, 0.147),
+				Vec3(-0.149, -0.965, 0.214),
+				Vec3(-0.150, -0.952, 0.266),
+				Vec3(-0.195, -0.924, 0.327),
+				Vec3(0.366, -0.904, 0.222),
+				Vec3(-0.209, -0.914, 0.347),
+				Vec3(-0.045, -0.934, 0.353),
+			};
+		},
+	},
+
+	Tank_At_Barrier_1 =
+	{
+		Name = "Tank_At_Barrier_1",
+		TriggerOnEntity = GetGoal("MOVER_tank").GetEntity(),
+		OnEnter = function(ent)
+		{
+			Map.Tank_At_First_Barrier = true;
+
+			Util.MapDebugPrint( "Tank_At_Barrier_1" );
+
+			ETUtil.SetExcludeIndexes( "BUILD_Tank", { 0, 1, 4 } );
+		},
+	},
+
+	Tank_Past_Barrier_1 = function()
+	{
+		DeleteTriggerRegion("Tank_At_Barrier_1");
+
+		Map.Tank_Past_First_Barrier = true;
+		Map.Tank_At_First_Barrier = false;
+
+		Util.MapDebugPrint( "Tank_Past_Barrier_1" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_Tank_Barrier_1.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		ETUtil.SetExcludeIndexes( "BUILD_Tank", { } );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_Tank_Barrier_1",
+			".*_Axis_CitySpawn_.*",
+			".*_city_mg",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*_Allies_CitySpawn_.*",
+		});
+
+		if ( !Map.Tank_Barrier_2 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_Tank_Barrier_2",
+			});
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"PLANT_Tank_Barrier_2",
+			});
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*_Axis_SecondBarrier_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			".*_Allies_SecondBarrier_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"PLANTMINE_Axis_SecondBarrier_6.*",
+			"PLANTMINE_Axis_SecondBarrier_8.*",
+			"PLANTMINE_Axis_SecondBarrier_9.*",
+			"AIRSTRIKE_Axis_SecondBarrier_7.*",
+		});
+
+		sleep(40);
+
+		if ( !Map.Tank_Past_Second_Barrier )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"PLANTMINE_Axis_SecondBarrier_6.*",
+				"AIRSTRIKE_Axis_SecondBarrier_7.*",
+			});
+		}
+	},
+
+	Tank_Barrier_2_Built = function()
+	{
+		Map.Tank_Barrier_2 = true;
+
+		Wp.SetWaypointFlag( "Tank_Barrier_2_1", "closed", true );
+		Wp.SetWaypointFlag( "Tank_Barrier_2_4", "closed", true );
+		Wp.SetWaypointFlag( "Tank_Barrier_2_2", "closed", false );
+
+		Util.MapDebugPrint( "Tank_Barrier_2_Built" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Tank_Barrier_2" );
+
+		if ( !Map.Tank and Map.Tank_At_Second_Barrier )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Tank" );
+		}
+
+		if ( Map.Tank_Past_First_Barrier )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Tank_Barrier_2" );
+		}
+	},
+
+	Tank_Barrier_2_Planted = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_2_Planted" );
+	},
+
+	Tank_Barrier_2_Defused = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_2_Defused" );
+	},
+
+	Tank_Barrier_2_Destroyed = function()
+	{
+		Map.Tank_Barrier_2 = false;
+
+		Wp.SetWaypointFlag( "Tank_Barrier_2_1", "closed", false );
+		Wp.SetWaypointFlag( "Tank_Barrier_2_4", "closed", false );
+		Wp.SetWaypointFlag( "Tank_Barrier_2_2", "closed", true );
+
+		Util.MapDebugPrint( "Tank_Barrier_2_Destroyed" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Tank_Barrier_2" );
+
+		if ( !Map.Tank_Past_Second_Barrier )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Tank_Barrier_2" );
+		}
+
+		if ( !Map.Tank and Map.Tank_At_Second_Barrier )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank" );
+		}
+	},
+
+	Tank_Near_Barrier_2 =
+	{
+		Name = "Tank_Near_Barrier_2",
+		TriggerOnEntity = GetGoal("MOVER_tank").GetEntity(),
+		OnEnter = function(ent)
+		{
+			Util.MapDebugPrint( "Tank_Near_Barrier_2" );
+
+			ETUtil.SetExcludeIndexes( "BUILD_Tank", { 0, 1, 2, 3 } );
+
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"ARTILLERY_S_Axis_SecondBarrier_15",
+				"ARTILLERY_S_Axis_SecondBarrier_16",
+				"PLANTMINE_Axis_SecondBarrier_4.*",
+			});
+
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"PLANTMINE_Axis_SecondBarrier_8.*",
+				"PLANTMINE_Axis_SecondBarrier_9.*",
+			});
+		},
+	},
+
+	Tank_At_Barrier_2 =
+	{
+		Name = "Tank_At_Barrier_2",
+		TriggerOnEntity = GetGoal("MOVER_tank").GetEntity(),
+		OnEnter = function(ent)
+		{
+			Map.Tank_At_Second_Barrier = true;
+
+			Util.MapDebugPrint( "Tank_At_Barrier_2" );
+		},
+	},
+
+	Tank_Past_Barrier_2 = function()
+	{
+		DeleteTriggerRegion("Tank_At_Barrier_2");
+
+		Map.Tank_At_Second_Barrier = false;
+		Map.Tank_Past_Second_Barrier = true;
+
+		Util.MapDebugPrint( "Tank_Past_Barrier_2" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_Tank_Barrier_2.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_Tank_Barrier_2",
+			".*_Axis_SecondBarrier_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*_Allies_SecondBarrier_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*_Axis_ApproachingPlace_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			".*_Allies_ApproachingPlace_.*",
+		});
+	},
+
+	Tank_Approaching_Airport = function()
+	{
+		Map.Tank_Near_Airport = true;
+
+		Util.MapDebugPrint( "Tank_Approaching_Airport" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_ApproachingPlace_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*_Allies_ApproachingPlace_.*",
+		});
+
+		if ( !Map.Allied_Command_Post )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"BUILD_Allied_Command_Post",
+			});
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*_Axis_CP_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			".*_Allies_City_.*",
+		});
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+		Map.Allied_Command_Post = true;
+
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"BUILD_Allied_Command_Post",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"PLANT_Allied_Command_Post",
+		});
+
+		if ( Map.Fw_190 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				".*_Axis_CP_.*",
+			});
+
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				".*_Axis_City_.*",
+			});
+		}
+	},
+
+	Allied_Command_Post_Planted = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Planted" );
+	},
+
+	Allied_Command_Post_Defused = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Defused" );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+		Map.Allied_Command_Post = false;
+
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"PLANT_Allied_Command_Post",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Allied_Command_Post",
+		});
+	},
+
+	Fw_190_Destroyed = function()
+	{
+		Map.Fw_190 = false;
+
+		Wp.SetWaypointFlag( "Plane_.*", "closed", false );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_CP_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*_Axis_City_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"MOBILEMORTAR_Axis_City_00",
+		});
+
+		Util.MapDebugPrint( "Fw_190_Destroyed" );
+	},
+
+	Tank_End =
+	{
+		Name = "Tank_End",
+		TriggerOnEntity = GetGoal("MOVER_tank").GetEntity(),
+		OnEnter = function(ent)
+		{
+			Map.Tank_on_the_End = true;
+
+			Util.MapDebugPrint( "Tank_End" );
+
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				".*_Tank",
+			});
+
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				".*_Axis_Radio_.*",
+			});
+		},
+	},
+
+	Command_House_Wall_Destroyed = function()
+	{
+		Map.Command_House_Wall = false;
+
+		DeleteTriggerRegion("Tank_End");
+
+		Wp.SetWaypointFlag( "Command_House_Door_1", "axis", false );
+		Wp.SetWaypointFlag( "Command_House_Door_2", "axis", false );
+		Wp.SetWaypointFlag( "Command_House_Door_3", "axis", false );
+
+		Wp.SetWaypointFlag( "Bf-109_1", "closed", true );
+		Wp.SetWaypointFlag( "Bf-109_2", "closed", true );
+		Wp.SetWaypointFlag( "Bf-109_3", "closed", false );
+		Wp.SetWaypointFlag( "Bf-109_4", "closed", false );
+		Wp.SetWaypointFlag( "Bf-109_5", "closed", true );
+		Wp.SetWaypointFlag( "Bf-109_6", "closed", true );
+		Wp.SetWaypointFlag( "Bf-109_7", "closed", false );
+		Wp.SetWaypointFlag( "Bf-109_8", "closed", false );
+
+		DynamicPathsUpdated( TEAM.ALLIES );
+
+		Util.MapDebugPrint( "Command_House_Wall_Destroyed" );
+
+		SetGoalPriority( "PLANTMINE_.*", 0.69, TEAM.AXIS, 0 );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"SWITCH_Radio",
+			".*_Allies_Radio_.*",
+		});
+	},
+
+	Send_Message_Started = function()
+	{
+		Map.Sending_In_Progress = true;
+
+		Util.MapDebugPrint( "Send_Message_Started" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"SWITCH_Radio",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"SWITCH_Radio",
+		});
+	},
+
+	Send_Message_Aborted = function()
+	{
+		Map.Sending_In_Progress = false;
+
+		Util.MapDebugPrint( "Send_Message_Aborted" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"SWITCH_Radio",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"SWITCH_Radio",
+		});
+	},
+
+	Send_Message_Completed = function()
+	{
+		Map.Sending_In_Progress = false;
+		Map.Sending_Complete = true;
+
+		Util.MapDebugPrint( "Send_Message_Completed" );
+
+		Util.DisableGoal( {
+			"SWITCH_Radio",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"FLAG_secret_documents",
+		});
+	},
+
+	Seafire_Landed = function()
+	{
+		Map.Seafire_Ready = true;
+
+		Util.MapDebugPrint( "Seafire_Landed" );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"ARTILLERY_S_Axis_Plane_.*",
+			"CALLARTILLERY_Axis_Plane_.*",
+		});
+
+		if ( Map.Documents_Taken and Map.Seafire )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"CAPPOINT_FakePlace_.*",
+			});
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"CAPPOINT_Seafire",
+			});
+		}
+	},
+
+	Seafire_Built = function()
+	{
+		Map.Seafire = true;
+
+		Util.MapDebugPrint( "Seafire_Built" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"BUILD_Seafire",
+		});
+
+		if ( Map.Documents_Taken )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"CAPPOINT_FakePlace_.*",
+			});
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"CAPPOINT_Seafire",
+			});
+		}
+	},
+
+	Seafire_Destroyed = function()
+	{
+		Map.Seafire = false;
+
+		Util.MapDebugPrint( "Seafire_Destroyed" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Seafire",
+		});
+
+		if ( Map.Documents_Taken )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"CAPPOINT_Seafire",
+			});
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"CAPPOINT_FakePlace_.*",
+			});
+		}
+	},
+
+	Secret_Documents_Taken = function()
+	{
+		Map.Documents_Taken = true;
+
+		Util.MapDebugPrint( "Secret_Documents_Taken" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_Radio_.*",
+			"PLANTMINE_Axis_City_.*",
+			"MOBILEMG42_Axis_City_.*",
+			"ARTILLERY_S_Axis_City_16",
+			"ARTILLERY_S_Axis_City_17",
+			"CALLARTILLERY_Axis_City_11",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"FLAG_secret_documents",
+			".*_Allies_Radio_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*_Axis_Plane_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			".*_Allies_Plane_.*",
+		});
+
+		if ( Map.Seafire_Ready )
+		{
+			if ( Map.Seafire )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"CAPPOINT_Seafire",
+				});
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"CAPPOINT_FakePlace_.*",
+				});
+			}
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"CAPPOINT_FakePlace_.*",
+			});
+		}
+	},
+
+	Secret_Documents_Dropped = function()
+	{
+		Util.MapDebugPrint( "Secret_Documents_Dropped" );
+	},
+
+	Secret_Documents_Returned = function()
+	{
+		Map.Documents_Taken = false;
+
+		Util.MapDebugPrint( "Secret_Documents_Returned" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_Plane_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CAPPOINT_.*",
+			".*_Allies_Plane_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*_Axis_Radio_.*",
+			"PLANTMINE_Axis_City_.*",
+			"MOBILEMG42_Axis_City_.*",
+			"ARTILLERY_S_Axis_City_16",
+			"ARTILLERY_S_Axis_City_17",
+			"CALLARTILLERY_Axis_City_11",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"FLAG_secret_documents",
+			".*_Allies_Radio_.*",
+		});
+	},
+
+	Secret_Documents_Secured = function()
+	{
+		Util.MapDebugPrint( "Secret_Documents_Secured" );
+
+		ETUtil.WinningChat( TEAM.ALLIES );
+		ETUtil.LosingChat( TEAM.AXIS );
+	},
+};
+
+global OnMapLoad = function()
+{
+	if ( Map.Debug )
+	{
+		Util.DebugColorString = "^3";
+	}
+
+	OnTrigger( "allies_hq_compost_constructed", Map.Allied_Command_Post_Built );
+	OnTrigger( "Planted at the Allied Command Post.", Map.Allied_Command_Post_Planted );
+	OnTrigger( "Defused at the Allied Command Post.", Map.Allied_Command_Post_Defused );
+	OnTrigger( "Axis team has destroyed the Allied Command Post! Spawning changed!", Map.Allied_Command_Post_Destroyed );
+
+	OnTrigger( "The Seafire has been repaired.", Map.Seafire_Built );
+	OnTrigger( "The Seafire has been damaged! Repair it before securing the Blueprints!", Map.Seafire_Destroyed );
+	OnTrigger( "The Seafire has succesfully landed and is ready to take the Secret blue", Map.Seafire_Landed );
+
+	OnTrigger( "The tank has been repaired!", Map.Tank_Built );
+	OnTrigger( "The tank has been damaged!", Map.Tank_Destroyed );
+
+	OnTrigger( "Tank Barrier #1 has been constructed.", Map.Tank_Barrier_1_Built );
+	OnTrigger( "Planted at Tank Barrier #1.", Map.Tank_Barrier_1_Planted );
+	OnTrigger( "Defused at Tank Barrier #1.", Map.Tank_Barrier_1_Defused );
+	OnTrigger( "Tank Barrier #1 has been destroyed.", Map.Tank_Barrier_1_Destroyed );
+
+	OnTrigger( "Tank Barrier #2 has been constructed.", Map.Tank_Barrier_2_Built );
+	OnTrigger( "Planted at Tank Barrier #2.", Map.Tank_Barrier_2_Planted );
+	OnTrigger( "Defused at Tank Barrier #2.", Map.Tank_Barrier_2_Defused );
+	OnTrigger( "Tank Barrier #2 has been destroyed.", Map.Tank_Barrier_2_Destroyed );
+
+	OnTrigger( "Allies have stolen Secret Blueprints!", Map.Secret_Documents_Taken );
+	OnTrigger( "USA have stolen Secret Blueprints!", Map.Secret_Documents_Taken );  //ETNam
+	OnTrigger( "Allies have dropped the Secret Blueprints! Pick 'em up!", Map.Secret_Documents_Dropped );
+	OnTrigger( "Flag returned secret_documents!", Map.Secret_Documents_Returned );
+	OnTrigger( "Allied team secured the Secret Blueprints into the Seafire!", Map.Secret_Documents_Secured );
+
+	OnTrigger( "Allied team has entered the City", Map.Tank_Entered_City );
+	OnTrigger( "Allied team is approaching the Airport!", Map.Tank_Approaching_Airport );
+	OnTrigger( "Allied team has destroyed the Fw-190!", Map.Fw_190_Destroyed );
+	OnTrigger( "Allied team has destroyed the Command house wall! The doors are unlocke", Map.Command_House_Wall_Destroyed );
+	OnTrigger( "Allies have started sending the message... 45 seconds remaining!", Map.Send_Message_Started );
+	OnTrigger( "Axis have prevented Allies from sending the message!", Map.Send_Message_Aborted );
+	OnTrigger( "Pilot is preparing for landing!", Map.Send_Message_Completed );
+
+	Util.DisableGoal( ".*", true );
+
+	Util.EnableGoal( {
+		"AMMOCAB_.*",
+		"HEALTHCAB_.*",
+	});
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		".*_Axis_CitySpawn_.*",
+		".*_city_mg",
+	});
+
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+		"MOBILEMORTAR_Axis_CitySpawn_.*",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"MOUNT_Tank",
+		"ESCORT_Tank",
+		"PLANT_Tank_Barrier_1",
+		".*_Allies_CitySpawn_.*",
+	});
+
+	Util.AddUseWp( "BUILD_Tank_Barrier_1", "Tank_Barrier_1_1" );
+	Util.AddUseWp( "BUILD_Tank_Barrier_2", "Tank_Barrier_2_3" );
+	Util.AddUseWp( "CAPPOINT_Seafire", "Seafire_1" );
+	Util.AddUseWp( "BUILD_Seafire", "Seafire_1" );
+	Util.AddUseWp( "CAPPOINT_Seafire", "Seafire_2" );
+	Util.AddUseWp( "BUILD_Seafire", "Seafire_2" );
+
+	Util.SetGoalRange( "CALLARTILLERY_Axis_Plane_0.", 1000);
+
+	Util.SetGoalPosition(-4322.125, -10503.425, 24.125, "PLANT_Tank_Barrier_2");
+
+
+	Wp.SetWaypointFlag( "Wood_Bridge_.*", "closed", false );
+	Wp.SetWaypointFlag( "Tank_Barrier_2_1", "closed", false );
+	Wp.SetWaypointFlag( "Tank_Barrier_2_4", "closed", false );
+	Wp.SetWaypointFlag( "Tank_Barrier_2_2", "closed", true );
+	Wp.SetWaypointFlag( "Plane_.*", "closed", true );
+	Wp.SetWaypointFlag( "Command_House_Door_1", "axis", true );
+	Wp.SetWaypointFlag( "Command_House_Door_2", "axis", true );
+	Wp.SetWaypointFlag( "Command_House_Door_3", "axis", true );
+	Wp.SetWaypointFlag( "Bf-109_1", "closed", false );
+	Wp.SetWaypointFlag( "Bf-109_2", "closed", false );
+	Wp.SetWaypointFlag( "Bf-109_3", "closed", true );
+	Wp.SetWaypointFlag( "Bf-109_4", "closed", true );
+	Wp.SetWaypointFlag( "Bf-109_5", "closed", false );
+	Wp.SetWaypointFlag( "Bf-109_6", "closed", false );
+	Wp.SetWaypointFlag( "Bf-109_7", "closed", true );
+	Wp.SetWaypointFlag( "Bf-109_8", "closed", true );
+
+	SetGoalPriority( "DEFEND_Axis_CitySpawn_90", 0.55, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_Radio_.*", 0.6, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_Plane_.*", 0.6, TEAM.AXIS, 0 );
+	SetGoalPriority( "CALLARTILLERY_Axis_Plane_.*", 0.82, TEAM.AXIS, 0 );
+	SetGoalPriority( "ARTILLERY_S_Axis_Plane_.*", 0.82, TEAM.AXIS, 0 );
+
+	SetGoalPriority( "ATTACK_Allies_Radio_.*", 0.6, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_Plane_.*", 0.6, TEAM.ALLIES, 0 );
+
+	SetGoalRole( "DEFEND_Axis_CitySpawn_2.*", { ROLE.DEFENDER, ROLE.DEFENDER1 } );
+	SetGoalRole( "DEFEND_Axis_CitySpawn_3.*", { ROLE.DEFENDER2, ROLE.DEFENDER3 } );
+	SetGoalRole( "PLANT_Allied_Command_Post", ROLE.INFILTRATOR );
+
+	Util.SetMaxUsers( 1, ".*_city_mg" );
+	Util.SetMaxUsers( 1, "PLANT_Allied_Command_Post" );
+	Util.SetMaxUsers( 3, "PLANT_Tank_Barrier_2" );
+	Util.SetMaxUsers( 5, "ESCORT_.*" );
+	Util.SetMaxUsersInProgress( 7, "SWITCH_Radio" );
+
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.MP40, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.THOMPSON, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.PANZERFAUST, false );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.FLAMETHROWER, false );
+
+	//Buildings near first barrier
+	RegionTrigger.Create(AABB(-7334.734,-14986.493,233.125,-7237.172,-14192.850,351.390), "DisableCombatMovement", "Wooden_bridge");
+	RegionTrigger.Create(AABB(-7584.132,-14032.011,177.125,-7426.390,-13941.621,316.309), "DisableCombatMovement", "Jump_01");
+	RegionTrigger.Create(AABB(-8234.648,-14222.916,177.125,-7738.550,-13959.678,434.741), "DisableCombatMovement", "Jump_02");
+	RegionTrigger.Create(AABB(-6895.490,-14933.332,229.125,-6421.350,-14775.915,394.825), "DisableCombatMovement", "Jump_03");
+	RegionTrigger.Create(AABB(-6335.689,-14883.482,157.125,-6218.949,-14493.200,359.869), "DisableCombatMovement", "Jump_04");
+	RegionTrigger.Create(AABB(-6460.016,-14097.927,157.125,-6196.736,-13573.292,280.004), "DisableCombatMovement", "Jump_05");
+	RegionTrigger.Create(AABB(-7261.426,-13864.484,153.125,-7156.961,-13493.319,362.131), "DisableCombatMovement", "Jump_06");
+	RegionTrigger.Create(AABB(-9042.064,-14000.088,233.125,-8740.890,-13599.295,339.125), "DisableCombatMovement", "Jump_07");
+	RegionTrigger.Create(AABB(-8778.329,-14791.273,209.125,-8674.874,-14424.073,349.133), "DisableCombatMovement", "Jump_08");
+	RegionTrigger.Create(AABB(-8858.528,-15950.335,209.125,-8757.877,-15422.951,371.125), "DisableCombatMovement", "Jump_09");
+	RegionTrigger.Create(AABB(-7705.347,-14269.183,177.125,-7568.294,-14140.979,289.006), "DisableCombatMovement", "Jump_to_barrier");
+	//near second barrier
+	RegionTrigger.Create(AABB(-8280.377,-14076.347,369.209,-8242.377,-14038.347,411.209), "DisableBotPush", "Axis_CitySpawn_70");
+	RegionTrigger.Create(AABB(-3011.410,-10115.292,189.125,-2459.898,-9915.612,305.242), "DisableBotPush", "Jump_10");
+	RegionTrigger.Create(AABB(-3543.739,-9888.762,1.125,-3321.250,-9595.053,210.125), "DisableCombatMovement", "Jump_11");
+	RegionTrigger.Create(AABB(-3920.666,-11040.058,217.125,-3647.580,-10723.021,357.527), "DisableCombatMovement", "Jump_12");
+	RegionTrigger.Create(AABB(-3540.477,-9889.649,134.125,-3348.330,-9794.527,210.125), "DisableBotPush", "Truck");
+	RegionTrigger.Create(AABB(-4768.683,-10963.699,8.125,-4708.950,-10901.125,82.125), "DisableBotPush", "Smokebomb_21");
+	RegionTrigger.Create(AABB(-4863.035,-11255.215,2.393,-4797.867,-11173.248,80.140), "DisableBotPush", "Smokebomb_23");
+
+	RegionTrigger.Create(AABB(-4877.141,-11025.786,8.125,-4711.749,-10869.801,82.125), "DisableCombatMovement", "Allies_SecondBarrier_21");
+	//tank triggers
+	OnTriggerRegion(AABB(-8038.222,-14833.759,1.150,-8000.222,-14795.759,75.150),Map.Tank_Near_Barrier_1 );
+	OnTriggerRegion(AABB(-7554.431,-14395.750,1.125,-7516.431,-14357.750,75.125),Map.Tank_At_Barrier_1 );
+	//OnTrigger( "Allied team passed the Tank Barrier #1 and has taken over the city!", Map.Tank_Past_Barrier_1 );
+	OnTrigger( "c_al_tank_barrier1", Map.Tank_Past_Barrier_1 );
+	OnTriggerRegion(AABB(-5495.377,-10071.857,1.125,-5457.377,-10033.857,75.125),Map.Tank_Near_Barrier_2 );
+	OnTriggerRegion(AABB(-4407.813,-9892.778,1.255,-4369.813,-9854.778,51.255),Map.Tank_At_Barrier_2 );
+	OnTrigger( "Allied team passed the Tank Barrier #2!", Map.Tank_Past_Barrier_2 );
+	OnTriggerRegion(AABB(-3935.356,-2007.865,1.125,-3897.356,-1969.865,51.125),Map.Tank_End );
+
+	if(GetGameState() == "Playing")
+	{
+		sleep(5);
+
+		EchoToScreen(0,"^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12 ^3");
+		Util.BotChat( 0, "say", "^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12^7" , 1 );
+	}
+
+	sleep(2);
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"MOBILEMORTAR_Axis_CitySpawn_.*",
+	});
+
+	while ( !Map.Tank_First_Death )
+	{
+		if ( GetEntFlags(GetGoal("MOVER_tank").GetEntity(), ENTFLAG.DEAD) )
+		{
+			Map.Tank_First_Death = true;
+
+			Map.Tank_Destroyed();
+		}
+		yield();
+	}
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 130.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		FLAG_secret_documents =
+		{
+			ROUTE_Allied_CPSpawn =
+			{
+				ROUTE_MainWay_CP_2 =
+				{
+					ROUTE_MainWay_Switch_1 =
+					{
+						ROUTE_MainWay_SwitchL_1 =
+						{
+							ROUTE_MainWay_SwitchL_2 = {},
+							ROUTE_OutsideL_4 =
+							{
+								ROUTE_OutsideL_3 = {},
+							},
+						},
+					},
+				},
+			},
+		},
+		PLANT_Allied_Command_Post =
+		{
+			ROUTE_BattleField_1 =
+			{
+				ROUTE_CaveTunnel_CP_1 =
+				{
+					ROUTE_CaveTunnel_CP_2 =
+					{
+						ROUTE_CaveTunnel_CP_3 =
+						{
+							ROUTE_CaveTunnel_CP_4 = {},
+						},
+					},
+				},
+				ROUTE_MainWay_CP_1 =
+				{
+					ROUTE_MainWay_CP_2 =
+					{
+						ROUTE_MainWay_CP_3 =
+						{
+							ROUTE_MainWay_CP_4 = {},
+						},
+					},
+				},
+			},
+			ROUTE_BattleField_2 =
+			{
+				ROUTE_CaveTunnel_CP_1 =
+				{
+					ROUTE_CaveTunnel_CP_2 =
+					{
+						ROUTE_CaveTunnel_CP_3 =
+						{
+							ROUTE_CaveTunnel_CP_4 = {},
+						},
+					},
+				},
+				ROUTE_MainWay_CP_1 =
+				{
+					ROUTE_MainWay_CP_2 =
+					{
+						ROUTE_MainWay_CP_3 =
+						{
+							ROUTE_MainWay_CP_4 = {},
+						},
+					},
+				},
+			},
+		},
+		DEFEND_Axis_CitySpawn_20 =
+		{
+			ROUTE_CitySpawn =
+			{
+				ROUTE_Building_1 =
+				{
+					ROUTE_Building_2 = {},
+				},
+			},
+		},
+		MOBILEMG42_Axis_CitySpawn_04 =
+		{
+			ROUTE_CitySpawn =
+			{
+				ROUTE_BackWay_1 =
+				{
+					ROUTE_BackWay_2 = {},
+				},
+			},
+		},
+	};
+
+	MapRoutes["ATTACK_Allies_SecondBarrier_.*"] =
+	{
+		ROUTE_CitySpawn =
+		{
+			ROUTE_CaveTunnel_SB_1 =
+			{
+				ROUTE_CaveTunnel_SB_2 =
+				{
+					ROUTE_CaveTunnel_SB_3 = {},
+				},
+			},
+			ROUTE_MainWay_SB_1 =
+			{
+				ROUTE_MainWay_SB_2 =
+				{
+					ROUTE_MainWay_SB_3 = {},
+				},
+			},
+		},
+	};
+
+	MapRoutes["ATTACK_Allies_ApproachingPlace_.*"] =
+	{
+		ROUTE_RoadSpawn =
+		{
+			ROUTE_CaveTunnel_AP_1 =
+			{
+				ROUTE_CaveTunnel_AP_2 =
+				{
+					ROUTE_CaveTunnel_AP_3 = {Weight=2,},
+					ROUTE_CaveTunnel_AP_Out =
+					{
+						ROUTE_MainWay_AP_3 = {},
+					},
+				},
+			},
+			ROUTE_MainWay_AP_1 =
+			{
+				ROUTE_MainWay_AP_2 =
+				{
+					ROUTE_MainWay_AP_3 = {},
+				},
+			},
+		},
+	};
+
+	MapRoutes["ATTACK_Allies_City_07"] =
+	{
+		ROUTE_Allied_CPSpawn =
+		{
+			ROUTE_MainWay_CP_1 =
+			{
+				ROUTE_MainWayCity_1 = {},
+			},
+			ROUTE_CaveTunnel_CP_4 =
+			{
+				ROUTE_CaveTunnel_CP_3 =
+				{
+					ROUTE_CaveTunnel_CP_2 =
+					{
+						ROUTE_CaveTunnel_CP_1 = {},
+					},
+				},
+			},
+		},
+	};
+
+	MapRoutes["CAPPOINT_.*"] =
+	{
+		ROUTE_FlagPlace =
+		{
+			ROUTE_Door =
+			{
+				ROUTE_OutsideL_1 =
+				{
+					ROUTE_OutsideL_2 =
+					{
+						ROUTE_OutsideL_3 =
+						{
+							ROUTE_OutsideL_4 =
+							{
+								ROUTE_OutsideL_5 =
+								{
+									ROUTE_OutsideM_4 = {},
+								},
+							},
+						},
+					},
+				},
+			},
+			ROUTE_Wall =
+			{
+				ROUTE_OutsideM_1 =
+				{
+					ROUTE_OutsideM_2 =
+					{
+						ROUTE_OutsideM_3 =
+						{
+							ROUTE_OutsideM_4 = {},
+						},
+					},
+				},
+			},
+		},
+	};
+
+	MapRoutes.BUILD_Tank = MapRoutes["ATTACK_Allies_SecondBarrier_.*"];
+	MapRoutes.SWITCH_Radio = MapRoutes.FLAG_secret_documents;
+	MapRoutes["ATTACK_Allies_Radio_.*"] = MapRoutes.FLAG_secret_documents;
+	MapRoutes["ATTACK_Allies_City_08"] = MapRoutes["ATTACK_Allies_City_07"];
+	MapRoutes["ATTACK_Allies_City_09"] = MapRoutes["ATTACK_Allies_City_07"];
+	MapRoutes["ATTACK_Allies_City_10"] = MapRoutes["ATTACK_Allies_City_07"];
+	MapRoutes["ATTACK_Allies_City_12"] = MapRoutes["ATTACK_Allies_City_07"];
+	MapRoutes["ATTACK_Allies_City_13"] = MapRoutes["ATTACK_Allies_City_07"];
+	MapRoutes["ATTACK_Allies_City_14"] = MapRoutes["ATTACK_Allies_City_07"];
+	MapRoutes["ATTACK_Allies_Plane_.*"] = MapRoutes["ATTACK_Allies_City_07"];
+	MapRoutes.DEFEND_Axis_CitySpawn_25 = MapRoutes.DEFEND_Axis_CitySpawn_20;
+	MapRoutes.DEFEND_Axis_CitySpawn_28 = MapRoutes.DEFEND_Axis_CitySpawn_20;
+	MapRoutes.DEFEND_Axis_CitySpawn_90 = MapRoutes.DEFEND_Axis_CitySpawn_20;
+	MapRoutes.CALLARTILLERY_Axis_CitySpawn_10 = MapRoutes.DEFEND_Axis_CitySpawn_20;
+	MapRoutes.AIRSTRIKE_Axis_CitySpawn_72 = MapRoutes.DEFEND_Axis_CitySpawn_20;
+	MapRoutes.MOBILEMG42_Axis_CitySpawn_01 = MapRoutes.DEFEND_Axis_CitySpawn_20;
+
+	Util.Routes(MapRoutes);
+};

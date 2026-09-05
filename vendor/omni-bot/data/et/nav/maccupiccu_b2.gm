@@ -1,0 +1,309 @@
+//==========================================================================================
+//
+//	maccupiccu_b2.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	28 August 2018	Initial Script
+//	palota                  	24 January 2025 	routes, enabled REPAIRMG42, AMMOCAB, HEALTHCAB, PLANT goals, added ATTACK and DEFEND goals, DisableCombatMovement, radarbox triggers
+//==========================================================================================
+//
+
+global Map =
+{
+	Navigation =
+	{
+		door_slow =
+		{
+			navigate = function(_this)
+			{
+				_this.AddAimRequest(Priority.High, "facing", Vec3(0.03, 1, -0.25));
+				sleep(1.5);
+			}
+		},
+	},
+
+	Allied_Assault_Ladder_Built = function()
+	{
+		Util.MapDebugPrint("Allied_Assault_Ladder_Built");
+	},
+	Allied_Assault_Ladder_Destroyed = function()
+	{
+		Util.MapDebugPrint("Allied_Assault_Ladder_Destroyed");
+	},
+
+	Axis_East_Ladder_Defense_Built = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.AXIS, 1, "CAMP_r1_east_.*");
+		Util.MapDebugPrint("Axis_East_Ladder_Defense_Built");
+	},
+	Axis_East_Ladder_Defense_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, 0, "CAMP_r1_east_.*");
+		Util.MapDebugPrint("Axis_East_Ladder_Defense_Destroyed");
+	},
+
+	Axis_West_Ladder_Defense_Built = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.AXIS, 1, "CAMP_r1_west_.*");
+		Util.MapDebugPrint("Axis_West_Ladder_Defense_Built");
+	},
+	Axis_West_Ladder_Defense_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, 0, "CAMP_r1_west_.*");
+		Util.MapDebugPrint("Axis_West_Ladder_Defense_Destroyed");
+	},
+
+	Axis_East_MG42_Nest_Built = function()
+	{
+		Util.MapDebugPrint("Axis_East_MG42_Nest_Built");
+	},
+	Axis_East_MG42_Nest_Destroyed = function()
+	{
+		Util.MapDebugPrint("Axis_East_MG42_Nest_Destroyed");
+	},
+
+	Axis_West_MG42_nest_Built = function()
+	{
+		Util.MapDebugPrint("Axis_West_MG42_nest_Built");
+	},
+	Axis_West_MG42_nest_Destroyed = function()
+	{
+		Util.MapDebugPrint("Axis_West_MG42_nest_Destroyed");
+	},
+
+	Old_City_Door_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+
+		SetAvailableMapGoals(TEAM.ALLIES, 0, {
+			"ATTACK_b.*",
+			"BUILD_Allied_Assault_Ladder.*",
+			"MOUNTMG42_128",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, 1, {
+			"PLANT_Sun_Symbol_Pyramid_Door",
+			"PLANT_Moon_Symbol_Pyramid_Door",
+			"PLANT_Axis.*",
+			"ATTACK_e.*",
+			"ATTACK_w.*",
+			"CAPPOINT_Truck",
+		});
+
+		SetAvailableMapGoals(TEAM.AXIS, 0, "SNIPE_x.*");
+
+		SetAvailableMapGoals(TEAM.AXIS, 1, {
+			"BUILD_Axis.*",
+			".*MG42_Axis_West_MG42_nest",
+			".*MG42_Axis_East_MG42_nest",
+			"DEFEND_[ew].*",
+		});
+
+		SetGoalPriority("BUILD.*Defense", 0.5);
+		SetGoalPriority("CAMP_r.*", 0.4);
+
+		Util.EnableGoal({ "AMMO.*", "HEALTH.*", "SNIPE_Tower.*", ".*_Charge_Booster" });
+		Util.MapDebugPrint("Old_City_Door_Destroyed");
+	},
+
+	Moon_Symbol_Pyramid_Door_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.ALLIES, 1, "FLAG_radarbox2");
+		Util.MapDebugPrint("Moon_Symbol_Pyramid_Door_Destroyed");
+	},
+
+	Sun_Symbol_Pyramid_Door_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.ALLIES, 1, "FLAG_radarbox1");
+		Util.MapDebugPrint("Sun_Symbol_Pyramid_Door_Destroyed");
+	},
+
+
+	box1 = 0,
+	box2 = 0,
+
+	SetGoals = function()
+	{
+		c = Map.box1 == 1 || Map.box2 == 1;
+		SetAvailableMapGoals(TEAM.AXIS, c, { "DEFEND_f.*", "MOUNTMG42_128" });
+		SetAvailableMapGoals(TEAM.AXIS, !Map.box1, "DEFEND_w.*");
+		SetAvailableMapGoals(TEAM.AXIS, !Map.box2, "DEFEND_e.*");
+	},
+
+	radarbox1_Taken = function()
+	{
+		Map.box1 = 1;
+		Map.SetGoals();
+		Util.MapDebugPrint("radarbox1_Taken");
+	},
+	radarbox1_Returned = function()
+	{
+		Map.box1 = 0;
+		Map.SetGoals();
+		Util.MapDebugPrint("radarbox1_Returned");
+	},
+	radarbox1_Secured = function()
+	{
+		Map.box1 = 2;
+		Map.SetGoals();
+		SetAvailableMapGoals(TEAM.ALLIES, 0, "ATTACK_w.*");
+		SetAvailableMapGoals(TEAM.AXIS, 0, ".*Axis_West_MG42_nest");
+		Util.MapDebugPrint("radarbox1_Secured");
+	},
+
+	radarbox2_Taken = function()
+	{
+		Map.box2 = 1;
+		Map.SetGoals();
+		Util.MapDebugPrint("radarbox2_Taken");
+	},
+	radarbox2_Returned = function()
+	{
+		Map.box2 = 0;
+		Map.SetGoals();
+		Util.MapDebugPrint("radarbox2_Returned");
+	},
+	radarbox2_Secured = function()
+	{
+		Map.box2 = 2;
+		Map.SetGoals();
+		SetAvailableMapGoals(TEAM.ALLIES, 0, "ATTACK_e.*");
+		SetAvailableMapGoals(TEAM.AXIS, 0, ".*_Axis_East_MG42_nest");
+		Util.MapDebugPrint("radarbox2_Secured");
+	},
+
+	oldcityflag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint("oldcityflag_Axis_Captured");
+	},
+	oldcityflag_Allies_Captured = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, 1, "CHECKPOINT_oldcityflag");
+		Util.MapDebugPrint("oldcityflag_Allies_Captured");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	//Buildables
+
+	OnTrigger("^2The Allied Assault Ladder has been constructed.", Map.Allied_Assault_Ladder_Built);
+	OnTrigger("^2The Allies Assault Ladder has been destroyed.", Map.Allied_Assault_Ladder_Destroyed);
+
+	OnTrigger("^3The Axis East Ladder defense has been constructed.", Map.Axis_East_Ladder_Defense_Built);
+	OnTrigger("^3The Axis East Ladder defense has been destroyed.", Map.Axis_East_Ladder_Defense_Destroyed);
+
+	OnTrigger("^3The Axis West Ladder defense has been constructed.", Map.Axis_West_Ladder_Defense_Built);
+	OnTrigger("^3The Axis West Ladder defense has been destroyed.", Map.Axis_West_Ladder_Defense_Destroyed);
+
+	OnTrigger("^3The Axis East MG42 Nest has been constructed.", Map.Axis_East_MG42_Nest_Built);
+	OnTrigger("^3The Axis East MG42 Nest has been destroyed.", Map.Axis_East_MG42_Nest_Destroyed);
+
+	OnTrigger("^3The Axis West MG42 Nest has been constructed.", Map.Axis_West_MG42_nest_Built);
+	OnTrigger("^3The Axis West MG42 Nest has been destroyed.", Map.Axis_West_MG42_nest_Destroyed);
+
+	OnTrigger("^1Allies have breached the Old City Door", Map.Old_City_Door_Destroyed);
+
+	OnTrigger("^1The East Pyramid Door is Destroyed !", Map.Moon_Symbol_Pyramid_Door_Destroyed);
+
+	OnTrigger("^1The West Pyramid Door is Destroyed !", Map.Sun_Symbol_Pyramid_Door_Destroyed);
+
+	OnTrigger("Allies have stolen the Moon Symbol!", Map.radarbox1_Taken);
+	OnTrigger("Flag returned radarbox1!", Map.radarbox1_Returned);
+	OnTrigger("^1Allies have secured the Moon Symbol!", Map.radarbox1_Secured);
+
+	OnTrigger("Allies have stolen the Sun Symbol!", Map.radarbox2_Taken);
+	OnTrigger("Flag returned radarbox2!", Map.radarbox2_Returned);
+	OnTrigger("^1Allies have secured the Sun Symbol!", Map.radarbox2_Secured);
+
+	OnTrigger("^1Axis reclaim the Old City!", Map.oldcityflag_Axis_Captured);
+	OnTrigger("^1Allies capture the Old City!", Map.oldcityflag_Allies_Captured);
+
+	OnTriggerRegion(AABB(-3000,-6867.024,-63.049,3000,-3700,400), RegionTrigger.DisableCombatMovement); // bridge and wall
+
+	Util.DisableGoal(".*", true);
+
+	Util.LimitToClass("PLANT_Axis.*", TEAM.ALLIES, 5);
+	Util.LimitToClass("PLANT_Charge_Booster", 0, 5);
+
+	//Allies
+	SetAvailableMapGoals(TEAM.ALLIES, 1, {
+		"ATTACK_b.*",
+		"PLANT_Old_City_Door",
+		"BUILD_Allied_Assault_Ladder.*",
+		"MOUNTMG42_128",
+	});
+
+	//Axis
+	SetAvailableMapGoals(TEAM.AXIS, 1, {
+		"BUILD_Charge_Booster",
+		"BUILD_Axis_West_Ladder_Defense",
+		"BUILD_Axis_East_Ladder_Defense",
+		"SNIPE_x.*",
+	});
+
+	SetGoalPriority("SNIPE_.*", 0.81, TEAM.AXIS);
+	SetGoalPriority("SNIPE_.*", 0.8, TEAM.ALLIES);
+	SetGoalPriority("BUILD_Charge_Booster", 0.85, TEAM.AXIS);
+	SetGoalPriority("PLANT_Axis.*", 0.8);
+
+	Util.SetMaxUsers(1, "BUILD.*");
+	Util.SetMaxUsers(1, "PLANT.*");
+	Util.SetMaxUsers(1, "MOUNTMG42_Axis.*");
+
+	// Camp times
+	SetMapGoalProperties("CAMP_.*", {MinCampTime=60, MaxCampTime=300});
+	SetMapGoalProperties("ATTACK_.*", {MinCampTime=10, MaxCampTime=80});
+	SetMapGoalProperties("DEFEND_.*", {MinCampTime=30, MaxCampTime=200});
+	SetMapGoalProperties("SNIPE_.*", {MinCampTime=60, MaxCampTime=150});
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		FLAG_radarbox1 = {
+			ROUTE_west_spawn = {
+				ROUTE_w1 = {},
+				ROUTE_w2 = {},
+				ROUTE_w3 = {},
+				ROUTE_w4 = {},
+				ROUTE_w5 = {},
+			},
+			ROUTE_east_spawn = {
+				ROUTE_e4 = {},
+				ROUTE_w3 = {},
+				ROUTE_w4 = {},
+				ROUTE_w5 = {},
+			},
+		},
+		FLAG_radarbox2 = {
+			ROUTE_west_spawn = {
+				ROUTE_w4 = {},
+				ROUTE_e3 = {},
+				ROUTE_e4 = {},
+				ROUTE_e5 = {},
+			},
+			ROUTE_east_spawn = {
+				ROUTE_e1 = {},
+				ROUTE_e2 = {},
+				ROUTE_e3 = {},
+				ROUTE_e4 = {},
+				ROUTE_e5 = {},
+			},
+		},
+	};
+	MapRoutes["ATTACK_w.*"] = MapRoutes.FLAG_radarbox1;
+	MapRoutes["ATTACK_e.*"] = MapRoutes.FLAG_radarbox2;
+	Util.Routes(MapRoutes);
+};

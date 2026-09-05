@@ -1,0 +1,176 @@
+global Map =
+{
+	keycard_secured = false,
+
+	keycard_door_open = function()
+	{
+		if (Map.keycard_secured) { return; }
+
+		Util.LimitToTeam(TEAM.AXIS, "SWITCH_seal_button");
+		Util.LimitToTeam(TEAM.ALLIES, "DEFEND_seal_button.*");
+
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"FLAG_keycard",
+			"CAPPOINT_keycard",
+			"ATTACK_cappoint_.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_keycard_.*");
+
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_cappoint_.*");
+
+		Util.MapDebugPrint("keycard_door_open");
+	},
+
+	keycard_door_close = function()
+	{
+		if (Map.keycard_secured) { return; }
+
+		Util.LimitToTeam(TEAM.ALLIES, "SWITCH_seal_button");
+		Util.LimitToTeam(TEAM.AXIS, "DEFEND_seal_button.*");
+
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"FLAG_keycard",
+			"ATTACK_cappoint_.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, "ATTACK_keycard_.*");
+
+		SetAvailableMapGoals(TEAM.AXIS, false,  "DEFEND_cappoint_.*");
+
+		Util.MapDebugPrint("keycard_door_close");
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint("Command_Post_Built");
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint("Command_Post_Built");
+	},
+
+	reactor_control_Built = function()
+	{
+		Util.MapDebugPrint("reactor_control_Built");
+	},
+
+	Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint("Command_Post_Destroyed");
+	},
+
+	reactor_control_Destroyed = function()
+	{
+		Util.MapDebugPrint("reactor_control_Destroyed");
+	},
+
+	wood_wall_Destroyed = function()
+	{
+		Util.MapDebugPrint("wood_wall_Destroyed");
+	},
+
+	keycard_Taken = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_cappoint.*");
+		Util.MapDebugPrint("keycard_Taken");
+	},
+
+	keycard_Returned = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_cappoint.*");
+		Util.MapDebugPrint("keycard_Returned");
+	},
+
+	keycard_Secured = function()
+	{
+		Map.keycard_secured = true;
+		sleep(2);
+		Wp.CheckBlockable();
+
+		//remise à zéro des objectifs
+		Util.DisableGoal(".*", true);
+		Util.EnableGoal({
+			"AMMOCAB_ammo_fond",
+			"HEALTHCAB_soins_fond",
+			".*_Command_Post",
+		});
+
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"PLANT_wood_wall",
+			"PLANT_reactor_control",
+			"ATTACK_reactor_.*",
+		});
+
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"BUILD_reactor_control",
+			"DEFEND_base_.*",
+			"DEFEND_reactor_.*",
+		});
+
+		Util.ChangeSpawn(TEAM.ALLIES, 3);
+
+		Util.MapDebugPrint("keycard_Secured");
+	},
+
+	forwardflag_Axis_Captured = function()
+	{
+		Util.ChangeSpawn(TEAM.AXIS, 3);
+		Util.ChangeSpawn(TEAM.ALLIES, 1);
+		Util.LimitToTeam(TEAM.AXIS, "DEFEND_flag_.*");
+		Util.MapDebugPrint("forwardflag_Axis_Captured");
+	},
+
+	forwardflag_Allies_Captured = function()
+	{
+		Util.ChangeSpawn(TEAM.AXIS, 2);
+		Util.ChangeSpawn(TEAM.ALLIES, 3);
+		Util.LimitToTeam(TEAM.ALLIES, "DEFEND_flag_.*");
+		Util.MapDebugPrint("forwardflag_Allies_Captured");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built);
+	OnTrigger("Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built);
+	OnTrigger("The reactor control has been constructed.", Map.reactor_control_Built);
+	OnTrigger("Allied team has destroyed the Axis Command Post!", Map.Command_Post_Destroyed);
+	OnTrigger("Axis team has destroyed the Allied Command Post!", Map.Command_Post_Destroyed);
+	OnTrigger("The reactor control has been destroyed.", Map.reactor_control_Destroyed);
+	OnTrigger("The wood wall has been blown !", Map.wood_wall_Destroyed);
+	OnTrigger("Allied team have stolen the keycard !", Map.keycard_Taken);
+	OnTrigger("Axis team have returned the keycard !", Map.keycard_Returned);
+	OnTrigger("Allies have delivered the keycard, doors lock disabled", Map.keycard_Secured);
+	OnTrigger("The Axis have captured the forward bunker!", Map.forwardflag_Axis_Captured);
+	OnTrigger("The Allies have captured the forward bunker!", Map.forwardflag_Allies_Captured);
+	OnTrigger("Keycard room magnetic seal deactivated", Map.keycard_door_open);
+	OnTrigger("Keycard room magnetic seal activated", Map.keycard_door_close);
+
+	Util.DisableGoal(".*", true);
+
+	Util.SetMaxUsers(1, "ATTACK_.*");
+	Util.SetMaxUsers(1, "DEFEND_.*");
+	Util.SetMaxUsers(3, "SWITCH_.*");
+	Util.SetMaxUsers(5, "FLAG_.*");
+
+	SetGoalPriority("PLANT_reactor_control", 0.9);
+	SetGoalPriority("PLANT_wood_wall", 0.9);
+	SetGoalPriority("SWITCH_seal_button", 0.75);
+	SetGoalPriority("DEFEND_cappoint_.*", 0.8);
+	SetGoalPriority("ATTACK_cappoint_.*", 0.7);
+	SetGoalPriority("DEFEND_seal_button_.*", 0.6);
+	SetGoalPriority("ATTACK_keycard_.*", 0.7);
+
+	Util.EnableGoal("CHECKPOINT_forwardflag");
+
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"SWITCH_seal_button",
+		"ATTACK_keycard_.*",
+	});
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"BUILD_Command_post",
+		"DEFEND_flag_.*",
+		"DEFEND_seal_button_.*",
+	});
+};

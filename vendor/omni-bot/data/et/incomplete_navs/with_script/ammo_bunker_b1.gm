@@ -1,0 +1,199 @@
+//==========================================================================================
+//
+//	ammo_bunker_b1.gm
+//
+//	Who  	When		What
+//------------------------------------------------------------------------------------------
+//	^4Tardis	27 May 2015	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	Allied_Command_Post_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Command_Post" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+
+	Ammo_Storage_Destroyed = function()
+	{
+		//Game Over
+		sleep(1);
+		ETUtil.WinningChat( TEAM.AXIS );
+		sleep(1.5);
+		ETUtil.LosingChat( TEAM.ALLIES );
+		Util.MapDebugPrint( "Ammo_Storage_Destroyed" );
+	},
+
+
+	North_bunker_wall_Destroyed = function()
+	{
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_north.*",
+			"DEFEND_south.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_ammo.*",
+			"MOBILEMG42_ammo.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"AIRSTRIKE_.*",
+			"CALLARTILLERY_.*",
+			"BUILD_Command_Post",
+			"PLANT_Command_Post",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Ammo_Storage",
+			"ATTACK_ammo.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_South_wall" );
+
+		SetGoalPriority( "PLANT_Ammo_Storage", 0.81, 0, CLASS.ENGINEER );
+
+		Util.MapDebugPrint( "North_bunker_wall_Destroyed" );
+	},
+
+	South_wall_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_north.*",
+			"DEFEND_south.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_ammo.*",
+			"MOBILEMG42_ammo.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, "AIRSTRIKE_.*" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Ammo_Storage",
+			"ATTACK_ammo.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_North_bunker_wall" );
+		SetGoalPriority( "PLANT_Ammo_Storage", 0.81, 0, CLASS.ENGINEER );
+
+		Util.MapDebugPrint( "South_wall_Destroyed" );
+	},
+
+
+	zoneTrigger =
+	{
+		Name = "zoneTrigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						"AIRSTRIKE_.*",
+						"CALLARTILLERY_.*",
+					});
+			}
+			Util.MapDebugPrint( "ALLIES_Entered_Zone" );
+		},
+		OnExit = function(ent)
+		{
+
+			Util.MapDebugPrint( "ALLIES_Exited_Zone" );
+		},
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "Allies have destroyed the ammo bunker!", Map.Ammo_Storage_Destroyed );
+	OnTrigger( "Allies have breached the North bunker wall!", Map.North_bunker_wall_Destroyed );
+	OnTrigger( "Allies have breached the South bunker wall!", Map.South_wall_Destroyed );
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	AxisArti = OnTriggerRegion(AABB(2641.126,-4609.544,33.125,2966.139,-4291.034,146.192), Map.zoneTrigger);
+
+	Util.DisableGoal( ".*", true ); // all but routes
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"DEFEND_north.*",
+		"DEFEND_south.*",
+		"BUILD_Command_Post",
+		"PLANT_Command_Post",
+	});
+
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"PLANT_North_bunker_wall",
+		"PLANT_South_wall",
+		"BUILD_Command_Post",
+		"PLANT_Command_Post",
+	});
+
+	SetGoalPriority( "BUILD_Command_Post", 0.6, 0, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Command_Post", 0.6, 0, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_South_wall", 0.81, 0, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_North_bunker_wall", 0.79, 0, CLASS.ENGINEER );
+
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "ATTACK_.*" );
+	Util.SetMaxUsers( 1, "DEFEND_.*" );
+	Util.SetMaxUsers( 1, "GRENADE_.*" );
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+	Util.SetMaxUsers( 1, "BUILD_.*" );
+	Util.SetMaxUsers( 2, "PLANT_.*" );
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+	SetMapGoalProperties( "MOBILEMG42_.*", {MinCampTime=10, MaxCampTime=60} );
+
+	//Util.AddUseWp
+	Util.AddUseWp( "PLANT_South_wall", "southwall" );
+	Util.AddUseWp( "PLANT_South_wall", "southwall1" );
+	Util.AddUseWp( "PLANT_South_wall", "southwall2" );
+	Util.AddUseWp( "PLANT_North_bunker_wall", "northwall" );
+	Util.AddUseWp( "PLANT_North_bunker_wall", "northwall1" );
+	Util.AddUseWp( "PLANT_North_bunker_wall", "northwall2" );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};

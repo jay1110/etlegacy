@@ -1,0 +1,994 @@
+//==========================================================================================
+//
+//	ctf_ss.gm
+//    Staatsschutz fight arena
+//	Who          	   When		     What
+//------------------------------------------------------------------------------------------
+//	^1[UJE]^3Captain	09 March 2018	Initial Script/Defense/Attack/Routes
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	//set status' for conditionals
+	AxisFlagTaken = false,
+	AlliesFlagTaken = false,
+	Roles =
+	{
+		AXIS =
+		{
+		      AllBots = true, // each bot is considered for a role
+			INFILTRATOR = // Plant CP
+			{
+				numbots = 1,
+				crucialClass = CLASS.COVERTOPS,
+			},
+			DEFENDER = // Defend Red Flag
+			{
+				numbots = 6,
+			},
+			ATTACKER = // Attack Blue Flag
+			{
+				numbots = 4,
+			},
+		},
+		ALLIES =
+		{
+			AllBots = true, // default: every other bot
+			INFILTRATOR = // Plant CP
+			{
+				numbots = 1,
+				crucialClass = CLASS.COVERTOPS,
+			},
+			DEFENDER = // Defend Blue Flag
+			{
+				numbots = 6,
+			},
+			ATTACKER = // Attack Red Flag
+			{
+				numbots = 4,
+			},
+		},
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Allied_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Allied_Command_Post" );
+	SetGoalRole("PLANT_Allied_Command_Post*", ROLE.INFILTRATOR);
+
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Allied_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_Command_Post" );
+	ClearGoalRole("PLANT_Allied_Command_Post*", ROLE.INFILTRATOR);
+
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Axis_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Command_Post" );
+      SetGoalRole("PLANT_Axis_Command_Post*", ROLE.INFILTRATOR);
+
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_Command_Post" );
+      ClearGoalRole("PLANT_Axis_Command_Post*", ROLE.INFILTRATOR);
+
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+	allied_flag_Taken = function()
+	{
+	Map.AlliesFlagTaken = true;
+	if ( Map.AxisFlagTaken )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, {"CAPPOINT_Fake_Blue.*","ATTACK_Blue_Flag.*"} );
+	SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT_Blue_Flag" );
+	SetGoalRole( "ATTACK_Blue_Flag.*", ROLE.ATTACKER );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {"CAPPOINT_Fake_Red.*","ATTACK_Red_Flag.*"} );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CAPPOINT_Red_Flag" );
+	SetGoalRole( "ATTACK_Red_Flag.*", ROLE.ATTACKER );
+	}
+	else
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "CAPPOINT_Blue_Flag" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Blue_Flag.*" );
+	ClearGoalRole( "ATTACK_Blue_Flag.*", ROLE.ATTACKER );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "FLAG_allied_flag" );
+
+		Util.MapDebugPrint( "allied_flag_Taken" );
+	},
+
+	axis_flag_Taken = function()
+	{
+	Map.AxisFlagTaken = true;
+	if ( Map.AlliesFlagTaken )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, {"CAPPOINT_Fake_Blue.*","ATTACK_Blue_Flag.*"} );
+	SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT_Blue_Flag" );
+	SetGoalRole( "ATTACK_Blue_Flag.*", ROLE.ATTACKER );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {"CAPPOINT_Fake_Red.*","ATTACK_Red_Flag.*"} );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CAPPOINT_Red_Flag" );
+	SetGoalRole( "ATTACK_Red_Flag.*", ROLE.ATTACKER );
+	}
+	else
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Red_Flag.*" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "CAPPOINT_Red_Flag" );
+	ClearGoalRole( "ATTACK_Red_Flag.*", ROLE.ATTACKER );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_axis_flag" );
+
+		Util.MapDebugPrint( "axis_flag_Taken" );
+	},
+
+	allied_flag_Returned = function()
+	{
+	Map.AlliesFlagTaken = false;
+	if ( Map.AxisFlagTaken )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "CAPPOINT_Red_Flag" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"CAPPOINT_Fake_Red.*","ATTACK_Red_Flag.*"} );
+	ClearGoalRole( "ATTACK_Red_Flag.*", ROLE.ATTACKER );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, true, {"ATTACK_Blue_Flag.*","FLAG_allied_flag"} );
+	SetAvailableMapGoals( TEAM.AXIS, false, {"CAPPOINT_Blue_Flag","CAPPOINT_Fake_Blue.*"} );
+	SetGoalRole( "ATTACK_Blue_Flag.*", ROLE.ATTACKER );
+
+		Util.MapDebugPrint( "allied_flag_Returned" );
+	},
+
+	axis_flag_Returned = function()
+	{
+	Map.AxisFlagTaken = false;
+	if ( Map.AlliesFlagTaken )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "CAPPOINT_Blue_Flag" );
+	SetAvailableMapGoals( TEAM.AXIS, false, {"ATTACK_Blue_Flag.*","CAPPOINT_Fake_Blue.*"} );
+	ClearGoalRole( "ATTACK_Blue_Flag.*", ROLE.ATTACKER );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, true, {"ATTACK_Red_Flag.*","FLAG_axis_flag"} );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"CAPPOINT_Red_Flag","CAPPOINT_Fake_Red.*"} );
+	SetGoalRole( "ATTACK_Red_Flag.*", ROLE.ATTACKER );
+
+		Util.MapDebugPrint( "axis_flag_Returned" );
+	},
+
+	allied_flag_Secured = function()
+	{
+	Map.AlliesFlagTaken = false;
+	SetAvailableMapGoals( TEAM.AXIS, true, {"ATTACK_Blue_Flag.*","FLAG_allied_flag"} );
+	SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT_Blue_Flag" );
+	SetGoalRole( "ATTACK_Blue_Flag.*", ROLE.ATTACKER );
+
+		Util.MapDebugPrint( "allied_flag_Secured" );
+	},
+
+	axis_flag_Secured = function()
+	{
+	Map.AxisFlagTaken = false;
+	SetAvailableMapGoals( TEAM.ALLIES, true, {"FLAG_axis_flag","ATTACK_Red_Flag.*"} );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CAPPOINT_Red_Flag" );
+	SetGoalRole( "ATTACK_Red_Flag.*", ROLE.ATTACKER );
+
+		Util.MapDebugPrint( "axis_flag_Secured" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "Axis have stolen Blue flag!", Map.allied_flag_Taken );
+	OnTrigger( "Allies have stolen Red flag!", Map.axis_flag_Taken );
+	//OnTrigger( "Flag dropped allied_flag!", Map.allied_flag_Dropped );
+	//OnTrigger( "Flag dropped axis_flag!", Map.axis_flag_Dropped );
+	OnTrigger( "^4Blue flag returned!", Map.allied_flag_Returned );
+	OnTrigger( "^1Red flag returned!", Map.axis_flag_Returned );
+	OnTrigger( "^1Axis have Captured the Flag!!!", Map.allied_flag_Secured );
+	OnTrigger( "^4Allies have Captured the Flag!!!", Map.axis_flag_Secured );
+
+	// all but routes
+	Util.DisableGoal( ".*", true );
+
+	// activation ALLIES
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	   "FLAG_axis_flag",
+	   "BUILD_Allied_Command_Post",
+	   "ATTACK_Red_Flag.*",
+	   "DEFEND_Blue_flag.*",
+	   ".*MG42_Allied.*",
+	});
+
+	// activation AXIS
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+	  "FLAG_allied_flag",
+	  "BUILD_Axis_Command_Post",
+	  "ATTACK_Blue_Flag.*",
+	  "DEFEND_Red_Flag.*",
+	  ".*MG42_Axis.*",
+	});
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, ".*MG42.*" );
+	Util.SetMaxUsers( 1, "ATTACK.*" );
+	Util.SetMaxUsers( 1, "DEFEND.*" );
+	Util.SetMaxUsers( 2, "FLAG.*" );
+	Util.SetMaxUsers( 1, "BUILD.*" );
+	Util.SetMaxUsers( 1, "PLANT.*" );
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=30} );
+	SetMapGoalProperties( "ATTACK.*", {MinCampTime=30, MaxCampTime=80} );
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=30, MaxCampTime=80} );
+
+	// Priorities
+	SetGoalPriority( "ATTACK.*", 0.91 );
+	SetGoalPriority( "DEFEND.*", 0.91 );
+	SetGoalPriority( "FLAG.*", 0.94 );
+	SetGoalPriority( "BUILD.*", 0.93 );
+
+	// ROLES
+	ClearGoalRole({ "PLANT_Allied_Command_Post", "PLANT_Axis_Command_Post" }, ROLE.INFILTRATOR);
+	SetGoalRole({ "ATTACK_Blue_Flag.*", "ATTACK_Red_Flag.*" }, ROLE.ATTACKER);
+	SetGoalRole({ "DEFEND_Blue_Flag.*", "DEFEND_Red_Flag.*" }, ROLE.DEFENDER);
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+	      CAPPOINT_Blue_Flag =
+		{
+			ROUTE_Allies_Flag  =
+			{
+				ROUTE_Allies_Spawn_Left  =
+				{
+					ROUTE_2Stairs_Allies  =
+					{
+						ROUTE_Allies_MG42  =
+						{
+							ROUTE_Bridge  =
+							{
+								ROUTE_Center_Axis_Bridge  =
+								{
+									ROUTE_Stair_C_Axis  =
+									{
+										ROUTE_Axis_Flag  =
+										{
+										},
+									},
+								},
+							},
+							ROUTE_Balcony_Axis_MG42  =
+							{
+								ROUTE_Roof_Axis_MG42  =
+								{
+									ROUTE_2Stairs_Axis  =
+									{
+										ROUTE_Axis_Spawn_Left  =
+										{
+											ROUTE_Axis_Flag  =
+											{
+											},
+										},
+										ROUTE_Axis_Spawn_Right  =
+										{
+											ROUTE_Axis_Flag  =
+											{
+											},
+										},
+										ROUTE_Axis_Flag  =
+										{
+										},
+									},
+								},
+							},
+						},
+					ROUTE_Center_Allies_Bridge  =
+					{
+						ROUTE_Bridge  =
+						{
+							ROUTE_Center_Axis_Bridge  =
+							{
+								ROUTE_Axis_Spawn_Left  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+								ROUTE_Axis_Spawn_Right  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+								ROUTE_Back_2Stairs_Axis  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+							},
+							ROUTE_Axis_CP  =
+							{
+								ROUTE_Stair_C_Axis  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+								ROUTE_Back_2Stairs_Axis  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+				ROUTE_Allies_Spawn_Right  =
+				{
+					ROUTE_2Stairs_Allies  =
+					{
+						ROUTE_Allies_MG42  =
+						{
+							ROUTE_Bridge  =
+							{
+								ROUTE_Center_Axis_Bridge  =
+								{
+									ROUTE_Stair_C_Axis  =
+									{
+										ROUTE_Axis_Flag  =
+										{
+										},
+									},
+								},
+							},
+							ROUTE_Balcony_Axis_MG42  =
+							{
+								ROUTE_Roof_Axis_MG42  =
+								{
+									ROUTE_2Stairs_Axis  =
+									{
+										ROUTE_Axis_Spawn_Left  =
+										{
+											ROUTE_Axis_Flag  =
+											{
+											},
+										},
+										ROUTE_Axis_Spawn_Right  =
+										{
+											ROUTE_Axis_Flag  =
+											{
+											},
+										},
+										ROUTE_Axis_Flag  =
+										{
+										},
+									},
+								},
+							},
+						},
+					},
+					ROUTE_Center_Allies_Bridge  =
+					{
+						ROUTE_Bridge  =
+						{
+							ROUTE_Center_Axis_Bridge  =
+							{
+								ROUTE_Axis_Spawn_Left  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+								ROUTE_Axis_Spawn_Right  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+								ROUTE_Back_2Stairs_Axis  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+							},
+							ROUTE_Axis_CP  =
+							{
+								ROUTE_Stair_C_Axis  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+								ROUTE_Back_2Stairs_Axis  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		CAPPOINT_Red_Flag =
+		{
+			ROUTE_Axis_Flag  =
+			{
+				ROUTE_Axis_Spawn_Left  =
+				{
+					ROUTE_2Stairs_Axis  =
+					{
+						ROUTE_Axis_MG42  =
+						{
+							ROUTE_Bridge  =
+							{
+								ROUTE_Center_Allies_Bridge  =
+								{
+									ROUTE_Stair_C_Allies  =
+									{
+										ROUTE_Allies_Flag  =
+										{
+										},
+									},
+								},
+							},
+							ROUTE_Balcony_Allies_MG42  =
+							{
+								ROUTE_Roof_Allies_MG42  =
+								{
+									ROUTE_2Stairs_Allies  =
+									{
+										ROUTE_Allies_Spawn_Left  =
+										{
+											ROUTE_Allies_Flag  =
+											{
+											},
+										},
+										ROUTE_Allies_Spawn_Right  =
+										{
+											ROUTE_Allies_Flag  =
+											{
+											},
+										},
+										ROUTE_Allies_Flag  =
+										{
+										},
+									},
+								},
+							},
+						},
+					ROUTE_Center_Axis_Bridge  =
+					{
+						ROUTE_Bridge  =
+						{
+							ROUTE_Center_Allies_Bridge  =
+							{
+								ROUTE_Allies_Spawn_Left  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+								ROUTE_Allies_Spawn_Right  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+								ROUTE_Back_2Stairs_Allies  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+							},
+							ROUTE_Allies_CP  =
+							{
+								ROUTE_Stair_C_Allies  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+								ROUTE_Back_2Stairs_Allies  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+				ROUTE_Axis_Spawn_Right  =
+				{
+					ROUTE_2Stairs_Axis  =
+					{
+						ROUTE_Axis_MG42  =
+						{
+							ROUTE_Bridge  =
+							{
+								ROUTE_Center_Allies_Bridge  =
+								{
+									ROUTE_Stair_C_Allies  =
+									{
+										ROUTE_Allies_Flag  =
+										{
+										},
+									},
+								},
+							},
+							ROUTE_Balcony_Allies_MG42  =
+							{
+								ROUTE_Roof_Allies_MG42  =
+								{
+									ROUTE_2Stairs_Allies  =
+									{
+										ROUTE_Allies_Spawn_Left  =
+										{
+											ROUTE_Allies_Flag  =
+											{
+											},
+										},
+										ROUTE_Allies_Spawn_Right  =
+										{
+											ROUTE_Allies_Flag  =
+											{
+											},
+										},
+										ROUTE_Allies_Flag  =
+										{
+										},
+									},
+								},
+							},
+						},
+					},
+					ROUTE_Center_Axis_Bridge  =
+					{
+						ROUTE_Bridge  =
+						{
+							ROUTE_Center_Allies_Bridge  =
+							{
+								ROUTE_Allies_Spawn_Left  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+								ROUTE_Allies_Spawn_Right  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+								ROUTE_Back_2Stairs_Allies  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+							},
+							ROUTE_Allies_CP  =
+							{
+								ROUTE_Stair_C_Allies  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+								ROUTE_Back_2Stairs_Allies  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		FLAG_axis_flag =
+		{
+			ROUTE_Allies_Spawn  =
+			{
+				ROUTE_Allies_Spawn_Left  =
+				{
+					ROUTE_2Stairs_Allies  =
+					{
+						ROUTE_Allies_MG42  =
+						{
+							ROUTE_Bridge  =
+							{
+								ROUTE_Center_Axis_Bridge  =
+								{
+									ROUTE_Stair_C_Axis  =
+									{
+										ROUTE_Axis_Flag  =
+										{
+										},
+									},
+								},
+							},
+							ROUTE_Balcony_Axis_MG42  =
+							{
+								ROUTE_Roof_Axis_MG42  =
+								{
+									ROUTE_2Stairs_Axis  =
+									{
+										ROUTE_Axis_Spawn_Left  =
+										{
+											ROUTE_Axis_Flag  =
+											{
+											},
+										},
+										ROUTE_Axis_Spawn_Right  =
+										{
+											ROUTE_Axis_Flag  =
+											{
+											},
+										},
+										ROUTE_Axis_Flag  =
+										{
+										},
+									},
+								},
+							},
+						},
+					ROUTE_Center_Allies_Bridge  =
+					{
+						ROUTE_Bridge  =
+						{
+							ROUTE_Center_Axis_Bridge  =
+							{
+								ROUTE_Axis_Spawn_Left  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+								ROUTE_Axis_Spawn_Right  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+								ROUTE_Back_2Stairs_Axis  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+							},
+							ROUTE_Axis_CP  =
+							{
+								ROUTE_Stair_C_Axis  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+								ROUTE_Back_2Stairs_Axis  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+				ROUTE_Allies_Spawn_Right  =
+				{
+					ROUTE_2Stairs_Allies  =
+					{
+						ROUTE_Allies_MG42  =
+						{
+							ROUTE_Bridge  =
+							{
+								ROUTE_Center_Axis_Bridge  =
+								{
+									ROUTE_Stair_C_Axis  =
+									{
+										ROUTE_Axis_Flag  =
+										{
+										},
+									},
+								},
+							},
+							ROUTE_Balcony_Axis_MG42  =
+							{
+								ROUTE_Roof_Axis_MG42  =
+								{
+									ROUTE_2Stairs_Axis  =
+									{
+										ROUTE_Axis_Spawn_Left  =
+										{
+											ROUTE_Axis_Flag  =
+											{
+											},
+										},
+										ROUTE_Axis_Spawn_Right  =
+										{
+											ROUTE_Axis_Flag  =
+											{
+											},
+										},
+										ROUTE_Axis_Flag  =
+										{
+										},
+									},
+								},
+							},
+						},
+					},
+					ROUTE_Center_Allies_Bridge  =
+					{
+						ROUTE_Bridge  =
+						{
+							ROUTE_Center_Axis_Bridge  =
+							{
+								ROUTE_Axis_Spawn_Left  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+								ROUTE_Axis_Spawn_Right  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+								ROUTE_Back_2Stairs_Axis  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+							},
+							ROUTE_Axis_CP  =
+							{
+								ROUTE_Stair_C_Axis  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+								ROUTE_Back_2Stairs_Axis  =
+								{
+									ROUTE_Axis_Flag  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	      FLAG_allied_flag =
+		{
+			ROUTE_Axis_Spawn  =
+			{
+				ROUTE_Axis_Spawn_Left  =
+				{
+					ROUTE_2Stairs_Axis  =
+					{
+						ROUTE_Axis_MG42  =
+						{
+							ROUTE_Bridge  =
+							{
+								ROUTE_Center_Allies_Bridge  =
+								{
+									ROUTE_Stair_C_Allies  =
+									{
+										ROUTE_Allies_Flag  =
+										{
+										},
+									},
+								},
+							},
+							ROUTE_Balcony_Allies_MG42  =
+							{
+								ROUTE_Roof_Allies_MG42  =
+								{
+									ROUTE_2Stairs_Allies  =
+									{
+										ROUTE_Allies_Spawn_Left  =
+										{
+											ROUTE_Allies_Flag  =
+											{
+											},
+										},
+										ROUTE_Allies_Spawn_Right  =
+										{
+											ROUTE_Allies_Flag  =
+											{
+											},
+										},
+										ROUTE_Allies_Flag  =
+										{
+										},
+									},
+								},
+							},
+						},
+					ROUTE_Center_Axis_Bridge  =
+					{
+						ROUTE_Bridge  =
+						{
+							ROUTE_Center_Allies_Bridge  =
+							{
+								ROUTE_Allies_Spawn_Left  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+								ROUTE_Allies_Spawn_Right  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+								ROUTE_Back_2Stairs_Allies  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+							},
+							ROUTE_Allies_CP  =
+							{
+								ROUTE_Stair_C_Allies  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+								ROUTE_Back_2Stairs_Allies  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+				ROUTE_Axis_Spawn_Right  =
+				{
+					ROUTE_2Stairs_Axis  =
+					{
+						ROUTE_Axis_MG42  =
+						{
+							ROUTE_Bridge  =
+							{
+								ROUTE_Center_Allies_Bridge  =
+								{
+									ROUTE_Stair_C_Allies  =
+									{
+										ROUTE_Allies_Flag  =
+										{
+										},
+									},
+								},
+							},
+							ROUTE_Balcony_Allies_MG42  =
+							{
+								ROUTE_Roof_Allies_MG42  =
+								{
+									ROUTE_2Stairs_Allies  =
+									{
+										ROUTE_Allies_Spawn_Left  =
+										{
+											ROUTE_Allies_Flag  =
+											{
+											},
+										},
+										ROUTE_Allies_Spawn_Right  =
+										{
+											ROUTE_Allies_Flag  =
+											{
+											},
+										},
+										ROUTE_Allies_Flag  =
+										{
+										},
+									},
+								},
+							},
+						},
+					},
+					ROUTE_Center_Axis_Bridge  =
+					{
+						ROUTE_Bridge  =
+						{
+							ROUTE_Center_Allies_Bridge  =
+							{
+								ROUTE_Allies_Spawn_Left  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+								ROUTE_Allies_Spawn_Right  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+								ROUTE_Back_2Stairs_Allies  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+							},
+							ROUTE_Allies_CP  =
+							{
+								ROUTE_Stair_C_Allies  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+								ROUTE_Back_2Stairs_Allies  =
+								{
+									ROUTE_Allies_Flag  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	};
+	MapRoutes["ATTACK_Blue.*"] = MapRoutes.Flag_allied_flag;
+	MapRoutes["ATTACK_Red.*"] = MapRoutes.Flag_axis_flag;
+	Util.Routes(MapRoutes);
+};

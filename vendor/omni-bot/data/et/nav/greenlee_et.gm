@@ -1,0 +1,491 @@
+//==========================================================================================
+//
+//	greenlee_et.gm
+//
+//	Who          	When		What
+//------------------------------------------------------------------------------------------
+//	^1[UJE]^3Captain	02 September 2018	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	EntranceStatus = 0,
+	WallStatus = 0,
+      Allied_Ins = 0,
+	Allied_Command_Post = 0,
+
+      //Rôles
+	Roles =
+	{
+		AXIS =
+		{
+		AllBots = true, // each bot is considered for a role
+			INFILTRATOR = //PLANT CP
+			{
+				numbots = 1,
+				crucialClass = CLASS.COVERTOPS,
+			},
+			DEFENDER = //Defend Pump
+			{
+				numbots = 8,
+			},
+			DEFENDER1 = //Defend Wall
+			{
+				numbots = 8,
+			},
+			DEFENDER2 = //Defend Wall
+			{
+				numbots = 4,
+			},
+		},
+		ALLIES =
+		{
+			AllBots = true, // each bot is considered for a role
+		      INFILTRATOR = //PLANT CP
+			{
+			      numbots = 1,
+				crucialClass = CLASS.COVERTOPS,
+			},
+			ATTACKER = // Attack Fuel Pump
+			{
+				numbots = 8,
+			},
+			ATTACKER1 = //Attack Wall
+			{
+				numbots = 4,
+			},
+		},
+	},
+      //Intrusion Tunnel without Destroyed Complex Entrance
+	AlliedIns =
+	{
+		Name = "Allied_Ins",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+		if ( GetEntTeam(ent) == TEAM.ALLIES )
+		{
+			Map.Allied_Ins += 1;
+			if ( Map.Allied_Ins > 0 )
+			{
+                  Util.MapDebugPrint( "Trigger region - Allied Entered Complex" );
+			}
+		if ( !Map.EntranceStatus )
+		      {
+			SetGoalRole( "DEFEND_Tunnel.*", ROLE.DEFENDER2 );
+			SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Tunnel.*" );
+			}
+		}
+	},
+		OnExit = function(ent)
+		{
+		if ( GetEntTeam(ent) == TEAM.ALLIES )
+		{
+		      Map.Allied_Ins -= 1;
+		      if ( Map.Allied_Ins == 0 )
+		      {
+                  Util.MapDebugPrint( "Trigger region - Fuel Pump Is Safe" );
+			}
+
+	      if ( !Map.EntranceStatus or !Map.WallStatus )
+			{
+			ClearGoalRole( "DEFEND_Tunnel.*", ROLE.DEFENDER2 );
+			SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Tunnel.*" );
+
+				}
+
+			}
+		},
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+	Map.Allied_Command_Post = 1;
+	if ( !Map.EntranceStatus  )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Command_Post");
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+	      "PLANT_Command_Post",
+	      "BUILD_Command_Post"
+	});
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Command_Post" );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+	Map.Allied_Command_Post = 0;
+	if ( !Map.EntranceStatus )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+      Axis_Command_Post_Built = function()
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+	"BUILD_Command_Post",
+	"PLANT_Command_Post"
+	});
+
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+	if ( !Map.EntranceStatus )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+	entrance_to_the_Center_Complex_Destroyed = function()
+	{
+	Map.EntranceStatus = 1;
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+	"DEFEND_Pump.*",
+	"DEFEND_Wall.*",
+	".*9027",
+	".*9033"
+	} );
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+	"DEFEND_Complex.*",
+	".*CAB_c.*",
+	".*CAB_u.*",
+	".*MG42.*"
+	} );
+
+      if ( !Map.WallStatus )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"ATTACK_Wall.*",
+	"PLANT_Southern_Axis_Refinery_Wall"
+	} );
+	SetGoalRole("ATTACK_Pump.*", ROLE.ATTACKER);
+	SetGoalRole("ATTACK_Wall.*", ROLE.ATTACKER1);
+	}
+	if ( !Map.Allied_Command or Map.Allied_Command )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+	"BUILD_Command_Post",
+	"PLANT_Command_Post"
+	});
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"ATTACK_Pump.*",
+	".*CAB_c.*",
+	".*CAB_upp.*",
+	"PLANT_fuel_pump"
+	} );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Complex.*" );
+
+	SetGoalRole("DEFEND_Pump.*", ROLE.DEFENDER);
+	SetGoalRole("DEFEND_Wall.*", ROLE.DEFENDER1);
+      ClearGoalRole("PLANT_Command_Post", ROLE.INFILTRATOR);
+
+		Util.MapDebugPrint( "entrance_to_the_Center_Complex_Destroyed" );
+	},
+
+	Southern_Axis_Refinery_Wall_Destroyed = function()
+	{
+	Map.WallStatus = 1;
+	SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Wall.*" );
+	ClearGoalRole("ATTACK.*", { ROLE.ATTACKER, ROLE.ATTACKER1 });
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANTMINE_Pump.*" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANTMINE_Wall.*" );
+
+		Util.MapDebugPrint( "Southern_Axis_Refinery_Wall_Destroyed" );
+	},
+
+	fuel_pump_Destroyed = function()
+	{
+		Util.MapDebugPrint( "fuel_pump_Destroyed" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+      //Register callback functions
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+
+	OnTrigger( "Allies have breached sidewall protecting the oil processing area", Map.Southern_Axis_Refinery_Wall_Destroyed );
+	OnTrigger( "Allies have breached the Center Complex", Map.entrance_to_the_Center_Complex_Destroyed );
+	//OnTrigger( "MISSING_STRING", Map.fuel_pump_Destroyed );
+	//Intrusion triggers
+	AlliedIns = OnTriggerRegion(AABB(-6968.781,-5843.715,133.380,-1772.084,231.591,1487.911), Map.AlliedIns );
+
+	//all but routes
+	Util.DisableGoal( ".*", true );
+
+	//Allies goals activation
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_Command_Post",
+		"ATTACK_Complex.*",
+		".*9029.*",
+		".*9031.*",
+		"PLANT_entrance.*",
+		"PLANT_Southern.*"
+	});
+
+      //Axis goals activation
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"DEFEND_Complex.*",
+		"BUILD_Command_Post",
+		".*MG42_31.*",
+		".*CAB_c.*",
+		"PLANTMINE_Wall.*",
+		".*CAB_u.*"
+
+	});
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, ".*MG42.*" );
+	Util.SetMaxUsers( 1, "DEFEND.*" );
+	Util.SetMaxUsers( 1, "ATTACK.*" );
+	Util.SetMaxUsers( 1, "BUILD.*" );
+	Util.SetMaxUsers( 1, "PLANT.*" );
+
+	//SetGoalPriority
+	SetGoalPriority( "BUILD_Command_Post.*",  0.98, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Command_Post", 0.96,  TEAM.AXIS, CLASS.COVERTOPS );
+	SetGoalPriority( "PLANT_Command_Post", 0.96,  TEAM.ALLIES, CLASS.COVERTOPS );
+	SetGoalPriority( "PLANT.*", 1.0, TEAM.ALLIES, CLASS.ENGINEER );
+	SetGoalPriority( ".*MG42_31.*", 1.0, TEAM.AXIS, CLASS.SOLDIER );
+	SetGoalPriority( "ATTACK.*", 0.96);
+	SetGoalPriority( "DEFEND.*", 0.96);
+	SetGoalPriority( "DEFEND_Tunnel.*", 1.0);
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42.*", {MinCampTime=40, MaxCampTime=90} );
+	SetMapGoalProperties( "ATTACK.*", {MinCampTime=40, MaxCampTime=90});
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=20, MaxCampTime=60});
+
+	//Offset Plant/Build Fix
+      Util.SetGoalOffset( 60, 0, 0, "PLANT_fuel_pump" );
+
+      ClearGoalRole({ "DEFEND.*", "ATTACK.*" }, { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2, ROLE.ATTACKER, ROLE.ATTACKER1 });
+	SetGoalRole("PLANT_Command_Post", ROLE.INFILTRATOR);
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_Southern_Axis_Refinery_Wall =
+		{
+			ROUTE_Complex_S  =
+			{
+				ROUTE_Exit_complex  =
+				{
+					ROUTE_Complex_Tunnel  =
+					{
+						ROUTE_Tunnel_Wall_Exit  =
+						{
+						},
+					},
+					ROUTE_Road_Wall  =
+					{
+					},
+				},
+			},
+		},
+		PLANT_fuel_pump =
+		{
+			ROUTE_Complex_S  =
+			{
+				ROUTE_Exit_complex  =
+				{
+					ROUTE_Front_Barrier  =
+					{
+					},
+					ROUTE_Road_Wall  =
+					{
+					},
+				},
+				ROUTE_Complex_Tunnel  =
+				{
+					ROUTE_Tunnel_Wall_Exit  =
+					{
+					},
+				},
+			},
+			ROUTE_Complex_Gate  =
+			{
+				ROUTE_Inside_Complex  =
+				{
+					ROUTE_Exit_complex  =
+					{
+						ROUTE_Road_Wall  =
+						{
+						},
+						ROUTE_Front_Barrier  =
+						{
+						},
+					},
+				},
+				ROUTE_Tunnel_Entrance  =
+				{
+					ROUTE_Complex_Tunnel  =
+					{
+						ROUTE_Tunnel_Wall_Exit  =
+						{
+						},
+					},
+				},
+			},
+		},
+		PLANT_entrance_to_the_Center_Complex =
+		{
+			ROUTE_Allied_S  =
+			{
+				ROUTE_Right_S  =
+				{
+					ROUTE_Road_Jump  =
+					{
+						ROUTE_Road_Cab  =
+						{
+						},
+					},
+				},
+				ROUTE_CP_Split  =
+				{
+					ROUTE_CP_Right  =
+					{
+					},
+					ROUTE_CP_Left  =
+					{
+					},
+				},
+			},
+		},
+	};
+	MapRoutes["ATTACK_Pump.*"] =
+		{
+			ROUTE_Complex_Gate  =
+			{
+				ROUTE_Tunnel_Entrance  =
+				{
+					ROUTE_Tunnel_Wall_Exit  =
+					{
+					},
+				},
+				ROUTE_Inside_Complex  =
+				{
+					ROUTE_Exit_complex  =
+					{
+						ROUTE_Road_Wall  =
+						{
+						},
+						ROUTE_Front_Barrier  =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_Complex_S  =
+			{
+				ROUTE_Exit_complex  =
+				{
+					ROUTE_Road_Wall  =
+					{
+					},
+					ROUTE_Front_Barrier  =
+					{
+					},
+				},
+				ROUTE_Inside_Complex  =
+				{
+					ROUTE_Complex_Tunnel  =
+					{
+						ROUTE_Tunnel_Wall_Exit  =
+						{
+						},
+					},
+				},
+			},
+		};
+	MapRoutes["ATTACK_Wall.*"] =
+		{
+			ROUTE_Complex_Gate  =
+			{
+				ROUTE_Tunnel_Entrance  =
+				{
+					ROUTE_Tunnel_Wall_Exit  =
+					{
+					},
+				},
+				ROUTE_Inside_Complex  =
+				{
+					ROUTE_Exit_complex  =
+					{
+						ROUTE_Road_Wall  =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_Complex_S  =
+			{
+				ROUTE_Exit_complex  =
+				{
+					ROUTE_Road_Wall  =
+					{
+					},
+				},
+			ROUTE_Complex_S  =
+			{
+				ROUTE_Exit_complex  =
+				{
+					ROUTE_Road_Wall  =
+					{
+					},
+					ROUTE_Front_Barrier  =
+					{
+					},
+				},
+				ROUTE_Inside_Complex  =
+				{
+					ROUTE_Complex_Tunnel  =
+					{
+						ROUTE_Tunnel_Wall_Exit  =
+						{
+						},
+					},
+				},
+			},
+		},
+	};
+	MapRoutes["ATTACK_Complex.*"] = MapRoutes.PLANT_entrance_to_the_Center_Complex;
+	Util.Routes(MapRoutes);
+};

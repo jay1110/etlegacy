@@ -1,0 +1,2868 @@
+//============================================================================================
+//
+//	MP_Tram 4 ET 2 - low_tram.gm
+//
+//	Who				When		What
+//--------------------------------------------------------------------------------------------
+//	Unknown			??/??/??	Original tram_rtcw waypoints
+//	Mateos			18/12/11	Copy/pasted/adapted to low_tram
+//	Qiki			17.03.2026	Navigations, Tramcars & waypoints
+//	Native12					Update of script, new goals, ...
+//	Qiki			29.05.2026	Stuckages
+//	Native12		29.05.2026	Released
+//
+//============================================================================================
+//	Keep your omni-bot scripts up to date!
+//	Bugs and suggestions: PM on https://fearless-assassins.com/
+
+global Map =
+{
+	Debug = 0,
+	Tramcar_Position_Debug = false,
+	Castle_Basement_Door = true,
+	Lower_Access_Door = true,
+	Supply_Room_Door = true,
+	Village_Tram_Tower = TEAM.AXIS,
+	Hatch = true,
+	Outpost_Bridge = false,
+	Allied_Outpost_CP = false,
+	Axis_Outpost_CP = false,
+	Castle_Bridge = false,
+	Allied_Castle_CP = false,
+	Axis_Castle_CP = false,
+	Radio_Codes_Booklet = "Returned",
+	Tramcar_1 = null,
+	Tramcar_2 = null,
+	Tramcar_3 = null,
+	Tramcar_4 = null,
+	Village_botId = {-1, -1, -1, -1},
+	Village_Bot_Ready = {false, false, false, false},
+	Outpost_Bottom_botId = {-1, -1, -1, -1},
+	Outpost_Bottom_Bot_Ready = {false, false, false, false},
+	Outpost_Top_botId = {-1, -1, -1, -1},
+	Outpost_Top_Bot_Ready = {false, false, false, false},
+	Castle_botId = {-1, -1, -1, -1},
+	Castle_Bot_Ready = {false, false, false, false},
+	Ally_in_trigger = {},
+	Ally_CP_trigger = {},
+	Axis_CP_trigger = {},
+	CarryingAlly_in_trigger = {},
+	Bot_Carrying_Goal_Near_Tram = false,
+	Player_Carrying_Goal_Near_Tram = 0,
+	EntOwner = "Free",
+	
+	DontDispenseAmmo = true,
+	
+	Roles =
+	{
+		ALLIES =
+		{
+			AllBots = true,
+			ATTACKER =	
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER1 =	
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER2 =	
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER3 =	
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+		},
+		
+		AXIS =
+		{
+			AllBots = true,
+			DEFENDER =	
+			{
+				numbots = 5,
+				crucialClass = {CLASS.ENGINEER, CLASS.SOLDIER, CLASS.FIELDOPS},
+			},
+			DEFENDER1 =	
+			{
+				numbots = 5,
+				crucialClass = {CLASS.ENGINEER, CLASS.SOLDIER, CLASS.FIELDOPS},
+			},
+			DEFENDER2 =	
+			{
+				numbots = 5,
+				crucialClass = {CLASS.ENGINEER, CLASS.FIELDOPS, CLASS.SOLDIER},
+			},
+			DEFENDER3 =	
+			{
+				numbots = 5,
+				crucialClass = {CLASS.ENGINEER, CLASS.FIELDOPS, CLASS.SOLDIER},
+			},
+		},
+	},
+	
+	Movers =
+	{
+		"MOVER_tramcar_1",
+		"MOVER_tramcar_2",
+		"MOVER_tramcar_3",
+		"MOVER_tramcar_4",
+	},
+	
+	Reference_Points =
+	{
+		Position =
+		{
+			Vec3(-6126.217, -69, -535.875),		//Village
+			Vec3(-3581.455, -69, 40.125),		//Village - Outpost Middle
+			Vec3(-1922.198, -69, 430.444),		//Village - Outpost Hill
+			Vec3(-1104.934, -69, 744.125),		//Outpost Bottom
+			Vec3(83.856, -69, 744.125),			//Outpost Top
+			Vec3(2047.420, -69, 1640.125),		//Outpost - Castle Middle
+			Vec3(3117.790, -69, 1710.163),		//Outpost - Castle Hill
+			Vec3(4193.673, -69, 1960.164),		//Castle
+		},
+		String =
+		{
+			"Village",
+			"Village - Outpost Middle",
+			"Village - Outpost Hill",
+			"Outpost Bottom",
+			"Outpost Top",
+			"Outpost - Castle Middle",
+			"Outpost - Castle Hill",
+			"Castle",
+		},
+	},
+	
+	Tram_Positions = 
+	{
+		Vec3(16.663, -84.155, -157.875),		//Ride Pos 0
+		Vec3(-25.085, -83.797, -157.875),		//Ride Pos 1
+		Vec3(14.415, 82.117, -157.875),			//Ride Pos 2
+		Vec3(-12.058, 80.917, -157.875),		//Ride Pos 3
+		Vec3(3.320, -31.789, -157.875),			//Board Pos 1
+		Vec3(3.320, 33.141, -157.875),			//Board Pos 2
+		Vec3(67.598, -33.179, -141.875),		//Exit Pos 1
+		Vec3(-69.436, 31.649, -141.875),		//Exit Pos 2
+	},
+	
+	Strings =
+	{
+		Ride =
+		{
+			"Ride_Pos_0",
+			"Ride_Pos_1",
+			"Ride_Pos_2",
+			"Ride_Pos_3",
+			"Board_Pos_1",
+			"Board_Pos_2",
+			"Exit_Pos_1",
+			"Exit_Pos_2",
+		},
+		Wait =
+		{
+			"Wait_Pos_0",
+			"Wait_Pos_1",
+			"Wait_Pos_2",
+			"Wait_Pos_3",
+		},
+	},
+	
+	Wait_Positions =
+	{
+		Village =
+		{
+			Vec3(-6010, -69, -535.875),
+			Vec3(-6097, -69, -535.875),
+			Vec3(-6160, -69, -535.875),
+			Vec3(-6244, -69, -535.875),
+		},
+		Outpost_Bottom =
+		{
+			Vec3(-1219, -69, 744.300),
+			Vec3(-1131, -69, 744.300),
+			Vec3(-1071, -69, 744.300),
+			Vec3(-1001, -69, 744.300),
+		},
+		Outpost_Top =
+		{
+			Vec3(221.095, -69, 744.125),
+			Vec3(112.108, -69, 744.125),
+			Vec3(48.305, -69, 744.125),
+			Vec3(-33.953, -69, 744.125),
+		},
+		Castle =
+		{
+			Vec3(4058.035, -69, 1960.125),
+			Vec3(4162.503, -69, 1960.125),
+			Vec3(4227.838, -69, 1960.125),
+			Vec3(4337.246, -69, 1960.125),
+		},
+	},
+	
+	Stations =
+	{
+		Position =
+		{
+			Vec3(-913.636, 77.376, 825.395),	//Tramcar_3_Outpost
+			Vec3(-6286.190, 88.171, -500),		//Tramcar_3_Village
+			Vec3(-3583.235, 46.345, 125.622),	//Tramcar_3_Middle
+			Vec3(-1943.864, 81.324, 706.456),	//Tramcar_3_Hill
+			Vec3(-919.923, -221.603, 825.395),	//Tramcar_4_Outpost
+			Vec3(-6300.997, -213.318, -500),	//Tramcar_4_Village
+			Vec3(-3578.151, -180.971, 125.622),	//Tramcar_4_Middle
+			Vec3(-1901.627, -221.603, 706.456),	//Tramcar_4_Hill
+			Vec3(-107.665, -227.292, 836.618),	//Tramcar_1_Outpost
+			Vec3(-101.429, 88.416, 836.618),	//Tramcar_2_Outpost
+			Vec3(2037.190, -325.965, 1793.030),	//Tramcar_1_Middle
+			Vec3(3082.853, -276.977, 1987.892),	//Tramcar_1_Hill
+			Vec3(4408.169, -217.427, 2050.512),	//Tramcar_1_Top
+			Vec3(4411.330, 79.712, 2050.512),	//Tramcar_2_Top
+			Vec3(2037.190, 205.513, 1793.030),	//Tramcar_2_Middle
+			Vec3(3082.853, 70.244, 1987.892),	//Tramcar_2_Hill
+		},
+		String =
+		{
+			"Tramcar_3_Outpost",
+			"Tramcar_3_Village",
+			"Tramcar_3_Middle",
+			"Tramcar_3_Hill",
+			"Tramcar_4_Outpost",
+			"Tramcar_4_Village",
+			"Tramcar_4_Middle",
+			"Tramcar_4_Hill",
+			"Tramcar_1_Outpost",
+			"Tramcar_2_Outpost",
+			"Tramcar_1_Middle",
+			"Tramcar_1_Hill",
+			"Tramcar_1_Top",
+			"Tramcar_2_Top",
+			"Tramcar_2_Middle",
+			"Tramcar_2_Hill",
+		},
+		
+	},
+	
+	ExitConfig =
+	{
+		Village =
+		{
+			Tramcar_3 =
+			{
+				[1] = { "Middle", 6, "Hill", 6, "Top", 7 },
+				[2] = { "Hill", 6, "Top", 7 },
+				[3] = { "Top", 7 }
+			},
+			Tramcar_4 =
+			{
+				[1] = { "Middle", 7, "Hill", 7, "Top", 6 },
+				[2] = { "Hill", 7, "Top", 6 },
+				[3] = { "Top", 6 }
+			},
+		},
+		Outpost_Bottom = 
+		{
+			Tramcar_3 =
+			{
+				[0] = { "Bottom", 7 },
+				[1] = { "Middle", 6, "Bottom", 7 },
+				[2] = { "Hill", 6, "Middle", 6, "Bottom", 7 }
+			},
+			Tramcar_4 =
+			{
+				[0] = { "Bottom", 6 },
+				[1] = { "Middle", 7, "Bottom", 6 },
+				[2] = { "Hill", 7, "Middle", 7, "Bottom", 6 }
+			},
+		},
+		Outpost_Top = 
+		{
+			Tramcar_1 =
+			{
+				[5] = { "Middle", 7, "Hill", 7, "Top", 6 },
+				[6] = { "Hill", 7, "Top", 6 },
+				[7] = { "Top", 6 }
+			},
+			Tramcar_2 =
+			{
+				[5] = { "Middle", 6, "Hill", 6, "Top", 7 },
+				[6] = { "Hill", 6, "Top", 7 },
+				[7] = { "Top", 7 }
+			},
+		},
+		Castle =
+		{
+			Tramcar_1 =
+			{
+				[4] = { "Bottom", 6 },
+				[5] = { "Middle", 7, "Bottom", 6 },
+				[6] = { "Hill", 7, "Middle", 7, "Bottom", 6 }
+			},
+			Tramcar_2 =
+			{
+				[4] = { "Bottom", 7 },
+				[5] = { "Middle", 6, "Bottom", 7 },
+				[6] = { "Hill", 6, "Middle", 6, "Bottom", 7 }
+			},
+		}
+	},
+	
+	Navigation =
+	{
+		//	/bot waypoint_setproperty paththrough Navigation_PT:jump
+		jump =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+		
+		//	/bot waypoint_setproperty paththrough Navigation_PT:jump_wait
+		jump_wait =
+		{
+			navigate = function(_this)
+			{
+				sleep(0.25);
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+		
+		//	/bot waypoint_setproperty paththrough Navigation_PT:tram_tower
+		tram_tower =
+		{
+			EvalFunc = function()
+			{
+				return Map.Tramcar_3 == "Middle";
+			},
+			navigate = function()
+			{
+				this.Goto(this.Bot.GetPosition());
+				
+				while ( Map.Tramcar_3 == "Middle" )
+				{
+					yield();
+				}
+			},
+		},
+		
+		//	/bot waypoint_setproperty paththrough Navigation_PT:tramcar
+		tramcar =
+		{
+			OnExit = function(_this)
+			{
+				this.Bot.DisableCombatMovement = false;
+				if ( !this.CurrentNavigation )
+				{
+					sleep(0.5);
+					return;
+				}
+				
+				botId_key = this.CurrentNavigation + "_botId";
+				botReady_key = this.CurrentNavigation + "_Bot_Ready";
+				
+				Map.ReleaseSlot(_this, botId_key, botReady_key);
+				
+				if ( Map.Bot_Carrying_Goal_ID == this.Bot.GetGameId() )
+				{
+					Map.Bot_Carrying_Goal_Near_Tram = false;
+					Util.MapDebugPrint( "Bot_Carrying_Goal - false" );
+				}
+			},
+			
+			navigate = function(_this)
+			{
+				this.Bot.DisableCombatMovement = true;
+				this.Goto(this.Bot.GetPosition());
+				wp = Wp.GetClosestWaypoint(this.Bot.GetPosition());
+				this.CurrentNavigation = wp.name;
+				botId_key = this.CurrentNavigation + "_botId";
+				botReady_key = this.CurrentNavigation + "_Bot_Ready";
+				
+				sleep(0.5);
+				if ( !this.CurrentNavigation )
+				{
+					Map.MoveWithTimeout(_this, wp.position, 15, 60);
+					
+					sleep(1.5);
+					return;
+				}
+				
+				slot = Map.ClaimSlot(_this, botId_key);
+				
+				if ( slot == -1 )
+				{
+					sleep(0.5);
+					return;
+				}
+				
+				if ( this.Bot.IsCarryingFlag() )
+				{
+					Map.Bot_Carrying_Goal_Near_Tram = true;
+					Map.Bot_Carrying_Goal_ID = this.Bot.GetGameId();
+					Util.MapDebugPrint( "Bot_Carrying_Goal - true" );
+				}
+				
+				refs = {};
+				
+				switch ( this.CurrentNavigation )
+				{
+					case "Village":
+					{
+						tramA = "Tramcar_3";
+						tramB = "Tramcar_4";
+						state = "Bottom";
+						refs[0] = Map.Reference_Points.Position[1];
+						refs[1] = Map.Reference_Points.Position[2];
+						refs[2] = Map.Reference_Points.Position[3];
+					}
+					case "Outpost_Bottom":
+					{
+						tramA = "Tramcar_3";
+						tramB = "Tramcar_4";
+						state = "Top";
+						refs[0] = Map.Reference_Points.Position[0];
+						refs[1] = Map.Reference_Points.Position[1];
+						refs[2] = Map.Reference_Points.Position[2];
+					}
+					case "Outpost_Top":
+					{
+						tramA = "Tramcar_2";
+						tramB = "Tramcar_1";
+						state = "Bottom";
+						refs[0] = Map.Reference_Points.Position[5];
+						refs[1] = Map.Reference_Points.Position[6];
+						refs[2] = Map.Reference_Points.Position[7];
+					}
+					case "Castle":
+					{
+						tramA = "Tramcar_2";
+						tramB = "Tramcar_1";
+						state = "Top";
+						refs[0] = Map.Reference_Points.Position[4];
+						refs[1] = Map.Reference_Points.Position[5];
+						refs[2] = Map.Reference_Points.Position[6];
+					}
+				}
+					
+				if ( Map[tramA] != state and Map[tramB] != state )
+				{
+					Map.MoveWithTimeout(_this, Map.Wait_Positions[this.CurrentNavigation][slot], 55, 60);
+				}
+		
+				Map[botReady_key][slot] = true;
+				
+				while ( Map[tramA] != state and Map[tramB] != state )
+				{
+					yield();
+				}
+				
+				if ( Map[tramA] == state )
+				{
+					ent = GetGoal( "MOVER_tramcar_" + tramA.Right(1) ).GetEntity();
+					
+					if ( this.CurrentNavigation == "Village" or this.CurrentNavigation == "Outpost_Top" )
+					{
+						waitpos = 2;
+					}
+					else
+					{
+						waitpos = 1;
+					}
+					
+					boardpos = 4;
+					tram = tramA;
+				}
+				else
+				{
+					ent = GetGoal( "MOVER_tramcar_" + tramB.Right(1) ).GetEntity();
+					
+					if ( this.CurrentNavigation == "Village" or this.CurrentNavigation == "Outpost_Top" )
+					{
+						waitpos = 1;
+					}
+					else
+					{
+						waitpos = 2;
+					}
+					
+					boardpos = 5;
+					tram = tramB;
+				}
+				
+				Map.MoveWithTimeout(_this, Map.Wait_Positions[this.CurrentNavigation][waitpos], 25, 50);
+					
+				if ( !Map.TramBoarding(_this, ent, tram, state, boardpos, slot) )
+				{
+					return;
+				}
+				
+				pos = Map.GetGoalPos(_this);
+				exitdata = Map.GetBestExit(_this, refs, pos, tram, this.CurrentNavigation);
+				
+				state = exitdata[0];
+				exitpos = exitdata[1];
+				altstate1 = exitdata[2];
+				altexitpos1 = exitdata[3];
+				altstate2 = exitdata[4];
+				altexitpos2 = exitdata[5];
+				
+				Map.ReleaseSlot(_this, botId_key, botReady_key);
+				
+				while ( Map[tram] != state )
+				{
+					this.Bot.MoveTowards(this.Bot.GetPosition());
+					this.Bot.HoldButton(BTN.CROUCH, 0.25);
+					yield();
+				}
+				
+				dowhile ( !this.Bot.MoveTowards(offsetPos, 15) )
+				{
+					offsetPos = GetEntityWorldSpace(ent, Map.Tram_Positions[exitpos]);
+					
+					if ( Map[tram] != state )
+					{
+						if ( altstate1 )
+						{
+							while ( Map[tram] != altstate1 )
+							{
+								dowhile ( !this.Bot.MoveTowards(offsetPos, 25) )
+								{
+									offsetPos = GetEntityWorldSpace(ent, Map.Tram_Positions[slot] );
+									
+									yield();
+								}
+								this.Bot.MoveTowards(this.Bot.GetPosition());
+								this.Bot.HoldButton(BTN.CROUCH, 0.25);
+								yield();
+							}
+							
+							dowhile ( !this.Bot.MoveTowards(offsetPos, 15) )
+							{
+								offsetPos = GetEntityWorldSpace(ent, Map.Tram_Positions[altexitpos1]);
+								yield();
+								
+								if ( Map[tram] != altstate1 )
+								{
+									if ( altstate2 )
+									{
+										while ( Map[tram] != altstate2 )
+										{
+											dowhile ( !this.Bot.MoveTowards(offsetPos, 25) )
+											{
+												offsetPos = GetEntityWorldSpace(ent, Map.Tram_Positions[slot] );
+												
+												yield();
+											}
+											this.Bot.MoveTowards(this.Bot.GetPosition());
+											this.Bot.HoldButton(BTN.CROUCH, 0.25);
+											yield();
+										}
+										
+										dowhile ( !this.Bot.MoveTowards(offsetPos, 15) )
+										{
+											offsetPos = GetEntityWorldSpace(ent, Map.Tram_Positions[altexitpos2]);
+											yield();
+										}
+									}
+									else
+									{
+										return;
+									}
+								}
+							}
+						}
+						else
+						{
+							return;
+						}
+					}
+					yield();
+				}	
+			},
+		},
+	},
+
+	MoveWithTimeout = function(_this, pos, radius, limit)
+	{
+		timer = 0;
+		while ( !_this.Bot.MoveTowards(pos, radius) )
+		{
+			sleep(0.1);
+			timer += 1;
+			if ( timer > limit )
+			{
+				return false;
+			}
+		}
+		return true;
+	},
+
+	TramBoarding = function(_this, ent, tram, state, boardpos, y)
+	{
+		dowhile ( !_this.Bot.MoveTowards(offsetPos, 25) )
+		{
+			offsetPos = GetEntityWorldSpace(ent, Map.Tram_Positions[boardpos]);
+			
+			if ( Map[tram] != state )
+			{
+				if ( _this.Bot.DistanceTo(offsetPos) < 70 )
+				{
+					break;
+				}
+				else
+				{
+					return false;
+				}
+			}
+			yield();
+		}
+		
+		timer = 0;
+		dowhile ( !_this.Bot.MoveTowards(offsetPos, 25) )
+		{
+			offsetPos = GetEntityWorldSpace(ent, Map.Tram_Positions[y] );
+			sleep(0.1);
+			timer += 1;
+			
+			if ( timer > 100 )
+			{
+				return false;
+			}
+		}
+		
+		while ( Map[tram] != "Moving" )
+		{
+			yield();
+		}
+		return true;
+	},
+	
+	ClaimSlot = function(_this, botId_key)
+	{
+		for ( i = 0; i <= 3; i += 1 )
+		{
+			if ( Map[botId_key][i] == -1 )
+			{
+				Map[botId_key][i] = _this.Bot.GetGameId();
+				return i;
+			}
+		}
+		return -1;
+	},
+	
+	ReleaseSlot = function(_this, botId_key, botReady_key)
+	{
+		for ( i = 0; i <= 3; i += 1 )
+		{
+			if ( Map[botId_key][i] == _this.Bot.GetGameId() )
+			{
+				Map[botId_key][i] = -1;
+				Map[botReady_key][i] = false;
+				return;
+			}
+		}
+	},
+
+	GetGoalPos = function(_this)
+	{
+		goal = _this.Bot.GetMapGoalName();
+		
+		if ( !goal or goal.GoalType == "REVIVE" or goal.GoalType == "DEFUSE" )
+		{
+			return false;
+		}
+		
+		return Util.GetMapGoalPosition(goal);
+	},
+	
+	GetBestExit = function (_this, refs, pos, tram, location)
+	{
+		bestDistance = 999999;
+		bestexit = 0;
+		goal = _this.Bot.GetMapGoalName();
+		
+		foreach ( ref in refs )
+		{
+			d = DistanceBetween(ref, pos);
+			if ( d < bestDistance )
+			{
+				bestDistance = d;
+				bestexit = ref;
+			}
+		}
+		
+		foreach ( index and point in Map.Reference_Points.Position )
+		{
+			if ( bestexit == point )
+			{
+				name = Map.Reference_Points.String[index];
+				
+				if ( goal == "PLANT_lower_access_door" and ( tram == "Tramcar_3" or tram == "Tramcar_4" ))
+				{
+					ref = Map.Reference_Points.Position[2];
+					name = Map.Reference_Points.String[2];
+					index = 2;
+				}
+				
+				Util.MapDebugPrint( "I'm exiting at " + name + " from tram " + tram.Right(1) + " goal " + ToString(goal) );
+				break;
+			}
+		}
+		
+		exitdata = Map.ExitConfig[location][tram][index];
+		
+		return exitdata;
+	},
+
+	Outpost_Bridge_Built = function( trigger )
+	{
+		Map.Outpost_Bridge = true;
+		Util.MapDebugPrint( "Outpost_Bridge_Built" );
+		Wp.SetWaypointFlag( "Outpost_Bridge_1", "closed", false );
+		
+		Util.EnableGoal("ROUTE_OutpostOutsideRight_.*");
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"BUILD_outpost_bridge",
+			".*_Allies_OutpostBridge_.*",
+		});
+		
+		if ( Map.Supply_Room_Door )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, ".*_Axis_OutpostCP_0[234]" );
+			
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				".*_Axis_OutpostCP_0[01]",
+				".*_Axis_OutpostCP_18",
+				".*_Axis_OutpostCP_20",
+				"PLANT_outpost_bridge",
+			});
+		}
+	},
+	
+	Outpost_Bridge_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Outpost_Bridge_Planted" );
+		
+		if ( Map.Supply_Room_Door )
+		{
+			foreach( goal in Util.GoalTable("DEFUSE_outpost_bridge_.*") )
+			{
+				goal.SetRoles(ROLE.ATTACKER1);
+				goal.SetGoalPriority( TEAM.ALLIES, 0, 0.9 ); //return to default due to role
+			}
+		}
+	},
+	
+	Outpost_Bridge_Destroyed = function( trigger )
+	{
+		Map.Outpost_Bridge = false;
+		Util.MapDebugPrint( "Outpost_Bridge_Destroyed" );
+		Wp.SetWaypointFlag( "Outpost_Bridge_1", "closed", true );
+		
+		Util.DisableGoal("ROUTE_OutpostOutsideRight_.*");
+		
+		foreach( goal in Util.GoalTable("DEFUSE_outpost_bridge_.*") )
+		{
+			goal.SetAvailable(TEAM.ALLIES, false);
+		}
+		
+		if ( Map.Supply_Room_Door )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				".*_Axis_OutpostCP_0[01]",
+				".*_Axis_OutpostCP_18",
+				".*_Axis_OutpostCP_20",
+				"PLANT_outpost_bridge",
+			});
+			
+			SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_OutpostCP_0[234]" );
+			
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"BUILD_outpost_bridge",
+				".*_Allies_OutpostBridge_.*",
+			});
+		}
+	},
+	
+	Village_Tram_Tower_Axis_Captured = function( trigger )
+	{
+		Map.Village_Tram_Tower = TEAM.AXIS;
+		Util.MapDebugPrint( "Village_Tram_Tower_Axis_Captured" );
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_forward_flag" );
+		
+		if ( Map.Supply_Room_Door )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_forward_flag" );
+		}
+		
+		Map.SetSpawn();
+	},
+
+	Village_Tram_Tower_Allies_Captured = function( trigger )
+	{
+		Map.Village_Tram_Tower = TEAM.ALLIES;
+		Util.MapDebugPrint( "Village_Tram_Tower_Allies_Captured" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_forward_flag" );
+		
+		if ( Map.Supply_Room_Door )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_forward_flag" );
+		}
+		
+		Map.SetSpawn();
+	},
+
+	Lower_Access_Door_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Lower_Access_Door_Planted" );
+		
+		if ( Map.Supply_Room_Door )
+		{
+			foreach( goal in Util.GoalTable("DEFUSE_lower_access_door.*") )
+			{
+				goal.SetRoles(ROLE.DEFENDER);
+				goal.SetGoalPriority( TEAM.AXIS, 0, 0.87 );
+			}
+		}
+	},
+
+	Lower_Access_Door_Destroyed = function( trigger )
+	{
+		Map.Lower_Access_Door = false;
+		Util.MapDebugPrint( "Lower_Access_Door_Destroyed" );
+		
+		Map.Village_Tram_Tower = TEAM.ALLIES;
+		
+		foreach( goal in Util.GoalTable("DEFUSE_lower_access_door.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"PLANTMINE_Axis_LowerAccess_.*",
+			"MOBILEMG42_Axis_LowerAccess_.*",
+		});
+		
+		if ( Map.Outpost_Bridge )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_outpost_bridge" );
+		}
+		
+		if ( Map.Supply_Room_Door )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_LowAccessDest_.*" );
+			
+			SetAvailableMapGoals( TEAM.ALLIES, true, ".*_Allies_LowAccessDest_.*" );
+			
+			SetGoalRole( "PLANT_supply_room_door", ROLE.ATTACKER );
+		}
+		
+		if ( Map.Hatch )
+		{
+			SetGoalRole( "PLANT_hatch", ROLE.ATTACKER );
+		}
+		
+		Map.SetSpawn();
+	},
+	
+	Hatch_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Hatch_Planted" );
+		
+		if ( Map.Supply_Room_Door )
+		{
+			foreach( goal in Util.GoalTable("DEFUSE_hatch.*") )
+			{
+				goal.SetRoles(ROLE.DEFENDER2, ROLE.DEFENDER3);
+				goal.SetGoalPriority( TEAM.AXIS, 0, 0.88 );
+				goal.MaxUsers_InProgress( 1 );
+			}
+		}
+		else
+		{
+			foreach( goal in Util.GoalTable("DEFUSE_hatch.*") )
+			{
+				goal.SetAvailable(TEAM.AXIS, false);
+			}
+		}
+	},
+	
+	Hatch_Destroyed = function( trigger )
+	{
+		Wp.SetWaypointFlag( "Hatch_3", "closed", false );
+		Wp.SetWaypointFlag( "Hatch_4", "closed", false );
+		Map.Hatch = false;
+		Util.MapDebugPrint( "Hatch_Destroyed" );
+		
+		Util.EnableGoal("ROUTE_Hatch");
+		
+		foreach( goal in Util.GoalTable("DEFUSE_hatch.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+	},
+	
+	Allied_Outpost_CP_Built = function( trigger )
+	{
+		Map.Allied_Outpost_CP = true;
+		Util.MapDebugPrint( "Allied_Outpost_CP_Built" );
+		
+		Util.DisableGoal("BUILD_Outpost_Command_Post" );
+		
+		if ( !Map.Supply_Room_Door )
+		{
+			SetGoalRole( "PLANT_Outpost_Command_Post", ROLE.INFILTRATOR );
+			Util.SetMaxUsers( 1, "PLANT_Outpost_Command_Post" );
+		}
+		
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Outpost_Command_Post" );
+	},
+	
+	Axis_Outpost_CP_Built = function( trigger )
+	{
+		Map.Axis_Outpost_CP = true;
+		Util.MapDebugPrint( "Axis_Outpost_CP_Built" );
+		
+		Util.DisableGoal("BUILD_Outpost_Command_Post" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Outpost_Command_Post" );
+	},
+	
+	Outpost_CP_Planted = function( trigger )
+	{
+		if ( Map.Allied_Outpost_CP )
+		{
+			Util.MapDebugPrint( "Allied_Outpost_CP_Planted" );
+			
+			foreach( goal in Util.GoalTable("DEFUSE_Outpost_Command_Post.*") )
+			{
+				goal.SetRoles(ROLE.ATTACKER1);
+				goal.SetGoalPriority( 0, 0, 0.88 );
+			}
+		}
+		else
+		{
+			Util.MapDebugPrint( "Axis_Outpost_CP_Planted" );
+			
+			if ( Map.Supply_Room_Door )
+			{
+				foreach( goal in Util.GoalTable("DEFUSE_Outpost_Command_Post.*") )
+				{
+					goal.SetRoles(ROLE.DEFENDER1);
+					goal.SetGoalPriority( 0, 0, 0.88 );
+				}
+			}
+			else
+			{
+				foreach( goal in Util.GoalTable("DEFUSE_Outpost_Command_Post.*") )
+				{
+					goal.SetAvailable(TEAM.AXIS, false);
+				}
+			}
+		}
+	},
+	
+	Allied_Outpost_CP_Destroyed = function( trigger )
+	{
+		Map.Allied_Outpost_CP = false;
+		Util.MapDebugPrint( "Allied_Outpost_CP_Destroyed" );
+		
+		SetAvailableMapGoals( 0, false, "PLANT_Outpost_Command_Post" );
+		
+		ClearGoalRole( "PLANT_Outpost_Command_Post", ROLE.INFILTRATOR );
+		Util.SetMaxUsers( 2, "PLANT_Outpost_Command_Post" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Outpost_Command_Post" );
+		
+		if ( Map.Supply_Room_Door )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Outpost_Command_Post" );
+		}
+	},
+	
+	Axis_Outpost_CP_Destroyed = function( trigger )
+	{
+		Map.Axis_Outpost_CP = false;
+		Util.MapDebugPrint( "Axis_Outpost_CP_Destroyed" );
+		
+		SetAvailableMapGoals( 0, false, "PLANT_Outpost_Command_Post" );
+		
+		foreach( goal in Util.GoalTable("DEFUSE_Outpost_Command_Post.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Outpost_Command_Post" );
+		
+		if ( Map.Supply_Room_Door )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Outpost_Command_Post" );
+		}
+	},
+	
+	Supply_Room_Door_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Supply_Room_Door_Planted" );
+		
+		foreach( goal in Util.GoalTable("DEFUSE_supply_room_door.*") )
+		{
+			goal.SetGoalPriority( TEAM.AXIS, 0, 1.02 );
+		}
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, ".*_Axis_Low.*" );
+		
+		SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_CastleCP_.*" );
+	},
+	
+	Supply_Room_Door_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Supply_Room_Door_Defused" );
+		
+		if ( tableCount(Util.GoalTable("DEFUSE_supply_room_door.*")) == 1 and Map.Supply_Room_Door )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, ".*_Axis_CastleCP_.*" );
+			
+			if ( Map.Lower_Access_Door )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_LowerAccess_.*" );
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					".*_Axis_LowerAccess_.*",
+					".*_Axis_LowAccessDest_.*",
+				});
+				
+				yield();
+				
+				SetAvailableMapGoals( TEAM.AXIS, false, {
+					"PLANTMINE_Axis_LowerAccess_.*",
+					"MOBILEMG42_Axis_LowerAccess_.*",
+				});
+			}
+		}
+	},
+	
+	Supply_Room_Door_Destroyed = function( trigger )
+	{
+		Map.Supply_Room_Door = false;
+		Util.MapDebugPrint( "Supply_Room_Door_Destroyed" );
+		
+		ClearGoalRole( ".*_Outpost_Command_Post", { ROLE.DEFENDER, ROLE.DEFENDER1 });
+		
+		SetAvailableMapGoals( 0, true, ".*CAB.*" );
+		
+		Util.SetMaxUsers( 2, "BUILD_Castle_Command_Post" );
+		
+		if ( Map.Allied_Outpost_CP )
+		{
+			SetGoalRole( "PLANT_Outpost_Command_Post", ROLE.INFILTRATOR );
+			Util.SetMaxUsers( 1, "PLANT_Outpost_Command_Post" );
+		}
+		
+		foreach( goal in Util.GoalTable("DEFUSE_supply_room_door.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+		
+		Util.DisableGoal("CAMP_CP_Trigger_00");
+		
+		if ( Map.Lower_Access_Door )
+		{
+			Util.DisableGoal("CHECKPOINT_forward_flag");
+		}
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_Low.*",
+			".*_Axis_OutpostCP_.*",
+			".*_Axis_OutpostStation_.*",
+			".*MG42_Outpost_CP_Hut",
+			"BUILD_Outpost_Command_Post",
+		});
+		
+		if ( Map.Outpost_Bridge )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_outpost_bridge" );
+		}
+		
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"MOUNTMG42_Tram_Tower_Outpost_Top",
+			".*MG42_Castle_CP_Hut",
+			".*_Axis_CastleCP_.*",
+			".*_Axis_CastleStation_.*",
+		});
+		
+		if ( !Map.Allied_Castle_CP and !Map.Axis_Castle_CP )
+		{
+			SetAvailableMapGoals( 0, true, "BUILD_Castle_Command_Post" );
+		}
+		else if ( Map.Allied_Castle_CP )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Castle_Command_Post" );
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Castle_Command_Post" );
+		}
+		
+		if ( Map.Castle_Bridge )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_castle_bridge" );
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_castle_bridge" );
+		}
+		
+		if ( tableCount(Map.CarryingAlly_in_trigger) < 1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_Castle_.*" );
+		}
+		
+		Map.SetSpawn();
+		
+		sleep(2);
+		
+		if ( !Map.Outpost_Bridge )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_outpost_bridge" );
+		}
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*_Allies_Low.*",
+			".*_Allies_OutpostBridge_.*",
+			".*_Allies_OutpostCP_.*",
+			".*MG42_Outpost_CP_Hut",
+			".*MG42_Tram_Tower_Outpost_Bottom",
+			".*_Allies_OutpostStation_.*",
+		});
+		
+		if ( Map.Lower_Access_Door )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_lower_access_door" );
+		}
+		
+		if ( !Map.Outpost_Bridge )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_outpost_bridge" );
+		}
+		
+		if ( Map.Radio_Codes_Booklet != "Taken" )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_SupplyRoom_.*" );
+			
+			SetAvailableMapGoals( TEAM.ALLIES, true, "FLAG_radio_codes" );
+		}
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			".*MG42_Tram_Tower_Castle",
+			".*_Allies_CastleCP_.*",
+			".*MG42_Castle_CP_Hut",
+			".*_Allies_CastleStation_.*",
+		});
+		
+		if ( Map.Castle_Basement_Door )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Castle_Basement_Door" );
+		}
+	},
+	
+	Radio_Codes_Booklet_Taken = function( trigger )
+	{
+		Map.Radio_Codes_Booklet = "Taken";
+		Util.MapDebugPrint( "Radio_Codes_Booklet_Taken" );
+		thread ( Map.Carrying_player );
+		
+		OnTriggerRegion(AABB(3500,-2374,1364,7585,2034,2752), Map.Castle_Trigger_Taken);
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, "CAPPOINT_Transmitter" );
+		
+		if ( tableCount(Map.CarryingAlly_in_trigger) < 1 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, ".*_Allies_CastleOut_.*" );
+		}
+		
+		for ( i = 0; i <= 999; i += 1 )
+		{
+			if ( GetEntFlags(i,ENTFLAG.CARRYINGGOAL) )
+			{
+				break;
+			}
+		}
+		
+		thread(Map.Escort_carrying, i);
+		
+		sleep(2);
+		
+		if ( Map.Radio_Codes_Booklet == "Taken" )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, ".*_Axis_SupplyRoom_.*" );
+		}
+	},
+	
+	Escort_carrying = function (i)
+	{
+		while ( Map.Radio_Codes_Booklet == "Taken" )
+		{
+			if ( Map.Bot_Carrying_Goal_Near_Tram or Map.Player_Carrying_Goal_Near_Tram == 1 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, "CAMP_Allies_Escort_.*" );
+			}
+			else if (GetEntPosition(i).x >= -10000 and GetEntPosition(i).y >= -2000 and GetEntPosition(i).z >= -100 and
+			GetEntPosition(i).x <= 1780 and GetEntPosition(i).y <= 1985 and GetEntPosition(i).z <= 1600)
+			{
+				foreach ( goal in Util.GoalTable("CAMP_Allies_Escort_.*") )
+				{
+					goal.SetRange(3500);
+				}
+				
+				Util.SetGoalPosition(2079.723, 1843.358, 1171.132, "CAMP_Allies_Escort_1");
+				GetGoal("CAMP_Allies_Escort_1").AimVectors = { Vec3(0.938, -0.324, 0.125), Vec3(0.236, -0.963, 0.132) };
+				Util.SetGoalPosition(2052.572, 1963.526, 1237.225, "CAMP_Allies_Escort_2");
+				GetGoal("CAMP_Allies_Escort_2").AimVectors = { Vec3(0.269, -0.950, 0.162), Vec3(0.862, -0.482, 0.155) };
+				Util.SetGoalPosition(1910.374, 1779.756, 1121.875, "CAMP_Allies_Escort_3");
+				GetGoal("CAMP_Allies_Escort_2").AimVectors = { Vec3(0.947, -0.124, 0.296), Vec3(0.255, -0.953, 0.162) };
+				Util.SetGoalPosition(1760.168, 1626.821, 1088.695, "CAMP_Allies_Escort_4");
+				GetGoal("CAMP_Allies_Escort_2").AimVectors = { Vec3(0.380, -0.893, 0.242), Vec3(0.983, -0.032, 0.181) };
+				
+				SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Allies_Escort_.*" );
+			}
+			else if ((GetEntPosition(i).x >= 1810 and GetEntPosition(i).y >= -2000 and GetEntPosition(i).z >= 1050 and
+			GetEntPosition(i).x <= 3150 and GetEntPosition(i).y <= 1000 and GetEntPosition(i).z <= 2500) or
+			(GetEntPosition(i).x >= 1810 and GetEntPosition(i).y >= 1001 and GetEntPosition(i).z >= 1050 and
+			GetEntPosition(i).x <= 2024 and GetEntPosition(i).y <= 1440 and GetEntPosition(i).z <= 1200))
+			{
+				foreach ( goal in Util.GoalTable("CAMP_Allies_Escort_.*") )
+				{
+					goal.SetRange(1500);
+				}
+				
+				Util.SetGoalPosition(3391.949, -675.235, 1950.168, "CAMP_Allies_Escort_1");
+				GetGoal("CAMP_Allies_Escort_1").AimVectors = { Vec3(0.877, 0.476, 0.060), Vec3(0.285, 0.927, -0.245) };
+				Util.SetGoalPosition(3509.020, -826.097, 1960.088, "CAMP_Allies_Escort_2");
+				GetGoal("CAMP_Allies_Escort_2").AimVectors = { Vec3(0.697, 0.717, -0.006), Vec3(0.147, 0.958, -0.247) };
+				Util.SetGoalPosition(3630.990, -655.960, 1937.726, "CAMP_Allies_Escort_3");
+				GetGoal("CAMP_Allies_Escort_2").AimVectors = { Vec3(0.036, 0.968, -0.248), Vec3(0.748, 0.663, 0.041) };
+				Util.SetGoalPosition(3837.134, -623.719, 1917.725, "CAMP_Allies_Escort_4");
+				GetGoal("CAMP_Allies_Escort_2").AimVectors = { Vec3(0.493, 0.869, 0.046), Vec3(-0.112, 0.964, -0.242) };
+				
+				SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Allies_Escort_.*" );
+			}
+			else if ((GetEntPosition(i).x >= 3189 and GetEntPosition(i).y >= 400 and GetEntPosition(i).z >= 1260 and
+			GetEntPosition(i).x <= 4000 and GetEntPosition(i).y <= 1731 and GetEntPosition(i).z <= 1810) or
+			(GetEntPosition(i).x >= 2075 and GetEntPosition(i).y >= 1378 and GetEntPosition(i).z >= 1050 and
+			GetEntPosition(i).x <= 3151 and GetEntPosition(i).y <= 1735 and GetEntPosition(i).z <= 1330))
+			{
+				foreach ( goal in Util.GoalTable("CAMP_Allies_Escort_.*") )
+				{
+					goal.SetRange(1500);
+				}
+				
+				Util.SetGoalPosition(3598.335, 666.741, 1585.582, "CAMP_Allies_Escort_1");
+				GetGoal("CAMP_Allies_Escort_1").AimVectors = { Vec3(0.454, -0.805, 0.382), Vec3(0.909, -0.328, 0.257) };
+				Util.SetGoalPosition(3844.326, 791.406, 1569.522, "CAMP_Allies_Escort_2");
+				GetGoal("CAMP_Allies_Escort_2").AimVectors = { Vec3(0.169, -0.931, 0.323), Vec3(-0.425, 0.840, 0.338) };
+				Util.SetGoalPosition(3841.256, 474.365, 1592.869, "CAMP_Allies_Escort_3");
+				GetGoal("CAMP_Allies_Escort_2").AimVectors = { Vec3(0.334, -0.774, 0.538), Vec3(-0.346, 0.904, 0.253) };
+				Util.SetGoalPosition(3593.952, 398.618, 1545.954, "CAMP_Allies_Escort_4");
+				GetGoal("CAMP_Allies_Escort_2").AimVectors = { Vec3(0.780, -0.424, 0.460), Vec3(0.356, 0.905, 0.231) };
+				
+				SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Allies_Escort_.*" );
+			}
+			else if (GetEntPosition(i).x > 4600 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, "CAMP_Allies_Escort_.*" );
+			}
+			else if (GetEntPosition(i).x >= 4063 and GetEntPosition(i).y >= 263 and GetEntPosition(i).z >= 1729 and
+			GetEntPosition(i).x <= 4832 and GetEntPosition(i).y <= 836 and GetEntPosition(i).z <= 1850)
+			{
+				foreach ( goal in Util.GoalTable("CAMP_Allies_Escort_.*") )
+				{
+					goal.SetRange(1500);
+				}
+				
+				Util.SetGoalPosition(4808.136, 1048.660, 1729.125, "CAMP_Allies_Escort_1");
+				GetGoal("CAMP_Allies_Escort_1").AimVectors = { Vec3(-0.158, 0.987, 0.002), Vec3(-0.103, -0.994, -0.043) };
+				Util.SetGoalPosition(4673.192, 928.196, 1729.125, "CAMP_Allies_Escort_2");
+				GetGoal("CAMP_Allies_Escort_2").AimVectors = { Vec3(0.737, 0.676, 0.017), Vec3(0.290, -0.957, -0.020) };
+				Util.SetGoalPosition(4688.802, 1261.765, 1729.125, "CAMP_Allies_Escort_3");
+				GetGoal("CAMP_Allies_Escort_2").AimVectors = { Vec3(0.415, 0.910, 0.005), Vec3(0.120, -0.993, -0.022) };
+				Util.SetGoalPosition(4805.861, 1151.771, 1729.125, "CAMP_Allies_Escort_4");
+				GetGoal("CAMP_Allies_Escort_2").AimVectors = { Vec3(-0.088, -0.996, -0.003), Vec3(-0.148, 0.989, -0.020) };
+				
+				SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Allies_Escort_.*" );
+				
+				foreach ( bot in BotTable )
+				{
+					goal = bot.GetMapGoalName();
+					if ( goal == "CAMP_Allies_Escort_1" or goal == "CAMP_Allies_Escort_2" or goal == "CAMP_Allies_Escort_3" or goal == "CAMP_Allies_Escort_4" )
+					{
+						bot.DisableCombatMovement = true;
+						bot.HoldButton(BTN.SPRINT, 0.2);
+					}
+					else
+					{
+						bot.DisableCombatMovement = false;
+					}
+				}
+			}
+			else if ((GetEntPosition(i).x >= 3151 and GetEntPosition(i).y >= -1300 and GetEntPosition(i).z >= 1885 and
+			GetEntPosition(i).x <= 4481 and GetEntPosition(i).y <= 433 and GetEntPosition(i).z <= 2300) or
+			(GetEntPosition(i).x >= 3189 and GetEntPosition(i).y >= -1300 and GetEntPosition(i).z >= 1400 and
+			GetEntPosition(i).x <= 4033 and GetEntPosition(i).y <= 401 and GetEntPosition(i).z <= 1884))
+			{
+				foreach ( goal in Util.GoalTable("CAMP_Allies_Escort_.*") )
+				{
+					goal.SetRange(1500);
+				}
+				
+				Util.SetGoalPosition(4781.101, 122.715, 2033.125, "CAMP_Allies_Escort_1");
+				GetGoal("CAMP_Allies_Escort_1").AimVectors = { Vec3(0.451, -0.893, 0.007), Vec3(0.969, 0.244, 0.046) };
+				Util.SetGoalPosition(4754.125, -100.318, 2033.125, "CAMP_Allies_Escort_2");
+				GetGoal("CAMP_Allies_Escort_2").AimVectors = { Vec3(0.475, 0.878, 0.060), Vec3(0.759, -0.651, -0.001) };
+				Util.SetGoalPosition(4788.125, -267.084, 2033.125, "CAMP_Allies_Escort_3");
+				GetGoal("CAMP_Allies_Escort_2").AimVectors = { Vec3(0.315, 0.948, 0.037), Vec3(0.961, -0.276, -0.019) };
+				Util.SetGoalPosition(5086.658, 304.133, 2033.125, "CAMP_Allies_Escort_4");
+				GetGoal("CAMP_Allies_Escort_2").AimVectors = { Vec3(-0.357, -0.934, 0.020), Vec3(-0.324, 0.906, 0.273) };
+				
+				SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Allies_Escort_.*" );
+				
+				foreach ( bot in BotTable )
+				{
+					goal = bot.GetMapGoalName();
+					if ( goal == "CAMP_Allies_Escort_1" or goal == "CAMP_Allies_Escort_2" or goal == "CAMP_Allies_Escort_3" or goal == "CAMP_Allies_Escort_4" )
+					{
+						bot.DisableCombatMovement = false;
+						bot.HoldButton(BTN.SPRINT, 0.2);
+					}
+				}
+			}
+			else
+			{
+				foreach ( goal in Util.GoalTable("CAMP_Allies_Escort_.*") )
+				{
+					goal.SetRange(1000);
+				}
+				
+				SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Allies_Escort_.*" );
+				
+				foreach ( goal in Util.GoalTable("CAMP_Allies_Escort_.*") )
+				{
+					goal.SetPosition(GetEntPosition(i) - Vec3(-20, 0, 23));
+				}
+			}
+			
+			sleep(0.1);
+		}
+	},
+	
+	Radio_Codes_Booklet_Dropped = function( trigger )
+	{
+		Map.Radio_Codes_Booklet = "Dropped";
+		Util.MapDebugPrint( "Radio_Codes_Booklet_Dropped" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CAPPOINT_Transmitter",
+			"CAMP_Allies_Escort_.*",
+		});
+		
+		Util.SetGoalRange( ".*_radio_codes_dropped", 1600);
+		Util.SetMaxUsers( 3, "FLAGRETURN_radio_codes_dropped" );
+		
+		if ( tableCount(Map.CarryingAlly_in_trigger) < 1 )
+		{
+			DeleteTriggerRegion("Castle_Trigger_Taken");	//don't move it, because of testing of variable CarryingAlly_in_trigger
+			
+			SetAvailableMapGoals( TEAM.AXIS, false, ".*_Axis_CappointPlace_.*" );
+			Util.MapDebugPrint( "Empty trigger" );
+		}
+		else
+		{
+			DeleteTriggerRegion("Castle_Trigger_Taken");	//don't move it, because of testing of variable CarryingAlly_in_trigger
+			
+			Util.MapDebugPrint( "Entity in trigger" );
+			
+			while ( Map.Radio_Codes_Booklet == "Dropped" )
+			{
+				sleep(0.1);
+			}
+			
+			if ( tableCount(Map.CarryingAlly_in_trigger) < 1 )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, false, ".*_Axis_CappointPlace_.*" );
+			}
+		}
+	},
+
+	Radio_Codes_Booklet_Returned = function( trigger )
+	{
+		Map.Radio_Codes_Booklet = "Returned";
+		Util.MapDebugPrint( "Radio_Codes_Booklet_Returned" );
+		
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*_Axis_SupplyRoom_.*",
+			"MOUNTMG42_Tram_Tower_Outpost_Top",
+		});
+	},
+
+	Radio_Codes_Booklet_Secured = function( trigger )
+	{
+		Util.MapDebugPrint( "Radio_Codes_Booklet_Secured" );
+	},
+
+	Castle_Basement_Door_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Castle_Basement_Door_Planted" );
+		
+		foreach( goal in Util.GoalTable("DEFUSE_Castle_Basement_Door.*") )
+		{
+			goal.SetGoalPriority( TEAM.AXIS, 0, 0.99 );
+			goal.MaxUsers_InProgress( 3 );
+		}
+	},
+	
+	Castle_Basement_Door_Destroyed = function( trigger )
+	{
+		Map.Castle_Basement_Door = false;
+		Util.MapDebugPrint( "Castle_Basement_Door_Destroyed" );
+		
+		Util.EnableGoal("ROUTE_CastleBasementDoor.*");
+		
+		foreach( goal in Util.GoalTable("DEFUSE_Castle_Basement_Door.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+		
+		if ( !Map.Supply_Room_Door )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_CastleDoorDest_.*" );
+		}
+	},
+
+	Castle_Bridge_Built = function( trigger )
+	{
+		Map.Castle_Bridge = true;
+		Util.MapDebugPrint( "Castle_Bridge_Built" );
+		Wp.SetWaypointFlag( "Castle_Bridge_0", "closed", false );
+		
+		Util.EnableGoal("ROUTE_CastleBridgeWay_.*");
+		
+		/*if ( !Map.Supply_Room_Door )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_castle_bridge" );	//suicide?
+		}*/
+	},
+	
+	Castle_Bridge_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Castle_Bridge_Planted" );
+	},
+	
+	Castle_Bridge_Destroyed = function( trigger )
+	{
+		Map.Castle_Bridge = false;
+		Util.MapDebugPrint( "Castle_Bridge_Destroyed" );
+		Wp.SetWaypointFlag( "Castle_Bridge_0", "closed", true );
+		
+		Util.DisableGoal("ROUTE_CastleBridgeWay_.*");
+		
+		if ( !Map.Supply_Room_Door )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_castle_bridge" );
+		}
+	},
+	
+	Allied_Castle_CP_Built = function( trigger )
+	{
+		Map.Allied_Castle_CP = true;
+		Util.MapDebugPrint( "Allied_Castle_CP_Built" );
+		
+		SetAvailableMapGoals( 0, false, "BUILD_Castle_Command_Post" );
+		
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Castle_Command_Post" );
+	},
+	
+	Axis_Castle_CP_Built = function( trigger )
+	{
+		Map.Axis_Castle_CP = true;
+		Util.MapDebugPrint( "Axis_Castle_CP_Built" );
+		
+		SetAvailableMapGoals( 0, false, "BUILD_Castle_Command_Post" );
+		
+		if ( !Map.Supply_Room_Door )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Castle_Command_Post" );
+		}
+	},
+	
+	Castle_CP_Planted = function( trigger )
+	{
+		if ( Map.Allied_Castle_CP )
+		{
+			Util.MapDebugPrint( "Allied_Castle_CP_Planted" );
+			
+			foreach( goal in Util.GoalTable("DEFUSE_Castle_Command_Post.*") )
+			{
+				goal.SetRoles(ROLE.ATTACKER, ROLE.ATTACKER1);
+				goal.SetGoalPriority( 0, 0, 0.88 );
+			}
+		}
+		else
+		{
+			Util.MapDebugPrint( "Axis_Castle_CP_Planted" );
+			
+			foreach( goal in Util.GoalTable("DEFUSE_Castle_Command_Post.*") )
+			{
+				goal.SetRoles(ROLE.DEFENDER, ROLE.DEFENDER1);
+				goal.SetGoalPriority( 0, 0, 0.88 );
+			}
+		}
+		
+	},
+	
+	Allied_Castle_CP_Destroyed = function( trigger )
+	{
+		Map.Allied_Castle_CP = false;
+		Util.MapDebugPrint( "Allied_Castle_CP_Destroyed" );
+		
+		if ( !Map.Supply_Room_Door )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Castle_Command_Post" );
+			
+			SetAvailableMapGoals( 0, true, "BUILD_Castle_Command_Post" );
+		}
+	},
+	
+	Axis_Castle_CP_Destroyed = function( trigger )
+	{
+		Map.Axis_Castle_CP = false;
+		Util.MapDebugPrint( "Axis_Castle_CP_Destroyed" );
+		
+		if ( !Map.Supply_Room_Door )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Castle_Command_Post" );
+			
+			SetAvailableMapGoals( 0, true, "BUILD_Castle_Command_Post" );
+		}
+	},
+	
+	OutpostCP_Trigger =
+	{
+		Name = "OutpostCP_Trigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( Map.Supply_Room_Door )
+			{
+				if ( GetEntTeam(ent) == TEAM.ALLIES )
+				{
+					if (Map.Ally_CP_trigger[ent])
+					{
+						Map.Ally_CP_trigger[ent] += 1;
+					}
+					else
+					{
+						Map.Ally_CP_trigger[ent] = 1;
+					}
+					
+					GetGoal("DEFEND_Axis_OutpostCP_30").AimVectors = { Vec3(0.247, 0.837, -0.489), Vec3(0.294, -0.922, -0.250) };
+				}
+				else
+				{
+					if (Map.Axis_CP_trigger[ent])
+					{
+						Map.Axis_CP_trigger[ent] += 1;
+					}
+					else
+					{
+						Map.Axis_CP_trigger[ent] = 1;
+					}
+					
+					GetGoal("ATTACK_Allies_OutpostCP_04").AimVectors = { Vec3(0.446, 0.882, -0.150), Vec3(0.331, -0.930, -0.158) };
+				}
+				
+				bot = Util.IsBot(ent);
+				if(bot){ bot.SetRoles(ROLE.ROAMER); }
+				
+				if ( Map.EntOwner == "Owner_Axis" and GetEntTeam(ent) == TEAM.ALLIES )
+				{
+					Util.MapDebugPrint( "Disable MOUNTMG42_Outpost_CP_Hut for Axis" );
+					
+					SetAvailableMapGoals( TEAM.AXIS, true, "CAMP_CP_Trigger_00");
+					sleep(2.1);
+					SetAvailableMapGoals( TEAM.AXIS, false, ".*MG42_Outpost_CP_Hut");
+					sleep(5);
+					
+					if ( Map.EntOwner == "Free" and Map.Supply_Room_Door )
+					{
+						SetAvailableMapGoals( 0, false, "CAMP_CP_Trigger_00");
+						
+						SetAvailableMapGoals( 0, true, ".*MG42_Outpost_CP_Hut");
+					}
+				}
+				else if ( Map.EntOwner == "Owner_Allies" and GetEntTeam(ent) == TEAM.AXIS )
+				{
+					Util.MapDebugPrint( "Disable MOUNTMG42_Outpost_CP_Hut for Allies" );
+					
+					SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_CP_Trigger_00");
+					sleep(2.1);
+					SetAvailableMapGoals( TEAM.ALLIES, false, ".*MG42_Outpost_CP_Hut");
+					sleep(5);
+					
+					if ( Map.EntOwner == "Free" and Map.Supply_Room_Door )
+					{
+						SetAvailableMapGoals( 0, false, "CAMP_CP_Trigger_00");
+						
+						SetAvailableMapGoals( 0, true, ".*MG42_Outpost_CP_Hut");
+					}
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			bot = Util.IsBot(ent);
+			if(bot){ bot.ClearRoles(ROLE.ROAMER); }
+			if (Map.Ally_CP_trigger[ent])
+			{
+				if (Map.Ally_CP_trigger[ent] > 1)
+				{
+					Map.Ally_CP_trigger[ent] -= 1;
+				}
+				else
+				{
+					Map.Ally_CP_trigger[ent] = null;
+				}
+				
+				if ( Map.Supply_Room_Door )
+				{
+					if ( tableCount(Map.Ally_CP_trigger) < 1 )
+					{
+						GetGoal("DEFEND_Axis_OutpostCP_30").AimVectors = { Vec3(0.247, 0.837, -0.489) };
+						
+						SetAvailableMapGoals( TEAM.AXIS, false, "CAMP_CP_Trigger_00");
+						
+						SetAvailableMapGoals( TEAM.AXIS, true, ".*MG42_Outpost_CP_Hut");
+					}
+				}
+			}
+			else
+			{
+				if (Map.Axis_CP_trigger[ent] > 1)
+				{
+					Map.Axis_CP_trigger[ent] -= 1;
+				}
+				else
+				{
+					Map.Axis_CP_trigger[ent] = null;
+				}
+				
+				if ( Map.Supply_Room_Door )
+				{
+					if ( tableCount(Map.Axis_CP_trigger) < 1 )
+					{
+						GetGoal("ATTACK_Allies_OutpostCP_04").AimVectors = { Vec3(0.446, 0.882, -0.150) };
+						
+						SetAvailableMapGoals( TEAM.ALLIES, false, "CAMP_CP_Trigger_00");
+						
+						SetAvailableMapGoals( TEAM.ALLIES, true, ".*MG42_Outpost_CP_Hut");
+					}
+				}
+			}
+		},
+	},
+	
+	MG_Owner = function()
+	{
+		mg_ent = GetGoal("MOUNTMG42_Outpost_CP_Hut").GetEntity();
+		
+		while ( Map.Supply_Room_Door )
+		{
+			if ( GetEntFlags(mg_ent, ENTFLAG.MOUNTED) )
+			{
+				owner = GetEntOwner(mg_ent);
+				
+				if ( owner )
+				{
+					if ( GetEntTeam(owner) == TEAM.AXIS )
+					{
+						if ( Map.EntOwner != "Owner_Axis" )
+						{
+							Util.MapDebugPrint( "MOUNTMG42_Outpost_CP_Hut mounted by Axis" );
+							
+							Map.EntOwner = "Owner_Axis";
+						}
+					}
+					else if ( GetEntTeam(owner) == TEAM.ALLIES )
+					{
+						if ( Map.EntOwner != "Owner_Allies" )
+						{
+							Util.MapDebugPrint( "MOUNTMG42_Outpost_CP_Hut mounted by Allies" );
+							
+							Map.EntOwner = "Owner_Allies";
+						}
+					}
+				}
+				else
+				{
+					if ( Map.EntOwner != "Free" )
+					{
+						Util.MapDebugPrint( "MOUNTMG42_Outpost_CP_Hut => clear entity owner" );
+						
+						Map.EntOwner = "Free";
+					}
+				}
+			}
+			else
+			{
+				if ( Map.EntOwner != "Free" )
+				{
+					Util.MapDebugPrint( "MOUNTMG42_Outpost_CP_Hut => clear entity owner" );
+					
+					Map.EntOwner = "Free";
+				}
+			}
+			sleep(0.1);
+		}
+	},
+	
+	Castle_Trigger =
+	{
+		Name = "Castle_Trigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				if (Map.Ally_in_trigger[ent])
+				{
+					Map.Ally_in_trigger[ent] += 1;
+				}
+				else
+				{
+					Map.Ally_in_trigger[ent] = 1;
+					Util.MapDebugPrint("Ally in trigger: " + tableCount(Map.Ally_in_trigger));
+				}
+				
+				if ( !Map.Supply_Room_Door )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						".*_Axis_Castle_.*",
+						".*_Axis_CastleStation_.*",
+					});
+					
+					if ( tableCount(Map.Ally_in_trigger) < 10 )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, {
+							"DEFEND_Axis_CastleIns_" + tableCount(Map.Ally_in_trigger),
+							"DEFEND_Axis_CastleIns_" + (tableCount(Map.Ally_in_trigger)+1),
+						});
+					}
+					
+					sleep(0.5);
+					
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						".*_Axis_Castle_.*",
+						".*_Axis_CastleStation_.*",
+					});
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.Ally_in_trigger[ent])
+			{
+				SetAvailableMapGoals( TEAM.AXIS, false, {
+					"DEFEND_Axis_CastleIns_" + (tableCount(Map.Ally_in_trigger)+1),
+				});
+				
+				if (Map.Ally_in_trigger[ent] > 1)
+				{
+					Map.Ally_in_trigger[ent] -= 1;
+					Util.MapDebugPrint("Ally in trigger: " + tableCount(Map.Ally_in_trigger));
+				}
+				else
+				{
+					Map.Ally_in_trigger[ent] = null;
+					
+					Util.MapDebugPrint("Ally in trigger: " + tableCount(Map.Ally_in_trigger));
+				}
+				
+				if ( tableCount(Map.Ally_in_trigger) < 1 )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Axis_CastleIns_.*" );
+				}
+			}
+		},
+	},
+	
+	Castle_Trigger_Taken =
+	{
+		Name = "Castle_Trigger_Taken",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+			{
+				if (Map.CarryingAlly_in_trigger[ent])
+				{
+					Map.CarryingAlly_in_trigger[ent] += 1;
+				}
+				else
+				{
+					Map.CarryingAlly_in_trigger[ent] = 1;
+					Util.MapDebugPrint("CarryingAlly in trigger: " + tableCount(Map.CarryingAlly_in_trigger));
+				}
+				
+				SetAvailableMapGoals( TEAM.AXIS, false, {
+					".*_Axis_Castle_.*",
+					".*_Axis_CastleStation_.*",
+					".*_Axis_CastleIns_.*",
+					"MOUNTMG42_Tram_Tower_Outpost_Top",
+				});
+				
+				SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_CappointPlace_.*" );
+				
+				SetAvailableMapGoals( TEAM.ALLIES, false, {
+					".*MG42_Tram_Tower_Castle",
+					".*_Allies_CastleOut_.*",
+					".*_Allies_CastleStation_.*",
+				});
+				
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					".*_Allies_CastleIns_.*",
+					".*_Allies_CappointPlace_.*",
+				});
+				
+				sleep(0.5);
+				
+				if ( !Map.Supply_Room_Door )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						".*_Axis_Castle_.*",
+						".*_Axis_CastleStation_.*",
+						".*_Axis_CastleIns_.*",
+					});
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.CarryingAlly_in_trigger[ent] > 1)
+			{
+				Map.CarryingAlly_in_trigger[ent] -= 1;
+				Util.MapDebugPrint("CarryingAlly in trigger: " + tableCount(Map.CarryingAlly_in_trigger));
+			}
+			else
+			{
+				Map.CarryingAlly_in_trigger[ent] = null;
+				
+				Util.MapDebugPrint("CarryingAlly in trigger: " + tableCount(Map.CarryingAlly_in_trigger));
+			}
+			
+			if ( tableCount(Map.CarryingAlly_in_trigger) < 1 )
+			{
+				if ( Map.Radio_Codes_Booklet == "Taken" )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, false, ".*_Axis_CappointPlace_.*" );
+				}
+				
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					".*MG42_Tram_Tower_Castle",
+					".*_Allies_CastleOut_.*",
+					".*_Allies_CastleStation_.*",
+				});
+				
+				SetAvailableMapGoals( TEAM.ALLIES, false, {
+					".*_Allies_CastleIns_.*",
+					".*_Allies_CappointPlace_.*",
+				});
+			}
+		},
+	},
+	
+	Carrying_player = function()
+	{
+		while ( Map.Radio_Codes_Booklet == "Taken" )
+		{
+			for ( c = 0; c <= 999; c += 1 )
+			{
+				if ( GetEntFlags(c,ENTFLAG.CARRYINGGOAL) and !Util.IsBot(c) )
+				{
+					for ( b = 1; b < 5; b += 1 )
+					{
+						ent = GetGoal("MOVER_tramcar_" + b).GetEntity();
+						while ( DistanceBetween(GetEntPosition(c), GetEntPosition(ent)) < 300 )
+						{
+							if ( Map.Player_Carrying_Goal_Near_Tram == 0 )
+							{
+								Map.Player_Carrying_Goal_Near_Tram = 1;
+								Util.MapDebugPrint( "Player_Is_Near_Tram" );
+							}
+							yield();
+						}
+						
+						if ( Map.Player_Carrying_Goal_Near_Tram == 1 )
+						{
+							Map.Player_Carrying_Goal_Near_Tram = 0;
+							Util.MapDebugPrint( "Player_Isn't_Near_Tram" );
+						}
+					}
+				}
+			}
+			yield();
+		}
+	},
+	
+	MG42_Trigger =
+	{
+		Name = "MG42_Trigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			a = Util.IsBot(ent);
+			if (a)
+			{
+				a.OldReactionTime = a.ReactionTime;
+				a.ReactionTime = 0.5;
+			}
+		},
+		OnExit = function(ent)
+		{
+			a = Util.IsBot(ent);
+			if (a)
+			{
+				a.ReactionTime = a.OldReactionTime;
+			}
+		},
+	},
+
+	SetSpawn1 = function(bot)
+	{
+		if ( bot.GetTeam() == TEAM.ALLIES )
+        {
+			if ( Map.Supply_Room_Door )
+			{
+				if ( Map.Village_Tram_Tower == TEAM.ALLIES )
+				{
+					if ( RandInt(0, 1) == 1 )
+					{
+						bot.ChangeSpawnPoint(3);
+					}
+					else
+					{
+						bot.ChangeSpawnPoint(1);
+					}
+				}
+				else
+				{
+					bot.ChangeSpawnPoint(1);
+				}
+			}
+			else
+            {
+				bot.ChangeSpawnPoint(4);
+			}
+		}
+	},
+	
+	SetSpawn = function()
+	{
+		foreach ( id and bot in BotTable )
+		{
+			Map.SetSpawn1(bot);
+		}
+	},
+	
+	Tramcar_Position = function()
+	{
+		while ( 1 )
+		{
+			for ( h = 1; h <= 4; h += 1 )
+			{
+				pos = Util.GetMapGoalPosition("MOVER_tramcar_" + h ).x;
+				//Util.MapDebugPrint( "Tramcar" + " " + h + " " + pos );
+				
+				switch ( h )
+				{
+					case 1:
+					{
+						if ( pos < 132 )
+						{
+							if ( Map.Tramcar_1 != "Bottom" )
+							{
+								Map.Tramcar_1 = "Bottom";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_1_Bottom" );
+								}
+							}
+						}
+						else if ( pos > 1990 and pos < 2063 )
+						{
+							if ( Map.Tramcar_1 != "Middle" )
+							{
+								Map.Tramcar_1 = "Middle";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_1_Middle" );
+								}
+							}
+						}
+						else if ( pos > 2800 and pos < 3320 )
+						{
+							if ( Map.Tramcar_1 != "Hill" )
+							{
+								Map.Tramcar_1 = "Hill";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_1_Hill" );
+								}
+							}
+						}
+						else if ( pos > 4174 )
+						{
+							if ( Map.Tramcar_1 != "Top" )
+							{
+								Map.Tramcar_1 = "Top";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_1_Top" );
+								}
+							}
+						}
+						else
+						{
+							if ( Map.Tramcar_1 != "Moving" )
+							{
+								Map.Tramcar_1 = "Moving";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_1_Moving" );
+								}
+							}
+						}
+					}
+					case 2:
+					{
+						if ( pos < 104 )
+						{
+							if ( Map.Tramcar_2 != "Bottom" )
+							{
+								Map.Tramcar_2 = "Bottom";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_2_Bottom" );
+								}
+							}
+						}
+						else if ( pos > 2005 and pos < 2112 )
+						{
+							if ( Map.Tramcar_2 != "Middle" )
+							{
+								Map.Tramcar_2 = "Middle";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_2_Middle" );
+								}
+							}
+						}
+						else if ( pos > 2772 and pos < 3304 )
+						{
+							if ( Map.Tramcar_2 != "Hill" )
+							{
+								Map.Tramcar_2 = "Hill";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_2_Hill" );
+								}
+							}
+						}
+						else if ( pos > 4174 )
+						{
+							if ( Map.Tramcar_2 != "Top" )
+							{
+								Map.Tramcar_2 = "Top";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_2_Top" );
+								}
+							}
+						}
+						else
+						{
+							if ( Map.Tramcar_2 != "Moving" )
+							{
+								Map.Tramcar_2 = "Moving";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_2_Moving" );
+								}
+							}
+						}
+					}
+					case 3:
+					{
+						if ( pos < -6100 )
+						{
+							if ( Map.Tramcar_3 != "Bottom" )
+							{
+								Map.Tramcar_3 = "Bottom";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_3_Bottom" );
+								}
+							}
+						}
+						else if ( pos > -3611 and pos < -3530 )
+						{
+							if ( Map.Tramcar_3 != "Middle" )
+							{
+								Map.Tramcar_3 = "Middle";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_3_Middle" );
+								}
+							}
+						}
+						else if ( pos > -2100 and pos < -1795 )
+						{
+							if ( Map.Tramcar_3 != "Hill" )
+							{
+								Map.Tramcar_3 = "Hill";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_3_Hill" );
+								}
+							}
+						}
+						else if ( pos > -1142 )
+						{
+							if ( Map.Tramcar_3 != "Top" )
+							{
+								Map.Tramcar_3 = "Top";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_3_Top" );
+								}
+							}
+						}
+						else
+						{
+							if ( Map.Tramcar_3 != "Moving" )
+							{
+								Map.Tramcar_3 = "Moving";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_3_Moving" );
+								}
+							}
+						}
+					}
+					case 4:
+					{
+						if ( pos < -6100 )
+						{
+							if ( Map.Tramcar_4 != "Bottom" )
+							{
+								Map.Tramcar_4 = "Bottom";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_4_Bottom" );
+								}
+							}
+						}
+						else if ( pos > -3670 and pos < -3570 )
+						{
+							if ( Map.Tramcar_4 != "Middle" )
+							{
+								Map.Tramcar_4 = "Middle";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_4_Middle" );
+								}
+							}
+						}
+						else if ( pos > -2100 and pos < -1817 )
+						{
+							if ( Map.Tramcar_4 != "Hill" )
+							{
+								Map.Tramcar_4 = "Hill";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_4_Hill" );
+								}
+							}
+						}
+						else if ( pos > -1134 )
+						{
+							if ( Map.Tramcar_4 != "Top" )
+							{
+								Map.Tramcar_4 = "Top";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_4_Top" );
+								}
+							}
+						}
+						else
+						{
+							if ( Map.Tramcar_4 != "Moving" )
+							{
+								Map.Tramcar_4 = "Moving";
+								
+								if ( Map.Tramcar_Position_Debug )
+								{
+									Util.MapDebugPrint( "Tramcar_4_Moving" );
+								}
+							}
+						}
+					}
+				}
+			}
+			sleep(0.1);
+		}
+	},
+	
+	Cablecar_Position_Debug = function()
+	{
+		keys =
+		{
+			"Village",
+			"Outpost_Bottom",
+			"Outpost_Top",
+			"Castle"
+		};
+		
+		for (;;)
+        {
+            for ( i = 0; i < tableCount(Map.Stations.Position); i += 1 )
+			{
+				pos = Map.Stations.Position[i];
+				DrawText3d( pos + Vec3(0,0,40), Map.Stations.String[i], COLOR.RED, 0.05 );
+			}
+			
+			for ( w = 0; w < tableCount(Map.Reference_Points.Position); w += 1 )
+			{
+				pos = Map.Reference_Points.Position[w];
+				DrawText3d( pos + Vec3(0,0,40), Map.Reference_Points.String[w], COLOR.ORANGE, 0.05 );
+				DrawDebugLine( pos + Vec3(0,0,40), pos - Vec3(0,0,25), COLOR.PINK, 0.05 );
+			}
+			
+			for ( y = 1; y < 5; y += 1 )
+			{
+				ent = GetGoal("MOVER_tramcar_" + y).GetEntity();
+				
+				for ( x = 0; x < tableCount(Map.Tram_Positions); x += 1 )
+				{
+					offsetpos = GetEntityWorldSpace(ent, Map.Tram_Positions[x]);
+					DrawDebugLine( offsetpos + Vec3(0,0,40), offsetpos - Vec3(0,0,25), COLOR.BLUE, 0.05 );
+					DrawText3d( offsetpos + Vec3(0,0,40), Map.Strings.Ride[x], COLOR.YELLOW, 0.05 );
+				}
+			}
+			
+			for ( z = 0; z < 4; z += 1 )
+			{
+				foreach ( key in keys )
+				{
+					pos = Map.Wait_Positions[key][z];
+					DrawText3d( pos + Vec3(0,0,40), Map.Strings.Wait[z], COLOR.CYAN, 0.05 );
+					botId_key = key + "_botId";
+					botReady_key = key + "_Bot_Ready";
+					
+					if ( Map[botId_key][z] == -1 )
+					{
+						c = COLOR.GREEN;
+					}
+					else if ( Map[botReady_key][z] )
+					{
+						c = COLOR.RED;
+					}
+					else
+					{
+						c = COLOR.YELLOW;
+					}
+					
+					DrawDebugLine( pos + Vec3(0,0,40), pos - Vec3(0,0,25), c, 0.05 );
+				}
+			}
+            sleep(0.05);
+        }
+	},
+};
+
+global OnMapLoad = function()
+{
+	thread ( Map.Tramcar_Position );
+	
+	if ( Map.Debug )
+	{
+		thread ( Map.Cablecar_Position_Debug );
+	}
+	
+	OnTrigger( "Planted at the Castle Basement Door.", Map.Castle_Basement_Door_Planted );
+	OnTrigger( "^1Allies has destroyed the Castle Basement Door", Map.Castle_Basement_Door_Destroyed );
+	
+	OnTrigger( "Planted at the lower access door.", Map.Lower_Access_Door_Planted );
+	OnTrigger( "^1Allies has destroyed the Lower Access Door into Outpost", Map.Lower_Access_Door_Destroyed );
+	
+	OnTrigger( "Planted at the supply room door.", Map.Supply_Room_Door_Planted );
+	OnTrigger( "Defused at the supply room door.", Map.Supply_Room_Door_Defused );
+	OnTrigger( "^1Allies has destroyed the Supply Room Door", Map.Supply_Room_Door_Destroyed );
+	
+	OnTrigger( "Allies have stolen The Radio Codes Booklet!", Map.Radio_Codes_Booklet_Taken );
+	OnTrigger( "USA have stolen The Radio Codes Booklet!", Map.Radio_Codes_Booklet_Taken );	//ETNam
+	OnTrigger( "Flag dropped radio_codes!", Map.Radio_Codes_Booklet_Dropped );
+	OnTrigger( "Flag returned radio_codes!", Map.Radio_Codes_Booklet_Returned );
+	OnTrigger( "^1Allied Transmission Complete ^1!^3!^1!^3!^1!^3!^1!^3!^1!^3!", Map.Radio_Codes_Booklet_Secured );
+	
+	OnTrigger( "^1Axis reclaim the Village Tram Tower", Map.Village_Tram_Tower_Axis_Captured );
+	OnTrigger( "^1Allies has captured the Village Tram Tower", Map.Village_Tram_Tower_Allies_Captured );
+	
+	OnTrigger( "Planted at the hatch.", Map.Hatch_Planted );
+	OnTrigger( "^1Allies has destroyed the hatch", Map.Hatch_Destroyed );
+	
+	OnTrigger( "^1Allies has build the Outpost Bridge!", Map.Outpost_Bridge_Built );
+	OnTrigger( "Planted at the outpost bridge.", Map.Outpost_Bridge_Planted );
+	OnTrigger( "^1Axis has blown the Outpost Bridge!", Map.Outpost_Bridge_Destroyed );
+	
+	OnTrigger( "^6Allied Outpost Command Post constructed !", Map.Allied_Outpost_CP_Built );
+	OnTrigger( "^6Axis Outpost Command Post constructed !", Map.Axis_Outpost_CP_Built );
+	OnTrigger( "Planted at the Outpost Command Post.", Map.Outpost_CP_Planted );
+	OnTrigger( "^6Axis team has destroyed the Allied Outpost Command Post!", Map.Allied_Outpost_CP_Destroyed );
+	OnTrigger( "^6Allied team has destroyed the Axis Outpost Command Post!", Map.Axis_Outpost_CP_Destroyed );
+	
+	OnTrigger( "^1Allies has build the Castle Bridge!", Map.Castle_Bridge_Built );
+	OnTrigger( "Planted at the castle bridge.", Map.Castle_Bridge_Planted );
+	OnTrigger( "^1Axis has blown the Castle Bridge!", Map.Castle_Bridge_Destroyed );
+	
+	OnTrigger( "^6Allied Castle Command Post constructed.", Map.Allied_Castle_CP_Built );
+	OnTrigger( "^6Axis Castle Command Post constructed.", Map.Axis_Castle_CP_Built );
+	OnTrigger( "Planted at the Castle Command Post.", Map.Castle_CP_Planted );
+	OnTrigger( "^6Axis team has destroyed the Allied Castle Command Post!", Map.Allied_Castle_CP_Destroyed );
+	OnTrigger( "^6Allied team has destroyed the Axis Castle Command Post.", Map.Axis_Castle_CP_Destroyed );
+	
+	Util.DisableGoal(".*", true);
+	Util.DisableGoal("ROUTE_OutpostOutsideRight_.*");
+	Util.DisableGoal("ROUTE_Hatch");
+	Util.DisableGoal("ROUTE_CastleBasementDoor.*");
+	Util.DisableGoal("ROUTE_CastleBridgeWay_.*");
+	
+	Util.EnableGoal({
+		"BUILD_Outpost_Command_Post",
+		".*MG42_Outpost_CP_Hut",
+	});
+	
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		".*_Axis_LowerAccess_.*",
+		".*_Axis_OutpostCP_0[234]",
+		".*_Axis_OutpostCP_1[01567]",
+		".*_Axis_OutpostCP_21",
+		".*_Axis_OutpostCP_3.*",
+		".*_Axis_OutpostCP_4.*",
+		".*_Axis_OutpostStation_.*",
+		"BUILD_Castle_Command_Post",
+	});
+	
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"CHECKPOINT_forward_flag",
+		"PLANT_lower_access_door",
+		".*_Allies_LowerAccess_.*",
+		"BUILD_outpost_bridge",
+		".*_Allies_OutpostBridge_.*",
+		".*_Allies_OutpostCP_.*",
+		".*MG42_Tram_Tower_Outpost_Bottom",
+		"PLANT_hatch",
+		"PLANT_supply_room_door",
+		".*_Allies_OutpostStation_.*",
+	});
+	
+	SetGoalRole( ".*_Command_Post", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.ATTACKER, ROLE.ATTACKER1 });
+	SetGoalRole( ".*MG42_Outpost_CP_Hut", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.ATTACKER, ROLE.ATTACKER1 });
+	SetGoalRole( "CHECKPOINT_forward_flag", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.ATTACKER, ROLE.ATTACKER1 });
+	SetGoalRole( ".*MG42_Castle_CP_Hut", { ROLE.DEFENDER, ROLE.ATTACKER });
+	
+	SetGoalRole( "CAMP_CP_Trigger_00", ROLE.ROAMER );
+	
+	SetGoalRole( ".*_Axis_LowerAccess_.*", ROLE.DEFENDER );
+	SetGoalRole( ".*_Axis_LowAccessDest_.*", ROLE.DEFENDER );
+	SetGoalRole( ".*_Axis_CastleCP_.*", ROLE.DEFENDER );
+	SetGoalRole( "PLANT_outpost_bridge", ROLE.DEFENDER1 );
+	SetGoalRole( ".*_Axis_OutpostCP_.*", ROLE.DEFENDER1 );
+	SetGoalRole( ".*_Axis_CastleStation_.*", ROLE.DEFENDER1 );
+	SetGoalRole( ".*_Axis_CastleDoorDest_.*", ROLE.DEFENDER1 );
+	SetGoalRole( ".*_Axis_OutpostStation_1.*", ROLE.DEFENDER2 );
+	SetGoalRole( ".*_Axis_OutpostStation_2.*", ROLE.DEFENDER3 );
+	SetGoalRole( ".*_Axis_OutpostStation_0.*", { ROLE.DEFENDER2, ROLE.DEFENDER3 });
+	SetGoalRole( ".*_Axis_Castle_.*", { ROLE.DEFENDER2, ROLE.DEFENDER3 });
+	SetGoalRole( ".*_Axis_CastleIns_.*", { ROLE.DEFENDER1, ROLE.DEFENDER2, ROLE.DEFENDER3 });
+	SetGoalRole( ".*_Axis_CappointPlace_.*", { ROLE.DEFENDER1, ROLE.DEFENDER2, ROLE.DEFENDER3 });
+	
+	SetGoalRole( "PLANT_lower_access_door", ROLE.ATTACKER );
+	SetGoalRole( ".*_Allies_LowerAccess_.*", ROLE.ATTACKER );
+	SetGoalRole( ".*_Allies_LowAccessDest_.*", ROLE.ATTACKER );
+	SetGoalRole( ".*_Allies_CastleCP_.*", ROLE.ATTACKER );
+	SetGoalRole( "BUILD_outpost_bridge", ROLE.ATTACKER1 );
+	SetGoalRole( ".*_Allies_OutpostBridge_.*", ROLE.ATTACKER1 );
+	SetGoalRole( ".*_Allies_OutpostCP_.*", ROLE.ATTACKER1 );
+	SetGoalRole( ".*_Allies_CastleStation_.*", ROLE.ATTACKER1 );
+	SetGoalRole( ".*MG42_Tram_Tower_Outpost_Bottom", { ROLE.ATTACKER, ROLE.ATTACKER1 });
+	SetGoalRole( ".*MG42_Tram_Tower_Castle", { ROLE.ATTACKER, ROLE.ATTACKER1 });
+	SetGoalRole( "PLANT_hatch", { ROLE.ATTACKER2, ROLE.ATTACKER3 });
+	SetGoalRole( "PLANT_supply_room_door", { ROLE.ATTACKER2, ROLE.ATTACKER3 });
+	SetGoalRole( ".*_Allies_OutpostStation_.*", { ROLE.ATTACKER2, ROLE.ATTACKER3 });
+	SetGoalRole( ".*_Allies_CastleOut_.*", { ROLE.ATTACKER2, ROLE.ATTACKER3 });
+	SetGoalRole( ".*_Allies_CastleIns_.*", { ROLE.ATTACKER2, ROLE.ATTACKER3 });
+	SetGoalRole( ".*_Allies_CappointPlace_.*", { ROLE.ATTACKER1, ROLE.ATTACKER2, ROLE.ATTACKER3 });
+	SetGoalRole( "CAMP_Allies_Escort_.*", { ROLE.ATTACKER1, ROLE.ATTACKER2, ROLE.ATTACKER3 });
+	
+	ClearGoalRole( "ARTILLERY_.*", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2, ROLE.DEFENDER3 });
+	
+	SetGoalPriority( "CAMP_CP_Trigger_00", 0.55, 0 );
+	SetGoalPriority( "CHECKPOINT_.*", 0.60, 0 );	//return to default due to role
+	SetGoalPriority( "MOUNTMG42_.*", 0.60, 0 );	//return to default due to role
+	SetGoalPriority( "AIRSTRIKE_.*", 0.70, 0 );	//return to default due to role
+	SetGoalPriority( "REPAIRMG42_.*", 0.70, 0 );
+	SetGoalPriority( "PLANT_.*", 0.71, 0 );	//return to default due to role
+	SetGoalPriority( "PLANT_Outpost_Command_Post", 0.70, 0 );
+	SetGoalPriority( "BUILD_.*", 0.80, 0 );	//return to default due to role
+	SetGoalPriority( "BUILD_Outpost_Command_Post", 0.79, 0 );
+	SetGoalPriority( "BUILD_Castle_Command_Post", 0.78, 0 );
+	
+	SetGoalPriority( "DEFEND_Axis_OutpostCP_30", 0.51, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_Axis_CastleCP_.*", 0.52, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_Axis_CastleIns_.*", 0.52, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_Axis_LowAccessDest_.*", 0.54, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_Axis_CastleDoorDest_.*", 0.54, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_Axis_CappointPlace_.*", 0.56, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_Axis_SupplyRoom_.*", 0.82, TEAM.AXIS );
+	SetGoalPriority( "PLANTMINE_.*", 0.69, TEAM.AXIS );	//return to default due to role
+	SetGoalPriority( "CALLARTILLERY_.*", 0.70, TEAM.AXIS );	//return to default due to role
+	SetGoalPriority( "MOBILEMG42_.*", 0.79, TEAM.AXIS );	//return to default due to role
+	SetGoalPriority( "MOBILEMG42_Axis_CastleDoorDest_00", 0.80, TEAM.AXIS );
+	SetGoalPriority( "MOBILEMG42_Axis_CappointPlace_.*", 0.82, TEAM.AXIS );
+	SetGoalPriority( "MOBILEMG42_Axis_SupplyRoom_.*", 0.92, TEAM.AXIS );
+	
+	SetGoalPriority( "ATTACK_Allies_OutpostCP_04", 0.51, TEAM.ALLIES );
+	SetGoalPriority( ".*_Allies_OutpostBridge_.*", 0.52, TEAM.ALLIES );
+	SetGoalPriority( ".*_Allies_CastleIns_.*", 0.52, TEAM.ALLIES );
+	SetGoalPriority( ".*_Allies_LowAccessDest_.*", 0.54, TEAM.ALLIES );
+	SetGoalPriority( ".*_Allies_CappointPlace_.*", 0.65, TEAM.ALLIES );
+	SetGoalPriority( "CAMP_Allies_Escort_.*", 0.79, 0 );
+	SetGoalPriority( "PLANT_Castle_Basement_Door", 0.81, 0 );	//return to default - goal without role
+	SetGoalPriority( "CAPPOINT_Transmitter", 1.02, TEAM.ALLIES );
+	SetGoalPriority( "CAPPOINT_FakePlace_.*", 1.15, TEAM.ALLIES );
+	
+	foreach( goal in Util.GoalTable(".*_Axis_SupplyRoom_.*") )
+    {
+        goal.SetRange(2500);
+    }
+	
+	Util.SetMaxUsers( 1, ".*MG42_.*" );
+	Util.SetMaxUsers( 1, "ATTACK_.*" );
+	Util.SetMaxUsers( 1, "DEFEND_.*" );
+	Util.SetMaxUsers( 1, "CAMP_.*" );
+	Util.SetMaxUsers( 1, "BUILD_Castle_Command_Post" );
+	Util.SetMaxUsersInUse( 1, "PLANT_Outpost_Command_Post" );
+	Util.SetMaxUsers( 2, "PLANT_castle_bridge" );
+	Util.SetMaxUsers( 2, "CHECKPOINT_forward_flag" );
+	Util.SetMaxUsers( 2, "BUILD_castle_bridge" );
+	Util.SetMaxUsers( 2, "PLANT_Castle_Basement_Door" );
+	
+	Wp.SetWaypointFlag( "Hatch_3", "closed", true );
+	Wp.SetWaypointFlag( "Hatch_4", "closed", true );
+	
+	Wp.SetWaypointFlag( "Outpost_Bridge_1", "closed", true );
+	Wp.SetWaypointFlag( "Castle_Bridge_0", "closed", true );
+	
+	Util.AddUseWp( "PLANT_hatch", {"Hatch_1", "Hatch_2" });
+	Util.AddUseWp( "PLANT_lower_access_door", {"Lower_Access_Door_0", "Lower_Access_Door_1" });
+	
+	Util.AddUseWp( "BUILD_outpost_bridge", "Outpost_Bridge_0" );
+	Util.AddUseWp( "BUILD_castle_bridge", "Castle_Bridge_1" );
+	Util.AddUseWp( "PLANT_castle_bridge", "Castle_Bridge_2" );
+	Util.AddUseWp( "HEALTHCAB_t52", "Castle_Health" );
+	Util.AddUseWp( "PLANT_Castle_Command_Post", "Castle_CP" );
+	Util.AddUseWp( "BUILD_Castle_Command_Post", "Castle_CP" );
+	
+	Util.SetGoalPosition(-892.781, 63.300, 574.109, "PLANT_hatch");
+	Util.SetGoalPosition(-3551.415, -1425.960, -78.757, "PLANT_outpost_bridge");
+	
+	OnTriggerRegion(AABB(-2326.727,-2016.875,688.125,-1759.125,-1759.125,1001.106), Map.OutpostCP_Trigger);
+	OnTriggerRegion(AABB(5380.056,-1043.022,1720.125,7411.151,2174.155,2655.732), Map.Castle_Trigger);
+	OnTriggerRegion(AABB(-711.482,78.618,465.125,-673.482,116.618,539.125), Map.MG42_Trigger);
+	OnTriggerRegion(AABB(-947.133,215.652,201.125,-909.133,253.652,275.125), Map.MG42_Trigger);
+	OnTriggerRegion(AABB(-1721.977,-1968.991,771.211,-1683.977,-1930.991,845.211), Map.MG42_Trigger);
+	OnTriggerRegion(AABB(3460.336,2193.806,2097.240,3498.336,2231.806,2171.240), Map.MG42_Trigger);
+	OnTriggerRegion(AABB(6984.631,1508.999,2113.125,7022.631,1546.999,2187.125), Map.MG42_Trigger);
+	
+	RegionTrigger.Create(AABB(-1141.126,-1154.858,865.125,-1063.202,-811.491,1033.158), "DisableCombatMovement", "Outpost");
+	RegionTrigger.Create(AABB(-939.088,95.125,465.125,-763.225,220.632,602.875), "DisableCombatMovement", "Under_Hatch");
+	RegionTrigger.Create(AABB(3313.848,-630.802,1910.326,3950.591,-552.494,2019.741), "DisableCombatMovement", "Castle");
+	RegionTrigger.Create(AABB(6499.125,979.129,2113.125,6549.024,1055.615,2187.125), "DisableCombatMovement", "CappointPlace_20");
+	RegionTrigger.Create(AABB(6255.125,1167.125,2113.125,6341.651,1235.315,2187.125), "DisableCombatMovement", "CappointPlace_21");
+	RegionTrigger.Create(AABB(5687.744,1804.082,2113.125,5791.292,1872.873,2187.125), "DisableCombatMovement", "CappointPlace_22");
+	RegionTrigger.Create(AABB(5943.178,1509.955,2113.125,6032.476,1648.875,2187.125), "DisableCombatMovement", "CappointPlace_23");
+
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.MP40, true );
+    WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.THOMPSON, true );
+    WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.PANZERFAUST, false );
+    WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.FLAMETHROWER, false );
+    
+	thread ( Map.MG_Owner );
+	
+	if ( GetGameState() == "Playing" )
+	{
+		sleep(5);
+		EchoToScreen(0,"^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12 ^7");
+		Util.BotChat( 0, "say", "^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12^7" , 1 );
+	}
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 130;
+	bot.MaxViewDistance = 2700;
+	
+	Map.SetSpawn1(bot);
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_lower_access_door =
+		{
+			ROUTE_Village_Spawn_1 =
+			{
+				ROUTE_OutpostOutsideLeft_1 =
+				{
+					Weight = 3,
+					ROUTE_OutpostOutsideLeft_2 =
+					{
+						ROUTE_OutpostOutsideLeft_3 = {},
+					},
+				},
+				ROUTE_OutpostTram_1 =
+				{
+					ROUTE_OutpostTram_2 = {},
+				},
+			},
+			ROUTE_TramTowerSpawn =
+			{
+				ROUTE_OutpostOutsideLeft_3 = {},
+			},
+		},
+		BUILD_Outpost_Command_Post =
+		{
+			ROUTE_Village_Spawn_1 =
+			{
+				ROUTE_OutpostOutsideLeft_1 =
+				{
+					Weight = 2,
+					ROUTE_OutpostOutsideLeft_2 =
+					{
+						ROUTE_OutpostOutsideLeft_3 = {},
+					},
+				},
+				ROUTE_OutpostTram_1 =
+				{
+					ROUTE_OutpostTram_2 = {},
+				},
+				ROUTE_OutpostOutsideRight_1 =
+				{
+					ROUTE_OutpostOutsideRight_2 = {Weight = 3,},
+				},
+			},
+			ROUTE_TramTowerSpawn =
+			{
+				ROUTE_OutpostOutsideLeft_3 = {},
+				ROUTE_OutpostOutsideRight_1 = {},
+			},
+		},
+		PLANT_supply_room_door =
+		{
+			ROUTE_Village_Spawn_1 =
+			{
+				ROUTE_OutpostOutsideLeft_1 =
+				{
+					Weight = 2,
+					ROUTE_OutpostOutsideLeft_2 =
+					{
+						ROUTE_OutpostOutsideLeft_3 = {},
+					},
+				},
+				ROUTE_OutpostTram_1 = {},
+				ROUTE_OutpostOutsideRight_1 =
+				{
+					ROUTE_OutpostOutsideRight_2 = {Weight = 3,},
+				},
+			},
+			ROUTE_TramTowerSpawn =
+			{
+				ROUTE_OutpostOutsideLeft_3 = {},
+				ROUTE_OutpostOutsideRight_1 = {},
+			},
+		},
+		CAPPOINT_Transmitter =
+		{
+			ROUTE_FlagCodes_Place =
+			{
+				ROUTE_SideWayOut_1 =
+				{
+					Weight = 3,
+					ROUTE_SideWayOut_2 =
+					{
+						ROUTE_SideWayOut_3 =
+						{
+							ROUTE_CastleIns_1 =
+							{
+								ROUTE_CastleIns_2 = {},
+							},
+						},
+						ROUTE_CastleBasementDoor_1 =
+						{
+							Weight = 2,
+							ROUTE_CastleBasementDoorR_1 =
+							{
+								ROUTE_CastleBasementDoorR_2 =
+								{
+									ROUTE_CastleBasementDoorR_3 = {},
+								},
+							},
+							ROUTE_CastleBasementDoorL_1 =
+							{
+								ROUTE_CastleBasementDoorL_2 =
+								{
+									ROUTE_CastleBasementDoorL_3 = {},
+								},
+							},
+						},
+					},
+					ROUTE_CastleBridgeWay_1 =
+					{
+						ROUTE_CastleBridgeWay_2 =
+						{
+							ROUTE_CastleIns_1 = {},
+						},
+					},
+				},
+				ROUTE_CastleTram_1 =
+				{
+					ROUTE_CastleTram_3 =
+					{
+						ROUTE_CastleIns_1 = {},
+					},
+				},
+			},
+		},
+	};
+	
+	MapRoutes.PLANT_lower_access_door.ROUTE_Village_Spawn_2 = MapRoutes.PLANT_lower_access_door.ROUTE_Village_Spawn_1;
+	MapRoutes.PLANT_lower_access_door.ROUTE_TramTowerSpawn_1 = MapRoutes.PLANT_lower_access_door.ROUTE_TramTowerSpawn;
+	MapRoutes.BUILD_Outpost_Command_Post.ROUTE_Village_Spawn_2 = MapRoutes.BUILD_Outpost_Command_Post.ROUTE_Village_Spawn_1;
+	MapRoutes.BUILD_Outpost_Command_Post.ROUTE_TramTowerSpawn_1 = MapRoutes.BUILD_Outpost_Command_Post.ROUTE_TramTowerSpawn;
+	MapRoutes.PLANT_hatch = MapRoutes.PLANT_supply_room_door;
+	
+	MapRoutes[".*_Allies_Low.*"] =
+	{
+		ROUTE_Village_Spawn_1 =
+		{
+			ROUTE_OutpostOutsideLeft_1 =
+			{
+				ROUTE_OutpostOutsideLeft_2 =
+				{
+					ROUTE_OutpostOutsideLeft_3 = {},
+				},
+			},
+		},
+		ROUTE_TramTowerSpawn =
+		{
+			ROUTE_OutpostOutsideLeft_3 = {},
+		},
+	};
+	
+	MapRoutes[".*_Axis_LowAccessDest_.*"] =
+	{
+		ROUTE_OutpostSpawn =
+		{
+			ROUTE_SpiralStaircase_1 =
+			{
+				ROUTE_OutpostStationIns =
+				{
+					ROUTE_Hatch = {},
+					ROUTE_OutpostEngineRoom_1 =
+					{
+						ROUTE_OutpostEngineRoom_2 = {Weight = 2,},
+					},
+				},
+			},
+		},
+	};
+	
+	MapRoutes[".*_Allies_CappointPlace_.*"] =
+	{
+		ROUTE_OutpostSpawn =
+		{
+			ROUTE_SideWayOut_1 =
+			{
+				Weight = 3,
+				ROUTE_SideWayOut_2 =
+				{
+					ROUTE_SideWayOut_3 =
+					{
+						ROUTE_CastleIns_1 =
+						{
+							ROUTE_CastleIns_2 = {},
+						},
+					},
+					ROUTE_CastleBasementDoor_1 =
+					{
+						ROUTE_CastleBasementDoorR_1 =
+						{
+							ROUTE_CastleBasementDoorR_2 =
+							{
+								ROUTE_CastleBasementDoorR_3 = {},
+							},
+						},
+						ROUTE_CastleBasementDoorL_1 =
+						{
+							ROUTE_CastleBasementDoorL_2 =
+							{
+								ROUTE_CastleBasementDoorL_3 = {},
+							},
+						},
+					},
+				},
+				ROUTE_CastleBridgeWay_1 =
+				{
+					ROUTE_CastleBridgeWay_2 =
+					{
+						ROUTE_CastleIns_1 = {},
+					},
+				},
+			},
+			ROUTE_CastleTram_1 =
+			{
+				ROUTE_CastleTram_3 =
+				{
+					ROUTE_CastleIns_1 = {},
+				},
+			},
+		},
+	};
+	
+	MapRoutes[".*_Allies_CastleOut_.*"] =
+	{
+		ROUTE_OutpostSpawn =
+		{
+			ROUTE_SideWayOut_1 =
+			{
+				Weight = 3,
+				ROUTE_SideWayOut_2 = {},
+				ROUTE_CastleBridgeWay_1 =
+				{
+					ROUTE_CastleBridgeWay_2 = {},
+				},
+			},
+			ROUTE_CastleTram_1 =
+			{
+				ROUTE_CastleTram_2 = {},
+			},
+		},
+	};
+	
+	MapRoutes[".*_Allies_CastleStation_.*"] =
+	{
+		ROUTE_OutpostSpawn =
+		{
+			ROUTE_SideWayOut_1 =
+			{
+				Weight = 3,
+				ROUTE_SideWayOut_2 = {},
+				ROUTE_CastleBridgeWay_1 =
+				{
+					ROUTE_CastleBridgeWay_2 = {},
+				},
+			},
+			ROUTE_CastleTram_1 =
+			{
+				ROUTE_CastleTram_2 = {},
+				ROUTE_CastleTram_3 = {},
+			},
+		},
+	};
+	
+	MapRoutes[".*_Axis_CastleDoorDest_.*"] =
+	{
+		ROUTE_CastleSpawn =
+		{
+			ROUTE_CastleStairs_1 =
+			{
+				Weight = 3,
+				ROUTE_CastleStairs_2 =
+				{
+					ROUTE_CastleHall_1 = {},
+				},
+				ROUTE_CastleStairs_3 =
+				{
+					ROUTE_CastleHall_2 = {},
+				},
+			},
+			ROUTE_CastleBasementDoor_1 = {},
+		},
+	};
+	
+	MapRoutes[".*_Axis_CappointPlace_.*"] =
+	{
+		ROUTE_CastleSpawn =
+		{
+			ROUTE_CastleStairs_1 = {Weight = 3,},
+			ROUTE_CastleIns_1 =
+			{
+				ROUTE_CastleIns_2 = {},
+			},
+		},
+	};
+	
+	MapRoutes[".*_Allies_Low.*"].ROUTE_Village_Spawn_2 = MapRoutes[".*_Allies_Low.*"].ROUTE_Village_Spawn_1;
+	MapRoutes[".*_Allies_Low.*"].ROUTE_TramTowerSpawn_1 = MapRoutes[".*_Allies_Low.*"].ROUTE_TramTowerSpawn;
+	MapRoutes[".*_Allies_OutpostStation_.*"] = MapRoutes.PLANT_supply_room_door;
+	MapRoutes[".*_Allies_CappointPlace_.*"].ROUTE_OutpostEngineRoom = MapRoutes[".*_Allies_CappointPlace_.*"].ROUTE_OutpostSpawn;
+	MapRoutes[".*_Allies_CappointPlace_.*"].ROUTE_FlagCodes_Place = MapRoutes[".*_Allies_CappointPlace_.*"].ROUTE_OutpostSpawn;
+	MapRoutes[".*_Allies_CastleIns_.*"] = MapRoutes[".*_Allies_CappointPlace_.*"];
+	MapRoutes[".*_Allies_CastleOut_.*"].ROUTE_OutpostEngineRoom = MapRoutes[".*_Allies_CappointPlace_.*"].ROUTE_OutpostSpawn;
+	MapRoutes[".*_Allies_CastleOut_.*"].ROUTE_FlagCodes_Place = MapRoutes[".*_Allies_CappointPlace_.*"].ROUTE_OutpostSpawn;
+	
+	Util.Routes(MapRoutes);
+};

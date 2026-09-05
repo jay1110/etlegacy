@@ -1,0 +1,585 @@
+//==========================================================================================
+//
+//	et_ufo_final.gm
+//
+//	       Who          	       When		                      What
+//------------------------------------------------------------------------------------------
+//	^1[UJE]^3Captain	        13 August 2018	                 Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	MainStatus = 0,
+	SouthStatus = 0,
+	DocStatus = 0,
+	Allied_Command_Post = 0,
+	Axis_Command_Post = 0,
+	AllyInside = 0,
+	// Rôles
+	Roles =
+	{
+		AXIS =
+		{
+		AllBots = true, // each bot is considered for a role
+			INFILTRATOR = //PLANT CP
+			{
+				numbots = 1,
+				crucialClass = CLASS.COVERTOPS,
+			},
+		},
+		ALLIES =
+		{
+			AllBots = true, // default: every other bot
+		      INFILTRATOR = //PLANT CP
+			{
+			      numbots = 1,
+				crucialClass = CLASS.COVERTOPS,
+			},
+		},
+	},
+	// Navigation
+	Navigation =
+	{     // /bot waypoint_setproperty paththrough Navigation_PT:window
+		window =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.PressButton(BTN.JUMP);
+				sleep(0.25);
+				_this.Bot.HoldButton(BTN.SPRINT, 3);
+				_this.Bot.HoldButton(BTN.CROUCH, 1);
+				sleep(3);
+			},
+		},
+		// /bot waypoint_setproperty paththrough Navigation_PT:boxes
+		boxes =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+		// /bot waypoint_setproperty paththrough Navigation_PT:rail
+		rail =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.PressButton(BTN.JUMP);
+				sleep(0.25);
+			},
+		},
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+      Map.Allied_Command_Post = 1;
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Command_Post");
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+	      "PLANT_Command_Post",
+	      "BUILD_Command_Post"
+	});
+
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+	Map.Allied_Command_Post = 0;
+	if ( !Map.DocStatus && Map.AllyInside == 0 )
+	      {
+	            SetAvailableMapGoals( TEAM.AXIS, true, {
+		      "DEFEND_South.*",
+		      "DEFEND_Main.*",
+			"AIRSTRIKE_Axis.*",
+		      ".*MG42.*"
+	      });
+	            SetAvailableMapGoals( TEAM.AXIS, false, {
+		      "DEFEND_UFO.*",
+		      "DEFEND_Doc.*"
+	      });
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+      Axis_Command_Post_Built = function()
+	{
+	Map.Axis_Command_Post = 1;
+	if ( Map.MainStatus || Map.SouthStatus )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+	"BUILD_Command_Post",
+	"PLANT_Command_Post"
+	} );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+      Map.Axis_Command_Post = 0;
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+	South_Gate_Planted = function()
+	{
+
+		Util.DisableGoal("DEFUSE_South_Gate.*");
+	},
+
+	South_Gate_Destroyed = function()
+	{
+	Map.SouthStatus = 1;
+      SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"AIRSTRIKE_Allied_S.*",
+		"ATTACK_South.*"
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"ATTACK_Doc.*",
+		"FLAG.*"
+	});
+	if ( Map.Axis_Command_Post )
+            {
+	      SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+	      }
+	      else
+	      {
+	      SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+	      }
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_First_South.*" );
+	if ( Map.AllyInside == 0 )
+      {
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_South.*" );
+	}
+		Util.MapDebugPrint( "South_Gate_Destroyed" );
+	},
+
+	Main_Gate_Planted = function()
+	{
+            Util.DisableGoal("DEFUSE_Main_Gate.*");
+	},
+
+	Main_Gate_Destroyed = function()
+	{
+	Map.MainStatus = 1;
+	if ( Map.Axis_Command_Post )
+	      {
+	      SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+	      }
+	      else
+	      {
+	      SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+	      }
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"AIRSTRIKE_Allied_M.*",
+            "ATTACK_Main.*"
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	      "ATTACK_Doc.*",
+		"FLAG.*"
+	});
+      SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_First_Main.*" );
+	if ( Map.AllyInside == 0 )
+      {
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Main.*" );
+	}
+		Util.MapDebugPrint( "Main_Gate_Destroyed" );
+	},
+
+	The_UFO_Documents_Taken = function()
+	{
+	Map.DocStatus = 1;
+      SetAvailableMapGoals( TEAM.AXIS, true, {
+		"DEFEND_Trans.*",
+		"DEFEND_Flex_Trans.*",
+		"AIRSTRIKE_Trans.*"
+	});
+      SetAvailableMapGoals( TEAM.AXIS, false, {
+		"DEFEND_Doc.*",
+		"DEFEND_UFO.*"
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"ATTACK_Trans.*",
+		"CAPPOINT.*"
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"ATTACK_Doc.*",
+		"FLAG.*"
+	});
+		Util.MapDebugPrint( "UFO_Doc_Taken" );
+	},
+
+	The_UFO_Documents_returned = function()
+	{
+      Map.DocStatus = 0;
+      SetAvailableMapGoals( TEAM.AXIS, false, {
+		"DEFEND_Trans.*",
+		"DEFEND_Flex_Trans.*",
+		"AIRSTRIKE_Trans.*"
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"CAPPOINT.*",
+		"ATTACK_Trans.*"
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"ATTACK_Doc.*",
+		"FLAG.*"
+	});
+	if ( Map.AllyInside == 0 && !Map.Allied_Command_Post )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"DEFEND_South.*",
+		"DEFEND_Main.*",
+		"AIRSTRIKE_Axis.*",
+		".*MG42.*"
+	});
+      }
+	else
+      {
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"DEFEND_UFO.*",
+		"DEFEND_Doc.*"
+	});
+	}
+		Util.MapDebugPrint( "UFO_Doc_Returned" );
+	},
+
+	The_UFO_Documents_Captured = function()
+	{
+		Util.MapDebugPrint( "UFO_Doc_Secured" );
+	},
+
+	Ally_Ins = //UFO intrusion area
+	{
+		Name = "Ally_Ins",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+ 	      {
+		if( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				bot = Util.IsBot(ent);
+				if ( bot )
+				{
+				Map.AllyInside += 1;
+			      Util.MapDebugPrint(GetEntName(ent) + " ^5Ally Entered Bunker UFO");
+				}
+		      if ( !Map.DocStatus )
+		      {
+			sleep(3);
+	            SetAvailableMapGoals( TEAM.AXIS, false, {
+		      "DEFEND_South.*",
+		      "DEFEND_Main.*",
+			"AIRSTRIKE_Axis.*",
+			"DEFEND_First.*",
+		      ".*MG42.*"
+	            });
+	            SetAvailableMapGoals( TEAM.AXIS, true, {
+		      "DEFEND_UFO.*",
+		      "DEFEND_Doc.*"
+	            });
+	            }
+		}
+ 	},
+ 	OnExit = function(ent)
+ 	{
+		if( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				bot = Util.IsBot(ent);
+				if ( bot )
+				{
+				Map.AllyInside -= 1;
+				Util.MapDebugPrint(GetEntName(ent) + " ^5UFO Bunker Is Safe" );
+				}
+			if ( !Map.DocStatus && !Map.Allied_Command_Post && Map.AllyInside == 0 )
+	            {
+			sleep(3);
+	            SetAvailableMapGoals( TEAM.AXIS, true, {
+			"AIRSTRIKE_Axis.*",
+			"DEFEND_South.*",
+			"DEFEND_Main.*",
+		      ".*MG42.*"
+	            });
+	            SetAvailableMapGoals( TEAM.AXIS, false, {
+		      "DEFEND_UFO.*",
+		      "DEFEND_Doc.*"
+	            });
+			}
+			if ( !Map.MainStatus )
+	            {
+		      SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_First_Main.*" );
+		      }
+			if ( !Map.SouthStatus )
+	            {
+		      SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_First_South.*" );
+		      }
+		   }
+	     }
+ 	},
+ };
+
+global OnMapLoad = function()
+{
+      //Register callback functions
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+
+	OnTrigger( "Planted at The Main Gate.", Map.Main_Gate_Planted );
+	OnTrigger( "The Main Gate Destroyed.", Map.Main_Gate_Destroyed );
+	OnTrigger( "Planted at The South Gate.", Map.South_Gate_Planted );
+	OnTrigger( "The South Gate Destroyed.", Map.South_Gate_Destroyed );
+
+	OnTrigger( "Allies have stolen The UFO Documents!", Map.The_UFO_Documents_Taken );
+	OnTrigger( "Flag returned allied_obj3!", Map.The_UFO_Documents_returned );
+	OnTrigger( "Allies Transmitted the UFO Documents!", Map.The_UFO_Documents_Captured );
+
+	//Region Trigger
+	Ally1 = OnTriggerRegion(AABB(-2810.608,-3658.102,730.747,-1025.112,2002.705,1619.245), Map.Ally_Ins);
+
+	//Max users per goal
+	Util.SetMaxUsers( 1, "DEFEND.*" );
+	Util.SetMaxUsers( 1, "ATTACK.*" );
+	Util.SetMaxUsers( 1, ".*MG42.*" );
+	Util.SetMaxUsers( 1, "FLAG.*" );
+	Util.SetMaxUsers( 1, "BUILD.*" );
+	Util.SetMaxUsers( 1, "PLANT.*" );
+
+	//Camp times
+	SetMapGoalProperties( "ATTACK.*", {MinCampTime=15, MaxCampTime=30});
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=40, MaxCampTime=90});
+	SetMapGoalProperties( "MOUNTMG42.*", {MinCampTime=60, MaxCampTime=120});
+
+	//SetGoalPriority
+	SetGoalPriority( "BUILD_Command_Post.*",  0.98, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Command_Post", 0.96,  TEAM.AXIS, CLASS.COVERTOPS );
+	SetGoalPriority( "PLANT_Command_Post", 0.96,  TEAM.ALLIES, CLASS.COVERTOPS );
+	SetGoalPriority( "PLANT_South_Gate", 1.0, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Main_Gate", 1.0, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "DEFEND.*", 0.96);
+      SetGoalPriority( "AIRSTRIKE.*", 1.0);
+	SetGoalPriority( "FLAG.*", 0.96);
+	Util.LimitToClass( "MOUNT.*", TEAM.AXIS, CLASS.ENGINEER);
+
+	//all but routes
+	Util.DisableGoal(".*", true);
+
+	//Allies goals activation
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"ATTACK_Main.*",
+		"ATTACK_South.*",
+		"AIRSTRIKE_Allied.*",
+		"PLANT_Main_Gate",
+		"PLANT_South_Gate"
+	});
+
+      //Axis goals activation
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"DEFEND_First_Main.*",
+		"DEFEND_First_South.*",
+		"AIRSTRIKE_Axis.*",
+		"BUILD_Command_Post",
+		".*MG42.*"
+	});
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_South_Gate =
+		{
+			ROUTE_AlliesSpawn = { ROUTE_south_route = {}, },
+		},
+		PLANT_Main_Gate =
+		{
+			ROUTE_AlliesSpawn =
+			{
+				ROUTE_hill_route = {},
+				ROUTE_north_route = {},
+			},
+		},
+		FLAG_allied_obj3 =
+		{
+			ROUTE_AlliesSpawn =
+			{
+				ROUTE_hill_route =
+				{
+					ROUTE_main_gate =
+					{
+						ROUTE_trans_route =
+						{
+							ROUTE_spawn_stairs =
+							{
+								  ROUTE_spawn_route = {},
+								  ROUTE_upper_ufo =
+								  {
+									Weight = 2,
+									ROUTE_upper_west = {},
+									ROUTE_upper_east = {},
+								  },
+							},
+						},
+
+						ROUTE_north_alley =
+						{
+							ROUTE_garage =
+							{
+								ROUTE_duct =
+								{
+									ROUTE_roof = {},
+									ROUTE_duct_exit = {},
+								},
+
+								ROUTE_stairs = { Weight = 4, },
+							},
+						},
+					},
+				},
+				ROUTE_south_route =
+				{
+					ROUTE_south_gate =
+					{
+						ROUTE_nw_corner =
+						{
+							ROUTE_garage =
+							{
+								ROUTE_duct =
+								{
+									ROUTE_roof = {},
+									ROUTE_duct_exit = {},
+								},
+
+								ROUTE_stairs = { Weight = 4, },
+							},
+						},
+						ROUTE_mid_alley =
+						{
+							ROUTE_garage =
+							{
+								ROUTE_duct =
+								{
+									ROUTE_roof = {},
+									ROUTE_duct_exit = {},
+								},
+
+								ROUTE_stairs = { Weight = 4, },
+							},
+						},
+					},
+				},
+			},
+			ROUTE_CPSpawn =
+			{
+				ROUTE_nw_corner =
+				{
+					ROUTE_garage =
+					{
+						ROUTE_duct =
+						{
+							ROUTE_roof = {},
+							ROUTE_duct_exit = {},
+						},
+
+						ROUTE_stairs = { Weight = 4, },
+					},
+				},
+				ROUTE_mid_alley =
+				{
+					ROUTE_garage =
+					{
+						ROUTE_duct =
+						{
+							ROUTE_roof = {},
+							ROUTE_duct_exit = {},
+						},
+
+						ROUTE_stairs = { Weight = 4, },
+					},
+				},
+				ROUTE_main_gate =
+				{
+					Weight = 2,
+					ROUTE_trans_route =
+					{
+						ROUTE_spawn_stairs =
+						{
+							ROUTE_spawn_route = {},
+							ROUTE_upper_ufo =
+							{
+								Weight = 2,
+								ROUTE_upper_west = {},
+								ROUTE_upper_east = {},
+							},
+						},
+					},
+				},
+			},
+		},
+		CAPPOINT_transmitter =
+		{
+			ROUTE_DocSteal =
+			{
+				ROUTE_nw_corner =
+				{
+					ROUTE_main_gate =
+					{
+						ROUTE_trans_stairs = {},
+						ROUTE_trans_ladder = {},
+					},
+				},
+
+				ROUTE_trans_ladder = {},
+				ROUTE_north_alley =
+				{
+					ROUTE_trans_stairs = {},
+				},
+
+				ROUTE_duct =
+				{
+					Weight = 2,
+					ROUTE_trans_ladder = {},
+					ROUTE_north_alley =
+					{
+						ROUTE_trans_stairs = {},
+
+					},
+				},
+			},
+		},
+	};
+
+	MapRoutes[".*MG42.*"] =
+		{
+		ROUTE_AxisSpawn = { ROUTE_main_gate_defense = {},
+		}
+	};
+	MapRoutes["ATTACK_Doc.*"] = MapRoutes.FLAG_allied_obj3;
+	MapRoutes["DEFEND_Main.*"] = MapRoutes[".*MG42.*"];
+	MapRoutes["DEFEND_South.*"] = MapRoutes[".*MG42.*"];
+	Util.Routes(MapRoutes);
+};

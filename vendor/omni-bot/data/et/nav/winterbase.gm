@@ -1,0 +1,940 @@
+//==========================================================================================
+//
+//	winterbase.gm
+//
+//	Who  	When		What
+//------------------------------------------------------------------------------------------
+//	ETPlayer	26 August 2022	Initial Script
+//	MickyP	10 December 2023	Full Script & updated waypoints
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	Door_1_Closed = true,
+	Door_2_Closed = true,
+	Docs_Secured = false,
+	Vault_Opened = false,
+	Gold_1_taken = true,
+	Gold_2_taken = true,
+
+	Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Command_Post_Built" );
+	},
+
+	Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Command_Post_Destroyed" );
+	},
+
+	Allied_Defence_Destroyed = function()
+	{
+	if  ( Map.Docs_Secured )
+		{
+
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Main.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"CAMP_Compound.*",
+				"MOBILEMG42_Main_Gate",
+			});
+			sleep(2.5); // Allow gate to blow
+			SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Main_Gate.*" );
+			SetAvailableMapGoals( TEAM.AXIS, true, "CAMP_Compound.*" );
+		}
+		Wp.SetWaypointFlag( "Gate", "closed", true );
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_door_2" );
+		Util.MapDebugPrint( "Allied_Defence_Destroyed" );
+	},
+
+	 Main_Gate_Opened = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "AIRSTRIKE_Main_Gate" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_room_1" );
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"PLANT_Command_Post",
+			"BUILD_Command_Post",
+		});
+		Util.EnableGoal( "ROUTE_Command_Door" );
+		if  ( Map.Door_2_Closed )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_door_2" );
+		}
+		else
+		{
+			//Do Nothing
+		}
+
+
+		Util.MapDebugPrint( "Main_Gate_Opened" );
+	},
+
+	Second_Gate_Opened = function()
+	{
+		Util.EnableGoal( "ROUTE_Front_Door" );
+		Util.EnableGoal( "ROUTE_Side_Door" );
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"SWITCH_door_2",
+			"CAMP_Compound.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"CAPPOINT_Vault",
+			"FLAG_commanders_log",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CAMP_Compound.*",
+			"MOBILEMG42_Main_Gate",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"DEFEND_KeyCard.*",
+			"MOUNTMG42_Obj_Overview",
+		});
+
+		Map.Door_2_Closed = false;
+		Util.MapDebugPrint( "2nd_Gate_Opened" );
+	},
+
+	commanders_log_Taken = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "CAMP_Vault.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"DEFEND_KeyCard.*",
+			"MOUNTMG42_Obj_Overview",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Vault.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_Card_.*" );
+		Util.DisableGoal( "PLANT_Command_Post" ); // Focus on Capture point
+		Util.DisableGoal( "BUILD_Command_Post" ); // Focus on Capture point
+		Util.MapDebugPrint( "commanders_log_Taken" );
+	},
+
+	commanders_log_Returned = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "CAMP_Vault.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "CAMP_Vault.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"DEFEND_KeyCard.*",
+			"MOUNTMG42_Obj_Overview",
+			"PLANTMINE_Card_.*",
+		});
+
+		Util.EnableGoal( "PLANT_Command_Post" ); // Focus on CP Spawn
+		Util.EnableGoal( "BUILD_Command_Post" ); // Focus on CP Spawn
+		Util.MapDebugPrint( "commanders_log_Returned" );
+	},
+
+	gold_crate_1_Taken = function()
+	{
+		Map.Gold_1_taken = true;
+		SetAvailableMapGoals( TEAM.AXIS, false, "CAMP_Vault.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "CAMP_Vault.*" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "CAMP_Truck.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Truck.*" );
+		Util.MapDebugPrint( "gold_crate_Taken" );
+	},
+
+	gold_crate_2_Taken = function()
+	{
+		Map.Gold_2_taken = true;
+		SetAvailableMapGoals( TEAM.AXIS, false, "CAMP_Vault.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "CAMP_Vault.*" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "CAMP_Truck.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Truck.*" );
+		Util.MapDebugPrint( "gold_crate_Taken" );
+	},
+
+	gold_crate_1_Returned = function()
+	{
+		Map.Gold_1_taken = false;
+		if ( !Map.Gold_2_taken )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "CAMP_Truck.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Truck.*" );
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "CAMP_Truck.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, false, "CAMP_Truck.*" );
+			SetAvailableMapGoals( TEAM.AXIS, true, "CAMP_Vault.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Vault.*" );
+		}
+		Util.MapDebugPrint( "gold_crate_1_Returned" );
+	},
+
+	gold_crate_2_Returned = function()
+	{
+		Map.Gold_2_taken = false;
+		if ( !Map.Gold_1_taken )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "CAMP_Truck.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Truck.*" );
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "CAMP_Truck.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, false, "CAMP_Truck.*" );
+			SetAvailableMapGoals( TEAM.AXIS, true, "CAMP_Vault.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Vault.*" );
+		}
+		Util.MapDebugPrint( "gold_crate_2_Returned" );
+	},
+
+	gold_crate_1_Secured = function()
+	{
+		if ( !Map.Gold_2_taken )
+		{
+		//	SetAvailableMapGoals( TEAM.AXIS, false, "CAMP_Vault.*" );
+		//	SetAvailableMapGoals( TEAM.ALLIES, false, "CAMP_Vault.*" );
+			Util.MapDebugPrint( "gold_crate_1_Secured_crate_2_taken" );
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "CAMP_Truck.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, false, "CAMP_Truck.*" );
+			SetAvailableMapGoals( TEAM.AXIS, true, "CAMP_Vault.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Vault.*" );
+			Util.MapDebugPrint( "gold_crate_1_Secured_crate_2_not_taken" );
+		}
+		Util.MapDebugPrint( "gold_crate_1_Secured" );
+	},
+
+	gold_crate_2_Secured = function()
+	{
+		if ( !Map.Gold_1_taken )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "CAMP_Vault.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Vault.*" );
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "CAMP_Truck.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, false, "CAMP_Truck.*" );
+			Util.MapDebugPrint( "gold_crate_2_Secured" );
+		}
+		Util.EnableGoal( "PLANT_Command_Post" ); // Focus on CP Spawn
+		Util.EnableGoal( "BUILD_Command_Post" ); // Focus on CP Spawn
+	},
+
+	Vault_Open = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "CAMP_Compound.*" ); 	// In case of player getting obj early
+		SetAvailableMapGoals( TEAM.ALLIES, false, "CAMP_Compound.*" ); 	// In case of player getting obj early
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_Card_1.*" ); // In case of player getting obj early
+		SetAvailableMapGoals( TEAM.AXIS, true, "CAMP_Vault.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Vault.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_Card_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"CAPPOINT_Vault",
+			"FLAG_commanders_log",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, "CAPPOINT_Truck" );
+		sleep(5.0); // Allow Vault door time to open
+		SetAvailableMapGoals( TEAM.AXIS, true, "FLAG_gold_crate" );
+
+		Util.MapDebugPrint( "Vault_Open" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Command_Post_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Command_Post_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Command_Post_Destroyed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Command_Post_Destroyed );
+	OnTrigger( "^1Allied Defence has been destroyed!", Map.Allied_Defence_Destroyed );
+	OnTrigger( "Axis have stolen the Vault key!", Map.commanders_log_Taken );
+	OnTrigger( "winterbase_allied_stolen_docs", Map.commanders_log_Taken );
+	OnTrigger( "^1Vault Code's were returned", Map.commanders_log_Returned );
+	OnTrigger( "^1Axis have opened the Vault!", Map.Vault_Open );
+	OnTrigger( "^1The Axis have Opened the Main Gate!", Map.Main_Gate_Opened);
+	OnTrigger( "winterbase_axis_opendoor2", Map.Second_Gate_Opened);
+	OnTrigger( "winterbase_axis_gold1_stolen", Map.gold_crate_1_Taken );
+	OnTrigger( "winterbase_axis_gold2_stolen", Map.gold_crate_2_Taken );
+	OnTrigger( "winterbase_axis_gold1_returned", Map.gold_crate_1_Returned );
+	OnTrigger( "winterbase_axis_gold2_returned", Map.gold_crate_2_Returned );
+	OnTrigger( "Axis team has secured the first Gold Crate!", Map.gold_crate_1_Secured );
+	OnTrigger( "Axis team has secured the second Gold Crate!", Map.gold_crate_2_Secured );
+
+	Util.DisableGoal( ".*", true ); // all but routes
+	Util.DisableGoal( "ROUTE_Command_Door" );
+	Util.DisableGoal( "ROUTE_Front_Door" );
+	Util.DisableGoal( "ROUTE_Side_Door" );
+	Wp.SetWaypointFlag( "Gate", "closed", false ); // Just for editing waypoints
+//	Util.EnableGoal( "AMMOCAB.*", true );
+//	Util.EnableGoal( "HEALTHCAB.*", true );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"PLANT_Allied_Defence",
+		"SWITCH_room_1",
+		"ATTACK_Main_Gate.*",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"AIRSTRIKE_Main_Gate.*",
+		"PLANT_Command_Post",
+		"BUILD_Command_Post",
+		"DEFEND_Main_.*",
+		"PLANTMINE_Card_.*",
+	});
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "MOUNTMG42_Obj_Overview" );
+	Util.SetMaxUsers( 1, "PLANT_Command_Post" );
+	Util.SetMaxUsers( 1, "BUILD_Command_Post" );
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42_Obj_Overview", {MinCampTime=15, MaxCampTime=90} );
+
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	Server.MinClassCount[TEAM.AXIS][CLASS.COVERTOPS] = 1;};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		ATTACK_Main_Gate_1 =
+		{
+			ROUTE_Axis_Spawn_1  =
+			{
+				ROUTE_Far_Left  =
+				{
+				},
+				ROUTE_Left  =
+				{
+				},
+				ROUTE_Middle  =
+				{
+				},
+				ROUTE_Right  =
+				{
+				},
+				ROUTE_Far_Right  =
+				{
+				},
+			},
+			ROUTE_Axis_Spawn_2  =
+			{
+				ROUTE_Far_Left  =
+				{
+				},
+				ROUTE_Left  =
+				{
+				},
+				ROUTE_Middle  =
+				{
+				},
+			},
+		},
+		CAMP_Compound_1 =
+		{
+			ROUTE_Axis_Spawn_1  =
+			{
+				ROUTE_Far_Left  =
+				{
+				},
+				ROUTE_Far_Right  =
+				{
+				},
+				ROUTE_Left  =
+				{
+				},
+				ROUTE_Middle  =
+				{
+				},
+				ROUTE_Right  =
+				{
+				},
+			},
+			ROUTE_Axis_Spawn_2  =
+			{
+				ROUTE_Far_Left  =
+				{
+				},
+				ROUTE_Far_Right  =
+				{
+				},
+				ROUTE_Left  =
+				{
+				},
+				ROUTE_Middle  =
+				{
+				},
+				ROUTE_Right  =
+				{
+				},
+			},
+			ROUTE_Command_Post_Spawn  =
+			{
+				ROUTE_Ramp  =
+				{
+						ROUTE_Passage  =
+						{
+						},
+				},
+			},
+			ROUTE_Allies_Spawn  =
+			{
+				ROUTE_Stairs  =
+				{
+				},
+				ROUTE_Allies_Right_Exit  =
+				{
+					ROUTE_Switch_Roof  =
+					{
+					},
+					ROUTE_Truck_Drop  =
+					{
+					},
+					ROUTE_Main_Wall_Path  =
+					{
+						ROUTE_Truck_2 =
+						{
+						},
+					},
+					ROUTE_Main_Wall_Path  =
+					{
+						ROUTE_Main_Wall  =
+						{
+							ROUTE_Boxes =
+							{
+							},
+						},
+					},
+				},
+			},
+		},
+		CAPPOINT_Truck =
+		{
+			ROUTE_Gold  =
+			{
+				ROUTE_Gold_Side  =
+				{
+					ROUTE_Ramps_Top  =
+					{
+						ROUTE_Small_Ramp  =
+						{
+						},
+					},
+					ROUTE_Truck_Side  =
+					{
+					},
+				},
+				ROUTE_Command_Post  =
+				{
+					ROUTE_Ramp_Bottom  =
+					{
+					},
+					ROUTE_Ramps_Top  =
+					{
+						ROUTE_Small_Ramp  =
+						{
+						},
+					},
+				},
+			},
+		},
+		FLAG_commanders_log =
+		{
+			ROUTE_Axis_Spawn_1  =
+			{
+				ROUTE_Far_Left  =
+				{
+					ROUTE_Front_Door  =
+					{
+					},
+					ROUTE_Compound =
+					{
+						ROUTE_Side_Door  =
+						{
+						},
+					},
+				},
+				ROUTE_Left  =
+				{
+					ROUTE_Front_Door  =
+					{
+					},
+					ROUTE_Compound =
+					{
+						ROUTE_Side_Door  =
+						{
+						},
+					},
+				},
+				ROUTE_Middle  =
+				{
+					ROUTE_Front_Door  =
+					{
+					},
+					ROUTE_Compound =
+					{
+						ROUTE_Side_Door  =
+						{
+						},
+					},
+				},
+				ROUTE_Right  =
+				{
+					ROUTE_Front_Door  =
+					{
+					},
+					ROUTE_Compound =
+					{
+						ROUTE_Side_Door  =
+						{
+						},
+					},
+				},
+				ROUTE_Far_Right  =
+				{
+					ROUTE_Front_Door  =
+					{
+					},
+					ROUTE_Compound =
+					{
+						ROUTE_Side_Door  =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_Axis_Spawn_2  =
+			{
+				ROUTE_Far_Left  =
+				{
+					ROUTE_Front_Door  =
+					{
+					},
+					ROUTE_Compound =
+					{
+						ROUTE_Side_Door  =
+						{
+						},
+					},
+				},
+				ROUTE_Left  =
+				{
+					ROUTE_Front_Door  =
+					{
+					},
+					ROUTE_Compound =
+					{
+						ROUTE_Side_Door  =
+						{
+						},
+					},
+				},
+				ROUTE_Middle  =
+				{
+					ROUTE_Front_Door  =
+					{
+					},
+					ROUTE_Compound =
+					{
+						ROUTE_Side_Door  =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_Command_Post_Spawn  =
+			{
+				ROUTE_Ramp  =
+				{
+					ROUTE_Side_Door  =
+					{
+					},
+				},
+				ROUTE_Front_Door  =
+				{
+				},
+			},
+		},
+		CAPPOINT_Vault =
+		{
+			ROUTE_Keycard  =
+			{
+				ROUTE_Front_Door  =
+				{
+					ROUTE_Command_Door  =
+					{
+						ROUTE_Command_Post  =
+						{
+						},
+					},
+					ROUTE_Ramp  =
+					{
+					},
+				},
+				ROUTE_Side_Door  =
+				{
+					ROUTE_Ramp  =
+					{
+					},
+					ROUTE_Stairs  =
+					{
+						ROUTE_Passage  =
+						{
+						},
+					},
+				},
+			},
+		},
+		DEFEND_KeyCard_1 =
+		{
+			ROUTE_Allies_Spawn  =
+			{
+				ROUTE_Allies_Ramp_Exit  =
+				{
+				},
+				ROUTE_Allies_Right_Exit  =
+				{
+					ROUTE_Switch_Roof  =
+					{
+						ROUTE_Side_Door  =
+						{
+						},
+					},
+				},
+				ROUTE_Stairs  =
+				{
+					ROUTE_Side_Door  =
+					{
+					},
+				},
+				ROUTE_Allies_Right_Exit  =
+				{
+					ROUTE_Main_Wall_Path  =
+					{
+						ROUTE_Hut_1  =
+						{
+						},
+					},
+					ROUTE_Main_Wall_Path  =
+					{
+						ROUTE_Main_Wall  =
+						{
+							ROUTE_Hut_2  =
+							{
+							},
+						},
+					},
+				},
+			},
+		},
+		CAMP_Truck_1 =
+		{
+			ROUTE_Axis_Spawn_1  =
+			{
+				ROUTE_Far_Right  =
+				{
+					ROUTE_Command_Door  =
+					{
+					},
+					ROUTE_Ramp  =
+					{
+						ROUTE_Gold_Side  =
+						{
+							ROUTE_Ramps_Top  =
+							{
+							},
+							ROUTE_Truck_Side  =
+							{
+							},
+						},
+						ROUTE_Command_Post  =
+						{
+						},
+					},
+				},
+				ROUTE_Right  =
+				{
+					ROUTE_Command_Door  =
+					{
+					},
+					ROUTE_Ramp  =
+					{
+						ROUTE_Gold_Side  =
+						{
+							ROUTE_Ramps_Top  =
+							{
+							},
+							ROUTE_Truck_Side  =
+							{
+							},
+						},
+						ROUTE_Command_Post  =
+						{
+						},
+					},
+				},
+				ROUTE_Middle_Rear  =
+				{
+					ROUTE_Middle  =
+					{
+						ROUTE_Command_Door  =
+						{
+						},
+						ROUTE_Ramp  =
+						{
+							ROUTE_Gold_Side  =
+							{
+								ROUTE_Ramps_Top  =
+								{
+								},
+								ROUTE_Truck_Side  =
+								{
+								},
+							},
+							ROUTE_Command_Post  =
+							{
+							},
+						},
+					},
+				},
+				ROUTE_Middle_Rear  =
+				{
+					ROUTE_Left  =
+					{
+						ROUTE_Command_Door  =
+						{
+						},
+						ROUTE_Ramp  =
+						{
+							ROUTE_Gold_Side  =
+							{
+								ROUTE_Ramps_Top  =
+								{
+								},
+								ROUTE_Truck_Side  =
+								{
+								},
+							},
+							ROUTE_Command_Post  =
+							{
+							},
+						},
+					},
+				},
+				ROUTE_Far_Left  =
+				{
+					ROUTE_Command_Door  =
+					{
+					},
+					ROUTE_Ramp  =
+					{
+						ROUTE_Gold_Side  =
+						{
+							ROUTE_Ramps_Top  =
+							{
+							},
+							ROUTE_Truck_Side  =
+							{
+							},
+						},
+						ROUTE_Command_Post  =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_Axis_Spawn_2  =
+			{
+				ROUTE_Far_Left  =
+				{
+					ROUTE_Command_Door  =
+					{
+					},
+					ROUTE_Ramp  =
+					{
+						ROUTE_Gold_Side  =
+						{
+							ROUTE_Ramps_Top  =
+							{
+							},
+							ROUTE_Truck_Side  =
+							{
+							},
+						},
+						ROUTE_Command_Post  =
+						{
+						},
+					},
+				},
+				ROUTE_Left  =
+				{
+					ROUTE_Command_Door  =
+					{
+					},
+					ROUTE_Ramp  =
+					{
+						ROUTE_Gold_Side  =
+						{
+							ROUTE_Ramps_Top  =
+							{
+							},
+							ROUTE_Truck_Side  =
+							{
+							},
+						},
+						ROUTE_Command_Post  =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_Allies_Spawn  =
+			{
+				ROUTE_Stairs  =
+				{
+					ROUTE_Ramp  =
+					{
+						ROUTE_Gold_Side  =
+						{
+							ROUTE_Truck_Side  =
+							{
+							},
+							ROUTE_Ramps_Top  =
+							{
+							},
+						},
+						ROUTE_Command_Post  =
+						{
+						},
+					},
+					ROUTE_Passage  =
+					{
+						ROUTE_Gold_Side  =
+						{
+							ROUTE_Truck_Side  =
+							{
+							},
+							ROUTE_Ramps_Top  =
+							{
+							},
+						},
+						ROUTE_Command_Post  =
+						{
+						},
+					},
+				},
+				ROUTE_Allies_Right_Exit  =
+				{
+					ROUTE_Switch_Roof  =
+					{
+						ROUTE_Ramp  =
+						{
+							ROUTE_Gold_Side  =
+							{
+								ROUTE_Truck_Side  =
+								{
+								},
+								ROUTE_Ramps_Top  =
+								{
+								},
+							},
+							ROUTE_Command_Post  =
+							{
+							},
+						},
+					},
+					ROUTE_Main_Wall_Path  =
+					{
+						ROUTE_Truck_2 =
+						{
+							ROUTE_Ramp  =
+							{
+								ROUTE_Gold_Side  =
+								{
+									ROUTE_Truck_Side  =
+									{
+									},
+									ROUTE_Ramps_Top  =
+									{
+									},
+								},
+								ROUTE_Command_Post  =
+								{
+								},
+							},
+						},
+					},
+					ROUTE_Main_Wall_Path  =
+					{
+						ROUTE_Main_Wall  =
+						{
+							ROUTE_Boxes =
+							{
+								ROUTE_Ramp  =
+								{
+									ROUTE_Gold_Side  =
+									{
+										ROUTE_Truck_Side  =
+										{
+										},
+										ROUTE_Ramps_Top  =
+										{
+										},
+									},
+									ROUTE_Command_Post  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+
+	};
+		MapRoutes.ATTACK_Main_Gate_2 = MapRoutes.ATTACK_Main_Gate_1;
+		MapRoutes.ATTACK_Main_Gate_3 = MapRoutes.ATTACK_Main_Gate_1;
+		MapRoutes.ATTACK_Main_Gate_4 = MapRoutes.ATTACK_Main_Gate_1;
+		MapRoutes.ATTACK_Main_Gate_5 = MapRoutes.ATTACK_Main_Gate_1;
+		MapRoutes.ATTACK_Main_Gate_6 = MapRoutes.ATTACK_Main_Gate_1;
+		MapRoutes.ATTACK_Main_Gate_7 = MapRoutes.ATTACK_Main_Gate_1;
+		MapRoutes.ATTACK_Main_Gate_8 = MapRoutes.ATTACK_Main_Gate_1;
+		MapRoutes.PLANT_Allied_Defence = MapRoutes.ATTACK_Main_Gate_1;
+		MapRoutes.CAMP_Compound_1 = MapRoutes.CAMP_Compound_1;
+		MapRoutes.CAMP_Compound_2 = MapRoutes.CAMP_Compound_1;
+		MapRoutes.CAMP_Compound_3 = MapRoutes.CAMP_Compound_1;
+		MapRoutes.CAMP_Compound_4 = MapRoutes.CAMP_Compound_1;
+		MapRoutes.CAMP_Compound_5 = MapRoutes.CAMP_Compound_1;
+		MapRoutes.CAMP_Compound_6 = MapRoutes.CAMP_Compound_1;
+		MapRoutes.CAMP_Compound_7 = MapRoutes.CAMP_Compound_1;
+		MapRoutes.CAMP_Compound_8 = MapRoutes.CAMP_Compound_1;
+		MapRoutes.CAMP_Compound_9 = MapRoutes.CAMP_Compound_1;
+		MapRoutes.CAMP_Compound_10 = MapRoutes.CAMP_Compound_1;
+		MapRoutes.CAMP_Compound_11 = MapRoutes.CAMP_Compound_1;
+		MapRoutes.DEFEND_KeyCard_2 = MapRoutes.DEFEND_KeyCard_1;
+		MapRoutes.DEFEND_KeyCard_3 = MapRoutes.DEFEND_KeyCard_1;
+		MapRoutes.DEFEND_KeyCard_4 = MapRoutes.DEFEND_KeyCard_1;
+		MapRoutes.DEFEND_KeyCard_5 = MapRoutes.DEFEND_KeyCard_1;
+		MapRoutes.DEFEND_KeyCard_6 = MapRoutes.DEFEND_KeyCard_1;
+		MapRoutes.DEFEND_KeyCard_7 = MapRoutes.DEFEND_KeyCard_1;
+		MapRoutes.DEFEND_KeyCard_8 = MapRoutes.DEFEND_KeyCard_1;
+		MapRoutes.DEFEND_KeyCard_9 = MapRoutes.DEFEND_KeyCard_1;
+		MapRoutes.CAMP_Truck_2 = MapRoutes.CAMP_Truck_1;
+		MapRoutes.CAMP_Truck_3 = MapRoutes.CAMP_Truck_1;
+		MapRoutes.CAMP_Truck_4 = MapRoutes.CAMP_Truck_1;
+		MapRoutes.CAMP_Truck_5 = MapRoutes.CAMP_Truck_1;
+		MapRoutes.CAMP_Truck_6 = MapRoutes.CAMP_Truck_1;
+		MapRoutes.CAMP_Truck_7 = MapRoutes.CAMP_Truck_1;
+		MapRoutes.CAMP_Truck_8 = MapRoutes.CAMP_Truck_1;
+
+
+	Util.Routes(MapRoutes);
+};

@@ -1,0 +1,2242 @@
+//==========================================================================================
+//
+//	tt.gm
+//
+//	Who              	When		What
+//------------------------------------------------------------------------------------------
+//	^1Varga^7Tom^|_(HUN)	15 September 2024	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	
+	MainTownGate = true,
+	WeakWall = true,
+	StairsWay = true,
+	KeyMadTaken = false,
+	KeyMadDropped = false,
+	KeyMadReturned = false,
+	KeyMadSecured = false,
+	KeySmileTaken = false,
+	KeySmileDropped = false,
+	KeySmileReturned = false,
+	KeySmileSecured = false,
+	BookTaken = false,
+	BookDropped = false,
+	BookReturned = false,
+	BookSecured = false,
+	AlliedSupplies = true,
+	GasVentilator = false,
+	MG42 = false,
+	Mansion_MG42 = false,
+	Allied_CP = false,
+	Axis_CP = false,
+	AirstrikeWellTrigger = 0,
+	rifle_g_bots1 = 0,
+	bot_in_1_trigger = false,
+	bot_in_2_trigger = 0,
+	SmileTriggerCount = 0,
+	MG42TriggerCount = 0,
+	MansionMG42_triggercount = 0,
+	
+	Navigation =
+	{
+		well =
+		{
+			navigate = function(_this)
+			{
+				_this.AddAimRequest(Priority.High, "facing", Vec3(0.055, 0.967, -0.249));
+				_this.Bot.HoldButton(BTN.CROUCH, BTN.FORWARD, 1.2);
+				sleep(1.2);
+			},
+		},
+		
+		near_well =
+		{
+			navigate = function(_this)
+			{
+				_this.AddAimRequest(Priority.High, "facing", Vec3(0.057, 0.977, 0.055));
+				_this.Bot.HoldButton(BTN.FORWARD, BTN.JUMP, 0.8);
+				sleep(0.8);
+			},
+		},
+		
+		jump_to_generator_1 =
+		{
+			navigate = function()
+			{
+				this.AddAimRequest(Priority.High, "facing", Vec3(0.236, 0.970, -0.058));	//0.509, 0.861, -0.013//0.334, 0.936, -0.111
+				this.Bot.HoldButton(BTN.JUMP, BTN.FORWARD, BTN.SPRINT, 0.06);
+				sleep(0.06);
+			},
+		},
+		
+		stop =
+		{
+			EvalFunc = function()
+			{
+				return !this.StopTime || GetTime() - this.StopTime > 11;
+			},
+			
+			navigate = function()
+			{
+				this.Goto(this.Bot.GetPosition());
+				sleep(12);
+				this.StopTime = GetTime();
+			},
+		},
+		
+		jump_to_generator_2 =
+		{
+			navigate = function()
+			{
+				this.AddAimRequest(Priority.High, "facing", Vec3(0.226, 0.974, -0.001));
+				this.Bot.HoldButton(BTN.JUMP, BTN.FORWARD, BTN.SPRINT,  0.3);
+				sleep(0.3);
+			},
+		},
+		
+		jump_to_generator_3 =
+		{
+			navigate = function()
+			{
+				this.AddAimRequest(Priority.High, "facing", Vec3(-0.364, 0.914, -0.179));
+				this.Bot.HoldButton(BTN.JUMP, BTN.FORWARD, BTN.FORWARD, 0.5);
+				sleep(0.5);
+			},
+		},
+		
+		big_jump = 
+		{
+			navigate = function()
+			{
+				this.AddAimRequest(Priority.VeryHigh, "facing", Vec3(-0.040, -0.982, 0.183));
+				this.Bot.HoldButton(BTN.JUMP, BTN.FORWARD, BTN.SPRINT,  1.9);
+				sleep(1.9);
+			},
+		},
+		
+		gpg40_attack =			//waypoint_setproperty paththrough Navigation_PT:gpg40_attack
+		{
+			wpInfo = Util.WpNameInfo("grenade_shot"),	//name of waypoint (Waypoint_setname)
+			EvalFunc = function(_this)
+			{
+				return Map.rifle_g_bots1 < 1 && !Map.StairsWay && Map.bot_in_2_trigger || Map.bot_in_1_trigger && _this.Bot.HasWeapon(WEAPON.GPG40) && _this.Bot.HasAmmo(WEAPON.GPG40);
+			},
+			navigate = function(_this)
+			{
+				Map.rifle_g_bots1 += 1;
+
+				
+				_this.AddAimRequest(Priority.VeryHigh, "facing", Vec3(-0.430, -0.876, 0.216));
+				_this.AddWeaponRequest(Priority.VeryHigh, WEAPON.GPG40);	
+				if ( _this.Goto(Map.Navigation.gpg40_attack.wpInfo.position) == EVENT.PATH_SUCCESS )
+				{
+					print("You will die!");
+					_this.AddWeaponRequest( WEAPON.GPG40);
+					_this.BlockForWeaponChange( WEAPON.GPG40 );
+					_this.Bot.HoldButton(BTN.ATTACK2, 0.5);
+					sleep(2);
+					_this.Bot.HoldButton(BTN.ATTACK1, 0.5);
+					sleep(1);
+				}
+				Map.rifle_g_bots1 -= 1;
+				yield();
+			},
+		},
+	},
+	
+	mg_42 =
+	{
+		Name = "mg_42",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if(GetEntTeam(ent) == TEAM.ALLIES)
+			{
+				Map.MG42TriggerCount += 1;
+				if(Map.MG42TriggerCount > 0 && Map.MG42)
+				{
+					SetAvailableMapGoals(TEAM.AXIS, true, "GRENADE_MG42");
+					Wp.SetWaypointFlag("axis_attack_3","allies", true);
+					Wp.SetWaypointFlag("axis_attack_4","allies", true);
+					Util.MapDebugPrint("Allies at Mg42");
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if(GetEntTeam(ent) == TEAM.ALLIES)
+			{
+				Map.MG42TriggerCount -= 1;
+				if(Map.MG42TriggerCount < 1)
+				{
+					SetAvailableMapGoals(TEAM.AXIS, false, "GRENADE_MG42");
+					Wp.SetWaypointFlag("axis_attack_1","allies", false);
+					Wp.SetWaypointFlag("axis_attack_2","allies", false);
+					Util.MapDebugPrint("Allies leave MG42");
+				}
+			}
+		},
+	},
+	
+	MansionMG42 = 
+	{
+		Name = "MansionMG42",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if(GetEntTeam(ent) == TEAM.ALLIES)
+			{
+				Map.MansionMG42_triggercount += 1;
+				if(MansionMG42_triggercount > 0)
+				{
+					Wp.SetWaypointFlag("templestairs_1", "allies", true);
+					Wp.SetWaypointFlag("axis_attack_1","allies", true);
+					Wp.SetWaypointFlag("axis_attack_2","allies", true);
+					Util.MapDebugPrint("Allies at MansionMG42");
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if(GetEntTeam(ent) == TEAM.ALLIES)
+			{
+				Map.MansionMG42_triggercount -= 1;
+				if(Map.MansionMG42_triggercount < 1)
+				{
+					Wp.SetWaypointFlag("templestairs_1", "allies", false);
+					Wp.SetWaypointFlag("axis_attack_1","allies", false);
+					Wp.SetWaypointFlag("axis_attack_2","allies", false);
+					Util.MapDebugPrint("Allies leave Mansion_MG42");
+				}
+			}
+		},		
+	},
+	
+	one_trigger =
+	{
+		Name = "one_trigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if(GetEntTeam(ent) == TEAM.ALLIES)
+			{
+				Map.bot_in_1_trigger = true;
+				if(Map.AlliedSupplies)
+				{
+					SetAvailableMapGoals(TEAM.AXIS, true,
+					{
+						"CALLARTILLERY_Truc.*",
+						"ARTILLERY_S_Truc.*",
+					});
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if(GetEntTeam(ent) == TEAM.ALLIES)
+			{
+				Map.bot_in_1_trigger = false;
+				if(!Map.bot_in_1_trigger)
+				{
+					SetAvailableMapGoals(TEAM.AXIS, false,
+					{
+						"CALLARTILLERY_Truc.*",
+						"ARTILLERY_S_Truc.*",
+					});
+				}
+			}
+		},
+	},
+	
+	two_trigger = 
+	{
+		Name = "two_trigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if(GetEntTeam(ent) == TEAM.ALLIES)
+			{
+				Map.bot_in_2_trigger += 1;
+				
+				if(Map.bot_in_2_trigger > 0)
+				{
+					SetAvailableMapGoals(TEAM.AXIS, true, "GRENADE_Truck");
+				}
+				if(Map.AlliedSupplies)
+				{
+					SetAvailableMapGoals(TEAM.AXIS, true,
+					{
+						"CALLARTILLERY_Truc.*",
+						"ARTILLERY_S_Truc.*",
+					});
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if(GetEntTeam(ent) == TEAM.ALLIES)
+			{
+				Map.bot_in_2_trigger -= 1;
+				
+				if(Map.bot_in_2_trigger < 1)
+				{
+					SetAvailableMapGoals(TEAM.AXIS, false, "GRENADE_Truck");
+				}
+				if(!Map.bot_in_1_trigger)
+				{
+					SetAvailableMapGoals(TEAM.AXIS, false,
+					{
+						"CALLARTILLERY_Truc.*",
+						"ARTILLERY_S_Truc.*",
+					});
+				}
+			}
+		},
+	},
+	
+	Airstrike__well = 
+	{
+		Name = "Airstike__well",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		playerlist = {},
+		OnEnter = function(ent)
+		{
+			if(GetEntTeam(ent) == TEAM.ALLIES)
+			{
+				list = Map.Airstrike__well.playerlist;
+				if(list[ent])
+				{
+					list[ent] += 1;
+				}
+				else
+				{
+					list[ent] = 1;
+					if(tableCount(list) == 1)
+					{
+						//SetAvailableMapGoals(TEAM.AXIS, true, "AIRSTRIKE_Well");
+					}
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			list = Map.Airstrike__well.playerlist;
+			if(list[ent])
+			{
+				if(list[ent] > 1)
+				{
+					list[ent] -= 1;
+				}
+				else
+				{
+					list[ent] = null;
+					if(tableCount(list) == 0)
+					{
+						SetAvailableMapGoals(TEAM.AXIS, false, "AIRSTRIKE_Well");
+					}
+				}
+			}
+		},
+	},
+	
+	GPG_Attack = 
+	{
+		Name = "GPG_Attack",
+		TriggerOnClass = CLASS.ENGINEER,
+		OnEnter = function(ent)
+		{
+			if(GetEntTeam(ent) == TEAM.AXIS)
+			{
+				Wp.SetWaypointFlag("allies_1", "closed", false);
+				Wp.SetWaypointFlag("allies_2", "closed", true);
+			}
+		},
+		OnExit = function(ent)
+		{
+			if(GetEntTeam(ent) == TEAM.AXIS)
+			{
+				Wp.SetWaypointFlag("allies_1", "closed", true);
+				Wp.SetWaypointFlag("allies_2", "closed", false);
+			}
+		},
+	},
+	
+	fence = 
+	{
+		Name = "fence",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			ent1 = GetGameEntityFromId(90);
+			ent2 = GetGameEntityFromId(89);
+			ent3 = GetGameEntityFromId(88);
+			ent4 = GetGameEntityFromId(91);
+			ent5 = GetGameEntityFromId(92);
+			ent6 = GetGameEntityFromId(93);
+
+			if(!ent1 && !ent2 && !ent3)
+			{
+				print("^1Entity 88, 89 ,90 isn't valid");
+				Wp.SetWaypointFlag("fence_1", "closed", false);
+				Wp.SetWaypointFlag("fence_2", "closed", false);
+				Wp.SetWaypointFlag("fence_3", "closed", false);
+			}
+			if(!ent4 && !ent5)
+			{
+				Wp.SetWaypointFlag("fence_4", "closed", false);
+				Wp.SetWaypointFlag("fence_5", "closed", false);
+			}
+			if(!ent1 && !ent2 && ! ent3 && !ent4 && !ent5)
+			{
+				DeleteTriggerRegion("fence");
+			}
+		},
+	},
+	
+	smile_trigger =
+	{
+		Name = "smile_trigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if(GetEntTeam(ent) == TEAM.AXIS)
+			{
+				Map.SmileTriggerCount += 1;
+				Util.MapDebugPrint("SmileTriggerCount = ^5" + Map.SmileTriggerCount);
+			}
+		},
+		OnExit = function(ent)
+		{
+			if(GetEntTeam(ent) == TEAM.AXIS)
+			{
+				Map.SmileTriggerCount -= 1;
+				if(!Map.StairsWay && Map.SmileTriggerCount < 1)
+				{
+					SetAvailableMapGoals(TEAM.AXIS, false, "FLAG_keymad");
+				}
+				Util.MapDebugPrint("SmileTriggerCount = ^5" + Map.SmileTriggerCount);
+			}
+		},
+	},
+
+	Roles =
+	{
+		AXIS =
+		{
+			AllBots = false, // each bot is considered for a role
+			ATTACKER =
+			{
+				//spawnpt = 4,
+				numbots = 8,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER1=
+			{
+				//spawnpt = 4,
+				numbots = 4,
+				crucialClass = CLASS.ENGINEER,
+			},
+			INFILTRATOR=
+			{
+				numbots = 4,
+				crucialClass = CLASS.COVERTOPS,
+			},
+		},
+		ALLIES =
+		{
+			AllBots = false, // each bot is considered for a role
+			DEFENDER =
+			{
+				//spawnpt = 4,
+				numbots = 8,
+				crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER1 =
+			{
+				//spawnpt = 4,
+				numbots = 4,
+				crucialClass = CLASS.ENGINEER,
+			},
+		},
+
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+		Map.Axis_CP = true;
+		SetAvailableMapGoals(TEAM.AXIS, true, 
+		{
+			"PLANTMINE_Axis_CP_.*",
+		});
+		SetGoalPriority("PLANTMINE_Axis_CP_.*", 0.85, TEAM.AXIS, CLASS.ENGINEER);
+		SetAvailableMapGoals(TEAM.AXIS, false, "BUILD_Axis_Command_Post");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "PLANT_Axis_Command_Post");
+	
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+	
+	Axis_CP_planted = function()
+	{
+		Util.MapDebugPrint("Axis Comman Post Planted");
+	},
+	
+	Axis_CP_Defused = function()
+	{
+		Util.MapDebugPrint("Axis Command Post Defused");
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+		Map.Axis_CP = false;
+		//SetGoalPriority("BUILD_Axis_Command_Post", 0.0, TEAM.AXIS, 0);
+		SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Axis_Command_Post");
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFUSE_Axis_Command_Post_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "PLANT_Axis_Command_Post");
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+	
+	Allied_Command_Post_Built = function()
+	{
+		Map.Allied_CP = true;
+		
+		SetAvailableMapGoals(TEAM.ALLIES, false, "BUILD_Allied_Command_Post");
+		if(!Map.AlliedSupplies && Map.KeyMadSecured && !Map.KeySmileSecured)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, false, "PLANT_Allied_Command_Post");
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "PLANT_Allied_Command_Post");
+		}
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+	
+	Allied_CP_Planted = function()
+	{
+		Util.MapDebugPrint("Planted at the Allied Command Post");
+	},
+	
+	Allied_CP_Defused = function()
+	{
+		Util.MapDebugPrint("Defused at Allied CommandPost");
+	},
+	
+	Allied_Command_Post_Destroyed = function()
+	{
+		Map.Allied_CP = false;
+		if(!Map.KeyMadSecured || !Map.KeySmileSecured)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, true, "BUILD_Allied_Command_Post");
+		}
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+	MG42_Built = function()
+	{
+		Map.MG42 = true;
+		SetAvailableMapGoals(TEAM.ALLIES, true, "MOUNTMG42_MG42");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "BUILD_MG42");
+
+		if(Map.KeySmileSecured && Map.KeyMadSecured)
+		{
+			if(!Map.BookTaken)
+			{
+				SetAvailableMapGoals(TEAM.AXIS, true, "CALLARTILLERY_Book");
+			}
+			if(Map.Mansion_MG42)
+			{
+				SetGoalRole( "PLANTMINE_omega", { ROLE.DEFENDER, ROLE.DEFENDER1});
+				SetGoalRole( "PLANTMINE_Truck_0.*",  ROLE.DEFENDER);
+				SetGoalRole( "PLANTMINE_Truck_1.*",  ROLE.DEFENDER1);
+				SetAvailableMapGoals(TEAM.ALLIES, true,
+				{
+					"PLANTMINE_Truck_.*",
+					"PLANTMINE_omega",
+				});
+			}
+			SetAvailableMapGoals(TEAM.AXIS, true,
+			{
+				"PLANT_MG42",
+				"GRENADE_MG42",
+			});
+		}
+		Util.MapDebugPrint( "MG42_Built" );
+	},
+	
+	MG42_Planted = function()
+	{
+		Util.MapDebugPrint("MG42 Planted");
+	},
+	
+	MG42_Defused = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "PLANT_MG42");
+		Util.MapDebugPrint("MG42 Defused");
+	},
+
+	MG42_Destroyed = function()
+	{
+		Map.MG42 = false;
+		Map.MG42TriggerCount = 0;
+		if(Map.KeyMadSecured && Map.KeySmileSecured)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, true,
+			{
+				"BUILD_MG42",
+			});
+		}
+		Wp.SetWaypointFlag("axis_attack_3","allies", false);
+		Wp.SetWaypointFlag("axis_attack_4","allies", false);
+		SetAvailableMapGoals(TEAM.ALLIES, false, "MOUNTMG42_MG42");
+		SetAvailableMapGoals(TEAM.AXIS, false, "PLANT_MG42");
+		SetAvailableMapGoals(TEAM.AXIS, false, "GRENADE_MG42");
+		Util.MapDebugPrint( "MG42_Destroyed" );
+	},
+	
+	Mansion_MG42_Built = function()
+	{
+		Map.Mansion_MG42 = true;
+		SetAvailableMapGoals(TEAM.ALLIES, true, "MOUNTMG42_Mansion_MG42_nest");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "BUILD_Mansion_MG42_nest");
+		SetAvailableMapGoals(TEAM.AXIS, true, "PLANT_Mansion_MG42_nest");
+		if(Map.MG42 && Map.KeyMadSecured && Map.KeySmileSecured)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, true,
+			{
+				"PLANTMINE_Truck_.*",
+				"PLANTMINE_omega",
+			});
+		}
+		Util.MapDebugPrint("Mansion MG42 Built");
+	},
+	
+	MG42_Mansion_Planted = function()
+	{
+		Util.MapDebugPrint("Mansion MG42 Planted");
+	},
+	
+	Mansion_MG42_defused = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "PLANT_Mansion_MG42_nest");
+		Util.MapDebugPrint("Mansion MG42 defused");
+	},
+	
+	MG42_Mansion_Destroyed = function()
+	{
+		Map.Manson_MG42 = false;
+		Wp.SetWaypointFlag("axis_attack_3","allies", false);
+		Wp.SetWaypointFlag("axis_attack_4","allies", false);
+		SetAvailableMapGoals(TEAM.ALLIES, false,
+		{
+			"MOUNTMG42_Mansion_MG42_nest",
+			"DEFUSE_Mansion.*",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, false, "PLANT_Mansion_MG42_nest");
+		if(Map.KeySmileSecured && Map.KeyMadSecured)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, true, "BUILD_Mansion_MG42_nest");
+		}
+		Util.MapDebugPrint("Mansion MG42 nest destroyed");
+	},
+	
+	Allied_Supplies_Planted = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "PLANTMINE_Supplies_1");
+		Util.MapDebugPrint("Allied supplies planted");
+	},
+	
+	Allied_Supplies_Defused = function()
+	{
+		Util.MapDebugPrint("Allied supplies defused");
+	},
+
+	Allied_supplies_Destroyed = function()
+	{
+		Map.AlliedSupplies = false;
+		DeleteTriggerRegion("smile_trigger");
+		Map.SmileTriggerCount = 0;
+		
+		ClearGoalRole( "FLAG_keymad", ROLE.INFILTRATOR );
+		
+		Map.bot_in_2_trigger = false;
+		Map.bot_in_1_trigger = false;
+		
+		DeleteTriggerRegion("Airstrike_well");
+		DeleteTriggerRegion("one_trigger");
+		DeleteTriggerRegion("two_trigger");
+		DeleteTriggerRegion("GPG_Attack");
+		Wp.SetWaypointFlag("allies_1", "closed", false);
+		Wp.SetWaypointFlag("allies_2", "closed", false);
+		
+		if(!Map.StairsWay)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Archeologist_stairway");
+		}
+
+		SetGoalPriority("PLANT_Allied_Command_Post", 0.78, TEAM.AXIS, CLASS.ENGINEER);
+		
+		SetAvailableMapGoals(TEAM.AXIS, false,
+		{
+			"CALLARTILLERY_Truc.*",
+			"CALLARTILLERY_Weak_Wall",
+			"ARTILLERY_S_Truc.*",
+		//	"ARTILLERY_S_Weak_Wall",
+			"ATTACK_Allied_Supplies_.*",
+			"ATTACK_Weak_Wall_.*",
+			"MOBILEMORTAR_To_Truck_.*",
+			"MOBILEMORTAR_To_Statue_.*",
+			"MOBILEMG42_Attack_Weak_Wall_.*",
+			"MOBILEMG42_Near_Allied_Supply_.*",
+			"MOBILEMG42_Near_Weak_Wall_.*",
+			"CAMP_Wood_Barricade_.*",
+			"CAMP_Truck_Ax.*",
+			"GRENADE_Truck",
+		});
+		
+		if(Map.KeyMadSecured)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, false,
+			{
+				"ATTACK_MadKey_.*",
+				"FLAG_keymad",
+				"CAPPOINT_keymad",
+				"MOBILEMG42_MadKey_Temple_Entrance_",
+			});
+			
+			SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_Mad_key_.*");
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Mad_key_.*");
+			SetAvailableMapGoals(TEAM.AXIS, true,
+			{
+				"ATTACK_MadKey_.*",
+				"FLAG_keymad",
+				"SMOKEBOMB_Left_Temple_Entrance",
+				"MOBILEMG42_MadKey_Temple_Entrance_.*",
+			});
+		}
+		
+		if(Map.KeySmileSecured)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, false,
+			{
+				"ATTACK_KeySmile_.*",
+				"DEFEND_Smile_key_.*",
+				"FLAG_keysmile",
+				"CAPPOINT_keysmile",
+				"BUILD_Gas_ventilator",
+				"DEFUSE_Gas_ventillator_.*",
+			});
+			SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_Smile_key_.*");
+		}
+		else
+		{
+			if(!Map.GasVentilator)
+			{
+				SetAvailableMapGoals(TEAM.AXIS, true,
+				{
+					"BUILD_Gas_ventilator",
+					"DEFEND_Smile_key_0.*",
+				});
+				SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Smile_key_0.*");
+			}
+			else
+			{
+				SetAvailableMapGoals(TEAM.AXIS, true,
+				{
+					"FLAG_keysmile",
+					"DEFEND_Smile_key_0.*",
+				});
+				SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Smile_key_.*");
+				SetAvailableMapGoals(TEAM.ALLIES, true, "PLANT_Gas_ventilator");
+			}
+		}
+		
+		//Util.MapDebugPrint( "MG42 state is " + Map.MG42 );
+		//Util.MapDebugPrint( "Mansion_MG42 state is " + Map.Mansion_MG42 );
+		Util.MapDebugPrint( "KeyMadSecured state is " + Map.KeyMadSecured );
+		Util.MapDebugPrint( "KeySmileSecured state is " + Map.KeySmileSecured );
+		
+		if(Map.KeyMadSecured && Map.KeySmileSecured)
+		{
+			if(!Map.BookTaken || !Map.BookDropped)
+			{
+				SetAvailableMapGoals(TEAM.AXIS, true,
+				{
+					"FLAG_book_of_wisdom",
+					"ATTACK_Book_.*",
+				});
+				
+				SetAvailableMapGoals(TEAM.ALLIES, true,
+				{
+					"DEFEND_Book_.*",
+				});
+			}
+			else
+			{
+				SetAvailableMapGoals(TEAM.ALLIES, true,
+				{
+					"DEFEND_Allied_Supplies_.*",
+					"DEFEND_Cappoint_Book_.*",
+				});
+			}
+			if(Map.MG42)
+			{
+				SetAvailableMapGoals(TEAM.ALLIES, true, "MOUNTMG42_MG42");
+				SetAvailableMapGoals(TEAM.AXIS, true,
+				{
+					"PLANT_MG42",
+					"GRENADE_MG42",
+				});
+				
+				if(Map.Mansion_MG42)
+				{
+					SetAvailableMapGoals(TEAM.ALLIES, true, "PLANTMINE_Truck.*");
+					Util.MapDebugPrint( "MG42 state is azaz mindkettő kész van" + Map.MG42 + Mansion_MG42);
+				}
+				else
+				{
+					SetAvailableMapGoals(TEAM.ALLIES, false, "PLANTMINE_Truck.*");
+				}
+				
+			}
+			else
+			{
+				SetAvailableMapGoals(TEAM.ALLIES, true, "BUILD_MG42");
+				SetAvailableMapGoals(TEAM.ALLIES, false, "MOUNTMG42_MG42");
+				SetAvailableMapGoals(TEAM.ALLIES, false, "PLANTMINE_Truck_.*");
+				//Util.MapDebugPrint( "MG42 state is " + Map.MG42 );
+			}
+			
+			if(Map.Mansion_MG42)
+			{
+				SetAvailableMapGoals(TEAM.ALLIES, true, "MOUNTMG42_Mansion_MG42_nest");
+				SetAvailableMapGoals(TEAM.AXIS, true, "PLANT_Mansion_MG42_nest");
+				if(Map.MG42)
+				{
+					SetAvailableMapGoals(TEAM.ALLIES, true,
+					{
+						"PLANTMINE_Truck_.*",
+						"MOUNTMG42_MG42",
+					});
+					SetAvailableMapGoals(TEAM.AXIS, true, "PLANT_MG42");
+				}
+				else
+				{
+					SetAvailableMapGoals(TEAM.ALLIES, false, "PLANTMINE_Truck_.*");
+					SetAvailableMapGoals(TEAM.ALLIES, true, "BUILD_MG42");
+				}
+			}
+			else
+			{
+				SetAvailableMapGoals(TEAM.ALLIES, true, "BUILD_Mansion_MG42_nest");
+				SetAvailableMapGoals(TEAM.ALLIES, false, "MOUNTMG42_Mansion_MG42_nest");
+				SetAvailableMapGoals(TEAM.ALLIES, false, "PLANTMINE_Truck_.*");
+			}
+		}	
+		else
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, false, "PLANT_Gas_ventilator");
+			SetAvailableMapGoals(TEAM.AXIS, false, "BUILD_Gas_ventilator");
+			SetAvailableMapGoals(TEAM.AXIS, false, "DEFUSE_Gas_ventillator_.*");
+		}
+		
+		SetAvailableMapGoals(TEAM.AXIS, false,
+		{
+			"MOBILEMG42_Attack_Weak_Wall_.*",
+			"MOBILEMORTAR_To_Truck_.*",
+			"PLANTMINE_Supplies_1",
+			"PLANT_Weak_city_wall",
+		//	"CAMP_Near_Truck",
+			"MOBILEMG42_MainGate_AlliedSide_.*",
+			"CALLARTILLERY_Main_Gate",
+			"ARTILLERY_S_Main_Gate",
+			"ARTILLERY_S_Truck",
+			"AIRSTRIKE_Weak_Wall",
+			"PLANT_Wall_barricade",
+		});
+		
+		SetAvailableMapGoals(TEAM.ALLIES, false,
+		{
+			"BUILD_Weak_city_wall",
+			"DEFUSE_Weak_city_wall_.*",
+			"DEFUSE_Allied_supplies_.*",
+			"DEFEND_Maingate_.*",
+			"DEFEND_Allied_Supplies_.*",
+			"PLANTMINE_Maingate_.*",
+			"PLANTMINE_Weakwall_.*",
+			"HEALTHCAB_first_healthcabinet",
+			"AMMOCAB_first_ammocabinet",
+			"BUILD_Wall_barricade",
+			"DEFUSE_Wall_barricade",
+		});
+		
+		if(Map.MainTownGate)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, false,
+			{
+				"ATTACK_Main_Gate_.*",
+				"PLANTMINE_Maingate_.*",
+				"PLANTMINE_Supplies_1",
+				"PLANT_Main_town_gate",
+				//"MOBILEMG42_Main_Gate_Axis_.*",
+				//"MOBILEMG42_Near_Allied_Supply_.*",
+			});
+		}
+		
+		Wp.SetWaypointFlag("second_door_inside", "allies", false);
+		Wp.SetWaypointFlag("second_door_outside", "allies", false);
+		Wp.SetWaypointFlag("sidedoor_inside", "closed", false);
+		Wp.SetWaypointFlag("sidedoor_overside", "closed", false);
+		
+		SetAvailableMapGoals(TEAM.ALLIES, true, "BUILD_Allied_Command_Post");
+	
+		Util.MapDebugPrint( "Allied_supplies_Destroyed" );
+	},
+	
+	Archeologist_stairway_Built = function()
+	{
+		Map.StairsWay = true;
+		Wp.SetWaypointFlag("stairsway","closed", false);
+		Wp.SetWaypointFlag("stairsway2", "closed", false);
+		Wp.SetWaypointFlag("understairs", "closed", true);
+		
+		sleep(1);
+		
+		if(!Map.KeyMadSecured)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true,
+			{
+				"FLAG_keymad",
+				"ATTACK_MadKey_.*",
+				"MOBILEMG42_MadKey_Temple_Entrance_.*",
+			});
+			SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Mad_key_.*");
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.AXIS, false,
+			{
+				"FLAG_keymad",
+				"ATTACK_MadKey_.*",
+				"MOBILEMG42_MadKey_Temple_Entrance_.*",
+			});
+			SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_Mad_key_.*");
+		}
+
+		if(!Map.KeySmileSecured)
+		{
+			if(Map.GasVentilator)
+			{
+				SetAvailableMapGoals(TEAM.AXIS, true,
+				{
+					"FLAG_keysmile",
+					"DEFEND_Smile_key_0.*",
+				});
+				SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Smile_key_.*");
+			}
+			else
+			{
+				SetAvailableMapGoals(TEAM.AXIS, true,
+				{
+					"BUILD_Gas_ventilator",
+					"DEFEND_Smile_key_1.*",
+				});
+				SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Smile_key_0.*");
+			}
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.AXIS, false,
+			{
+				"BUILD_Gas_ventilator",
+				"DEFEND_Smile_key_.*",
+				"DEFUSE_Gas_ventillator_.*",
+			});
+			SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_Smile_key_.*");
+		}
+		
+		SetAvailableMapGoals(TEAM.AXIS, false, "BUILD_Archeologist_stairway");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "PLANT_Archeologist_stairway");
+		Util.MapDebugPrint( "Archeologist_stairway_Built ^5" + Map.SmileTriggerCount );
+	},
+	
+	Archeologist_stairway_Planted = function()
+	{
+		if(MainTownGate && AlliedSupplies)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, false, "DEFUSE_Archeologist_stairsway_.*");
+		}
+		Util.MapDebugPrint( "Archeologist_stairway_Planted" );
+	},
+	
+	Archeologist_stairway_Defused = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, true, "PLANT_Archeologist_stairway");
+		Util.MapDebugPrint("Archeologist stairway defused");
+	},
+
+	Archeologist_stairway_Destroyed = function()
+	{
+		Map.StairsWay = false;
+		if(!Map.MainTownGate)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Archeologist_stairway");
+		}
+		SetAvailableMapGoals(TEAM.ALLIES, false, "PLANT_Archeologist_stairway");
+		Wp.SetWaypointFlag("stairsway","closed", true);
+		Wp.SetWaypointFlag("stairsway2", "closed", true);
+		Wp.SetWaypointFlag("understairs", "closed", false);
+		sleep(1);
+		if(Map.SmileTriggerCount < 1)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, false, "FLAG_keymad");
+		}
+		
+		
+		Util.MapDebugPrint( "Archeologist_stairsway_Destroyed ^5" + Map.SmileTriggerCount );
+	},
+	
+	Gas_ventilator_Built = function()
+	{
+		Map.GasVentilator = true;
+		Wp.SetWaypointFlag("gasroom_1", "closed", false);
+		Wp.SetWaypointFlag("gasroom_2", "closed", false);
+		
+		if(!Map.KeySmileSecured && !Map.KeySmileTaken)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "FLAG_keysmile");
+		}
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_Gas_Ventillator");
+		SetAvailableMapGoals(TEAM.AXIS, false, "BUILD_Gas_ventilator");
+		if(!Map.KeySmileSecured)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, true,
+			{
+				"PLANT_Gas_ventilator",
+			});
+			if(!Map.KeySmileTaken || !Map.KeySmileReturned || !Map.KeySmileDropped)
+			{
+				SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Smile_key_.*");
+				SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_Smile_key_0.*");
+			}
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_Smile_key_.*");
+			SetAvailableMapGoals(TEAM.ALLIES, false, "PLANT_Gas_ventilator");
+			SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_Smile_key_.*");
+		}
+		if(Map.AlliedSupplies)
+		{
+			SetGoalPriority("FLAG_keysmile", 1.1, TEAM.AXIS, CLASS.ENGINEER);
+		}
+		Util.MapDebugPrint( "Gas_ventilator_Built" );
+	},
+	
+	Ventilator_Planted = function()
+	{
+		if(!Map.KeySmileSecured)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "DEFUSE_Gas_ventillator_.*");
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.AXIS, false, "DEFUSE_Gas_ventillator_.*");
+		}
+		Util.MapDebugPrint("Ventilator Planted");
+		//SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_Smile_key_1.*");
+	},
+	
+	Gas_ventilator_Defused = function()
+	{
+		//SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Smile_key_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "PLANT_Gas_ventilator");
+		Util.MapDebugPrint("Defused at Gas Ventilator");
+	},
+
+	Gas_ventilator_Destroyed = function()
+	{
+		Map.GasVentilator = false;
+		
+		Wp.SetWaypointFlag("gasroom_1", "closed", true);
+		Wp.SetWaypointFlag("gasroom_2", "closed", true);
+		
+		if(!Map.KeySmileSecured)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Gas_ventilator");
+			SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_Smile_key_0.*");
+		}
+		
+		SetAvailableMapGoals(TEAM.ALLIES, false,
+		{
+			"PLANT_Gas_ventilator",
+			"DEFEND_Smile_key_1.*",
+		});
+
+		SetAvailableMapGoals(TEAM.AXIS, false,
+		{
+			"DEFUSE_Gas.*",
+			"FLAG_keysmile",
+			"DEFEND_Gas_Ventillator",
+		});
+		Util.MapDebugPrint( "Gas_ventilator_Destroyed" );
+	},
+	
+	Main_Town_Gate_PLanted = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Axis_Command_Post");
+		SetGoalPriority("ATTACK_Main_Gate_1", 0.79, TEAM.AXIS, 0);
+		SetGoalPriority("ATTACK_Main_Gate_2", 0.79, TEAM.AXIS, 0);
+		SetGoalPriority("ATTACK_Main_Gate_5", 0.6, TEAM.AXIS, 0);
+		SetAvailableMapGoals(TEAM.AXIS, true, "ATTACK_Main_Gate_.*");
+		WeaponTable.SetWeaponTeamAvailability(TEAM.AXIS, CLASS.ENGINEER, WEAPON.MP40, false);
+		Util.MapDebugPrint("Main town gate planted");
+	},
+	
+	Main_Town_Gate_Defused = function()
+	{
+		Util.MapDebugPrint("Defused at the Main Town Gate");
+	},
+
+	Main_town_gate_Destroyed = function()
+	{
+		Map.MainTownGate = false;
+		Wp.SetWaypointFlag("main_gate_door_inside", "allies", false);
+		Wp.SetWaypointFlag("main_gate_door_outside", "allies", false);
+		Wp.SetWaypointFlag("weakwall_3", "closed", false);
+		SetAvailableMapGoals(TEAM.AXIS, false, 
+		{	
+			"ATTACK_Main_Gate_.*",
+			"MOBILEMG42_Main_Gate_Axis_.*",
+			"MOBILEMG42_MainGate_AlliedSide_.*",
+			"MOBILEMG42_Near_Weak_Wall_.*",
+			"CALLARTILLERY_MainGate_.*",
+			"ARTILLERY_S_Main_Gate",
+			"CAMP_Wood_Barricade_.*",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, true,
+		{
+			"PLANT_Weak_city_wall",
+			"ATTACK_Weak_Wall_1.*",
+			"AMMOCAB_first_ammocabinet",
+			"HEALTHCAB_first_healthcabinet",
+			"HEALTHCAB_food01_heal",
+			"HEALTHCAB_food02",
+			"PLANT_Allied_supplies",
+			"CALLARTILLERY_Weak_Wall",
+			"CALLARTILLERY_Truc.*",
+			"MOBILEMORTAR_To_Statue_0.*",
+			"ARTILLERY_S_Truc.*",
+			"CAMP_Truck_Ax.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true,
+		{
+			"DEFEND_Allied_Supplies_.*",
+			"AMMOCAB_first_ammocabinet_1",
+			"HEALTHCAB_first_healthcabinet_1",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false,
+		{
+			"DEFEND_Maingate_.*",
+			"DEFUSE_Main_town_gate_.*",
+			"PLANTMINE_Maingate_.*",
+		});
+		
+		if(!Map.StairsWay)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Archeologist_stairway");
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "FLAG_keymad");
+		}
+		
+		if(!Map.AlliedSupplies)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, false, "ATTACK_Weak_Wall_.*");
+			SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_Allied_Supplies_.*");
+			SetAvailableMapGoals(TEAM.AXIS, false,
+			{
+				"PLANT_Weak_city_wall",
+				"ATTACK_Weak_Wall_",
+				"MOBILEMORTAR_To_Truck_.*",
+				"MOBILEMORTAR_To_Statue_.*",
+				"MOBILEMG42_Attack_Weak_Wall_.*",
+				"MOBILEMG42_Near_Allied_Supply_.*",
+				"MOBILEMG42_Near_Weak_Wall_",
+				"CALLARTILLERY_Gate_To_Truc.*",
+				"ARTILLERY_S_Truc.*",
+				"CALLARTILLERY_Weak_Wal.*",
+				//"ARTILLERY_S_Weak_Wall",
+				"CAMP_Truck_Ax.*",
+			});
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "MOBILEMORTAR_To_Statue_0.*");
+		}
+	
+		Util.MapDebugPrint( "Main_town_gate_Destroyed" );
+	},
+	
+	Weak_city_wall_Built = function()  //Wood Barricade Built
+	{
+		Map.WeakWall = true;
+		SetGoalPriority("PLANT_Wall_barricade", 0.0, TEAM.AXIS, CLASS.ENGINEER);
+		SetGoalPriority("PLANT_Wall_barricade", 0.8, TEAM.AXIS, CLASS.COVERTOPS);
+		if(Map.AlliedSupplies)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "PLANT_Wall_barricade");
+			SetAvailableMapGoals(TEAM.AXIS, false,
+			{
+				"AIRSTRIKE_Weak_Wall",
+				"CAMP_Wood_Barricade_.*",
+			});
+			SetAvailableMapGoals(TEAM.ALLIES, true,
+			{
+				"PLANTMINE_Weakwall_1",
+				"PLANTMINE_Weakwall_2",
+			});
+		}
+		Util.MapDebugPrint("Allies reconsctructed the Wall");
+	},
+	
+	Weak_City_Wall_Planted = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, false, "DEFUSE_Weak_city_wall_.*", true);
+		SetGoalPriority("PLANT_Weak_city_wall", 0.0, TEAM.AXIS, CLASS.COVERTOPS);
+		Util.MapDebugPrint("Planted at weak city wall");
+	},
+	
+	City_Wall_Breached = function()
+	{
+		Map.WeakWall = false;
+		
+		if(ETUtil.CountClass(TEAM.AXIS, CLASS.SOLDIER) < 2)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, false,
+			{
+				"MOBILEMG42_Near_Allied_Supply_.*",
+				"MOBILEMG42_Attack_Weak_Wall_.*",
+				"MOBILEMG42_Near_Weak_Wall_.*",
+			});
+		}
+		SetAvailableMapGoals(TEAM.AXIS, true,
+		{
+			"PLANT_Allied_supplies",
+			"PLANT_Weak_city_wall",
+			//"MOBILEMORTAR_To_Truck_",
+		});
+		SetGoalPriority("PLANT_Weak_city_wall", 0.9, TEAM.AXIS, CLASS.COVERTOPS );
+
+		SetAvailableMapGoals(TEAM.ALLIES, false,
+		{
+			"PLANTMINE_Weakwall_1",
+			"PLANTMINE_Weakwall_2",
+		});
+		if(!Map.StairsWay)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true,
+			{
+				"CALLARTILLERY_Weak_Wall",
+				//"ARTILLERY_S_Weak_Wall",
+			});
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true,
+			{
+				//"ARTILLERY_S_Weak_Wall",
+			});
+		}
+		if(Map.AlliedSupplies)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true,
+			{
+				"ATTACK_Allied_Supplies_.*",
+				"PLANT_Allied_supplies",
+				"PLANT_Weak_city_wall",
+			});
+			SetAvailableMapGoals(TEAM.ALLIES, true,
+			{
+				"BUILD_Wall_barricade",
+				"DEFEND_Allied_Supplies_.*",
+				"PLANTMINE_Weakwall_3",
+				"PLANTMINE_Weakwall_4",
+				"PLANTMINE_Weakwall_5",
+			});
+		}
+		Util.MapDebugPrint("City Wall Breached");
+	},
+/*	
+	City_Wall_Hard_Damaged = function()
+	{
+		Map.WeakWall = false;
+		SetAvailableMapGoals(TEAM.AXIS, true,
+		{
+			"PLANT_Weak_city_wall",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, true, "PLANT_Allied_supplies");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "BUILD_Weak_city_wall");
+		Util.MapDebugPrint("City Wall Hard Damaged");
+	},
+*/
+	Weak_city_wall_Destroyed = function()	//Wood Barricade destroyed
+	{
+		Map.WeakWall = false;
+		SetAvailableMapGoals(TEAM.AXIS, true,
+		{
+			"PLANT_Allied_supplies",
+			//"MOBILEMORTAR_To_Truck_.*",
+			"CAMP_Wood_Barricade_.*",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, false,
+		{
+			"PLANT_Weak_city_wall",
+		});
+		if(Map.AlliedSupplies)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, true, "BUILD_Wall_barricade");
+		}
+	
+		Util.MapDebugPrint( "Weak_city_wall_Destroyed" );
+	},
+/*	
+	Allies_Trying_Repair_The_Wall = function()
+	{
+		Map.WeakWall = false;
+
+		Wp.SetWaypointFlag("weakwall_2", "closed", true);
+		Util.MapDebugPrint("Allies trying to repair the wall");
+	},
+	
+	Allies_Almost_Finished_The_Wall = function()
+	{
+		Map.WeakWall = false;
+
+		//SetAvailableMapGoals(TEAM.AXIS, false, "PLANT_Allied_supplies");
+		Util.MapDebugPrint("Allies almost finished the wall");
+	},
+*/	
+	keysmile_Taken = function()
+	{
+		Map.KeySmileReturned = false;
+		Map.KeySmileDropped = false;
+		Map.KeySmileTaken = true;
+		SetAvailableMapGoals(TEAM.AXIS, true,
+		{
+			"CAPPOINT_keysmile",
+			"DEFEND_Altar_Right_0.*",
+			"MOBILEMG42_Smile_Key_.*",
+			"ATTACK_KeySmile_.*",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, false,
+		{
+			"DEFEND_Smile_key_.*",
+		});
+		
+	//	Wp.SetWaypointFlag("keysmile_temple_entrance", "allies", true);
+	//	Wp.SetWaypointFlag("keysmile_temple_entrance_out", "allies", true);
+		SetAvailableMapGoals(TEAM.ALLIES, false,
+		{
+			"DEFEND_Smile_key_.*",
+			"DEFEND_Mad_key_.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Cappoint_Keys_.*");
+
+		Util.MapDebugPrint( "keysmile_Taken" );
+//		Util.MapDebugPrint( "^3KeySmileTaken = " + Map.KeySmileTaken );
+//		Util.MapDebugPrint( "^3KeySmileDropped = " + Map.KeySmileDropped );
+//		Util.MapDebugPrint( "^3KeySmileReturned = " + Map.KeySmileReturned );
+//		Util.MapDebugPrint( "^3KeySmileSecured = " + Map.KeySmileSecured );
+	},
+
+	KeySmile_Dropped = function()
+	{
+		Map.KeySmileTaken = false;
+		Map.KeySmileDropped = true;
+		Util.MapDebugPrint( "Keysmile Dropped" );
+//		Util.MapDebugPrint( "^3KeySmileTaken = " + Map.KeySmileTaken );
+//		Util.MapDebugPrint( "^3KeySmileDropped = " + Map.KeySmileDropped );
+//		Util.MapDebugPrint( "^3KeySmileReturned = " + Map.KeySmileReturned );
+//		Util.MapDebugPrint( "^3KeySmileSecured = " + Map.KeySmileSecured );
+	},
+	
+	keysmile_Returned = function()
+	{
+		Map.KeySmileDropped = false;
+		Map.KeySmileReturned = true;
+
+		if(Map.GasVentilator)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_Smile_key_0.*");
+			SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Smile_key_.*");
+			SetAvailableMapGoals(TEAM.ALLIES, true, "PLANT_Gas_ventilator");
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Gas_ventilator");
+			SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_Smile_key_1.*");
+			SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_Smile_key_1.*");
+		}
+		SetAvailableMapGoals(TEAM.AXIS, false,
+		{
+			"CAPPOINT_keysmile",
+			"ATTACK_KeySmile_.*",
+			"DEFEND_Altar_Right_0.*",
+			"MOBILEMG42_Smile_Key_.*",
+		});
+		Wp.SetWaypointFlag("keysmile_temple_entrance", "allies", false);
+		Wp.SetWaypointFlag("keysmile_temple_entrance_out", "allies", false);
+		if(Map.KeyMadTaken || Map.KeyMadDropped && !Map.KeyMadSecured)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, false,
+			{
+				"DEFEND_Cappoint_Keys_.*",
+			});
+		}
+
+		Util.MapDebugPrint( "Keysmile_Returned!" );
+//		Util.MapDebugPrint( "^3KeySmileTaken = " + Map.KeySmileTaken );
+//		Util.MapDebugPrint( "^3KeySmileDropped = " + Map.KeySmileDropped );
+//		Util.MapDebugPrint( "^3KeySmileReturned = " + Map.KeySmileReturned );
+//		Util.MapDebugPrint( "^3KeySmileSecured = " + Map.KeySmileSecured );
+//		Util.MapDebugPrint("^5KeyMad_TAKEN = " + Map.KeyMadTaken );
+//		Util.MapDebugPrint("^5KeyMad_SECURED = " + Map.KeyMadSecured );
+	},
+
+	keysmile_Secured = function()
+	{
+		Wp.SetWaypointFlag("keysmile_temple_entrance", "allies", false);
+		Wp.SetWaypointFlag("keysmile_temple_entrance_out", "allies", false);
+		Map.KeySmileTaken = false;
+		Map.KeySmileSecured = true;
+		SetAvailableMapGoals(TEAM.AXIS, false,
+		{
+			"BUILD_Gas_ventilator",
+			"CAPPOINT_keysmile",
+			"FLAG_keysmile",
+			"ATTACK_KeySmile_.*",
+			"DEFEND_Smile_key_.*",
+			"DEFEND_Altar_Right_0.*",
+			"DEFEND_Gas_Ventillator",
+			"DEFUSE_Gas_ventillator_.*",
+			"MOBILEMG42_Smile_Key_.*",
+		});
+		if(Map.KeyMadSecured)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true,
+			{
+				"FLAG_book_of_wisdom",
+				"PLANTMINE_alt_.*",
+				"CALLARTILLERY_Book_1",
+				"ARTILLERY_S_MG42",
+				"ATTACK_Book_.*",
+				"MOBILEMG42_Mad_Key_.*",
+				"HEALTHCAB_first_healthcabinet_1",
+				"AMMOCAB_first_ammocabinet_1",
+			});
+			
+			if(GetCvar("g_friendlyFire") == 1)
+			{
+				SetAvailableMapGoals(TEAM.AXIS, true, "ARTILLERY_S_Book");
+			}
+			SetAvailableMapGoals(TEAM.ALLIES, false,
+			{
+				"DEFEND_Mad_key_.*",
+				"DEFEND_Cappoint_Keys_.*",
+				"BUILD_Allied_Command_Post",
+			});			
+			SetAvailableMapGoals(TEAM.ALLIES, true,
+			{
+				"BUILD_MG42",
+				"BUILD_Mansion_MG42_nest",
+				"DEFEND_Book_.*",
+			});
+			SetAvailableMapGoals(TEAM.AXIS, false,
+			{
+				"CALLARTILLERY_SmileTemple",
+				"ARTILLERY_S_AltarRight",
+				"ATTACK_MadKey_.*",
+				"DEFEND_Cappoint_Keys_.*",
+				"MOBILEMG42_Mad_Key_.*",
+				"MOBILEMG42_Smile_Key_.*",
+				"PLANT_Allied_Command_Post",
+			});
+			if(Map.MG42 && Map.Mansion_MG42)
+			{
+				SetAvailableMapGoals(TEAM.ALLIES, true,
+				{
+					"PLANTMINE_Truck_.*",
+					"PLANTMINE_omega",
+					"MOUNTMG42_M.*",
+				});
+			}
+			if(Map.AlliedSupplies)
+			{
+				SetAvailableMapGoals(TEAM.ALLIES, false, "BUILD_M.*");
+			}
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true,
+			{
+				"PLANTMINE_AlliSpawn_.*",
+				"MOBILEMG42_Smile_Key_.*",
+			});
+			if(!Map.KeyMadTaken || !Map.KeyMadDropped)
+			{
+				SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Mad_key_.*");
+				SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_Cappoint_Keys_.*");
+				SetAvailableMapGoals(TEAM.AXIS, true,
+				{
+					"CALLARTILLERY_MainGate",
+					"ARTILLERY_S_AltarLeft",
+				});
+			}
+		}
+		SetAvailableMapGoals(TEAM.ALLIES, false,
+		{
+			"PLANT_Gas_ventilator",
+			"DEFEND_Smile_key_.*",
+			"SNIPE_SmileKey_.*",
+		});
+		Util.MapDebugPrint( "Keysmile Secured!" );
+//		Util.MapDebugPrint( "^3KeySmileTaken = " + Map.KeySmileTaken );
+//		Util.MapDebugPrint( "^3KeySmileDropped = " + Map.KeySmileDropped );
+//		Util.MapDebugPrint( "^3KeySmileReturned = " + Map.KeySmileReturned );
+//		Util.MapDebugPrint( "^3KeySmileSecured = " + Map.KeySmileSecured );
+	},
+	
+	keymad_Taken = function()
+	{
+		Map.KeyMadDropped = false;
+		Map.KeyMadReturned = false;
+		Map.KeyMadTaken = true;
+		
+		SetAvailableMapGoals(TEAM.AXIS, true,
+		{
+			"CAPPOINT_keymad",
+			"DEFEND_Altar_Left_0.*",
+			"MOBILEMG42_Mad_Key_.*",
+		});
+		
+		SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_Mad_key_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true,
+		{
+			"DEFEND_Cappoint_Keys_.*",
+			"SNIPE_MadKey_.*",
+		});
+		Util.MapDebugPrint( "keymad_Taken" );
+//		Util.MapDebugPrint( "^3KeyMadTaken = " + Map.KeyMadTaken );
+//		Util.MapDebugPrint( "^3KeyMadDropped = " + Map.KeyMadDropped );
+//		Util.MapDebugPrint( "^3KeyMadReturned = " + Map.KeyMadReturned );
+//		Util.MapDebugPrint( "^3KeyMadSecured = " + Map.KeyMadSecured );
+
+		SetAvailableMapGoals(TEAM.AXIS, false,
+		{
+			"SMOKEBOMB_Left_Temple_Entrance",
+			"SMOKEBOMB_Left_Temple_1",
+			"ATTACK_MadKey_.*",
+		});
+	},
+	
+	KeyMad_Dropped = function()
+	{
+		Map.KeyMadTaken = false;
+		Map.KeyMadDropped = true;
+		Util.MapDebugPrint("KeyMad Dropped");
+//		Util.MapDebugPrint( "^3KeyMadTaken = " + Map.KeyMadTaken );
+//		Util.MapDebugPrint( "^3KeyMadDropped = " + Map.KeyMadDropped );
+//		Util.MapDebugPrint( "^3KeyMadReturned = " + Map.KeyMadReturned );
+//		Util.MapDebugPrint( "^3KeyMadSecured = " + Map.KeyMadSecured );
+	},
+
+	keymad_Returned = function()
+	{
+		Map.KeyMadDropped = false;
+		Map.KeyMadReturned = true;
+		SetAvailableMapGoals(TEAM.AXIS, true,
+		{
+			"FLAG_keymad",
+			"ATTACK_MadKey_.*",
+			"MOBILEMG42_MadKey_Temple_Entrance_.*",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, false,
+		{
+			"CAPPOINT_keymad",
+			"DEFEND_Altar_Left_0.*",
+			"MOBILEMG42_Mad_Key_.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Mad_key_.*");
+		if(!Map.KeySmileTaken || Map.KeySmileSecured)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_Cappoint_Keys_.*");
+		}
+		if(Map.AlliedSupplies && !Map.StairsWay)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_Mad_key_.*");
+		}
+		Util.MapDebugPrint( "Keymad_Returned!" );
+//		Util.MapDebugPrint("^5Keysmile_TAKEN = " + Map.KeySmileTaken );
+//		Util.MapDebugPrint("^5Keysmile_SECURED = "+  Map.KeySmileSecured );
+//		Util.MapDebugPrint( "^3KeyMadTaken = " + Map.KeyMadTaken );
+//		Util.MapDebugPrint( "^3KeyMadDropped = " + Map.KeyMadDropped );
+//		Util.MapDebugPrint( "^3KeyMadReturned = " + Map.KeyMadReturned );
+//		Util.MapDebugPrint( "^3KeyMadSecured = " + Map.KeyMadSecured );
+		
+	},
+	
+	keymad_Secured = function()
+	{
+		Map.KeyMadTaken = false;
+		Map.KeyMadSecured = true;
+		SetGoalPriority("BUILD_Archeologist_stairway", 0.85, TEAM.AXIS, CLASS.ENGINEER);
+		SetAvailableMapGoals(TEAM.AXIS, false,
+		{
+			"FLAG_keymad",
+			"ATTACK_KeySmile_.*",
+			"CAPPOINT_keymad",
+			"ATTACK_MadKey_.*",
+			"DEFEND_Altar_Left_0.*",
+			"MOBILEMG42_MadKey_Temple_Entrance_.*",
+			
+		});
+		if(Map.KeySmileSecured)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true,
+			{
+				"FLAG_book_of_wisdom",
+				"ATTACK_Book_.*",
+				"PLANTMINE_alt_.*",
+				"HEALTHCAB_first_healthcabinet_1",
+				"AMMOCAB_first_ammocabinet_1",
+			});
+			SetAvailableMapGoals(TEAM.ALLIES, false,
+			{
+				"BUILD_Allied_Command_Post",
+				"DEFEND_Smile_key_.*",
+			});
+			
+			SetAvailableMapGoals(TEAM.ALLIES, true,
+			{
+				"BUILD_MG42",
+				"BUILD_Mansion_MG42_nest",
+				"DEFEND_Book_.*",
+			});
+			
+			SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_Cappoint_Keys_.*");
+			SetAvailableMapGoals(TEAM.AXIS, false,
+			{
+				"DEFEND_Cappoint_Keys_.*",
+				"MOBILEMG42_Mad_Key_.*",
+				"MOBILEMG42_Smile_Key_.*",
+				"PLANT_Allied_Command_Post",
+				"CALLARTILLERY_SmileTemple",
+				"ARTILLERY_S_AltarRight",
+				"DEFUSE_Gas_ventillator_.*",
+				"BUILD_Gas_ventilator",
+				"DEFEND_Smile_key_.*",
+			});
+			if(Map.MG42 && Map.Mansion_MG42)
+			{
+				SetAvailableMapGoals(TEAM.ALLIES, true,
+				{
+					"PLANTMINE_omega",
+					"PLANTMINE_Truck.*",
+				});
+			}
+		}
+		else
+		{
+			if(!KeySmileTaken)
+			{
+				SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Smile_key_.*");
+				SetAvailableMapGoals(TEAM.AXIS, true,
+				{
+				//	"DEFEND_Cappoint_Keys_.*",
+					
+				});
+
+			}
+			if(!Map.KeySmileDropped)
+			{
+				SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_Cappoint_Keys_.*");
+			}
+			SetAvailableMapGoals(TEAM.AXIS, false, "CALLARTILLERY_MainGate");
+			SetAvailableMapGoals(TEAM.AXIS, true,
+			{
+				"ARTILLERY_S_AltarRight",
+				"CALLARTILLERY_SmileTemple",
+			});
+			SetAvailableMapGoals(TEAM.ALLIES, true, "SNIPE_SmileKey_.*");
+			if(Map.GasVentilator)
+			{
+				SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Smile_key_.*");
+				SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_Smile_key_0.*");
+			}
+			else
+			{
+				SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Smile_key_.*");
+				SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_Smile_key_1.*");
+				SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_Smile_key_.*");
+				SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_Smile_key_0.*");
+			}
+			SetAvailableMapGoals(TEAM.AXIS, true, "MOBILEMG42_Mad_Key_.*");
+			SetAvailableMapGoals(TEAM.AXIS, false, "PLANT_Allied_Command_Post");
+		}
+		
+		
+		if(Map.AlliedSupplies)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, false, "ATTACK_KeySmile_.*");
+		}
+		
+		SetAvailableMapGoals(TEAM.ALLIES, false,
+		{
+			"SNIPE_MadKey_.*",
+			"DEFEND_Mad_key_.*",
+		});
+		
+		Util.MapDebugPrint( "KeyMad Secured!" );
+//		Util.MapDebugPrint( "^3KeyMadTaken = " + Map.KeyMadTaken );
+//		Util.MapDebugPrint( "^3KeyMadDropped = " + Map.KeyMadDropped );
+//		Util.MapDebugPrint( "^3KeyMadReturned = " + Map.KeyMadReturned );
+//		Util.MapDebugPrint( "^3KeyMadSecured = " + Map.KeyMadSecured );
+	},
+	
+	book_of_wisdom_Taken = function()
+	{
+		Map.BookTaken = true;
+		Util.ChangeSpawnForRole(TEAM.AXIS, ROLE.ATTACKER, 3);
+		Util.ChangeSpawnForRole(TEAM.AXIS, ROLE.ATTACKER1, 3);
+		SetAvailableMapGoals(TEAM.AXIS, true, "CAPPOINT_Place_Of_Book");
+		SetAvailableMapGoals(TEAM.AXIS, false, "ATTACK_Book_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false,
+		{
+			"DEFEND_Book_.*",
+			"BUILD.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Cappoint_Book_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Allied_Supplies_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "CAPPOINT_Place_Of_Book");
+		Util.MapDebugPrint( "book_of_wisdom_Taken" );
+		sleep (4.0);
+		if(!Map.BookReturned)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, false,
+			{
+				"MOUNTMG42.*",
+				"BUILD_MG42",
+				"BUILD_Mansion_MG42_nest",
+			});
+		}
+	},
+	
+	Book_Dropped = function()
+	{
+		Map.BookDropped = true;
+		SetAvailableMapGoals(TEAM.AXIS, false, "CAPPOINT_Place_Of_Book");
+		SetAvailableMapGoals(TEAM.ALLIES, false,
+		{
+			"DEFEND_Allied_Supplies_.*",
+			"CAPPOINT_Place_Of_Book",
+			"DEFEND_Cappoint_Book_.*",
+		});
+		Util.MapDebugPrint( "Book of Wisdom Dropped!" );
+	},
+	
+	book_of_wisdom_Returned = function()
+	{
+		Map.BookReturned = true;
+		SetAvailableMapGoals(TEAM.AXIS, true,
+		{
+			"FLAG_book_of_wisdom",
+			"ATTACK_Book_.*",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, false, "CAPPOINT_Place_Of_Book");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Book_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_Cappoint_Book_.*");
+		if(Map.MG42)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, true, "MOUNTMG42_MG42");
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, true, "BUILD_MG42");
+		}
+		if(Map.Mansion_MG42)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, true, "MOUNTMG42_Mansion_MG42_nest");
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, true, "BUILD_Mansion_MG42_nest");
+		}
+		Util.MapDebugPrint( "Book of wisdom Returned" );
+	},
+	
+	book_of_wisdom_Secured = function()
+	{
+		Map.BookSecured = true;
+		Util.MapDebugPrint( "book_of_wisdom_Secured Axis Won!" );
+	},
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "allies_hq_compost_constructed", Map.Allied_Command_Post_Built );
+	OnTrigger( "Planted at the Allied Command Post.", Map.Allied_CP_Planted );
+	OnTrigger( "Defused at the Allied Command Post.", Map.Allied_CP_Defused );
+	OnTrigger( "allies_hq_compost_damaged", Map.Allied_Command_Post_Destroyed );
+	
+	OnTrigger( "TT_ax_DoneRamp", Map.Archeologist_stairway_Built );
+	OnTrigger( "Planted at Archeologist stairway.", Map.Archeologist_stairway_Planted );
+	OnTrigger( "Defused Archeologist stairway.", Map.Archeologist_stairway_Defused );
+	OnTrigger( "TT_ax_DestRamp", Map.Archeologist_stairway_Destroyed );
+	
+	OnTrigger( "axis_hq_compost_constructed", Map.Axis_Command_Post_Built );
+	OnTrigger( "Planted at the Axis Command Post.", Map.Axis_CP_planted );
+	OnTrigger( "Defused at the Axis Command Post.", Map.Axis_CP_Defused );
+	OnTrigger( "axis_hq_compost_damaged", Map.Axis_Command_Post_Destroyed );
+	
+	OnTrigger( "^1Axis have built ventilator! Room is free from gas!", Map.Gas_ventilator_Built );
+	OnTrigger( "Planted at Gas ventilator.", Map.Ventilator_Planted );
+	OnTrigger( "Defused at Gas Ventilator.", Map.Gas_ventilator_Defused );
+	OnTrigger( "^5Alies blown ventilation! Room takes full of gas again!", Map.Gas_ventilator_Destroyed );
+	OnTrigger( "^5Allied team have built MG42!", Map.MG42_Built );
+	OnTrigger( "Planted at the MG42.", Map.MG42_Planted );
+	OnTrigger( "Defused at MG42.", Map.MG42_Defused );
+	OnTrigger( "axisconstruct_house_mg42_mg42", Map.MG42_Destroyed );
+	
+	OnTrigger( "^5Allies have built the mansion MG42 nest!", Map.Mansion_MG42_Built );
+	OnTrigger( "Planted at the Mansion MG42 nest.", Map.MG42_Mansion_Planted );
+	OnTrigger( "Defused at the Mansion MG42 nest.", Map.Mansion_MG42_defused );
+	OnTrigger( "^1Axis have destroyed the mansion MG42 nest!", Map.MG42_Mansion_Destroyed );
+	
+	OnTrigger( "Planted at the Allied supplies.", Map.Allied_Supplies_Planted );
+	OnTrigger( "Defused at the Allied supplies.", Map.Allied_Supplies_Defused );
+	OnTrigger( "TT_ax_city_forced", Map.Allied_supplies_Destroyed );
+
+	OnTrigger( "Planted at Main town gate.", Map.Main_Town_Gate_PLanted );
+	OnTrigger( "Defused at Main town gate.", Map.Main_Town_Gate_Defused );
+	OnTrigger( "Main town gate Destroyed.", Map.Main_town_gate_Destroyed );
+	
+	OnTrigger( "Planted at Weak city wall.", Map.Weak_City_Wall_Planted );
+	OnTrigger( "TT_al_wall_breached", Map.City_Wall_Breached );
+	//OnTrigger( "^1Axis damaged hard the city wall!", Map.City_Wall_Hard_Damaged );
+	//OnTrigger( "TT_ax_wall_breached", Map.Weak_city_wall_Destroyed );
+	//OnTrigger( "^5Allies trying to repair city wall!", Map.Allies_Trying_Repair_The_Wall );
+	//OnTrigger( "^5Allies almost finished city wall!", Map.Allies_Almost_Finished_The_Wall );
+	OnTrigger( "^5Allied build wall barricade!", Map.Weak_city_wall_Built );
+	OnTrigger( "^1Axis destroyed wall barricade!", Map.Weak_city_wall_Destroyed );
+	
+	OnTrigger( "Axis have stolen Book of Wisdom!", Map.book_of_wisdom_Taken );
+	OnTrigger( "Flag dropped book_of_wisdom!", Map.Book_Dropped );
+	OnTrigger( "Flag returned book_of_wisdom!", Map.book_of_wisdom_Returned );
+	OnTrigger( "^1The Axis escape with Book of wisdom!", Map.book_of_wisdom_Secured );
+	
+	OnTrigger( "Axis have stolen Montesuma's angry  mask!", Map.keymad_Taken );
+	OnTrigger( "Flag dropped keymad!", Map.KeyMad_Dropped );
+	OnTrigger( "Flag returned keymad!", Map.keymad_Returned );
+	OnTrigger( "^1Angry Montesuma's mask captured!", Map.keymad_Secured );
+	
+	OnTrigger( "Axis have stolen Montesuma smile mask!", Map.keysmile_Taken );
+	OnTrigger( "Flag dropped keysmile!", Map.KeySmile_Dropped );
+	OnTrigger( "Flag returned keysmile!", Map.keysmile_Returned );
+	OnTrigger( "^1Smile Montesuma's mask captured!", Map.keysmile_Secured );
+
+	Util.SetGoalOffset(0.0, 0.0, 0.0, "BUILD_Archeologist_stairway");
+	Util.SetGoalOffset(0.0, 0.0, -110.0, "BUILD_Weak_city_wall");
+	Util.SetGoalOffset(0, 0, -100, "PLANT_Main_town_gate");
+	Util.SetGoalOffset(0, 0, -50, "BUILD_Mansion_MG42_nest");
+	Util.SetGoalOffset(0, 0, -80, "PLANT_Mansion_MG42_nest");
+	Util.SetGoalOffset(0, 0, -40, "BUILD_MG42");
+	Util.SetGoalOffset(0, 0, -150, "PLANT_Wall_barricade");
+	Util.SetGoalRange("BUILD_Axis_Command_Post", 1000);
+	Util.SetGoalRange("PLANTMINE_Truck_.*", 12000);
+	Util.AddUsePoint("PLANT_Main_town_gate",Vec3(-540.378, -4132.850, 120.125));
+	Util.AddUsePoint("PLANT_Weak_city_wall", Vec3(-2543.635, -4144.533, 24.125));
+	Util.AddUsePoint("PLANT_Wall_barricade", {Vec3(-2808.488, -4099.574, 24.125), Vec3(-2861.613, -3925.133, 24.126)});
+	Util.AddUsePoint("PLANT_MG42", Vec3(-251.458, 4648.948, 408.125));
+	Util.AddUsePoint("PLANT_Allied_supplies",{Vec3(-4537.840, -3703.956, 24.125)});
+	Util.AddUsePoint("BUILD_Archeologist_stairway", Vec3(-3084.79, -2374.74, 24.154));  //, Vec3(-3160.784, -2317.038, 24.125)}
+	Util.AddUsePoint("BUILD_Wall_barricade", {Vec3(-2592.958, -3942.332, 24.125), Vec3(-2622.498, -3838.826, 24.125)});
+	Util.AddUsePoint("BUILD_Gas_ventilator",/* Vec3(2323.049, 295.095, 152.159), */Vec3(2427.961, 274.010, 152.125));
+	Util.AddUsePoint("PLANT_Gas_ventilator", Vec3(2370.362, 298.592, 152.126));
+	Util.AddUsePoint("PLANT_Axis_Command_Post", Vec3(1663.983, -5335.625, 56.127));
+	Util.AddUsePoint("BUILD_MG42", Vec3(-372.125, 4632.358, 408.125));
+	SetGoalPriority("ATTACK_.*", 0.0, 0, CLASS.ENGINEER);
+	SetGoalPriority("ATTACK_Main_Gate_5", 0.79, TEAM.AXIS, 0);
+	SetGoalPriority("ATTACK_Allied_Supplies_1", 0.75, TEAM.AXIS, 0);
+	SetGoalPriority("DEFEND_.*", 0.0, 0, CLASS.ENGINEER);
+	SetGoalPriority("ATTACK_.*", 0.0, 0, CLASS.COVERTOPS);
+	//SetGoalPriority("DEFEND_.*", 0.0, 0, CLASS.COVERTOPS);
+	SetGoalPriority("DEFEND_Smile_key_01", 0.6, 0, 0);
+	SetGoalPriority("DEFEND_Cappoint_Keys_.*", 0.69, TEAM.ALLIES, 0);
+	SetGoalPriority("DEFEND_Allied_Supplies_3", 0.6, TEAM.ALLIES, CLASS.ENGINEER);
+	SetGoalPriority("DEFEND_Allied_Supplies_4", 0.6, TEAM.ALLIES, CLASS.COVERTOPS);
+	SetGoalPriority("PLANTMINE_Maingate_.*", 0.79, 0, CLASS.ENGINEER);
+	SetGoalPriority("PLANTMINE_Supplies_1", 0.89, TEAM.AXIS, CLASS.ENGINEER);
+	SetGoalPriority("PLANTMINE_Truck_.*", 0.89, TEAM.ALLIES, CLASS.ENGINEER);
+	SetGoalPriority("PLANTMINE_omega", 1.0, TEAM.AXIS, CLASS.ENGINEER);
+	SetGoalPriority("PLANT_Main_town_gate", 1.0, TEAM.AXIS, CLASS.ENGINEER);
+	SetGoalPriority("BUILD_Archeologist_stairway", 0.9, TEAM.AXIS, CLASS.ENGINEER);
+	SetGoalPriority("BUILD_Axis_Command_Post", 0.78, TEAM.AXIS, CLASS.ENGINEER);
+	SetGoalPriority("PLANT_Gas_ventilator", 1.0, TEAM.ALLIES, CLASS.ENGINEER);
+	SetGoalPriority("PLANT_Weak_city_wall", 0.0, TEAM.AXIS, 0);
+	SetGoalPriority("PLANT_Weak_city_wall", 1.1, TEAM.AXIS, CLASS.ENGINEER);
+	SetGoalPriority("PLANT_Gas_ventilator", 0.0, TEAM.ALLIES, CLASS.COVERTOPS);
+	SetGoalPriority("PLANT_MG42", 0.0, TEAM.AXIS, 0);
+	SetGoalPriority("PLANT_MG42", 0.9, TEAM.AXIS, CLASS.COVERTOPS);
+	SetGoalPriority("PLANT_Mansion_MG42_nest", 0.0, TEAM.AXIS, 0);
+	SetGoalPriority("PLANT_Mansion_MG42_nest", 0.8, TEAM.AXIS, CLASS.COVERTOPS);
+	SetGoalPriority("PLANT_Allied_Command_Post", 0.0, TEAM.AXIS, CLASS.ENGINEER);
+	SetGoalPriority("PLANT_Allied_Command_Post", 0.9, TEAM.AXIS, CLASS.COVERTOPS);
+	SetGoalPriority("PLANT_Allied_supplies", 0.0, TEAM.AXIS, 0);
+	SetGoalPriority("PLANT_Allied_supplies", 0.9, TEAM.AXIS, CLASS.ENGINEER);
+	SetGoalPriority("PLANT_Axis_Command_Post", 0.0, TEAM.ALLIES, 0);
+	SetGoalPriority("PLANT_Axis_Command_Post", 0.8, TEAM.ALLIES, CLASS.COVERTOPS);
+	SetGoalPriority("PLANT_Archeologist_stairway", 0.0, TEAM.ALLIES, 0);
+	SetGoalPriority("PLANT_Archeologist_stairway", 0.81, TEAM.ALLIES, CLASS.COVERTOPS);
+	SetGoalPriority("CAMP_.*", 0.0, 0, 0);
+	SetGoalPriority("CAMP_.*", 0.9, TEAM.AXIS, CLASS.COVERTOPS);
+	SetGoalPriority("GRENADE_Truck", 0.0, 0, 0);
+	SetGoalPriority("GRENADE_Truck", 0.91, TEAM.AXIS, CLASS.COVERTOPS);
+	SetGoalPriority("FLAG_keysmile_dropped", 1.2, TEAM.AXIS, 0, true);
+	SetGoalPriority("FLAGRETURN_keysmile_dropped", 1.2, TEAM.ALLIES, 0, true);
+	SetGoalPriority("FLAG_keymad_dropped", 1.2, TEAM.AXIS, 0, true);
+	SetGoalPriority("FLAG_keymad_dropped", 0.0, TEAM.AXIS, CLASS.SOLDIER, true);
+	SetGoalPriority("FLAGRETURN_keymad_dropped", 1.2, TEAM.ALLIES, 0, true);
+	SetGoalPriority("FLAGRETURN_book_of_wisdom_dropped", 1.2, TEAM.ALLIES, 0, true);
+	SetGoalPriority("FLAG_book_of_wisdom_dropped", 1.2, TEAM.AXIS, 0, true);
+	SetGoalPriority("MOUNT.*", 0.0, TEAM.ALLIES, CLASS.ENGINEER);
+	
+	Wp.SetWaypointFlag("main_gate_door_inside", "allies", true);
+	Wp.SetWaypointFlag("main_gate_door_outside", "allies", true);
+	Wp.SetWaypointFlag("stairsway","closed", false);
+	Wp.SetWaypointFlag("stairsway2","closed", false);
+	Wp.SetWaypointFlag("second_door_outside", "allies", true);
+	Wp.SetWaypointFlag("second_door_inside", "allies", true);
+	Wp.SetWaypointFlag("allies", "allies", true);
+	Wp.SetWaypointFlag("weakwall_3", "closed", true);
+	Wp.SetWaypointFlag("keysmile_temple_entrance", "allies", false);
+	Wp.SetWaypointFlag("keysmile_temple_entrance_out", "allies", false);
+	Wp.SetWaypointFlag("templestairs_1", "allies", false);
+	Wp.SetWaypointFlag("gasroom_1", "closed", true);
+	Wp.SetWaypointFlag("gasroom_2", "closed", true);
+	Wp.SetWaypointFlag("weakwall_3","closed", true);
+	Wp.SetWaypointFlag("understairs", "closed", true);
+	Wp.SetWaypointFlag("sidedoor_inside", "closed", true);
+	Wp.SetWaypointFlag("sidedoor_overside", "closed", true);
+	Wp.SetWaypointFlag("understairs", "closed", true);
+	Wp.SetWaypointFlag("allies_1", "closed", true);
+	Wp.SetWaypointFlag("allies_2", "closed", false);
+	Wp.SetWaypointFlag("axis_attack_1","allies", false);
+	Wp.SetWaypointFlag("axis_attack_2","allies", false);
+	Wp.SetWaypointFlag("axis_attack_3","allies", false);
+	Wp.SetWaypointFlag("axis_attack_4","allies", false);
+	Wp.SetWaypointFlag("fence_1","closed", true);
+	Wp.SetWaypointFlag("fence_2","closed", true);
+	Wp.SetWaypointFlag("fence_3","closed", true);
+	Wp.SetWaypointFlag("fence_4","closed", true);
+	Wp.SetWaypointFlag("fence_5","closed", true);
+	
+	Util.DisableGoal( ".*", true ); // all but routes
+	
+	OnTriggerRegion(AABB(-512.963, 4331.125, 385.222, -382.889, 4460.795, 459.222), Map.mg_42);
+	OnTriggerRegion(AABB(-128.649, 3633.538, 385.127, -90.649, 3671.538, 459.127), Map.MansionMG42);
+	OnTriggerRegion(AABB(-4128.875, -4177.277, 1.125, -3690.313, -3838.160, 204.028), Map.Airstrike__well);
+	OnTriggerRegion(AABB(-2888.875, -1803.791, -126.875, -2405.612, -1490.600, -52.875), RegionTrigger.KillTrigger);
+	OnTriggerRegion(AABB(-3943.605,-4113.035,1.127,-3892.570,-3983.561,76.127), Map.one_trigger);
+	OnTriggerRegion(AABB(-4128.875,-4208.148,2.125,-4072.563,-4115.173,76.125), Map.two_trigger);
+	OnTriggerRegion(AABB(-2929.999,-1986.484,1.125,-2887.125,-1943.125,75.125), Map.GPG_Attack);
+	OnTriggerRegion(AABB(-4820.0, -1900.0, -350.0, 2430.0, 1150.0, 500.0), Map.smile_trigger);
+	OnTriggerRegion(AABB(2350.036,-547.685,129.125,2444.925,215.711,203.125), RegionTrigger.DisableCombatMovement);
+	OnTriggerRegion(AABB(264.445,4012.354,969.125,408.875,4626.621,1259.125), RegionTrigger.DisableCombatMovement);
+	OnTriggerRegion(AABB(-1586.023,-2750.623,1.125,-1385.290,-2527.260,75.125), Map.fence);
+
+	
+	SetAvailableMapGoals(TEAM.AXIS, true,
+	{
+		"PLANT_Main_town_gate",
+		//"PLANT_Allied_supplies",
+		"ATTACK_Main_Gate_.*",
+		//"MOBILEMG42_Main_Gate_Axis_.*",
+		//"MOBILEMG42_Near_Allied_Supply_.*",
+		"CALLARTILLERY_MainGate_.*",
+		"ARTILLERY_S_Main_Gate",
+		"MOBILEMG42_MainGate_AlliedSide_.*",
+	});
+//	SetAvailableMapGoals(TEAM.AXIS, false, "ATTACK_Main_Gate_3");
+	SetAvailableMapGoals(TEAM.ALLIES, true,{ 
+		"PLANT_Archeologist_stairway",
+		"HEALTHCAB_first_healthcabinet",
+		"HEALTHCAB_food01_heal",
+		"HEALTHCAB_food02",
+		"DEFEND_Allied_Supplies_3",
+		"DEFEND_Allied_Supplies_4",
+		"AMMOCAB_first_ammocabinet",
+		"PLANTMINE_Maingate_.*",
+		"DEFEND_Maingate_.*",
+	});
+	//~SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_.*" );
+	//~SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_.*" );
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+	Util.SetMaxUsers( 1, "ATTACK.*");
+	Util.SetMaxUsers( 1, "DEFEND.*" );
+	Util.SetMaxUsers( 1, "CAMP.*");
+	Util.SetMaxUsers( 1, "BUILD_Axis_Command_Post" );
+	Util.SetMaxUsers( 1, "PLANT_Weak_city_wall" );
+
+	// Camp times
+	//SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " b1 executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CAPPOINT_Place_Of_Book = 
+		{
+			ROUTE_Book_Temple_South = 
+			{
+				ROUTE_Smile_Temple_Entrance_Roof = 
+				{
+					Weight = 2,
+					ROUTE_Main_Gate_Wall = 
+					{
+						ROUTE_CitySpawn = {},
+					},
+				},
+				ROUTE_Book_Temple_South_West = 
+				{
+					ROUTE_Side_Gate = {},
+				},
+			},
+		},
+		PLANT_Allied_supplies =
+		{
+			ROUTE_Axis_Spawn = 
+			{
+				ROUTE_Main_Gate = 
+				{
+					ROUTE_Gate_To_Supplies = 
+					{
+						ROUTE_Stairs_Wall = 
+						{
+							ROUTE_Side_Gate = {},
+						},
+					},
+				},
+				ROUTE_Hole = 
+				{
+					ROUTE_Gate_To_Supplies = 
+					{
+						ROUTE_Stairs_Wall = 
+						{
+							ROUTE_Side_Gate = {},
+						},
+					},
+					ROUTE_Wall_Barricade = {},
+				},
+				ROUTE_Tunnel = 
+				{
+					Weight = 2,
+					ROUTE_Tunnel_2 = {},
+				},
+			},
+		},
+		BUILD_Gas_ventilator =
+		{
+			ROUTE_Axis_Spawn = 
+			{
+				ROUTE_Hole = 
+				{
+					ROUTE_Gate_To_Supplies = 
+					{
+						ROUTE_Stairs_Wall = 
+						{
+							ROUTE_Madkey_Roof = 
+							{
+								ROUTE_SmileTemple_MainEntrance = {},
+								ROUTE_SmileTemple_SideEntrance = {},
+								ROUTE_SmileTemple_RoofEntrance = {},
+							},
+						},
+					},
+				},
+			},
+			ROUTE_CitySpawn = 
+			{
+				ROUTE_SmileTemple_MainEntrance = {},
+				ROUTE_SmileTemple_SideEntrance = {},
+				ROUTE_SmileTemple_RoofEntrance = {},
+			},
+		},
+		BUILD_Archeologist_stairway =
+		{
+			ROUTE_Axis_Spawn = 
+			{
+				ROUTE_Hole = 
+				{
+					ROUTE_Stairs_Wall = {},
+				},
+			},
+		},
+		FLAG_keymad =
+		{
+			ROUTE_Axis_Spawn = 
+			{
+				ROUTE_Main_Gate = 
+				{
+					ROUTE_Gate_To_Supplies = 
+					{
+						ROUTE_Madkey_Roof = 
+						{
+							ROUTE_MadKeyTemple_Entrance = {},
+						},
+					},
+				},
+				ROUTE_Hole = 
+				{
+					ROUTE_Gate_To_Supplies = 
+					{
+						ROUTE_Madkey_Roof = 
+						{
+							ROUTE_MadKeyTemple_Entrance = {},
+						},
+						ROUTE_Stairs_Wall = 
+						{
+							ROUTE_StairsWall_2 = 
+							{
+								ROUTE_Madkey_Roof = 
+								{
+									ROUTE_MadKeyTemple_Entrance = {},
+								},
+							},
+						},
+					},
+				},
+			},
+			ROUTE_CitySpawn = 
+			{
+				ROUTE_Gate_To_Supplies = 
+				{
+					ROUTE_Madkey_Roof = 
+					{
+						ROUTE_MadKeyTemple_Entrance = {},
+					},
+				},
+				ROUTE_Second_Door = 
+				{
+					ROUTE_MadKeyTemple_Entrance = {},
+				},
+			},
+		},
+		PLANT_Weak_city_wall =
+		{
+			ROUTE_CitySpawn = 
+			{
+				ROUTE_Gate_To_Supplies = {},
+			},
+		},
+		PLANTMINE_Maingate_1 =
+		{
+			ROUTE_CitySpawn = {},
+		},
+		PLANTMINE_Truck_01 = 
+		{
+			ROUTE_Alli_Spawn_3 = 
+			{
+				ROUTE_Teoti_Square = 
+				{
+					ROUTE_Second_Door = 
+					{
+						ROUTE_CitySpawn = 
+						{
+							ROUTE_Gate_To_Supplies = {},
+						},
+					},
+				},
+			},
+		},
+		MOBILEMG42_Near_Allied_Supply_1 = 
+		{
+			ROUTE_Axis_Spawn = 
+			{
+				ROUTE_Tunnel = {},
+			},
+		},
+		ATTACK_Allied_Supplies_1 = 
+		{
+			ROUTE_Axis_Spawn = 
+			{
+				ROUTE_Main_Gate = 
+				{
+					ROUTE_Gate_To_Supplies = 
+					{
+						ROUTE_Stairs_Wall = 
+						{
+							ROUTE_Side_Gate = {},
+						},
+					},
+				},
+				ROUTE_Hole = 
+				{
+					ROUTE_Gate_To_Supplies = 
+					{
+						ROUTE_Stairs_Wall = 
+						{
+							ROUTE_Side_Gate = {},
+						},
+					},
+				},
+			},
+		},
+		ATTACK_Main_Gate_6 = 
+		{
+			ROUTE_Axis_Spawn = 
+			{
+				ROUTE_Tunnel = 
+				{
+					ROUTE_Back_Field_1 = 
+					{
+						ROUTE_Back_Field_2 = {},
+					},
+				},
+			},
+		},
+		ATTACK_Main_Gate_3 = 
+		{
+			ROUTE_CitySpawn = 
+			{
+				ROUTE_Tunnel = {},
+			},
+		},
+	};
+	
+	MapRoutes["ATTACK_Weak_Wal.*"] = MapRoutes.MOBILEMG42_Near_Allied_Supply_1;
+	MapRoutes["CALLARTILLERY_Weak_Wall"] = MapRoutes.BUILD_Archeologist_stairway;
+	MapRoutes["ATTACK_Allied_Supplies_.*"] = MapRoutes.ATTACK_Allied_Supplies_1;
+	MapRoutes["MOBILEMG42_Near_Allied_Supply_.*"] = MapRoutes.ATTACK_Allied_Supplies_1;
+	MapRoutes["FLAG_keysmile"] = MapRoutes.BUILD_Gas_ventilator;
+	Util.Routes(MapRoutes);
+};

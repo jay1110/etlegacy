@@ -1,0 +1,363 @@
+//==========================================================================================
+//
+//	et_tank_beta3.gm
+//
+//	Who       	When		What
+//------------------------------------------------------------------------------------------
+//	^6BOTZ^3R^jUS
+// WHAT IS INCORRECT WITH THE MAP:
+// AirTunnel: the game has no ICON's displayed for this entity, the game has
+// NO trigger strings linked to the AirTunnel entity getting BROKEN or BUILT.
+// It is BREAKABLE, not destructable. Planting dyno does nothing to the AirTunnel cover.
+// A Satchel, bullets or a grenade will BREAK the AirTunnel cover.
+// This is NOT normal, the dyno explosion should break entity just like windows.
+//
+// Hopefully done with these files for now, May 20, 2020 3:56PM Ver. 1.08
+//
+// CYBER4WOLF C4W BOTZRUS Version 1.2 April 17, 2022
+// Tweaked a few waypoints and named one airboom for the PLANT_AirTunel Goal
+//
+// palota	26 June 2025	converted to Omni-bot 0.9, rewritten and optimized the script, changed priorities, fixed stuckages at ladders, pump door switches, partially destroyed bridge can be crossed, cover spots, use points, DEFEND_bridge, DEFEND_tank, BUILD_Allied_Ladder
+//==========================================================================================
+//
+
+global Map =
+{
+	pumpDoorOpen = false,
+
+	Roles =
+	{
+		ALLIES =
+		{
+			AllBots = true,
+			DEFENDER =
+			{
+				numbots = 4,
+				crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER1 =
+			{
+				numbots = 4,
+				crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER2 =
+			{
+				spawnpt = 2,
+				numbots = 4,
+			},
+		},
+
+		AXIS =
+		{
+			AllBots = true,
+			ATTACKER =
+			{
+				numbots = 9,
+				crucialClass = CLASS.COVERTOPS
+			},
+			ATTACKER1 =
+			{
+				spawnpt = 4,
+				numbots = 9,
+				crucialClass = CLASS.ENGINEER
+			},
+			ATTACKER2 =
+			{
+				numbots = 9,
+				crucialClass = CLASS.ENGINEER
+			},
+		},
+	},
+
+	Switches =
+	{
+		pumpdoor1 =
+		{
+			Enabled = true,
+			Priority = 0,
+			WaypointName = "pumpdoor1",
+			Timeout = 4000,
+			AimPosition = Vec3(1364.875, -504.625, -88.026),
+		},
+		pumpdoor2 =
+		{
+			Enabled = true,
+			Priority = 0,
+			WaypointName = "pumpdoor2",
+			Timeout = 4000,
+			AimPosition = Vec3(1418.125, -399.315, -89.608),
+		},
+	},
+
+	pumpdoor = function(trigger)
+	{
+		v = ToVector(trigger.Action);
+		if (v.y < 0) { sleep(1); Map.pumpDoorOpen = true; }
+		if (v.y > 0) { Map.pumpDoorOpen = false; }
+		Map.Switches.pumpdoor1.Enabled = !Map.pumpDoorOpen;
+		Map.Switches.pumpdoor2.Enabled = !Map.pumpDoorOpen;
+	},
+
+	SetBunker = function(b)
+	{
+		SetAvailableMapGoals(TEAM.AXIS, b, {
+			"MOUNTMG42_457",
+			"REPAIRMG42_457",
+			"BUILD_Road_MG_1",
+			"MOUNTMG42_Road_MG_1",
+			"REPAIRMG42_Road_MG_1",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, !b, {
+			"MOUNTMG42_370",
+			"MOUNTMG42_Base_MG",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, b, "PLANT_Road_MG_1");
+	},
+
+	Main_Entrance_Destroyed = function()
+	{
+		Map.SetBunker(false);
+		SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_bridge.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_tank.*");
+		Util.MapDebugPrint("Main_Entrance_Destroyed");
+	},
+
+	roadbunker_Axis_Captured = function()
+	{
+		Map.SetBunker(true);
+		Util.MapDebugPrint("roadbunker_Axis_Captured");
+	},
+
+	roadbunker_Allies_Captured = function()
+	{
+		Map.SetBunker(false);
+		Util.MapDebugPrint("roadbunker_Allies_Captured");
+	},
+
+	Allied_Ladder_Built = function()
+	{
+		Util.MapDebugPrint("Allied_Ladder_Built");
+	},
+
+	Base_MG_Built = function()
+	{
+		Util.MapDebugPrint("Base_MG_Built");
+	},
+
+	Bridge_Built = function()
+	{
+		Util.MapDebugPrint("Bridge_Built");
+	},
+
+	Road_MG_Built = function()
+	{
+		Util.MapDebugPrint("Road_MG_Built");
+	},
+
+	Road_MG_1_Built = function()
+	{
+		Util.MapDebugPrint("Road_MG_1_Built");
+	},
+
+	Allied_Ladder_Destroyed = function()
+	{
+		Util.MapDebugPrint("Allied_Ladder_Destroyed");
+	},
+
+	Base_MG_Destroyed = function()
+	{
+		Util.MapDebugPrint("Base_MG_Destroyed");
+	},
+
+	Bridge_Destroyed = function()
+	{
+		Util.MapDebugPrint("Bridge_Destroyed");
+	},
+
+	Road_MG_Destroyed = function()
+	{
+		Util.MapDebugPrint("Road_MG_Destroyed");
+	},
+
+	Road_MG_1_Destroyed = function()
+	{
+		Util.MapDebugPrint("Road_MG_1_Destroyed");
+	},
+
+	Allies_War_Documents_Taken = function()
+	{
+		Util.MapDebugPrint("Allies_War_Documents_Taken");
+	},
+
+	Allies_War_Documents_Returned = function()
+	{
+		Util.MapDebugPrint("Allies_War_Documents_Returned");
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("Axis team has damaged the Bridge!", Map.Bridge_Destroyed);
+	OnTrigger("Allied team has reinforced the Bridge!", Map.Bridge_Built);
+	OnTrigger("Allies team has constructed the Ladder in Old Pump Station!", Map.Allied_Ladder_Built);
+	OnTrigger("Axis team has destroyed the Ladder in Old Pump Station!", Map.Allied_Ladder_Destroyed);
+	OnTrigger("Allies have breached the Main Entrance and secured the Forward Bunker!", Map.Main_Entrance_Destroyed);
+	OnTrigger("Allied team has destroyed the West MG Nest!", Map.Base_MG_Destroyed);
+	OnTrigger("axis team has constructed the West MG Nest!", Map.Base_MG_Built);
+	OnTrigger("Axis team has destroyed the Road MG Nest!", Map.Road_MG_Destroyed);
+	OnTrigger("Allied team has constructed the Road MG Nest!", Map.Road_MG_Built);
+	OnTrigger("Allied team has destroyed the Kontrollpunkt MG Nest!", Map.Road_MG_1_Destroyed);
+	OnTrigger("Axis team has constructed the Kontrollpunkt MG Nest!", Map.Road_MG_1_Built);
+	OnTrigger("Axis have stolen Allies War Documents!", Map.Allies_War_Documents_Taken);
+	OnTrigger("Flag returned Allies War Documents!", Map.Allies_War_Documents_Returned);
+	OnTrigger("Axis reclaim the Forward Bunker!", Map.roadbunker_Axis_Captured);
+	OnTrigger("Allies capture the Forward Bunker!", Map.roadbunker_Allies_Captured);
+	OnTrigger("pumpdoor_goto", Map.pumpdoor);
+
+	OnTriggerRegion(AABB(-477.748,1956.351,-210.875,-213.883,2380.388,-29.753), RegionTrigger.DisableBotPush); //bridge
+
+	Util.LimitToTeam(TEAM.AXIS, "ATTACK.*");
+	Util.LimitToTeam(TEAM.ALLIES, "DEFEND.*");
+	SetAvailableMapGoals(TEAM.AXIS, false, {
+		 "PLANT_Allied_Ladder",
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, false, {
+		 "REPAIRMG42_.*",
+		 "DEFEND_tank.*",
+	});
+	Map.SetBunker(true);
+
+	SetGoalRole("PLANT_Main_Entrance", ROLE.DEFENDER1);
+	SetGoalRole("DEFEND_doc.*", ROLE.DEFENDER2);
+	SetGoalRole("FLAG_Allies_War_Documents", ROLE.ATTACKER);
+	SetGoalRole("ATTACK_tank.*", { ROLE.ATTACKER1, ROLE.ATTACKER2 });
+	SetGoalRole("BUILD_Base_MG", ROLE.ATTACKER1);
+	SetGoalRole("BUILD_Road_MG_1", ROLE.ATTACKER2);
+
+	Util.RemoveGoal("MOUNTMG42_575");
+	Util.RemoveGoal("REPAIRMG42_575");
+
+	Util.ExcludeClass("PLANT_Road_MG.*", 0, CLASS.ENGINEER);
+	Util.ExcludeClass("FLAG_Allies_War_Documents", TEAM.AXIS, CLASS.ENGINEER);
+	Util.ExcludeClass("CHECKPOINT.*", TEAM.AXIS, CLASS.ENGINEER);
+	Util.ExcludeClass("PLANT_Command_Post", 0, CLASS.ENGINEER);
+
+	SetGoalPriority("FLAG_Allies_War_Documents", 0.71);
+	SetGoalPriority("ATTACK_tank.*", 0.69);
+	SetGoalPriority("GRENADE_airtunnel", 0.94);
+	SetGoalPriority("GRENADE_airtunnel", 0.8, TEAM.AXIS, CLASS.COVERTOPS);
+	SetGoalPriority("BUILD_Road_MG_1", 0.81);
+	SetGoalPriority("BUILD_Base_MG", 0.8);
+	SetGoalPriority("MOUNTMG42_Road_MG_1", 0.72);
+	SetGoalPriority("MOUNTMG42_457", 0.72);
+	SetGoalPriority("PLANT_Bridge", 0.71);
+
+	SetGoalPriority("PLANT_Prototype_Tank", 0.9);
+	SetGoalPriority("DEFEND_doc.*", 0.69);
+	SetGoalPriority("DEFUSE_Bridge.*", 0.9, TEAM.ALLIES, CLASS.ENGINEER, true);
+
+	Util.SetMaxUsers( 1, "MOUNTMG42.*" );
+	Util.SetMaxUsers( 1, "BUILD.*" );
+	Util.SetMaxUsers( 1, "PLANT_Bridge" );
+
+	SetMapGoalProperties("MOUNTMG42_.*", {MinCampTime=20, MaxCampTime=90});
+	SetMapGoalProperties("ATTACK.*", {MinCampTime=40, MaxCampTime=120});
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=30, MaxCampTime=120});
+
+	Util.AddUseWp("PLANT_Prototype_Tank", { "tankplant_7", "tankplant_6", "tankplant_5", "tankplant_4", "tankplant_3", "tankplant_2", "tankplant_1" });
+	Util.AddUseWp("PLANT_AirTunel", "airboom");
+	Util.AddUseWp("BUILD_AirTunel", "airboom");
+	Util.AddUsePoint("PLANT_Bridge", Vec3(-166, 2409, -163));
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.TargetBreakableDist = 90;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		FLAG_Allies_War_Documents =
+		{
+			ROUTE_axisspawnbridge_1 =
+			{
+				ROUTE_axissideofbridgebetweenspawns =
+				{
+					ROUTE_tunnelsneak =
+					{
+						ROUTE_sidetunnel_2 =
+						{
+							ROUTE_side2ladder2doc =
+							{
+								ROUTE_end =
+								{
+									ROUTE_alliedspawn_b = {},
+									ROUTE_stealdocuments_1 = {},
+									ROUTE_sidetunnel_1 = {},
+								},
+							},
+						},
+					},
+					ROUTE_frontwaypastflag =
+					{
+						ROUTE_alliedspawn_c =
+						{
+							Weight = 2,
+							ROUTE_sidetunnel_1 = {},
+						},
+						ROUTE_alliedspawn_b = {},
+						ROUTE_stealdocuments_1 = {},
+					},
+				},
+
+			},
+			ROUTE_axisspawnbridge_2 =
+			{
+				ROUTE_axissideofbridgebetweenspawns = {},
+
+			},
+			ROUTE_axisspawnflag =
+			{
+				ROUTE_frontwaypastflag = {},
+			},
+		},
+		PLANT_Prototype_Tank =
+		{
+			ROUTE_alliedspawn_a =
+			{
+				ROUTE_captainsdesk = {},
+				ROUTE_mainentrance = {},
+			},
+			ROUTE_alliedspawn_b =
+			{
+				ROUTE_captainsdesk = {},
+				ROUTE_mainentrance = {},
+			},
+			ROUTE_alliedspawn_c =
+			{
+				ROUTE_captainsdesk = {},
+				ROUTE_mainentrance = {},
+			},
+		},
+		CAPPOINT_Feldkommandantur =
+		{
+			ROUTE_docs =
+			{
+				ROUTE_runlikehell_1 = {Weight=4},
+				ROUTE_frontwaypastflag = {},
+			},
+		},
+	};
+	MapRoutes["ATTACK_tankroom.*"] =
+	{
+		ROUTE_axisspawnbridge_1 =
+		{
+			ROUTE_axissideofbridgebetweenspawns = {},
+		},
+	};
+	Util.Routes(MapRoutes);
+};

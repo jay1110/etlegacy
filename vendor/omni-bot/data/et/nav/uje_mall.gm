@@ -1,0 +1,1613 @@
+//===================================================================================================================
+//
+//	uje_mall.gm
+//
+//	Who       	            When		                                What
+//---------------------------------------------------------------------------------------------------------------------------
+//  ^1[UJE]^3Niek	        10 January 2015	      Initial Script
+//  ^1[UJE]^3Captain      06 August 2017        Cleaning script,Add Offset Fix Build/Plant,Add Route,Change Spawn and More..
+//  ^1[UJE]^3Captain      19 May 2018           Completely reworked for UJE Mall last Beta ,Add Rôles,Many Routes and More..
+//
+//===========================================================================================================================
+//
+
+global Map =
+{
+	AxisCP = false,
+	AlliedCP = false,
+	TankAtB1 = false,
+	TankAtB2 = false,
+	RadioBuilt = false,
+	LibraryDoorDestroyed = false,
+	DocTaken = false,
+	DocSecured = false,
+     	Roles =
+	{
+		AXIS =
+		{
+		      AllBots = true, // each bot is considered for a role
+			INFILTRATOR = // Plant CP
+			{
+				numbots = 1,
+				crucialClass = CLASS.COVERTOPS,
+			},
+		},
+		ALLIES =
+		{
+			AllBots = true, // default: every other bot
+			INFILTRATOR = // Plant CP
+			{
+				numbots = 1,
+				crucialClass = CLASS.COVERTOPS,
+			},
+		},
+	},
+      SetSpawnAxisCP = function(bot)
+	{
+		if (bot.GetTeam() == TEAM.AXIS) {
+			if (Map.AxisCP) {
+				bot.ChangeSpawnPoint(4);
+			} else {
+				bot.ChangeSpawnPoint(7);
+		      }
+		}
+	},
+
+     SetSpawnAlliedCP = function(bot)
+	{
+		if (bot.GetTeam() == TEAM.ALLIES) {
+			if (Map.AlliedCP && !Map.LibraryDoorDestroyed) {
+			bot.ChangeSpawnPoint(3);
+			} else {
+			      bot.ChangeSpawnPoint(1);
+			}
+		}
+	},
+
+	SetSpawn = function()
+	{
+		foreach(bot in BotTable)
+		{
+			Map.SetSpawnAxisCP(bot);
+			Map.SetSpawnAlliedCP(bot);
+		}
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+	Map.AlliedCP = true;
+	Map.SetSpawn();
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Command_Post" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"PLANT_Command_Post","BUILD_Command_Post"} );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+	Map.AlliedCP = false;
+	Map.SetSpawn();
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+      Axis_Command_Post_Built = function()
+	{
+	Map.AxisCP = true;
+	Map.SetSpawn();
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, {"BUILD_Command_Post","PLANT_Command_Post"} );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+	Map.AxisCP = false;
+	Map.SetSpawn();
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+	CHECKPOINT_Bunker_Flag_Axis = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_bunker_flag" );
+	if ( !Map.Tank_Past_Barrier_1 )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_bunker_flag" );
+      }
+		Util.MapDebugPrint( "CHECKPOINT_Bunker_Flag_Axis" );
+	},
+
+	CHECKPOINT_Bunker_Flag_Allied = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_bunker_flag" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_bunker_flag" );
+
+		Util.MapDebugPrint( "CHECKPOINT_Bunker_Flag_Allied" );
+	},
+
+	Tank_Built = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "MOUNT_Tank" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "Build_tank" );
+
+		Util.MapDebugPrint( "Tank_Built" );
+	},
+
+	Tank_Destroyed = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Tank" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "MOUNT_Tank" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "MOUNT_Tank" );
+
+		Util.MapDebugPrint( "Tank_Destroyed" );
+	},
+
+	Tank_Barrier_1_Built = function()
+	{
+	if ( Map.TankAtB1 )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Tank_barrier_1" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Tank_barrier_1" );
+
+		Util.MapDebugPrint( "Tank_Barrier_1_Built" );
+	},
+
+	Tank_Barrier_1_Planted = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_1_Planted" );
+	},
+
+	Tank_Barrier_1_Destroyed = function()
+	{
+      SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Tank_barrier_1" );
+
+      SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank_barrier_1" );
+
+		Util.MapDebugPrint( "Tank_Barrier_1_Destroyed" );
+	},
+
+	Tank_Past_Barrier_1 = function()
+	{
+	Map.TankAtB1 = false;
+	SetAvailableMapGoals( TEAM.AXIS, true, {"ATTACK_Market.*","BUILD_Axis_Generator"} );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"BUILD_Tank_Barrier_1","CHECKPOINT_bunker_flag"} );
+
+		Util.MapDebugPrint( "Tank_Past_Barrier_1" );
+	},
+
+	Tank_Barrier_2_Built = function()
+	{
+	if ( Map.TankAtB2 )
+	{
+      SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Tank_Barrier_2" );
+	}
+      SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Tank_barrier_2" );
+
+		Util.MapDebugPrint( "Tank_Barrier_2_Built" );
+	},
+
+	Tank_Barrier_2_Planted = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_2_Planted" );
+	},
+
+	Tank_Barrier_2_Destroyed = function()
+	{
+      SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank_barrier_2" );
+
+		Util.MapDebugPrint( "Tank_Barrier_2_Destroyed" );
+	},
+
+	Tank_Past_Barrier_2 = function()
+	{
+	Map.TankAtB2 = false;
+      SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Tank_Barrier_2" );
+
+		Util.MapDebugPrint( "Tank_Past_Barrier_2" );
+	},
+
+	Axis_Generator_Build = function()
+	{
+	if ( !Map.LibraryDoorDestroyed )
+	{
+      SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Generator" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Axis_Generator" );
+
+		Util.DisableGoal( "ROUTE_Hobby_Road" );
+		Util.MapDebugPrint( "Axis_Generator_Build" );
+	},
+
+	Axis_Generator_Planted = function()
+	{
+		Util.MapDebugPrint( "Axis_Generator_Planted" );
+	},
+
+	Axis_Generator_Destroyed = function()
+	{
+      SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Generator" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_Generator" );
+
+	      Util.EnableGoal( "ROUTE_Hobby_Road" );
+		Util.MapDebugPrint( "Axis_Generator_Destroyed" );
+	},
+
+	Library_Door_Destroyed = function()
+	{
+	Map.SetSpawn();
+	Map.LibraryDoorDestroyed = true;
+	SetAvailableMapGoals( TEAM.AXIS, true, {"PLANT_Safe","ATTACK_Library.*","PLANT_bank_side_door"} );
+	SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Market.*" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Library.*" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"DEFEND_Market.*","PLANT_Axis_Generator"} );
+
+		Util.MapDebugPrint( "Library_Door_Destroyed" );
+	},
+
+	Back_Door_Built = function()
+	{
+	if ( Map.Secret_Documents_Secured )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_bank_side_door" );
+      }
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_bank_side_door" );
+
+		Util.MapDebugPrint( "Back_Door_Build" );
+	},
+
+	Back_Door_Destroyed = function()
+	{
+	if ( Map.Secret_Documents_Secured )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_bank_side_door" );
+      }
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_bank_side_door" );;
+		Util.MapDebugPrint( "Back_Door_Destroyed" );
+	},
+
+	Safe_Destroyed = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Safe" );
+	SetAvailableMapGoals( TEAM.AXIS, true, {"FLAG_Secret_Documents","BUILD_Field_Radio_1"} );
+
+		Util.MapDebugPrint( "Safe_Destroyed" );
+	},
+
+	Field_Radio_Built = function()
+	{
+	Map.RadioBuilt = true;
+	if ( Map.DocTaken )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "CAPPOINT_Radio" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT_Fake" );
+	}
+      SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Field_Radio_1" );
+
+      SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Field_Radio" );
+
+		Util.MapDebugPrint( "Field_Radio_Built" );
+	},
+
+	Field_Radio_Planted = function()
+	{
+		Util.MapDebugPrint( "Field_Radio_Planted" );
+	},
+
+	Field_Radio_Destroyed = function()
+	{
+	Map.RadioBuilt = false;
+	if ( Map.DocTaken )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "CAPPOINT_Fake" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT_Radio" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Field_Radio_1" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Field_Radio" );
+
+		Util.MapDebugPrint( "Field_Radio_Destroyed" );
+	},
+
+	Secret_Documents_Taken = function()
+	{
+	Map.DocTaken = true;
+	if ( Map.RadioBuilt )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "CAPPOINT_Radio" );
+      }
+	else
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "CAPPOINT_Fake" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "FLAG_Secret_Documents" );
+	Util.MapDebugPrint( "Secret_Documents_Taken" );
+	sleep(3);
+	SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Cappoint.*" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Library.*" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Cappoint.*" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Library.*" );
+	},
+
+	Secret_Documents_Returned = function()
+	{
+	Map.DocTaken = false;
+	SetAvailableMapGoals( TEAM.AXIS, true, {"ATTACK_Library.*","FLAG_Secret_Documents"} );
+      SetAvailableMapGoals( TEAM.AXIS, false, {"ATTACK_Cappoint.*","CAPPOINT_Radio","CAPPOINT_Fake"} );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Library.*" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Cappoint.*" );
+
+		Util.MapDebugPrint( "Secret_Documents_Returned" );
+	},
+
+	Secret_Documents_Secured = function()
+	{
+	Map.DocSecured = true;
+	SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT.*" );
+
+		Util.MapDebugPrint( "Secret_Documents_Secured" );
+	},
+	// Tank RegionTrigger
+   	Tank_at_second_corner =
+      {
+ 	Name="Tank_at_second_corner",
+ 	TriggerOnClass = { CLASS.VEHICLE_HVY },
+ 	OnEnter = function(ent)
+      {
+            Util.MapDebugPrint(GetEntName(ent) + "_at_second_corner)" );
+ 	},
+ 	OnExit = function(ent)
+ 	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_First.*" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Second.*" );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_First.*" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Second.*" );
+
+ 	      Util.MapDebugPrint(GetEntName(ent) + "_pass_second_corner)" );
+ 	},
+   },
+      Tank_at_first_barrier =
+      {
+ 	Name="Tank_at_first_barrier",
+ 	TriggerOnClass = { CLASS.VEHICLE_HVY },
+ 	OnEnter = function(ent)
+ 	{
+	Map.TankAtB1 = true;
+	if ( Map.Tank_Barrier_1_Built )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "MOUNT_Tank" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Tank_Barrier_1" );
+	}
+ 		Util.MapDebugPrint(GetEntName(ent) + "_at_first_barrier" );
+ 	},
+ 	OnExit = function(ent)
+ 	{
+	Map.TankAtB1 = false;
+      SetAvailableMapGoals( TEAM.ALLIES, false, "MOUNT_Tank" );
+
+ 		Util.MapDebugPrint(GetEntName(ent) + "_pass_first_barrier" );
+ 	},
+   },
+
+   	Tank_entered_market =
+      {
+ 	Name="Tank_entered_market",
+ 	TriggerOnClass = { CLASS.VEHICLE_HVY },
+ 	OnEnter = function(ent)
+ 	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Market.*" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Second.*" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Market.*" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Second.*" );
+
+ 	      Util.MapDebugPrint(GetEntName(ent) + "_at_market" );
+ 	},
+ 	OnExit = function(ent)
+ 	{
+ 		Util.MapDebugPrint(GetEntName(ent) + "_leave_market" );
+ 	},
+   },
+      Tank_at_second_barrier =
+      {
+ 	Name="Tank_at_second_barrier",
+ 	TriggerOnClass = { CLASS.VEHICLE_HVY },
+ 	OnEnter = function(ent)
+ 	{
+	Map.TankAtB2 = true;
+	if ( Map.Tank_Built )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "MOUNT_Tank" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Tank_Barrier_2" );
+
+ 		Util.MapDebugPrint(GetEntName(ent) + "_at_second_barrier" );
+ 	},
+ 	OnExit = function(ent)
+ 	{
+
+ 		Util.MapDebugPrint(GetEntName(ent) + "_pass_second_barrier" );
+ 	},
+   },
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "^5Allied Command Post constructed. Charge speed increased! ^3CP Spawn a", Map.Allied_Command_Post_Built );
+	OnTrigger( "^1The Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "^5Axis Command Post constructed. Charge speed increased! ^3CP Spawn act", Map.Axis_Command_Post_Built );
+	OnTrigger( "^1The Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+
+	OnTrigger( "^3The Allies captured the rendevous point!", Map.CHECKPOINT_Bunker_Flag_Allied );
+	OnTrigger( "^3The Axis captured the rendevous point!", Map.CHECKPOINT_Bunker_Flag_Axis );
+
+	OnTrigger( "^5The Tank has been repaired", Map.Tank_Built );
+	OnTrigger( "^1The Tank has been damaged", Map.Tank_Destroyed );
+
+	OnTrigger( "^5Tank Barrier #1 has been constructed.", Map.Tank_Barrier_1_Built );
+	OnTrigger( "Planted at Tank Barrier #1.", Map.Tank_Barrier_1_Planted );
+	OnTrigger( "^1Tank Barrier #1 has been destroyed.", Map.Tank_Barrier_1_Destroyed );
+	OnTrigger( "^3The Tank is past the first barrier.", Map.Tank_Past_Barrier_1 );
+
+	OnTrigger( "^5Tank Barrier #2 has been constructed.", Map.Tank_Barrier_2_Built );
+	OnTrigger( "^1Tank Barrier #2 has been destroyed.", Map.Tank_Barrier_2_Destroyed );
+	OnTrigger( "Planted at Tank Barrier #2.", Map.Tank_Barrier_2_Planted );
+	OnTrigger( "^3The Tank is past the second barrier.", Map.Tank_Past_Barrier_2 );
+
+	OnTrigger( "^5Axis have build the Generator!", Map.Axis_Generator_Build );
+	OnTrigger( "Planted at Axis Generator.", Map.Axis_Generator_Planted );
+	OnTrigger( "^1Allied team has destroyed the Generator!", Map.Axis_Generator_Destroyed );
+
+	OnTrigger( "^1The Axis have destroyed the Library Door!", Map.Library_Door_Destroyed );
+	OnTrigger( "^1The Axis have destroyed the Safe!", Map.Safe_Destroyed );
+	OnTrigger( "^5The Axis Field Radio has been constructed.", Map.Field_Radio_Built );
+	OnTrigger( "Planted at the Field Radio.", Map.Field_Radio_Planted);
+	OnTrigger( "^1Allies have destroyed the Axis Field Radio.", Map.Field_Radio_Destroyed );
+	OnTrigger( "Axis have stolen The Secret Documents!", Map.Secret_Documents_Taken );
+	OnTrigger( "Flag returned Secret Documents!", Map.Secret_Documents_Returned );
+	OnTrigger( "^1The Axis delivered the documents!", Map.Secret_Documents_Secured );
+
+	OnTrigger( "^5The side entrance barrier has been constructed!", Map.Back_Door_Built );
+	OnTrigger( "^1The side entrance barrier has been destroyed!", Map.Back_Door_Destroyed );
+
+      //Tank TriggerRegion
+      Tank_At_Corner2 = OnTriggerRegion(AABB(-2450.872,-1654.039,-222.874,-2180.837,-1600.812,-140.870), Map.Tank_at_second_corner);
+	Tank_At_Barrier_1 = OnTriggerRegion(AABB(-1149.518,-3584.128,-222.875,-1078.824,-3136.052,-148.875), Map.Tank_at_first_barrier);
+	Tank_Entered_Market = OnTriggerRegion(AABB(1143.930,-3494.782,-222.874,1247.533,-3249.583,-148.857), Map.Tank_entered_market);
+	Tank_At_Barrier_2 = OnTriggerRegion(AABB(1498.899,-1909.271,-214.875,1773.127,-1854.929,-140.875), Map.Tank_at_second_barrier);
+
+	// all but routes
+	Util.DisableGoal( ".*", true );
+
+      //Axis goals activation
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"BUILD_Tank",
+		"CHECKPOINT_bunker_flag",
+		".*CAB.*",
+		"ATTACK_First.*",
+	});
+      //Allies goals activation
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_Command_Post",
+		"BUILD_Tank_Barrier.*",
+		"CHECKPOINT_bunker_flag",
+		".*CAB.*",
+		"DEFEND_First.*",
+	});
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "DEFEND.*" );
+	Util.SetMaxUsers( 1, "ATTACK.*" );
+	Util.SetMaxUsers( 1, "CHECKPOINT_bunker_flag" );
+	Util.SetMaxUsers( 1, "BUILD_Command_Post" );
+	Util.SetMaxUsers( 1, "MOUNT_Tank" );
+	Util.SetMaxUsers( 2, "FLAG.*" );
+	Util.SetMaxUsers( 1, "BUILD.*" );
+	Util.SetMaxUsers( 1, "PLANT.*" );
+
+	// Camp times
+	//SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=30, MaxCampTime=90} );
+	//SetMapGoalProperties( "MOBILEMG42_.*", {MinCampTime=60, MaxCampTime=180} );
+	SetMapGoalProperties( "ATTACK.*", {MinCampTime=60, MaxCampTime=90} );
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=60, MaxCampTime=90} );
+
+	//SetGoalPriority
+	SetGoalPriority( "BUILD_Tank_Barrier.*", 0.82, TEAM.ALLIES, CLASS.ENGINEER );
+	SetGoalPriority( "BUILD_bank_side_door", 0.96, TEAM.ALLIES, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Axis_Generator", 0.82, TEAM.ALLIES, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Command_Post",   0.96,  TEAM.ALLIES, CLASS.COVERTOPS );
+	SetGoalPriority( "BUILD_Field_Radio_1",  0.96, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Command_Post",   0.96,  TEAM.AXIS, CLASS.COVERTOPS );
+	SetGoalPriority( "PLANT_Tank_Barrier.*", 0.92, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_bank_side_door", 0.96, TEAM.AXIS, CLASS.ENGINEER );
+      SetGoalPriority( "PLANT_Safe", 0.96, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "BUILD_Tank", 0.92, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "CHECKPOINT_bunker_flag", 0.90 );
+
+     //Offset Plant/Build Fix
+     Util.SetGoalOffset( 50, 0, 0, "PLANT_Safe" );
+     Util.SetGoalOffset( 50, 0, 0, "PLANT_bank_side_door" );
+     Util.SetGoalOffset( 150, 50, 0, "PLANT_Field_Radio" );
+     Util.SetGoalOffset( 0, -40, 0, "PLANT_Command_Post" );
+     Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+      bot.TargetBreakableDist = 120.0;
+      Map.SetSpawnAxisCP(bot);
+      Map.SetSpawnAlliedCP(bot);
+	bot.MaxViewDistance = 2400;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_bunker_flag =
+		{
+			ROUTE_First_Axis_Spawn  =
+			{
+				ROUTE_Back_Rendez_Vous  = {Weight = 2},
+				ROUTE_Trucking_Road  = {Weight = 3},
+				},
+		},
+		BUILD_Command_Post =
+		{
+			ROUTE_First_Allied_Spawn  =
+			{
+				ROUTE_Hobby_Road  =
+				{
+					ROUTE_Entered_Marker  =
+					{
+					},
+				},
+				ROUTE_Shoes_Store  =
+				{
+					ROUTE_Entered_Marker  =
+					{
+					},
+				},
+				ROUTE_Library_Left  =
+				{
+					ROUTE_Market_Barrier_2  =
+					{
+						ROUTE_Store_Cab_Door  =
+						{
+						},
+						ROUTE_Entered_Marker  =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_library_Door  =
+			{
+				ROUTE_Hobby_Road  =
+				{
+					ROUTE_Entered_Marker  =
+					{
+					},
+				},
+				ROUTE_Shoes_Store  =
+				{
+					ROUTE_Entered_Marker  =
+					{
+					},
+				},
+				ROUTE_Library_Left  =
+				{
+					ROUTE_Market_Barrier_2  =
+					{
+						ROUTE_Entered_Marker  =
+						{
+						},
+						ROUTE_Store_Cab_Door  =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_Rendez_Vous  =
+			{
+				ROUTE_Corner_Third  =
+				{
+				},
+				ROUTE_Tunnel_Barrier_1  =
+				{
+				},
+				ROUTE_Stair_Roof_Tunnel  =
+				{
+					ROUTE_Bar_At_Top  =
+					{
+						ROUTE_Top_CP  =
+						{
+						},
+					},
+				},
+				ROUTE_First_Corner  =
+				{
+					ROUTE_Piano_Cab  =
+					{
+						ROUTE_Axis_CP_Spawn  =
+						{
+							ROUTE_Top_CP  =
+							{
+							},
+						},
+					},
+				},
+			},
+			ROUTE_First_Axis_Spawn  =
+			{
+				ROUTE_Trucking_Road  =
+				{
+					ROUTE_Music_Store  =
+					{
+						ROUTE_Bungers  =
+						{
+							ROUTE_Market_Barrier_2  =
+							{
+								ROUTE_Entered_Marker  =
+								{
+								},
+								ROUTE_Store_Cab_Door  =
+								{
+								},
+							},
+						},
+					},
+					ROUTE_Piano_Cab  =
+					{
+						ROUTE_Axis_CP_Spawn  =
+						{
+							ROUTE_Top_CP  =
+							{
+							},
+						},
+					},
+					ROUTE_Stair_Roof_Tunnel  =
+					{
+						ROUTE_Bar_At_Top  =
+						{
+							ROUTE_Top_CP  =
+							{
+							},
+						},
+					},
+					ROUTE_Tunnel_Barrier_1  =
+					{
+					},
+				},
+			},
+		},
+		PLANT_Tank_Barrier_1 =
+		{
+			ROUTE_Axis_CP_Spawn  =
+			{
+				ROUTE_CP_Left  =
+				{
+				},
+				ROUTE_CP_Right  =
+				{
+				},
+			},
+			ROUTE_First_Axis_Spawn  =
+			{
+				ROUTE_Music_Store  =
+				{
+					ROUTE_Bungers  =
+					{
+						ROUTE_Market_Barrier_2  =
+						{
+							ROUTE_Entered_Marker  =
+							{
+							},
+						},
+					},
+				},
+				ROUTE_Back_Rendez_Vous  =
+				{
+					ROUTE_Rendez_Vous  =
+					{
+						ROUTE_Corner_Third  =
+						{
+							ROUTE_PWN  =
+							{
+							},
+						},
+						ROUTE_Tunnel_Barrier_1  =
+						{
+						},
+					},
+					ROUTE_Stair_Roof_Tunnel  =
+					{
+						ROUTE_Bar_At_Top  =
+						{
+							ROUTE_Top_CP  =
+							{
+							},
+						},
+					},
+				},
+			},
+			ROUTE_Rendez_Vous  =
+			{
+				ROUTE_Stair_Roof_Tunnel  =
+				{
+					ROUTE_Bar_At_Top  =
+					{
+						ROUTE_Top_CP  =
+						{
+						},
+					},
+				},
+				ROUTE_Tunnel_Barrier_1  =
+				{
+				},
+				ROUTE_Corner_Third  =
+				{
+					ROUTE_PWN  =
+					{
+					},
+				},
+			},
+		},
+		PLANT_Tank_Barrier_2 =
+		{
+			ROUTE_Rendez_Vous  =
+			{
+				ROUTE_Tunnel_Barrier_1  =
+				{
+					ROUTE_Entered_Marker  =
+					{
+						ROUTE_Market_Barrier_2  =
+						{
+						},
+					},
+					ROUTE_Store_Cab_Door  =
+					{
+						ROUTE_Market_Barrier_2  =
+						{
+						},
+					},
+				},
+				ROUTE_First_Corner  =
+				{
+					ROUTE_Piano_Cab  =
+					{
+						ROUTE_Axis_CP_Spawn  =
+						{
+							ROUTE_Restaurant_Top  =
+							{
+								ROUTE_Market_Barrier_2  =
+								{
+								},
+							},
+						},
+					},
+					ROUTE_Music_Store  =
+					{
+						ROUTE_Bar_Mall  =
+						{
+							ROUTE_Market_Barrier_2  =
+							{
+							},
+						},
+						ROUTE_Bungers  =
+						{
+							ROUTE_Market_Barrier_2  =
+							{
+							},
+						},
+					},
+				},
+			},
+			ROUTE_Axis_CP_Spawn  =
+			{
+				ROUTE_Restaurant_Top  =
+				{
+					ROUTE_Market_Barrier_2  =
+					{
+					},
+				},
+				ROUTE_Bungers  =
+				{
+					ROUTE_Market_Barrier_2  =
+					{
+					},
+				},
+				ROUTE_Bar_At_Top  =
+				{
+					ROUTE_Top_CP  =
+					{
+						ROUTE_Entered_Marker  =
+						{
+							ROUTE_Market_Barrier_2  =
+							{
+							},
+						},
+						ROUTE_Store_Cab_Door  =
+						{
+							ROUTE_Market_Barrier_2  =
+							{
+							},
+						},
+					},
+				},
+			},
+			ROUTE_First_Axis_Spawn  =
+			{
+				ROUTE_Trucking_Road  =
+				{
+					ROUTE_Music_Store  =
+					{
+						ROUTE_Bar_Mall  =
+						{
+						},
+						ROUTE_Bungers  =
+						{
+							ROUTE_Market_Barrier_2  =
+							{
+							},
+						},
+					},
+				},
+			},
+		},
+		PLANT_Safe =
+		{
+			ROUTE_Axis_CP_Spawn  =
+			{
+				ROUTE_Restaurant_Top  =
+				{
+					ROUTE_Library_Stair_Left  =
+					{
+						ROUTE_Library_Door  =
+						{
+						},
+					},
+				},
+				ROUTE_Bar_Mall  =
+				{
+					ROUTE_Library_Back  =
+					{
+						ROUTE_Bank_Side_Door  =
+						{
+							ROUTE_Secret_Doc  =
+							{
+							},
+						},
+						ROUTE_Breached_Wall  =
+						{
+						},
+					},
+					ROUTE_Library_Stair_Left  =
+					{
+						ROUTE_Library_Door  =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_Rendez_Vous  =
+			{
+				ROUTE_First_Corner  =
+				{
+					ROUTE_Piano_Cab  =
+					{
+						ROUTE_Axis_CP_Spawn  =
+						{
+							ROUTE_Restaurant_Top  =
+							{
+								ROUTE_Library_Stair_Left  =
+								{
+									ROUTE_Library_Door  =
+									{
+									},
+								},
+							},
+							ROUTE_Bar_Mall  =
+							{
+								ROUTE_Library_Stair_Left  =
+								{
+									ROUTE_Library_Door  =
+									{
+									},
+								},
+								ROUTE_Library_Back  =
+								{
+									ROUTE_Bank_Side_Door  =
+									{
+									},
+									ROUTE_Breached_Wall  =
+									{
+									},
+								},
+							},
+						},
+					},
+					ROUTE_Music_Store  =
+					{
+						ROUTE_Bar_Mall  =
+						{
+							ROUTE_Library_Stair_Left  =
+							{
+								ROUTE_Library_Door  =
+								{
+								},
+							},
+							ROUTE_Library_Back  =
+							{
+								ROUTE_Bank_Side_Door  =
+								{
+								},
+								ROUTE_Breached_Wall  =
+								{
+								},
+							},
+						},
+					},
+				},
+			},
+			ROUTE_First_Axis_Spawn  =
+			{
+				ROUTE_Trucking_Road  =
+				{
+					ROUTE_Music_Store  =
+					{
+						ROUTE_Bar_Mall  =
+						{
+							ROUTE_Library_Back  =
+							{
+								ROUTE_Bank_Side_Door  =
+								{
+								},
+								ROUTE_Breached_Wall  =
+								{
+								},
+							},
+							ROUTE_Library_Stair_Left  =
+							{
+								ROUTE_Library_Door  =
+								{
+								},
+							},
+						},
+						ROUTE_Bungers  =
+						{
+							ROUTE_Market_Barrier_2  =
+							{
+								ROUTE_Library_Stair_Left  =
+								{
+									ROUTE_Library_Door  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		FLAG_Secret_Documents =
+		{
+			ROUTE_Axis_CP_Spawn  =
+			{
+				ROUTE_Restaurant_Top  =
+				{
+					ROUTE_Library_Stair_Left  =
+					{
+						ROUTE_Library_Door  =
+						{
+						},
+					},
+				},
+				ROUTE_Bar_Mall  =
+				{
+					ROUTE_Library_Back  =
+					{
+						ROUTE_Bank_Side_Door  =
+						{
+							ROUTE_Secret_Doc  =
+							{
+							},
+						},
+						ROUTE_Breached_Wall  =
+						{
+						},
+					},
+					ROUTE_Library_Stair_Left  =
+					{
+						ROUTE_Library_Door  =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_Rendez_Vous  =
+			{
+				ROUTE_First_Corner  =
+				{
+					ROUTE_Piano_Cab  =
+					{
+						ROUTE_Axis_CP_Spawn  =
+						{
+							ROUTE_Restaurant_Top  =
+							{
+								ROUTE_Library_Stair_Left  =
+								{
+									ROUTE_Library_Door  =
+									{
+									},
+								},
+							},
+							ROUTE_Bar_Mall  =
+							{
+								ROUTE_Library_Stair_Left  =
+								{
+									ROUTE_Library_Door  =
+									{
+									},
+								},
+								ROUTE_Library_Back  =
+								{
+									ROUTE_Bank_Side_Door  =
+									{
+									},
+									ROUTE_Breached_Wall  =
+									{
+									},
+								},
+							},
+						},
+					},
+					ROUTE_Music_Store  =
+					{
+						ROUTE_Bar_Mall  =
+						{
+							ROUTE_Library_Stair_Left  =
+							{
+								ROUTE_Library_Door  =
+								{
+								},
+							},
+							ROUTE_Library_Back  =
+							{
+								ROUTE_Bank_Side_Door  =
+								{
+								},
+								ROUTE_Breached_Wall  =
+								{
+								},
+							},
+						},
+					},
+				},
+			},
+			ROUTE_First_Axis_Spawn  =
+			{
+				ROUTE_Trucking_Road  =
+				{
+					ROUTE_Music_Store  =
+					{
+						ROUTE_Bar_Mall  =
+						{
+							ROUTE_Library_Back  =
+							{
+								ROUTE_Bank_Side_Door  =
+								{
+								},
+								ROUTE_Breached_Wall  =
+								{
+								},
+							},
+							ROUTE_Library_Stair_Left  =
+							{
+								ROUTE_Library_Door  =
+								{
+								},
+							},
+						},
+						ROUTE_Bungers  =
+						{
+							ROUTE_Market_Barrier_2  =
+							{
+								ROUTE_Library_Stair_Left  =
+								{
+									ROUTE_Library_Door  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		CAPPOINT_Radio =
+		{
+			ROUTE_Secret_Doc  =
+			{
+				ROUTE_Bank_Side_Door  =
+				{
+					ROUTE_Library_Back  =
+					{
+						ROUTE_Bar_Mall  =
+						{
+							ROUTE_Bungers  =
+							{
+							},
+						},
+						ROUTE_Music_Store  =
+						{
+							ROUTE_Piano_Cab  =
+							{
+								ROUTE_Axis_CP_Spawn  =
+								{
+									ROUTE_Bungers  =
+									{
+									},
+									ROUTE_Restaurant_Top  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Breached_Wall  =
+				{
+					ROUTE_Library_Back  =
+					{
+						ROUTE_Bar_Mall  =
+						{
+							ROUTE_Bungers  =
+							{
+							},
+							ROUTE_Music_Store  =
+							{
+								ROUTE_Piano_Cab  =
+								{
+									ROUTE_Axis_CP_Spawn  =
+									{
+										ROUTE_Restaurant_Top  =
+										{
+										},
+										ROUTE_Bungers  =
+										{
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Library_Door  =
+				{
+					ROUTE_Library_Stair_Left  =
+					{
+						ROUTE_Market_Barrier_2  =
+						{
+						},
+						ROUTE_Bar_Mall  =
+						{
+							ROUTE_Bungers  =
+							{
+							},
+							ROUTE_Music_Store  =
+							{
+								ROUTE_Piano_Cab  =
+								{
+									ROUTE_Axis_CP_Spawn  =
+									{
+										ROUTE_Restaurant_Top  =
+										{
+										},
+										ROUTE_Bungers  =
+										{
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		CAPPOINT_Fake =
+		{
+			ROUTE_Secret_Doc  =
+			{
+				ROUTE_Bank_Side_Door  =
+				{
+					ROUTE_Library_Back  =
+					{
+						ROUTE_Bar_Mall  =
+						{
+							ROUTE_Music_Store  =
+							{
+								ROUTE_Piano_Cab  =
+								{
+									ROUTE_Axis_CP_Spawn  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Breached_Wall  =
+				{
+					ROUTE_Library_Back  =
+					{
+						ROUTE_Bar_Mall  =
+						{
+							ROUTE_Music_Store  =
+							{
+								ROUTE_Piano_Cab  =
+								{
+									ROUTE_Axis_CP_Spawn  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Library_Door  =
+				{
+					ROUTE_Library_Stair_Left  =
+					{
+						ROUTE_Market_Barrier_2  =
+						{
+							ROUTE_Store_Cab_Door  =
+							{
+								ROUTE_Top_CP  =
+								{
+									ROUTE_Bar_At_Top  =
+									{
+										ROUTE_Axis_CP_Spawn  =
+										{
+										},
+									},
+								},
+							},
+						},
+						ROUTE_Entered_Marker  =
+						{
+							ROUTE_Top_CP  =
+							{
+								ROUTE_Bar_At_Top  =
+								{
+									ROUTE_Axis_CP_Spawn  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	      };
+		MapRoutes["DEFEND_First.*"] =
+		{
+		      ROUTE_First_Allied_Spawn  =
+			{Weight = 3,
+				ROUTE_Library_Left  =
+				{
+					ROUTE_Bar_Mall  =
+					{
+						ROUTE_Music_Store  =
+						{
+						},
+					},
+					Weight = 4,
+					ROUTE_Market_Barrier_2  =
+					{
+						ROUTE_Bungers  =
+						{
+							ROUTE_Music_Store  =
+							{
+							},
+						},
+					},
+				},
+				Weight = 4,
+				ROUTE_Hobby_Road  =
+				{
+					ROUTE_Entered_Marker  =
+					{
+						ROUTE_Top_CP  =
+						{
+							ROUTE_Bar_At_Top  =
+							{
+								ROUTE_Stair_Roof_Tunnel  =
+								{
+								},
+								ROUTE_Axis_CP_Spawn  =
+								{
+									ROUTE_Piano_Cab  =
+									{
+									},
+								},
+							},
+						},
+						ROUTE_Tunnel_Barrier_1  =
+						{
+						},
+						ROUTE_Corner_Third  =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_Allied_CP_Spawn  =
+			{
+				ROUTE_CP_Left  =
+				{
+					ROUTE_Top_CP  =
+					{
+						ROUTE_Bar_At_Top  =
+						{
+							ROUTE_Stair_Roof_Tunnel  =
+							{
+							},
+						},
+						ROUTE_Axis_CP_Spawn  =
+						{
+							ROUTE_Piano_Cab  =
+							{
+							},
+						},
+					},
+					ROUTE_Tunnel_Barrier_1  =
+					{
+					},
+					ROUTE_Corner_Third  =
+					{
+					},
+				},
+				ROUTE_CP_Right  =
+				{
+					ROUTE_Top_CP  =
+					{
+						ROUTE_Bar_At_Top  =
+						{
+							ROUTE_Stair_Roof_Tunnel  =
+							{
+							},
+							ROUTE_Axis_CP_Spawn  =
+							{
+								ROUTE_Piano_Cab  =
+								{
+								},
+							},
+						},
+					},
+					ROUTE_Tunnel_Barrier_1  =
+					{
+					},
+					ROUTE_Corner_Third  =
+					{
+					},
+				},
+			},
+            };
+		MapRoutes["ATTACK_Second.*"] =
+		{
+			ROUTE_First_Axis_Spawn  =
+			{
+				ROUTE_Trucking_Road  =
+				{
+					ROUTE_First_Corner  =
+					{
+						ROUTE_Tunnel_Barrier_1  =
+						{
+						},
+						ROUTE_Stair_Roof_Tunnel  =
+						{
+						},
+						ROUTE_Corner_Third  =
+						{
+							ROUTE_PWN  =
+							{
+							},
+						},
+					},
+				},
+				ROUTE_Back_Rendez_Vous  =
+				{
+					ROUTE_Corner_Third  =
+					{
+						ROUTE_PWN  =
+						{
+						},
+					},
+					ROUTE_Tunnel_Barrier_1  =
+					{
+					},
+					ROUTE_Stair_Roof_Tunnel  =
+					{
+						ROUTE_Bar_At_Top  =
+						{
+							ROUTE_Top_CP  =
+							{
+							},
+						},
+					},
+				},
+			},
+			ROUTE_Rendez_Vous  =
+			{
+				ROUTE_Corner_Third  =
+				{
+					ROUTE_PWN  =
+					{
+					},
+				},
+				ROUTE_Tunnel_Barrier_1  =
+				{
+				},
+				ROUTE_Stair_Roof_Tunnel  =
+				{
+					ROUTE_Bar_At_Top  =
+					{
+						ROUTE_Top_CP  =
+						{
+						},
+					},
+				},
+				ROUTE_First_Corner  =
+				{
+					ROUTE_Piano_Cab  =
+					{
+						ROUTE_Axis_CP_Spawn  =
+						{
+							ROUTE_Bar_At_Top  =
+							{
+								ROUTE_Top_CP  =
+								{
+								},
+							},
+						},
+					},
+				},
+			},
+		};
+		MapRoutes["DEFEND_Second.*"] =
+		{
+			ROUTE_Allied_CP_Spawn  =
+			{
+				ROUTE_CP_Left  =
+				{
+				},
+				ROUTE_CP_Right  =
+				{
+				},
+			},
+			ROUTE_First_Allied_Spawn  =
+			{
+				ROUTE_Hobby_Road  =
+				{
+					ROUTE_Entered_Marker  =
+					{
+					},
+				},
+				ROUTE_Shoes_Store  =
+				{
+					ROUTE_Entered_Marker  =
+					{
+					},
+					ROUTE_Store_Cab_Door  =
+					{
+					},
+				},
+			},
+	      };
+	     	MapRoutes["DEFEND_Library.*"] =
+		{
+			ROUTE_First_Allied_Spawn  =
+			{
+				ROUTE_Library_Left  =
+				{
+					ROUTE_Library_Stair_Left  =
+					{
+						ROUTE_Library_Door  =
+						{
+						},
+					},
+				},
+				ROUTE_Library_Right  =
+				{
+					ROUTE_Breached_Wall  =
+					{
+					},
+				},
+				ROUTE_Allied_Stairs_Cab  =
+				{
+					ROUTE_Library_Stair_Front  =
+					{
+						ROUTE_Library_Door  =
+						{
+						},
+					},
+					ROUTE_Library_Right  =
+					{
+						ROUTE_Library_Door  =
+						{
+						},
+						ROUTE_Breached_Wall  =
+						{
+						},
+					},
+				},
+			},
+	      };
+	      MapRoutes["DEFEND_Cappoint.*"] =
+		{
+			ROUTE_First_Allied_Spawn  =
+			{
+				ROUTE_Library_Left  =
+				{
+					ROUTE_Market_Barrier_2  = {
+					},
+					ROUTE_Bar_Mall  =
+					{
+						ROUTE_Bungers  =
+						{
+						},
+					},
+				},
+				ROUTE_Allied_Stairs_Cab  =
+				{
+					ROUTE_Library_Stair_Front  =
+					{
+						ROUTE_Market_Barrier_2  =
+						{
+						},
+						ROUTE_Bar_Mall  =
+						{
+							ROUTE_Bungers  =
+							{
+							},
+						},
+					},
+				},
+			},
+	      };
+	// copy some routes
+	MapRoutes["ATTACK_First.*"] = MapRoutes.CHECKPOINT_bunker_flag;
+	MapRoutes["ATTACK_Second.*"] = MapRoutes.PLANT_Tank_Barrier_1;
+	MapRoutes["ATTACK_Market.*"] = MapRoutes.PLANT_Tank_Barrier_2;
+	MapRoutes["ATTACK_Library.*"] = MapRoutes.PLANT_Safe;
+	MapRoutes["ATTACK_Cappoint.*"] = MapRoutes.PLANT_Tank_Barrier_2;
+	MapRoutes.FLAG_Secret_Documents = MapRoutes.PLANT_Safe;
+
+	Util.Routes(MapRoutes);
+};

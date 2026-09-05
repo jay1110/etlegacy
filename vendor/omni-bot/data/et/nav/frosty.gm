@@ -1,0 +1,736 @@
+//==========================================================================================
+//
+//	frosty.gm
+//
+//	Who          	When		What
+//------------------------------------------------------------------------------------------
+//	^1[UJE]^3Captain	09 August 2018	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	DocStatus = 0,
+	GateStatus = 0,
+	DoorStatus = 0,
+	Allied_Command_Post = 0,
+	Axis_Command_Post = 0,
+	Axis_Checkpoint = 0,
+	Allied_Checkpoint = 0,
+	// Rôles
+	Roles =
+	{
+		AXIS =
+		{
+		AllBots = true, // each bot is considered for a role
+			INFILTRATOR = //PLANT CP
+			{
+				numbots = 2,
+				crucialClass = CLASS.COVERTOPS,
+			},
+			DEFENDER =
+			{
+				numbots = 6,
+				//crucialClass = CLASS.COVERTOPS,
+			},
+			DEFENDER1 =
+			{
+				numbots = 6,
+				//crucialClass = CLASS.COVERTOPS,
+			},
+		},
+		ALLIES =
+		{
+			AllBots = true, // default: every other bot
+		      INFILTRATOR = //PLANT CP
+			{
+			      numbots = 2,
+				crucialClass = CLASS.COVERTOPS,
+			},
+		      ROAMER = //FLAG book
+			{
+			      numbots = 2,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER =
+			{
+				numbots = 6,
+				//crucialClass = CLASS.COVERTOPS,
+			},
+			ATTACKER1 =
+			{
+				numbots = 6,
+				//crucialClass = CLASS.COVERTOPS,
+			},
+		},
+	},
+	// Navigation
+	Navigation =
+	{     // /bot waypoint_setproperty paththrough Navigation_PT:window
+		window =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.PressButton(BTN.JUMP);
+				sleep(0.25);
+				_this.Bot.HoldButton(BTN.SPRINT, 3);
+				_this.Bot.HoldButton(BTN.CROUCH, 1.5);
+				sleep(3);
+			},
+		},
+		// /bot waypoint_setproperty paththrough Navigation_PT:rail
+		rail =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.PressButton(BTN.JUMP);
+				sleep(0.25);
+			},
+		},
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+      Map.Allied_Command_Post = 1;
+	if ( !Map.DocStatus )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Command_Post");
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+	      "PLANT_Command_Post",
+	      "BUILD_Command_Post"
+	});
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Command_Post" );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+	Map.Allied_Command_Post = 0;
+	if ( !Map.DocStatus )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+      Axis_Command_Post_Built = function()
+	{
+	Map.Axis_Command_Post = 1;
+	if ( !Map.DocStatus && Map.DoorStatus or Map.GateStatus )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+	}
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+	"BUILD_Command_Post",
+	"PLANT_Command_Post"
+	});
+
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+      Map.Axis_Command_Post = 0;
+	if ( !Map.DocStatus )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+	Front_Bunker_Door_Planted = function()
+	{
+	if ( !Map.GateStatus )
+	      {
+		Util.DisableGoal("DEFUSE_Front_bunker_Door.*");
+		}
+		else
+		{
+		Util.EnableGoal("DEFUSE_Front_bunker_Door.*");
+		Util.SetMaxUsers( 1, "DEFUSE.*" );
+		}
+	},
+
+	Front_Bunker_Door_Destroyed = function()
+	{
+	Map.DoorStatus = 1;
+	if ( !Map.DocStatus )
+	      {
+	      SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"FLAG_book",
+		"ATTACK_Doc.*",
+		".*CAB.*"
+		});
+		}
+	      else
+	      {
+	      SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_CAPPOINT.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Doc.*" );
+	      }
+		if ( !Map.Allied_Checkpoint )
+            {
+		SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_flag" );
+		}
+		if ( Map.Axis_Command_Post && !Map.DocStatus )
+            {
+	      SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+	      }
+	      else
+	      {
+	      SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+	      }
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Front_Door.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Doc.*" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Front_Door.*" );
+		if ( !Map.GateStatus )
+            {
+		SetGoalRole("DEFEND_Doc.*", ROLE.DEFENDER);
+		SetGoalRole("ATTACK_Doc.*", ROLE.ATTACKER);
+		}
+		else
+		{
+		ClearGoalRole("DEFEND_Doc.*", ROLE.DEFENDER1);
+		ClearGoalRole("ATTACK_Doc.*", ROLE.ATTACKER1);
+		}
+		ClearGoalRole("DEFEND_Front_Door.*", ROLE.DEFENDER);
+            ClearGoalRole("ATTACK_Front_Door.*", ROLE.ATTACKER);
+
+		Util.MapDebugPrint( "Front_Bunker_Door_Destroyed" );
+	},
+
+	Gate_Planted = function()
+	{
+	if ( !Map.FrontDoorStatus )
+	      {
+		Util.DisableGoal("DEFUSE_Gate.*");
+		}
+		else
+		{
+		Util.EnableGoal("DEFUSE_Gate.*");
+		Util.SetMaxUsers( 1, "DEFUSE.*" );
+		}
+
+	},
+
+	Gate_Destroyed = function()
+	{
+	Map.GateStatus = 1;
+	if ( !Map.DocStatus )
+	      {
+	      SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"FLAG_book",
+		"ATTACK_Doc.*",
+		".*CAB.*"
+		});
+		}
+	if ( Map.Axis_Command_Post && !Map.DocStatus )
+            {
+	      SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+	      }
+	      else
+	      {
+	      SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+	      }
+	if ( !Map.Allied_Checkpoint )
+            {
+		SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_flag" );
+		}
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Gate.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Doc.*" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Gate.*" );
+
+	if ( !Map.FrontDoorStatus )
+            {
+		SetGoalRole("DEFEND_Doc.*", ROLE.DEFENDER1);
+		SetGoalRole("ATTACK_Doc.*", ROLE.ATTACKER1);
+		}
+		else
+		{
+		ClearGoalRole("DEFEND_Doc.*", ROLE.DEFENDER);
+		ClearGoalRole("ATTACK_Doc.*", ROLE.ATTACKER);
+		}
+		ClearGoalRole("ATTACK_Gate.*", ROLE.ATTACKER1);
+		ClearGoalRole("DEFEND_Gate.*", ROLE.DEFENDER1);
+
+		Util.MapDebugPrint( "Gate_Destroyed" );
+	},
+
+	flag_Axis_Captured = function()
+	{
+	Map.Axis_Checkpoint = 1;
+	Map.Allied_Checkpoint = 0;
+	if ( !Map.DocStatus && Map.DoorStatus or Map.GateStatus )
+            {
+		SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_flag" );
+		}
+	SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_flag" );
+
+		Util.MapDebugPrint( "flag_Axis_Captured" );
+	},
+
+	flag_Allies_Captured = function()
+	{
+	Map.Allied_Checkpoint = 1;
+	Map.Axis_Checkpoint = 0;
+	if ( !Map.DocStatus )
+            {
+		SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_flag" );
+		}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_flag" );
+
+		Util.MapDebugPrint( "flag_Allies_Captured" );
+	},
+
+	book_Taken = function()
+	{
+	Map.DocStatus = 1;
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"CAPPOINT.*",
+	"ATTACK_CAPPOINT.*"
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+	"FLAG_book",
+	"ATTACK_Doc.*"
+	});
+		Util.DisableGoal({"CHECKPOINT_flag",".*Command_Post"});
+		Util.MapDebugPrint( "book_Taken" );
+	sleep(5);
+	if ( !Map.GateStatus )
+            {
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Gate.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"ATTACK_Gate.*",
+		"PLANT_Gate"
+		});
+		}
+	if ( !Map.FrontDoorStatus )
+            {
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Front_Door.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"ATTACK_Front_Door.*",
+		"PLANT_Front_Bunker_Door"
+		});
+		}
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_CAPPOINT.*" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Doc.*" );
+	},
+
+	book_Returned = function()
+	{
+	Map.DocStatus = 0;
+	if ( Map.GateStatus or Map.FrontDoorStatus )
+	      {
+	      SetAvailableMapGoals( TEAM.ALLIES, true, {
+	      "FLAG_book",
+	      "ATTACK_Doc.*"
+	      });
+	      SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Doc.*" );
+		}
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+	"CAPPOINT.*",
+	"ATTACK_CAPPOINT.*"
+	});
+
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_CAPPOINT.*" );
+
+	if ( Map.Allied_Command_Post )
+	      {
+	      SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Command_Post");
+	      }
+	if ( Map.Axis_Command_Post && Map.GateStatus or Map.FrontDoorStatus )
+	      {
+	      SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+	      }
+      if ( !Map.Axis_Command_Post && !Map.Allied_Command_Post )
+		{
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+
+		if ( Map.GateStatus or Map.FrontDoorStatus )
+		{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+		}
+	}
+	if ( Map.GateStatus or Map.DoorStatus && !Map.Allied_Checkpoint )
+	      {
+	      SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_flag" );
+	      }
+	if ( Map.Allied_Checkpoint or !Map.Axis_Checkpoint )
+	      {
+	      SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_flag" );
+	      }
+	if ( !Map.GateStatus )
+            {
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Gate.*" );
+	      SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"ATTACK_Gate.*",
+		"PLANT_Gate"
+		});
+		}
+	if ( !Map.DoorStatus )
+            {
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Front_Door.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"ATTACK_Front_Door.*",
+		"PLANT_Front_Bunker_Door"
+		});
+		}
+	if ( !Map.DoorStatus or !Map.GateStatus )
+		{
+		foreach(bot in BotTable)
+		{
+			if(bot.GetTeam() == TEAM.AXIS)
+			{
+				bot.ExecCommand("kill");
+			}
+		}
+	}
+	      Util.MapDebugPrint( "book_Returned" );
+	},
+
+	book_Secured = function()
+	{
+		Util.MapDebugPrint( "book_Secured" );
+	},
+};
+
+global OnMapLoad = function()
+{
+      //Register callback functions
+	OnTrigger( "^1Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "^1Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "^1Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "^1Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+
+	OnTrigger( "Planted at the Front Bunker Door." , Map.Front_Bunker_Door_Planted );
+	OnTrigger( "^1Allies have breached the Door!", Map.Front_Bunker_Door_Destroyed );
+	OnTrigger( "Planted at the Gate." , Map.Gate_Planted );
+	OnTrigger( "^1Allies have breached the Gate!", Map.Gate_Destroyed );
+
+	OnTrigger( "Allies have stolen The Code Book!", Map.book_Taken );
+	OnTrigger( "Flag returned book!", Map.book_Returned );
+	OnTrigger( "^1Allies have transmitted the code book!", Map.book_Secured );
+
+	OnTrigger( "^1Axis captured the Flag!", Map.flag_Axis_Captured );
+	OnTrigger( "CHECKPOINT_flag to team 1", Map.flag_Axis_Captured );
+	OnTrigger( "^1Allies captured the Flag!", Map.flag_Allies_Captured );
+
+	   //Disable Combat Movement && BotsPush triggers
+      LadderA = RegionTrigger.Create(AABB(-1338.164,-1831.386,1.149,-1162.703,-1704.485,295.133), "DisableCombatMovement", "Ladder A");
+	LadderA = RegionTrigger.Create(AABB(-1338.164,-1831.386,1.149,-1162.703,-1704.485,295.133), "DisableBotPush", "");
+	Ladderb = RegionTrigger.Create(AABB(393.605,-2487.382,1.143,539.854,-2382.352,299.514), "DisableCombatMovement", "Ladder B");
+	Ladderb = RegionTrigger.Create(AABB(393.605,-2487.382,1.143,539.854,-2382.352,299.514), "DisableBotPush", "");
+	LadderC = RegionTrigger.Create(AABB(-944.008,-3306.333,1.130,-799.144,-3193.103,299.769), "DisableCombatMovement", "Ladder C");
+      LadderC = RegionTrigger.Create(AABB(-944.008,-3306.333,1.130,-799.144,-3193.103,299.769), "DisableBotPush", "");
+	LadderCheckpoint = RegionTrigger.Create(AABB(2087.140,-1850.872,-2.872,2212.712,-1773.259,271.904), "DisableBotPush", " Ladder Checkpoint");
+
+
+	//Max users per goal
+	Util.SetMaxUsers( 1, "DEFEND.*" );
+	Util.SetMaxUsers( 1, "ATTACK.*" );
+	Util.SetMaxUsers( 1, "FLAG.*" );
+	Util.SetMaxUsers( 1, "BUILD.*" );
+	Util.SetMaxUsers( 1, "PLANT.*" );
+	Util.SetMaxUsers( 1, "CHECKPOINT.*" );
+
+
+	//Camp times
+	SetMapGoalProperties( "ATTACK.*", {MinCampTime=15, MaxCampTime=30});
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=60, MaxCampTime=100});
+
+	//SetGoalPriority
+	SetGoalPriority( "BUILD_Command_Post.*",  0.98, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Command_Post", 0.96,  TEAM.AXIS, CLASS.COVERTOPS );
+	SetGoalPriority( "PLANT_Command_Post", 0.96,  TEAM.ALLIES, CLASS.COVERTOPS );
+	SetGoalPriority( "PLANT_Front_Bunker_Door", 1.0, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Gate", 1.0, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "DEFEND.*", 0.96);
+	SetGoalPriority( "FLAG.*", 0.96);
+
+	//all but routes
+	Util.DisableGoal(".*", true);
+
+	//Allies goals activation
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"ATTACK_Gate.*",
+		"ATTACK_Front_Door.*",
+		"PLANT_Gate",
+		"PLANT_Front_Bunker_Door"
+	});
+
+      //Axis goals activation
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"DEFEND_Gate.*",
+		"DEFEND_Front_Door.*",
+		"BUILD_Command_Post",
+		"CHECKPOINT_flag",
+		".*CAB.*"
+	});
+      SetGoalRole("DEFEND_Front_Door.*", ROLE.DEFENDER);
+      SetGoalRole("DEFEND_Gate.*", ROLE.DEFENDER1);
+	SetGoalRole("ATTACK_Front_Door.*", ROLE.ATTACKER);
+      SetGoalRole("ATTACK_Gate.*", ROLE.ATTACKER1);
+	ClearGoalRole("DEFEND_Doc.*", { ROLE.DEFENDER, ROLE.DEFENDER1 });
+	ClearGoalRole("ATTACK_Doc.*", { ROLE.ATTACKER, ROLE.ATTACKER1 });
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_Gate =
+		{
+			ROUTE_First_Allied_S  =
+			{
+
+				ROUTE_Ladder_Reservoir  =
+				{
+				      Weight = 3,
+					ROUTE_Barrier_Reservoir  =
+					{
+					},
+				},
+				ROUTE_Gate  =
+				{
+				},
+			},
+		},
+		FLAG_book =
+		{
+			ROUTE_First_Allied_S  =
+			{
+				ROUTE_Front_Door  =
+				{
+					ROUTE_Checkpoint  =
+					{
+						ROUTE_Garage_Trucks  =
+						{
+							ROUTE_Door_Ladder_A  =
+							{
+								ROUTE_Ladder_A  =
+								{
+								},
+								ROUTE_Ladder_B  =
+								{
+								},
+								ROUTE_Ladder_C  =
+								{
+								},
+							},
+						},
+					},
+					ROUTE_Checkpoint_UP  =
+					{
+						ROUTE_CP  =
+						{
+						},
+						ROUTE_Cab  =
+						{
+						},
+					},
+				},
+				ROUTE_Gate  =
+				{
+					ROUTE_Gate_In  =
+					{
+						ROUTE_Ladder_C  =
+						{
+						},
+						ROUTE_Ladder_A  =
+						{
+						},
+						ROUTE_Ladder_C  =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_Checkpoint  =
+			{
+				ROUTE_Checkpoint_UP  =
+				{
+					ROUTE_CP  =
+					{
+					},
+					ROUTE_Cab  =
+					{
+					},
+				},
+				ROUTE_Garage_Trucks  =
+				{
+					ROUTE_Door_Ladder_A  =
+					{
+						ROUTE_Ladder_A  =
+						{
+						},
+						ROUTE_Ladder_B  =
+						{
+						},
+						ROUTE_Ladder_C  =
+						{
+						},
+					},
+				},
+				ROUTE_Door_Ladder_B  =
+				{
+					ROUTE_Ladder_B  =
+					{
+					},
+					ROUTE_Ladder_C  =
+					{
+					},
+				},
+			},
+		},
+		CAPPOINT_Book =
+		{
+			ROUTE_CP  =
+			{
+				ROUTE_Checkpoint_UP  =
+				{
+					ROUTE_Checkpoint  =
+					{
+						ROUTE_Front_Door  =
+						{
+							ROUTE_Barrier_Reservoir  =
+							{
+							},
+							ROUTE_Ladder_Reservoir  =
+							{
+							},
+						},
+					},
+				},
+			},
+			ROUTE_Gate_In  =
+			{
+				ROUTE_Gate  =
+				{
+					ROUTE_Ladder_Reservoir  =
+					{
+					},
+					ROUTE_Barrier_Reservoir  =
+					{
+					},
+				},
+			},
+			ROUTE_Cab  =
+			{
+				ROUTE_Front_Door  =
+				{
+					ROUTE_Barrier_Reservoir  =
+					{
+					},
+					ROUTE_Ladder_Reservoir  =
+					{
+					},
+				},
+			},
+			ROUTE_Door_Ladder_B  =
+			{
+				ROUTE_Checkpoint  =
+				{
+					ROUTE_Front_Door  =
+					{
+						ROUTE_Barrier_Reservoir  =
+						{
+						},
+						ROUTE_Ladder_Reservoir  =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_Door_Ladder_A  =
+			{
+				ROUTE_Garage_Trucks  =
+				{
+					ROUTE_Checkpoint  =
+					{
+						ROUTE_Front_Door  =
+						{
+							ROUTE_Barrier_Reservoir  =
+							{
+							},
+							ROUTE_Ladder_Reservoir  =
+							{
+							},
+						},
+					},
+				},
+			},
+		},
+	};
+		MapRoutes["DEFEND_Front_Door.*"] =
+		{
+			ROUTE_First_Axis_S  =
+			{
+				ROUTE_Stairs  =
+				{
+					ROUTE_Ladder_A  =
+					{
+						ROUTE_Cab  =
+						{
+						},
+					},
+				},
+				ROUTE_Ladder_A  =
+				{
+					ROUTE_Cab  =
+					{
+					},
+				},
+				ROUTE_Ladder_C  =
+				{
+					ROUTE_CP  =
+					{
+					},
+					ROUTE_Cab  =
+					{
+					},
+				},
+			},
+		};
+		MapRoutes["DEFEND_Gate.*"] =
+		{
+			ROUTE_First_Axis_S  =
+			{
+				ROUTE_Stairs  =
+				{
+					ROUTE_Ladder_A  =
+					{
+					},
+				},
+				ROUTE_Ladder_C  =
+				{
+				},
+				ROUTE_Ladder_A  =
+				{
+				},
+			},
+		};
+	MapRoutes["ATTACK_Gate.*"] = MapRoutes.PLANT_Gate;
+	Util.Routes(MapRoutes);
+};

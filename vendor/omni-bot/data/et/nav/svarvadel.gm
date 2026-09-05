@@ -1,0 +1,759 @@
+//==========================================================================================
+//
+//	Svarvadel
+//
+//	Who			When		What
+//------------------------------------------------------------------------------------------
+//	MickyP		02Apr2010	1st Version
+//	Mateos		18/07/2026	First revision
+//	Mateos		07/08/2026	Second revision
+//
+//==========================================================================================
+//
+
+/*
+ * TODO:
+ * - Axis Routing OnMapLoad to not go through broken wall?
+ * - Find a way to more aggressively defend without TK... - Should be enough
+ * - Ammo_Crates_Planted/Defused should be handled - See if previous changes are enough with HH bot difficulty config - Yes
+ * - When Church Ruins spawn is the only one available and the whole team spawns, they all go the ladder way and hinder each other...
+ *   * Added routing, helped
+ *   * Port the spawn exit management from my other maps?
+ *     * Would penalize bots going for other routes, would take some tight waypointing, perhaps someday
+ *
+ * - Cover/Detonate spot(s)
+ * - Stuckages
+ */
+
+global Spawn =
+{
+	// Allies (no default)
+	VILLAGE             = 1,
+	LAKE_AREA           = 2,
+
+	// Axis
+	CHURCH_RUINS        = 3,
+	CITADEL_HOTEL       = 4, // Default
+	CITADEL_GUARD_HOUSE = 5,
+
+	nbAtGuardHouse = 0,
+
+	SetBotSpawn = function( bot )
+	{
+		if ( bot.GetTeam() != TEAM.AXIS || bot.GetClass() == CLASS.SOLDIER || Spawn.nbAtGuardHouse == 5 ) { return; }
+		bot.ChangeSpawnPoint( Spawn.CITADEL_GUARD_HOUSE );
+		Spawn.nbAtGuardHouse += 1;
+	}
+};
+
+global Map =
+{
+	isAmmoTakenOrSecured    = false,
+	isGunControlLadderBuilt = false,
+	isTowerBreached         = false,
+
+	Roles =
+	{
+		AXIS =
+		{
+			// Mortar then Mobile MG42
+			DEFENDER =
+			{
+				crucialClass = CLASS.SOLDIER,
+				numbots = 1,
+				spawnpt = Spawn.CITADEL_HOTEL,
+				voice = "defend"
+			}
+		}
+	},
+
+	Allies_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Allies_Command_Post_Built", true );
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Built", true );
+	},
+
+	Gun_control_ladder_Built = function()
+	{
+		Map.isGunControlLadderBuilt = true;
+
+		Wp.SetWaypointFlag( "ammo_ladder_1", "closed", false );
+		Wp.SetWaypointFlag( "ammo_ladder_2", "closed", false );
+		Util.EnableGoal( "ROUTE_ammo_ladder.*" );
+
+		if ( !Map.isTowerBreached )
+		{
+			// The MG42 is now at reach, use it
+			// Only if not Ammo secured
+			if ( !Map.isAmmoTakenOrSecured )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, false, "GRENADE_mg42" );
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"MOUNTMG42_spawnmg_gun",
+					"REPAIRMG42_spawnmg_gun",
+				});
+			}
+			SetAvailableMapGoals( TEAM.AXIS, true, "TRIPMINE_Cap_Sw.*" );
+		}
+
+		Util.MapDebugPrint( "Gun_control_ladder_Built", true );
+	},
+
+	citadel_entrance_barrier_Built = function()
+	{
+		Wp.SetWaypointFlag( "citadel_ladder_1", "closed", false );
+		Wp.SetWaypointFlag( "citadel_ladder_2", "closed", false );
+		Util.DisableGoal( "ROUTE_citadel_door" );
+		Util.EnableGoal( "ROUTE_citadel_ladder.*" );
+
+		Util.MapDebugPrint( "citadel_entrance_barrier_Built", true );
+	},
+
+	scaffolding_Built = function()
+	{
+		Util.EnableGoal( "ROUTE_scaffolding" );
+
+		Util.MapDebugPrint( "scaffolding_Built", true );
+	},
+
+	citadel_entrance_barrier_Planted = function()
+	{
+		foreach ( mg in Util.GoalTable( "DEFUSE_citadel_entrance_barrier.*" ) )
+		{
+			if ( mg.GetPosition().y > 1100 )
+			{
+				mg.SetAvailable( TEAM.AXIS, false );
+				Util.MapDebugPrint( mg.GetName() + " disabled because on the CP side", true );
+			}
+		}
+	},
+
+	Ammo_crates_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Ammo_crates_Destroyed", true );
+	},
+
+	Allies_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Allies_Command_Post_Destroyed", true );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed", true );
+	},
+
+	Gun_control_ladder_Destroyed = function()
+	{
+		Map.isGunControlLadderBuilt = false;
+
+		Wp.SetWaypointFlag( "ammo_ladder_1", "closed", true );
+		Wp.SetWaypointFlag( "ammo_ladder_2", "closed", true );
+		Util.DisableGoal( "ROUTE_ammo_ladder.*" );
+
+		if ( !Map.isTowerBreached )
+		{
+			// The MG42 is no longer at reach, don't use it
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"MOUNTMG42_spawnmg_gun",
+				"REPAIRMG42_spawnmg_gun"
+			});
+
+			if ( !Map.isAmmoTakenOrSecured )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, false, "TRIPMINE_Cap_Sw.*" );
+				SetAvailableMapGoals( TEAM.AXIS, true, "GRENADE_mg42" );
+			}
+		}
+
+		Util.MapDebugPrint( "Gun_control_ladder_Destroyed", true );
+	},
+
+	citadel_entrance_barrier_Destroyed = function()
+	{
+		Wp.SetWaypointFlag( "citadel_ladder_1", "closed", true );
+		Wp.SetWaypointFlag( "citadel_ladder_2", "closed", true );
+		Util.DisableGoal( "ROUTE_citadel_ladder.*" );
+		Util.EnableGoal( "ROUTE_citadel_door" );
+
+		Util.MapDebugPrint( "citadel_entrance_barrier_Destroyed", true );
+	},
+
+	scaffolding_Destroyed = function()
+	{
+		Util.DisableGoal( "ROUTE_scaffolding" );
+
+		Util.MapDebugPrint( "scaffolding_Destroyed", true );
+	},
+
+	Ammo_Taken = function()
+	{
+		Map.isAmmoTakenOrSecured = true;
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"AIRSTRIKE_ammo.*",
+			"ARTILLERY_S_ammo_1",
+			"DEFEND_ammo.*",
+			"GRENADE_mg42",
+			"PLANTMINE_ammo.*",
+			"PLANTMINE_ladder.*",
+			"TRIPMINE_ammo"
+		});
+		Util.EnableGoal( "CAMP_Cap_Sw.*" );
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"ARTILLERY_S_ammo_2",
+			"TRIPMINE_Cap_Sw.*"
+		});
+
+		WeaponGoals.Manage_MobileMortar_Axis_Start_Targets();
+
+		Util.MapDebugPrint( "Ammo_Taken" );
+	},
+
+	Ammo_Returned = function()
+	{
+		Map.isAmmoTakenOrSecured = false;
+
+		Util.DisableGoal( "CAMP_Cap_Sw.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"AIRSTRIKE_ammo.*",
+			"ARTILLERY_S_ammo_1",
+			"DEFEND_ammo.*",
+			"PLANTMINE_ammo.*",
+			"PLANTMINE_ladder.*",
+			"TRIPMINE_ammo"
+		});
+		if ( !Map.isGunControlLadderBuilt )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "GRENADE_mg42" );
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"ARTILLERY_S_ammo_2",
+			"TRIPMINE_Cap_Sw.*"
+		});
+
+		WeaponGoals.Manage_MobileMortar_Axis_Start_Targets();
+
+		Util.MapDebugPrint( "Ammo_Returned" );
+	},
+
+	Ammo_Loaded = function()
+	{
+		Util.DisableGoal( { "MOUNTMG42_spawnmg_gun", "REPAIRMG42_spawnmg_gun" } );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_gun" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"BUILD_Gun_control_ladder",
+			"BUILD_scaffolding",
+			"CAPPOINT_262",
+			"FLAG_gold"
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"ARTILLERY_S_ammo_2",
+			"BUILD_Command_Post",
+			"PLANT_Command_Post",
+			"PLANT_Gun_control_ladder",
+			"PLANT_scaffolding",
+			"PLANTMINE_ladder.*"
+		});
+
+		Util.MapDebugPrint( "Ammo_Loaded" );
+	},
+
+	Switch_Activated = function()
+	{
+		Map.isTowerBreached = true; // Better here than below
+
+		Util.DisableGoal( "CAMP_Cap_Sw.*" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ATTACK_crates.*",
+			"PLANT_citadel_entrance_barrier"
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"AMMOCAB_north_ammocabinet", // Action moving out
+			"ATTACK_ammo.*",
+			"SWITCH_gun"
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"ARTILLERY_S_ammo.*",
+			"CALLARTILLERY_ammo.*",
+			"DEFEND_ladder.*",
+			"MOBILEMORTAR_axis_start",
+			"TRIPMINE_Cap_Sw.*"
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"BUILD_citadel_entrance_barrier",
+			"DEFEND_crates.*",
+			"MOBILEMG42_axis_crates",
+			"PLANTMINE_crates.*"
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_crates_[12679]" ); // Front/Inside of Gun shot target
+
+		WeaponGoals.Manage_DEFENDER_Bot_Weapon_Switch_OnSwitchActivated();
+
+		Util.MapDebugPrint( "Switch_Activated" );
+	},
+
+	Tower_Breached = function()
+	{
+		sleep( .1 );
+		Wp.CheckBlockable();
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_crates_[12679]" ); // Front/Inside of Gun shot target
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Ammo_crates" );
+
+		Util.MapDebugPrint( "Tower_Breached" );
+	},
+
+	Ammo_crates_Planted = function()
+	{
+		// TODO: Focus on dynamite
+
+		Util.MapDebugPrint( "Ammo_crates_Planted", true );
+	},
+
+	Ammo_crates_Defused = function()
+	{
+		if ( tableCount( Util.GoalTable( "DEFUSE_Ammo_crates.*" ) ) == 0 )
+		{
+			// TODO: Restore the intial state
+		}
+
+		Util.MapDebugPrint( "Ammo_crates_Defused", true );
+	},
+
+	Wooden_Barbwired_Gate_Exploded = function()
+	{
+		Util.EnableGoal( "ROUTE_blowable_gate" );
+
+		Util.MapDebugPrint( "Wooden_Barbwired_Gate_Exploded", true );
+	}
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allies_Command_Post_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "The ladder has been built.", Map.Gun_control_ladder_Built );
+	OnTrigger( "The citadel entrance wooden barrier has been contructed.", Map.citadel_entrance_barrier_Built );
+	OnTrigger( "The scaffolding has been built.", Map.scaffolding_Built );
+	OnTrigger( "Planted at citadel entrance barrier.", Map.citadel_entrance_barrier_Planted );
+	OnTrigger( "^6Allies have blown the Axis ammo crates!!!", Map.Ammo_crates_Destroyed );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allies_Command_Post_Destroyed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "The ladder has been destroyed.", Map.Gun_control_ladder_Destroyed );
+	OnTrigger( "The citadel entrance wooden barrier has been destroyed.", Map.citadel_entrance_barrier_Destroyed );
+	OnTrigger( "The scaffolding has been destroyed.", Map.scaffolding_Destroyed );
+	OnTrigger( "^6Allies have stolen the ammo!!!", Map.Ammo_Taken );
+	OnTrigger( "^6The ammo has been returned!!!", Map.Ammo_Returned );
+	OnTrigger( "^6The ammo has been loaded onto the cannon!!!", Map.Ammo_Loaded );
+	OnTrigger( "base_lever2_goto", Map.Switch_Activated );
+	OnTrigger( "^6The Citadel Tower has been breached!!!", Map.Tower_Breached );
+
+	OnTrigger( "Planted at the Ammo crates.", Map.Ammo_crates_Planted );
+	OnTrigger( "Defused at the Ammo crates.", Map.Ammo_crates_Defused );
+
+	OnTrigger( "GRENADE_gate Exploded.", Map.Wooden_Barbwired_Gate_Exploded );
+
+	// From the little house ladder to the Gun Controls entrance
+	OnTriggerRegion( AABB( -2620.889, 544.739, 61.125, -1626.280, 2560.875, 283.125 ), RegionTrigger.DisableCombatMovement );
+
+	// ---
+
+	Util.DisableGoal( ".*", true );
+	Util.DisableGoal( "ROUTE_scaffolding" );
+	Util.DisableGoal( "ROUTE_ammo_ladder.*" );
+	Util.DisableGoal( "ROUTE_blowable_gate" );
+	Util.DisableGoal( "ROUTE_citadel_ladder.*" );
+
+	Util.EnableGoal ( "BUILD_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"AMMOCAB_north_ammocabinet",
+		"ATTACK_ammo.*",
+		"BUILD_Gun_control_ladder",
+		"BUILD_scaffolding",
+		"CAPPOINT_262",
+		"FLAG_gold",
+		"GRENADE_gate.*",
+		"MOUNTMG42_spawnmg_gun",
+		"REPAIRMG42_spawnmg_gun"
+	});
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"AIRSTRIKE_ammo.*",
+		"AMMOCAB_north_ammocabinet_1",
+		"ARTILLERY_S_ammo_1",
+		"CALLARTILLERY_ammo.*",
+		"DEFEND_ammo.*",
+		"DEFEND_ladder.*",
+		"GRENADE_mg42",
+		"MOBILEMORTAR_axis_start",
+		"PLANT_Gun_control_ladder",
+		"PLANT_scaffolding",
+		"PLANTMINE_ammo.*",
+		"PLANTMINE_ladder.*",
+		"TRIPMINE_ammo"
+	});
+
+	// ---
+
+	gameTimeLeft = GetGameTimeLeft();
+	SetMapGoalProperties( "MOBILEMG42_axis_crates", { MinCampTime = gameTimeLeft, MaxCampTime = gameTimeLeft } );
+
+	Wp.SetWaypointFlag( "ammo_ladder_1", "closed", true );
+	Wp.SetWaypointFlag( "ammo_ladder_2", "closed", true );
+	Wp.SetWaypointFlag( "citadel_ladder_1", "closed", true );
+	Wp.SetWaypointFlag( "citadel_ladder_2", "closed", true );
+
+	Util.SetMaxUsersInProgress( 1, "BUILD_Command_Post" );
+	Util.SetMaxUsersInProgress( 1, "GRENADE_.*" );
+
+	Util.AddUsePoint( "BUILD_citadel_entrance_barrier", Vec3( 165, 880, 32 ) );
+	Util.SetGoalOffset( 0, 50, 0, "PLANT_citadel_entrance_barrier" );
+	Util.SetGoalPosition( -2220, 2025, -85, "PLANT_Gun_control_ladder" );
+
+	thread( WeaponGoals.Favor_Airstrike_Over_Spawn_Ammo_Dispense );
+	WeaponGoals.Manage_MobileMortar_Axis_Start_Targets();
+	thread( WeaponGoals.Hold_MobileMortar_Axis_Start_Until_Allies_At_Wall );
+
+	// Focus on landmines
+	//WeaponTable.SetWeaponAvailability( CLASS.ENGINEER, WEAPON.GPG40, false );
+
+	// ---
+
+	// Common priorities
+	SetGoalPriority( "CAMP_Cap_Sw.*", 0.53 );
+
+	// Axis priorities
+	SetGoalPriority( "DEFEND_ammo.*", 0.51 );
+	SetGoalPriority( "DEFEND_crates_[29]", 0.51 );
+	/*SetGoalPriority( "DEFEND_crates_[2679]", 0.51 ); // 1 is in front
+	SetGoalPriority( "DEFEND_crates_[29]", 0.52, TEAM.AXIS, CLASS.ENGINEER );*/
+	SetGoalPriority( "DEFEND_ladder_1", 0.52 );
+	SetGoalPriority( "GRENADE_mg42", 0.74 ); // Below PLANTMINE (default 0.80)
+	SetGoalPriority( "REPAIRMG42_spawnmg_gun", 0.74, TEAM.AXIS ); // Below PLANTMINE (default 0.81)
+	SetGoalPriority( "PLANTMINE_.*", 0.75, TEAM.AXIS ); // Below CP
+	SetGoalPriority( "PLANTMINE_ammo_[12]", 0.76, TEAM.AXIS );
+	SetGoalPriority( ".*_Command_Post", 0.77, TEAM.AXIS );
+	SetGoalPriority( "PLANT_scaffolding", 0.78 ); // Below PLANT_Gun_control_ladder
+	SetGoalPriority( "PLANT_Gun_control_ladder", 0.79 ); // Below FLAGRETURN (0.80)
+
+	// Engis focus on landmines (if any Covi)
+	// DON'T USE Server.ClassCount (internal use _ONLY_)
+	if ( Utils.ExistBotClass( TEAM.AXIS, CLASS.COVERTOPS ) )
+	{
+		Util.LimitToClass( "PLANT_Gun_control_ladder", TEAM.AXIS, CLASS.COVERTOPS );
+		Util.LimitToClass( "PLANT_scaffolding", TEAM.AXIS, CLASS.COVERTOPS );
+	}
+
+	// Allied priorities
+	//SetGoalPriority( "FLAG_gold", 0.65 );
+	SetGoalPriority( ".*_Command_Post", 0.75, TEAM.ALLIES );
+	SetGoalPriority( "BUILD_Gun_control_ladder", 0.95 );
+	SetGoalPriority( "SWITCH_gun", 0.95 );
+
+	// ---
+
+	SetGoalRole( { "MOBILEMG42_axis_crates", "MOBILEMORTAR_axis_start" }, ROLE.DEFENDER );
+
+	// ---
+
+	Util.MapDebugPrint( "OnMapLoad" );
+
+	//Utils.Draw_Breakables_With_Entity_Number();
+};
+
+global OnBotJoin = function( bot )
+{
+	Spawn.SetBotSpawn( bot );
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		FLAG_gold =
+		{
+			ROUTE_AlliesS2 =
+			{
+				ROUTE_left_passage =
+				{
+					ROUTE_ammo_door = {},
+					ROUTE_scaffolding = {}
+				},
+				ROUTE_left_tower =
+				{
+					ROUTE_comm_post_door =
+					{
+						ROUTE_ammo_door = {},
+						ROUTE_scaffolding = {}
+					},
+					ROUTE_secondry_ladder =
+					{
+						ROUTE_ammo_door = {},
+						ROUTE_scaffolding = {}
+					}
+				},
+				ROUTE_old_flag =
+				{
+					ROUTE_comm_post_door =
+					{
+						ROUTE_ammo_door = {},
+						ROUTE_scaffolding = {}
+					}
+				}
+			},
+			ROUTE_AlliesS4 =
+			{
+				ROUTE_blowable_gate =
+				{
+					ROUTE_ammo_door = {},
+					ROUTE_scaffolding = {}
+				},
+				ROUTE_far_left_wall =
+				{
+					ROUTE_ammo_door = {},
+					ROUTE_scaffolding = {}
+				}
+			}
+		},
+
+		BUILD_citadel_entrance_barrier =
+		{
+			ROUTE_Church_Ruins_Spawn =
+			{
+				ROUTE_s6left = { /*Weight = 2*/ },
+				ROUTE_side_entry = {},
+				ROUTE_cr6right = {}
+			}
+		},
+
+		BUILD_scaffolding =
+		{
+			ROUTE_AlliesS2 =
+			{
+				ROUTE_left_passage = {},
+				ROUTE_left_tower =
+				{
+					ROUTE_comm_post_door = {},
+					ROUTE_secondry_ladder = {}
+				},
+				ROUTE_old_flag =
+				{
+					ROUTE_comm_post_door ={}
+				}
+			},
+			ROUTE_AlliesS4 =
+			{
+				ROUTE_blowable_gate = {},
+				ROUTE_far_left_wall = {}
+			}
+		},
+
+		CAPPOINT_262 =
+		{
+			ROUTE_ammo =
+			{
+				ROUTE_ammo_door =
+				{
+					ROUTE_ammo_ladder_1 = {},
+					ROUTE_ammo_ladder_2 = {},
+					ROUTE_secondry_ladder =
+					{
+						ROUTE_ammo_wall = {}
+					}
+				},
+				ROUTE_ammo_side =
+				{
+					ROUTE_ammo_ladder_1 = {},
+					ROUTE_ammo_ladder_2 = {},
+					ROUTE_secondry_ladder = {}
+				}
+			}
+		}
+	};
+
+	MapRoutes[ "DEFEND_ladder_[2-8]" ] =
+	{
+		ROUTE_AxisS6 =
+		{
+			ROUTE_s6door =
+			{
+				ROUTE_citadel_ladder_1 = {},
+				ROUTE_citadel_ladder_2 = {},
+				ROUTE_citadel_door = {},
+				ROUTE_comm_post_exit =
+				{
+					ROUTE_comm_post_passage = {}
+				}
+			},
+			ROUTE_s6left =
+			{
+				ROUTE_citadel_ladder_1 = {},
+				ROUTE_citadel_ladder_2 = {},
+				ROUTE_citadel_door = {},
+				ROUTE_comm_post_exit =
+				{
+					ROUTE_comm_post_passage = {}
+				}
+			},
+			ROUTE_s6right =
+			{
+				ROUTE_citadel_ladder_2 = {},
+				ROUTE_citadel_ladder_1 = {},
+				ROUTE_citadel_door = {},
+				ROUTE_comm_post_exit =
+				{
+					ROUTE_comm_post_passage = {}
+				}
+			}
+		}
+	};
+
+	MapRoutes[ "ATTACK_crates.*" ] =
+	{
+		ROUTE_AlliesS2 =
+		{
+			ROUTE_left_passage =
+			{
+				ROUTE_citadel_door =
+				{
+					ROUTE_citadel_wall =
+					{
+						ROUTE_citadel_ladder_1 =
+						{
+							ROUTE_citadel_ladder_2 = {},
+						}
+					}
+				}
+			},
+			ROUTE_comm_post_door =
+			{
+				ROUTE_comm_post_exit = {}
+			},
+			ROUTE_comm_post_passage =
+			{
+				ROUTE_comm_post_exit = {}
+			}
+		}
+	};
+
+	// Before copy
+	// Same routes for Church Ruins, excepted Door
+	MapRoutes[ "DEFEND_ladder_[2-8]" ].ROUTE_Church_Ruins_Spawn = {};
+	MapRoutes[ "DEFEND_ladder_[2-8]" ].ROUTE_Church_Ruins_Spawn.ROUTE_s6left   = MapRoutes[ "DEFEND_ladder_[2-8]" ].ROUTE_AxisS6.ROUTE_s6left;
+	MapRoutes[ "DEFEND_ladder_[2-8]" ].ROUTE_Church_Ruins_Spawn.ROUTE_cr6right = MapRoutes[ "DEFEND_ladder_[2-8]" ].ROUTE_AxisS6.ROUTE_s6right;
+
+	MapRoutes[ "ATTACK_ammo.*" ] = MapRoutes.BUILD_scaffolding;
+	MapRoutes.BUILD_Gun_control_ladder = MapRoutes.BUILD_scaffolding;
+	MapRoutes[ "DEFEND_ammo.*" ] = MapRoutes[ "DEFEND_ladder_[2-8]" ];
+	MapRoutes[ "CAMP_Cap_Sw.*" ] = MapRoutes[ "DEFEND_ladder_[2-8]" ];
+	MapRoutes.PLANT_Ammo_crates = MapRoutes[ "ATTACK_crates.*" ];
+
+	// Copies of BUILD_citadel_entrance_barrier
+	MapRoutes[ "DEFEND_crates.*" ]    = MapRoutes.BUILD_citadel_entrance_barrier;
+	MapRoutes.MOBILEMG42_axis_crates  = MapRoutes.BUILD_citadel_entrance_barrier;
+	MapRoutes[ "PLANTMINE_crates.*" ] = MapRoutes.BUILD_citadel_entrance_barrier;
+
+	Util.Routes( MapRoutes );
+};
+
+global WeaponGoals =
+{
+	MOBILEMORTAR_AXIS_START_BROKEN_WALL_FACING = Vec3( -0.926, 0.191, 0.325 ),
+	MOBILEMORTAR_AXIS_START_GUN_CONTROL_LADDER_MATERIALS_FACING = Vec3( -0.778, 0.599, 0.190 ),
+	MOBILEMORTAR_AXIS_START_GUN_CONTROL_ALLIED_ACCESS_FACING = Vec3( -0.912, 0.343, 0.225 ),
+
+	MOBILEMORTAR_AXIS_START_MAP_GOAL = GetGoal( "MOBILEMORTAR_axis_start" ),
+
+	Favor_Airstrike_Over_Spawn_Ammo_Dispense = function()
+	{
+		Map.DontDispenseAmmo = true;
+		SetGoalPriority( "AIRSTRIKE_ammo_1", 0.81 );
+		sleep( 1 ); // Just enough to skip the goal
+		Map.DontDispenseAmmo = false;
+		SetGoalPriority( "AIRSTRIKE_ammo_1", 0.80 );
+	},
+
+	// Around 15 seconds for Allies to get there
+	// Around 3-4 seconds between the shot and the hit
+	// Artillery will push them back for a couple seconds
+	Hold_MobileMortar_Axis_Start_Until_Allies_At_Wall = function()
+	{
+		// Make sure the 1st shot is targeted at the broken wall
+		WeaponGoals.MOBILEMORTAR_AXIS_START_MAP_GOAL.MortarAim[ 1 ] = null;
+
+		WeaponGoals.MOBILEMORTAR_AXIS_START_MAP_GOAL.DontShootMortar = true;
+		sleep( 10 + 2 );
+		WeaponGoals.MOBILEMORTAR_AXIS_START_MAP_GOAL.DontShootMortar = false;
+
+		sleep( 3 );
+		WeaponGoals.MOBILEMORTAR_AXIS_START_MAP_GOAL.MortarAim[ 1 ] = WeaponGoals.MOBILEMORTAR_AXIS_START_GUN_CONTROL_LADDER_MATERIALS_FACING;
+	},
+
+	Manage_DEFENDER_Bot_Weapon_Switch_OnSwitchActivated = function()
+	{
+		defenderBot = null;
+		foreach ( bot in BotTable )
+		{
+			if ( bot.HasRole( ROLE.DEFENDER ) )
+			{
+				defenderBot = bot;
+				break;
+			}
+		}
+
+		if ( defenderBot == null ) { return; }
+
+		if ( !defenderBot.ChangePrimaryWeapon( WEAPON.MOBILE_MG42 ) )
+		{
+			Util.MapDebugPrint( "DEFENDER bot couldn't change to Mobile MG42", 2 );
+			return;
+		}
+
+		thread( ETUtil.SuicideNextSpawn, defenderBot );
+	},
+
+	Manage_MobileMortar_Axis_Start_Targets = function()
+	{
+		if ( !Map.isAmmoTakenOrSecured )
+		{
+			WeaponGoals.MOBILEMORTAR_AXIS_START_MAP_GOAL.MortarAim[ 0 ] = WeaponGoals.MOBILEMORTAR_AXIS_START_BROKEN_WALL_FACING;
+			WeaponGoals.MOBILEMORTAR_AXIS_START_MAP_GOAL.MortarAim[ 1 ] = WeaponGoals.MOBILEMORTAR_AXIS_START_GUN_CONTROL_LADDER_MATERIALS_FACING;
+		}
+		else
+		{
+			WeaponGoals.MOBILEMORTAR_AXIS_START_MAP_GOAL.MortarAim[ 0 ] = WeaponGoals.MOBILEMORTAR_AXIS_START_GUN_CONTROL_ALLIED_ACCESS_FACING;
+			WeaponGoals.MOBILEMORTAR_AXIS_START_MAP_GOAL.MortarAim[ 1 ] = WeaponGoals.MOBILEMORTAR_AXIS_START_GUN_CONTROL_LADDER_MATERIALS_FACING;
+		}
+
+		WeaponGoals.MOBILEMORTAR_AXIS_START_MAP_GOAL.AdjustOrientation();
+	}
+};
+
+global Utils =
+{
+	// Only cycle through bots/ignore real players
+	ExistBotClass = function( team, class )
+	{
+		foreach ( bot in BotTable )
+		{
+			if ( bot.GetTeam() == team && bot.GetClass() == class )
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+};

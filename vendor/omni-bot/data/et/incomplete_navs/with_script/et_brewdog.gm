@@ -1,0 +1,157 @@
+//==========================================================================================
+//
+//  et_brewdog.gm (et_brewdog_b6.pk3)
+//
+// Who   	When		What
+//------------------------------------------------------------------------------------------
+// palota	12 June 2025	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	Switches =
+	{
+		storage_wall =
+		{
+			Enabled = true,
+			Priority = 0,
+			WaypointName = "switch",
+			Timeout = 3000,
+			AimPosition = Vec3(-646.875, 1824.157, 48.191),
+		},
+	},
+
+	Bunker_Door_Destroyed = function()
+	{
+		Util.EnableGoal("ROUTE_bunker_door");
+		Util.MapDebugPrint("Bunker_Door_Destroyed");
+	},
+
+	Storage_Wall_Destroyed = function()
+	{
+		Map.Switches.storage_wall.Enabled = false;
+		Util.EnableGoal("ROUTE_storage_wall");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "REPAIRMG42_mg42_1");
+		SetGoalPriority("DEFEND_wall.*", 0.5);
+		Util.MapDebugPrint("Storage_Wall_Destroyed");
+	},
+
+	docs_Taken = function()
+	{
+		Util.EnableGoal({ "CAMP_cap.*", "MOUNTMG42_mg42_1" });
+		Util.MapDebugPrint("docs_Taken");
+	},
+
+	docs_Returned = function()
+	{
+		Util.DisableGoal({ "CAMP_cap.*", "MOUNTMG42_mg42_1" });
+		Util.MapDebugPrint("docs_Returned");
+	},
+
+	south_flag_Axis_Captured = function()
+	{
+		Util.SetMaxUsersInProgress(2, "CHECKPOINT.*");
+		Util.MapDebugPrint("south_flag_Axis_Captured");
+	},
+
+	south_flag_Allies_Captured = function()
+	{
+		Util.SetMaxUsersInProgress(4, "CHECKPOINT.*");
+		Util.MapDebugPrint("south_flag_Allies_Captured");
+	},
+
+	storage_wall_lever_goto = function(trigger)
+	{
+		z = ToVector(trigger.Action).z;
+		if (z > 0){
+			Map.Switches.storage_wall.Enabled = false;
+			Util.EnableGoal("ROUTE_storage_wall");
+			Util.MapDebugPrint("storage wall open", 1);
+		}
+		if (z < 0){
+			Map.Switches.storage_wall.Enabled = true;
+			Util.DisableGoal("ROUTE_storage_wall");
+			Util.MapDebugPrint("storage wall close", 1);
+		}
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("Allies have breached the Bunker Door!", Map.Bunker_Door_Destroyed);
+	OnTrigger("Allies have breached the Storage Wall!", Map.Storage_Wall_Destroyed);
+	OnTrigger("Allies have stolen the Quiz Answers!", Map.docs_Taken);
+	OnTrigger("Flag returned docs!", Map.docs_Returned);
+	OnTrigger("Axis have reclaimed the Inner Compound!", Map.south_flag_Axis_Captured);
+	OnTrigger("Allies have captured the Inner Compound!", Map.south_flag_Allies_Captured);
+	OnTrigger("storage_wall_lever_goto", Map.storage_wall_lever_goto);
+
+	Util.DisableGoal(".*", true);
+	Util.DisableGoal({ "ROUTE_storage_wall", "ROUTE_bunker_door" });
+
+	Util.EnableGoal({
+		"CHECKPOINT_south_flag",
+	});
+
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"DEFEND_doc.*",
+		"DEFEND_door.*",
+		"DEFEND_wall.*",
+	});
+
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"PLANT_.*",
+		"FLAG_docs",
+		"CAPPOINT.*",
+	});
+
+	SetGoalPriority("FLAG_docs", 0.7);
+	SetGoalPriority({ "CAMP_cap.*", "MOUNTMG42_mg42_1" }, 0.75);
+	SetGoalPriority("DEFEND_wall.*", 0.51);
+
+	Util.AddUsePoint( "PLANT_Bunker_Door", Vec3( 1555, 1070, 345 ) );
+
+	Util.SetMaxUsersInProgress(2, "CHECKPOINT.*");
+	Util.SetMaxUsers(1, "PLANT_Bunker_Door");
+	Util.SetMaxUsers(1, "DEFEND_wall.*");
+	Util.SetMaxUsers(1, "REPAIRMG42.*");
+
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=25, MaxCampTime=200});
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		FLAG_docs =
+		{
+			ROUTE_allied_spawn = {
+				ROUTE_storage_wall = {Weight=3},
+				ROUTE_bunker_door = {},
+				ROUTE_east_ladder = {},
+			},
+			ROUTE_forward_spawn = {
+				ROUTE_bunker_door = {Weight=2},
+				ROUTE_east_ladder = {Weight=2},
+				ROUTE_storage_wall = {},
+			}
+		},
+		CAPPOINT_transmitter =
+		{
+			ROUTE_docs = {
+				ROUTE_wall_switch = {},
+				ROUTE_forward_spawn = {},
+			}
+		},
+	};
+	Util.Routes(MapRoutes);
+};

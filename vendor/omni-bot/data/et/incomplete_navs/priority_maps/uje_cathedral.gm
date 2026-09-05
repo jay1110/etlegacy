@@ -1,0 +1,589 @@
+//==========================================================================================
+//
+//  uje_cathedral.gm
+//
+//  Who         When        What
+//------------------------------------------------------------------------------------------
+//  ^1[UJE]^3Niek   07 November 2020    Initial Script
+//
+//==========================================================================================
+//
+
+/****************************************************
+Path mapping updated and script by Mateos
+Correspondant WAY file size: -
+Last update: 14th February 2022
+****************************************************/
+
+/*
+ * TODO:
+ * - Review the Axis goals priority when the Tank reaches the second area (so they can use the side way);
+ * - Add routing for the goal present in MapRoutes;
+ * - Test the waypoints!
+ */
+
+global Spawns =
+{
+    AXIS_SPAWN = 1,
+    ALLIED_SPAWN = 2,
+    CATHEDRAL = 3, // Default Allies, capturable until the Tank is through the Second Barrier
+    ALLIED_CP = 4,
+    AXIS_CP = 5,
+    COURTYARD_SPAWN = 6, // Default Axis
+};
+
+global CPStatus =
+{
+    NEUTRAL = 0,
+    AXIS = 1,
+    ALLIES = 2,
+};
+
+global Map =
+{
+    // ************************************************************************
+
+    cathedralSpawnTeam = TEAM.ALLIES,
+    cpStatus = CPStatus.NEUTRAL,
+
+    // ************************************************************************
+
+    Allied_Command_Post_Built = function()
+    {
+        Map.cpStatus = CPStatus.ALLIES;
+
+        SpawnManagement.ChangeSpawnOwner();
+
+        Util.MapDebugPrint( "Allied_Command_Post_Built", true );
+    },
+
+    Axis_Command_Post_Built = function()
+    {
+        Map.cpStatus = CPStatus.AXIS;
+
+        SpawnManagement.ChangeSpawnOwner();
+
+        Util.MapDebugPrint( "Axis_Command_Post_Built", true );
+    },
+
+    Allied_Command_Post_Destroyed = function()
+    {
+        Map.cpStatus = CPStatus.NEUTRAL;
+
+        SpawnManagement.ChangeSpawnOwner();
+
+        Util.MapDebugPrint( "Allied_Command_Post_Destroyed", true );
+    },
+
+    Axis_Command_Post_Destroyed = function()
+    {
+        Map.cpStatus = CPStatus.NEUTRAL;
+
+        SpawnManagement.ChangeSpawnOwner();
+
+        Util.MapDebugPrint( "Axis_Command_Post_Destroyed", true );
+    },
+
+    oldcityflag_Axis_Captured = function()
+    {
+        Map.cathedralSpawnTeam = TEAM.AXIS;
+
+        SpawnManagement.ChangeSpawnOwner();
+
+        Util.MapDebugPrint( "oldcityflag_Axis_Captured", true );
+    },
+
+    oldcityflag_Allies_Captured = function()
+    {
+        Map.cathedralSpawnTeam = TEAM.ALLIES;
+
+        SpawnManagement.ChangeSpawnOwner();
+
+        Util.MapDebugPrint( "oldcityflag_Allies_Captured", true );
+    },
+
+    // ************************************************************************
+
+    Tank_Past_First_Barrier = function()
+    {
+        TankDefenceManagement.SetArea( TankDefenceManagement.AreaList.SECOND_AREA );
+
+        Cabinets.SetAvailableCabsForTeam( TEAM.AXIS, false, Cabinets.AXIS_SPAWN );
+        Cabinets.SetAvailableCabsForTeam( TEAM.AXIS, true, Cabinets.GAZEBO );
+
+        // TODO After managing spawning (priorities will rely on the spawn location)
+        // More focus on the side way
+        SetGoalPriority( "PLANT_side_door", 0.92 );
+
+        Util.MapDebugPrint( "Tank_Past_First_Barrier" );
+    },
+
+    Tank_Past_Second_Barrier = function()
+    {
+        TankDefenceManagement.SetArea( TankDefenceManagement.AreaList.THIRD_AREA );
+
+        SpawnManagement.ChangeSpawnOwner();
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_side_door" );
+        SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Last_Barrier" );
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+            ".*_Command_Post",
+            "BUILD_side_door",
+        });
+
+        Cabinets.SetAvailableCabsForTeam( TEAM.ALLIES, false, Cabinets.GAZEBO );
+        Cabinets.SetAvailableCabsForTeam( TEAM.ALLIES, true, Cabinets.CATHEDRAL );
+
+        Util.MapDebugPrint( "Tank_Past_Second_Barrier" );
+    },
+
+    Tank_Past_Third_Barrier = function()
+    {
+        TankDefenceManagement.SetArea( TankDefenceManagement.AreaList.FOURTH_AREA );
+
+        // Keep Gazebo ones available for Axis just in case
+        Cabinets.SetAvailableCabsForTeam( TEAM.AXIS, true, Cabinets.CATHEDRAL );
+
+        Util.MapDebugPrint( "Tank_Past_Third_Barrier" );
+    },
+
+    vehicle_at_location = function()
+    {
+        switch( Map.VehicleLocation )
+        {
+            case 1:
+            {
+                Map.Tank_Past_Second_Barrier();
+            }
+
+            case 2:
+            {
+                Map.Tank_Past_Third_Barrier();
+            }
+        }
+    },
+};
+
+global OnMapLoad = function()
+{
+    // *** TRIGGERS ***
+
+    // For spawn management
+    OnTrigger( "^8Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+    OnTrigger( "^8Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+    OnTrigger( "^8Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+    OnTrigger( "^8Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+    OnTrigger( "^8Axis reclaim the Cathedral!", Map.oldcityflag_Axis_Captured );
+    OnTrigger( "^8Allies capture the Cathedral!", Map.oldcityflag_Allies_Captured );
+
+    // For Tank progress
+    OnTrigger( "^8The Tank is past the first tank barrier!", Map.Tank_Past_First_Barrier );
+    OnTrigger( "tank at location", Map.vehicle_at_location );
+    OnTriggerRegion( AABB( 655.125, -1008.875, 17.125, 927.875, -751.125, 91.125 ), RegionTrigger.VehicleTrigger );
+    OnTriggerRegion( AABB( -344.868, 168.161, 17.125, -275.399, 401.943, 91.125 ), RegionTrigger.VehicleTrigger );
+
+    // *************************************************************************
+
+    // *** GOALS ***
+    Util.DisableGoal( ".*", true ); // All but routes
+
+    Util.EnableGoal( ".*_Command_Post" );
+    Util.EnableGoal( "CHECKPOINT_oldcityflag" );
+
+    SetGoalPriority( "PLANT_Last_Barrier", 0.92 );
+    SetGoalPriority( "PLANT_Tank_Barrier_1", 0.92 );
+    SetGoalPriority( "BUILD_Tank", 0.91 ); // TODO: Axis bots still go for BUILD_Command_Post which is 0.90... not during warmup though
+    SetGoalPriority( "BUILD_Tank_Barrier_1", 0.91 );
+    Util.AddUsePoint( "PLANT_side_door", Vec3( 2730, -3260, 50 ) );
+    Util.AddUsePoint( "PLANT_Tank_Barrier_1", Vec3( 2830, -1690, 50 ) );
+    Util.SetGoalPosition( -150, 385, 40, "PLANT_Last_Barrier" );
+
+    SetAvailableMapGoals( TEAM.AXIS, true, {
+        "BUILD_Tank",
+        "ESCORT_tank",
+        "PLANT_Second_Tank_Barrier",
+        "PLANT_side_door",
+        "PLANT_Tank_Barrier_1",
+    });
+
+    SetAvailableMapGoals( TEAM.ALLIES, true, {
+        "BUILD_side_door",
+        "BUILD_Tank_Barrier_1",
+    });
+
+    Cabinets.Init();
+    Cabinets.SetAvailableCabsForTeam( TEAM.AXIS, true, Cabinets.AXIS_SPAWN );
+    Cabinets.SetAvailableCabsForTeam( TEAM.ALLIES, true, Cabinets.GAZEBO );
+
+    // Spawn management for both teams and DEFEND goals for Allies all along the Tank journey
+    SpawnManagement.Start();
+    TankDefenceManagement.Start();
+
+    // *************************************************************************
+
+    Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+    SpawnManagement.SetBotSpawn( bot );
+};
+
+
+global Cabinets =
+{
+    AXIS_SPAWN = 0,
+    GAZEBO = 1,
+    CATHEDRAL = 2,
+
+    goalLookupTable = {},
+
+    Init = function()
+    {
+        Cabinets.goalLookupTable[ Cabinets.AXIS_SPAWN ] = ".*CAB_uje7_.*cabinet";
+        Cabinets.goalLookupTable[ Cabinets.GAZEBO     ] = ".*CAB_uje5_.*cabinet";
+        Cabinets.goalLookupTable[ Cabinets.CATHEDRAL  ] = ".*CAB_south_.*cabinet";
+    },
+
+    SetAvailableCabs = function( bAvailability, id )
+    {
+        goals = Cabinets.goalLookupTable[ id ];
+        if ( bAvailability )
+        {
+            Util.EnableGoal( goals );
+        }
+        else
+        {
+            Util.DisableGoal( goals );
+        }
+    },
+
+    SetAvailableCabsForTeam = function( team, bAvailability, id )
+    {
+        SetAvailableMapGoals( team, bAvailability, Cabinets.goalLookupTable[ id ] );
+    },
+};
+
+/** Keep (most) of the bots close to the Tank regarding the spawn location */
+global SpawnManagement =
+{
+    /** Array containing some spawn-related data */
+    spwnData,
+    prevSpwnData,
+
+    previousAxisSpawn = "COURTYARD_SPAWN",
+    previousAlliedSpawn = "CATHEDRAL",
+
+    closestAxisSpawn = "COURTYARD_SPAWN",
+    closestAlliedSpawn = "CATHEDRAL",
+
+    /** Indices for the columns of spwnData */
+    SPWN_ID    = 0,
+    SPWN_POS   = 1,
+    SPWN_COLOR = 2,
+    SPWN_LBL   = 3,
+
+    // *************************************************************************
+
+    Start = function()
+    {
+        SpawnManagement.Init();
+        thread( SpawnManagement.TrackMovement );
+    },
+
+    Init = function()
+    {
+        SpawnManagement.spwnData =
+        {
+            AXIS_SPAWN      = { Spawns.AXIS_SPAWN     , GetEntPosition( GetEntityByName( "Axis_wobj"     ) ), COLOR.RED  , "Axis Spawn"      },
+            ALLIED_SPAWN    = { Spawns.ALLIED_SPAWN   , GetEntPosition( GetEntityByName( "Allied_wobj"   ) ), COLOR.BLUE , "Allied Spawn"    },
+            CATHEDRAL       = { Spawns.CATHEDRAL      , GetEntPosition( GetEntityByName( "old_city_wobj" ) ), COLOR.BLUE , "Cathedral"       },
+            ALLIED_CP       = { Spawns.ALLIED_CP      , GetEntPosition( GetEntityByName( "allied_cp_two" ) ), COLOR.WHITE, "Allied CP"       },
+            AXIS_CP         = { Spawns.AXIS_CP        , GetEntPosition( GetEntityByName( "axis_cp_two"   ) ), COLOR.WHITE, "Axis CP"         },
+            COURTYARD_SPAWN = { Spawns.COURTYARD_SPAWN, Vec3( 4320, -4840, 135 )                            , COLOR.RED  , "Courtyard Spawn" },
+        };
+
+        SpawnManagement.prevSpwnData = tableDuplicate( SpawnManagement.spwnData );
+
+        // OnMapLoad at least Axis are expected to spawn at their CP; force the move here
+        SpawnManagement.SetSpawn( TEAM.ALLIES );
+        SpawnManagement.SetSpawn( TEAM.AXIS );
+    },
+
+    TrackMovement = function()
+    {
+        while ( true )
+        {
+            tankEntPos = GetEntPosition( TankDefenceManagement.ENTITY );
+            foreach ( line in SpawnManagement.spwnData )
+            {
+                DrawDebugLine( tankEntPos, line[SpawnManagement.SPWN_POS], line[SpawnManagement.SPWN_COLOR], 5.0 );
+            }
+
+            sleep( 5.0 );
+        }
+    },
+
+    // TODO: Call Init from OnMapLoad instead of Start, remove Start, and move TrackMovement content to TankDefenceManagement debug drawing part
+    // TODO: Distance depending on waypoint path?
+    IdentifyClosestSpawns = function()
+    {
+        // Identify the current closest spawn
+        closestSpawns =
+        {
+            ALLIES = { 9999999, "", 0 },
+            AXIS   = { 9999999, "", 0 },
+        };
+        tankEntPos = GetEntPosition( TankDefenceManagement.ENTITY );
+        foreach ( key and line in SpawnManagement.spwnData )
+        {
+            if ( line[ SpawnManagement.SPWN_COLOR ] == COLOR.BLUE )
+            {
+                dist = tankEntPos.Distance( line[ SpawnManagement.SPWN_POS ] );
+                if ( dist < closestSpawns.ALLIES[ 0 ] )
+                {
+                    closestSpawns.ALLIES = { dist, key };
+                }
+            }
+            else if ( line[ 2 ] == COLOR.RED )
+            {
+                dist = tankEntPos.Distance( line[ SpawnManagement.SPWN_POS ] );
+                if ( dist < closestSpawns.AXIS[ 0 ] )
+                {
+                    closestSpawns.AXIS = { dist, key };
+                }
+            }
+        }
+
+        SpawnManagement.closestAlliedSpawn = closestSpawns.ALLIES[ 1 ];
+        SpawnManagement.closestAxisSpawn   = closestSpawns.AXIS[ 1 ];
+
+        // If the closest spawn has changed, change it for bots, with a little print
+        if ( SpawnManagement.closestAlliedSpawn != SpawnManagement.previousAlliedSpawn )
+        {
+            from = SpawnManagement.spwnData[ SpawnManagement.previousAlliedSpawn ][ SpawnManagement.SPWN_LBL ];
+            to   = SpawnManagement.spwnData[ SpawnManagement.closestAlliedSpawn  ][ SpawnManagement.SPWN_LBL ];
+            Util.MapDebugPrint( "Allies are moving from " + from + " to " + to, true );
+            SpawnManagement.SetSpawn( TEAM.ALLIES );
+        }
+
+        if ( SpawnManagement.closestAxisSpawn != SpawnManagement.previousAxisSpawn )
+        {
+            from = SpawnManagement.spwnData[ SpawnManagement.previousAxisSpawn ][ SpawnManagement.SPWN_LBL ];
+            to   = SpawnManagement.spwnData[ SpawnManagement.closestAxisSpawn  ][ SpawnManagement.SPWN_LBL ];
+            Util.MapDebugPrint( "Axis are moving from " + from + " to " + to, true );
+            SpawnManagement.SetSpawn( TEAM.AXIS );
+        }
+
+        // Reaffect previous variables
+        SpawnManagement.previousAlliedSpawn = SpawnManagement.closestAlliedSpawn;
+        SpawnManagement.previousAxisSpawn   = SpawnManagement.closestAxisSpawn;
+    },
+
+    ChangeSpawnOwner = function()
+    {
+        switch( Map.cpStatus )
+        {
+            case CPStatus.NEUTRAL:
+            {
+                SpawnManagement.spwnData.ALLIED_CP[ SpawnManagement.SPWN_COLOR ] = COLOR.WHITE;
+                SpawnManagement.spwnData.AXIS_CP[ SpawnManagement.SPWN_COLOR ]   = COLOR.WHITE;
+            }
+
+            case CPStatus.AXIS:
+            {
+                SpawnManagement.spwnData.AXIS_CP[ SpawnManagement.SPWN_COLOR ]   = COLOR.RED;
+            }
+
+            case CPStatus.ALLIES:
+            {
+                SpawnManagement.spwnData.ALLIED_CP[ SpawnManagement.SPWN_COLOR ] = COLOR.BLUE;
+            }
+        }
+
+        // When the Tank is past the Second Barrier (so into the third area or beyond),
+        // the Cathedral is permanently owned by Axis
+        // Else, depends on who owns the flag
+        if ( TankDefenceManagement.entityCurrentArea == TankDefenceManagement.AreaList.THIRD_AREA
+           || Map.cathedralSpawnTeam == TEAM.AXIS )
+        {
+            SpawnManagement.spwnData.CATHEDRAL[ SpawnManagement.SPWN_COLOR ]     = COLOR.RED;
+        }
+        else
+        {
+            SpawnManagement.spwnData.CATHEDRAL[ SpawnManagement.SPWN_COLOR ]     = COLOR.BLUE;
+        }
+
+        SpawnManagement.IdentifyClosestSpawns();
+    },
+
+    SetSpawn = function( team )
+    {
+        foreach ( bot in BotTable )
+        {
+            if ( bot.GetTeam() == team )
+            {
+                SpawnManagement.SetBotSpawn( bot );
+            }
+        }
+    },
+
+    SetBotSpawn = function( bot )
+    {
+        // TODO: Handle Engineer and Covert-Op later?
+        if ( bot.GetClass() == CLASS.ENGINEER || bot.GetClass() == CLASS.COVERTOPS )
+        {
+            return;
+        }
+
+        if ( bot.GetTeam() == TEAM.ALLIES )
+        {
+            bot.ChangeSpawnPoint( SpawnManagement.spwnData[ SpawnManagement.closestAlliedSpawn ][ SpawnManagement.SPWN_ID ] );
+        }
+        else
+        {
+            bot.ChangeSpawnPoint( SpawnManagement.spwnData[ SpawnManagement.closestAxisSpawn ][ SpawnManagement.SPWN_ID ] );
+        }
+    },
+};
+
+/** Make the Allied bots defend the Tank all along its journey to the Cathedral exit */
+global TankDefenceManagement =
+{
+    /** Entity target name, to track its position */
+    ENTITY_TARGET_NAME,
+
+    /** Entity to track the position of */
+    ENTITY,
+
+    /** Radius around the entity to enable the goals from */
+    RADIUS,
+
+    /** List of the goals to manage */
+    GOAL_LIST,
+
+    /** Check interval */
+    CHECK_INTERVAL,
+
+    /** Team for which handle the goals availability */
+    TEAM,
+
+    /** Entity last position, to detect if it's either moving or not */
+    entityPreviousPosition,
+
+    // *************************************************************************
+
+    /** Area list */
+    AreaList =
+    {
+        FIRST_AREA = 1,
+        SECOND_AREA = 2,
+        THIRD_AREA = 3,
+        FOURTH_AREA = 4,
+    },
+
+    /** Area in which the entity currently is */
+    entityCurrentArea,
+
+    // *************************************************************************
+
+    Start = function()
+    {
+        TankDefenceManagement.Init();
+        thread( TankDefenceManagement.TrackMovement );
+    },
+
+    Init = function()
+    {
+        TankDefenceManagement.ENTITY_TARGET_NAME = "tank";
+        TankDefenceManagement.ENTITY = GetEntityByName( TankDefenceManagement.ENTITY_TARGET_NAME );
+        TankDefenceManagement.entityPreviousPosition = GetEntPosition( TankDefenceManagement.ENTITY );
+
+        TankDefenceManagement.RADIUS = 768;
+
+        TankDefenceManagement.GOAL_LIST = {};
+        TankDefenceManagement.GOAL_LIST[ TankDefenceManagement.AreaList.FIRST_AREA  ] = Util.GoalTable( "CAMP_TankFirstArea.*"  );
+        TankDefenceManagement.GOAL_LIST[ TankDefenceManagement.AreaList.SECOND_AREA ] = Util.GoalTable( "CAMP_TankSecondArea.*" );
+        TankDefenceManagement.GOAL_LIST[ TankDefenceManagement.AreaList.THIRD_AREA  ] = Util.GoalTable( "CAMP_TankThirdArea.*"  );
+        TankDefenceManagement.GOAL_LIST[ TankDefenceManagement.AreaList.FOURTH_AREA ] = Util.GoalTable( "CAMP_TankFourthArea.*" );
+
+        TankDefenceManagement.CHECK_INTERVAL = 1.0;
+
+        TankDefenceManagement.TEAM = TEAM.ALLIES;
+
+        TankDefenceManagement.entityCurrentArea = TankDefenceManagement.AreaList.FIRST_AREA;
+    },
+
+    TrackMovement = function()
+    {
+        Util.MapDebugPrint( "Starting Tank defence management thread...", true );
+
+        while ( true )
+        {
+            entityCurrentPosition = GetEntPosition( TankDefenceManagement.ENTITY );
+            if ( entityCurrentPosition != TankDefenceManagement.entityPreviousPosition )
+            {
+                TankDefenceManagement.entityPreviousPosition = entityCurrentPosition;
+                TankDefenceManagement.ManageGoals();
+
+                SpawnManagement.IdentifyClosestSpawns();
+            }
+            else
+            {
+                // For debug purposes
+                foreach ( goal in TankDefenceManagement.GOAL_LIST[ TankDefenceManagement.entityCurrentArea ] )
+                {
+                    TankDefenceManagement.DrawDebugGoal( goal );
+                }
+            }
+
+            // For debug purposes
+            DrawRadius( entityCurrentPosition, TankDefenceManagement.RADIUS, COLOR.BROWN, TankDefenceManagement.CHECK_INTERVAL );
+
+            sleep( TankDefenceManagement.CHECK_INTERVAL );
+        }
+    },
+
+    ManageGoals = function()
+    {
+        foreach ( goal in TankDefenceManagement.GOAL_LIST[ TankDefenceManagement.entityCurrentArea ] )
+        {
+            shouldGoalBeEnabled = DistanceBetween( goal, TankDefenceManagement.ENTITY ) <= TankDefenceManagement.RADIUS;
+            goal.SetAvailable( TankDefenceManagement.TEAM, shouldGoalBeEnabled );
+
+            // For debug purposes
+            TankDefenceManagement.DrawDebugGoal( goal );
+        }
+    },
+
+    DrawDebugGoal = function( goal )
+    {
+        goalPosition = goal.GetPosition();
+        goalEyePosition = Vector3( goalPosition.x, goalPosition.y, goalPosition.z + 64 );
+
+        color;
+        if ( goal.IsAvailable( TankDefenceManagement.TEAM ) )
+        {
+            color = COLOR.CYAN;
+        }
+        else
+        {
+            color = COLOR.ORANGE;
+        }
+
+        DrawDebugLine( goalPosition, goalEyePosition, color, TankDefenceManagement.CHECK_INTERVAL );
+    },
+
+    SetArea = function( area )
+    {
+        // Update the goal list pointer
+        TankDefenceManagement.entityCurrentArea = area;
+
+        // Disable all the goals from the area we've just left
+        foreach ( goal in TankDefenceManagement.GOAL_LIST[ area - 1 ] )
+        {
+            goal.SetAvailable( TankDefenceManagement.TEAM, false );
+        }
+    },
+};

@@ -1,0 +1,1089 @@
+//================================================================================================
+//
+//  Dingenskirchen (Beta 9)
+//
+//  Who             When                What
+//------------------------------------------------------------------------------------------
+//  Mateos          21 September 2019   Initial Script
+// ///XP*Captain    18 November 2021    Add Attack, Routes, Switchs And More....
+// ///XP*Captain    22 January  2022    fix bot stuck in wall at river flag spawn.
+//                                      fix name attack and defense points and some misnamed
+//=================================================================================================
+/************************************************************************
+Based on the path mapping and script Dingenskirchen (Beta 8) by Mateos
+There many bugs on this map for omnibot script!!
+On the barrier, the switchs, the generator and suitcase bomb.
+Now bots Axis defuse suitcase bomb.
+But I made it all work ;)
+Update 18 November 2021 by ///XP*Captain for Dingenskirchen (Beta 9)
+***********************************************************************/
+global Map =
+{
+    ShowMovers = 0,
+    //set status' for conditionals
+    AlliesCP = false,
+    TankPassdBarrier = false,
+    TankPassedTunnel = false,
+    VillageSecured = false,
+	TunnelDoors = false,
+    RiverFlag = false,
+    GrateTunnel = false,
+    RiverSecured = false,
+    BridgeBuild = false,
+    TankAcrossBridge = false,
+    CastleWolfensteinBreached = false,
+    CastleStairs = false,
+    CellarDoor = true,
+    //Generator = true, Not use for moment many bug
+    RoomDoor = false,
+    AxisCP = false,
+    SuitcaseTaken = false,
+    SuitcaseSecured = false,
+
+    Tank_Built = function( trigger )
+    {
+        if ( !Map.CastleWolfensteinBreached )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "MOUNT_Tank_Ally" );
+
+        SetAvailableMapGoals( TEAM.AXIS, true, "MOUNT_Tank_Axis" );
+        }
+        SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Tank" );
+
+        Util.MapDebugPrint( "Tank_Built" );
+    },
+
+    Tank_Destroyed = function( trigger )
+    {
+        if ( !Map.CastleWolfensteinBreached )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank" );
+        }
+        SetAvailableMapGoals( TEAM.ALLIES, false, "MOUNT_Tank_Ally" );
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "MOUNT_Tank_Axis" );
+
+        Util.MapDebugPrint( "Tank_Destroyed", true );
+    },
+
+    Tank_Barrier_Built = function( trigger )
+    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "DYNAMITE_Tank_Barrier" );
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Tank_Barrier" );
+
+        Util.MapDebugPrint( "Tank_Barrier_Built" );
+    },
+
+    Tank_Barrier_Destroyed = function( trigger )
+    {
+        SetAvailableMapGoals( TEAM.ALLIES, false, "DYNAMITE_Tank_Barrier" );
+
+        SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Tank_Barrier" );
+
+        Util.MapDebugPrint( "Tank_Barrier_Destroyed" );
+    },
+
+    Tank_Passed_Barrier = function( trigger )
+    {
+        Map.TankPassdBarrier = true;
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+            "DYNAMITE_Tank_Barrier",
+            "ATTACK_Alpha.*",
+        });
+
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Bravo.*" );
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+            "BUILD_Tank_Barrier",
+            "DEFEND_Alpha.*",
+        });
+
+        Util.MapDebugPrint( "Tank_Passed_Barrier" );
+    },
+
+    village_flag_Axis_Captured = function( trigger )
+    {
+        if ( !Map.TankPassdBarrier )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Bravo.*" );
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Bravo.*" );
+        }
+        SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_village_flag" );
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_village_flag" );
+
+        Util.MapDebugPrint( "village_flag_Axis_Captured" );
+    },
+
+    village_flag_Allies_Captured = function( trigger )
+    {
+        if ( !Map.TankPassdBarrier )
+	    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Bravo.*" );
+        }
+        SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Bravo.*" );
+        SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_village_flag");
+
+        SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_village_flag" );
+
+        Util.MapDebugPrint( "village_flag_Allies_Captured" );
+    },
+
+    Village_Secured = function( trigger )
+    {
+        Map.VillageSecured = true;
+        if ( !Map.TunnelDoors )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Tunnel_Doors" );
+        }
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Bravo.*" );
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            "ATTACK_Delta.*",
+            "ATTACK_Charlie.*",
+        });
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Bravo.*" );
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+            "DEFEND_Charlie.*",
+            "DEFEND_Delta.*",
+            "CHECKPOINT_river_flag",
+        });
+
+        Util.MapDebugPrint( "Village_Secured" );
+    },
+
+    Tunnel_Doors_Destroyed = function( trigger )
+    {
+        Map.TunnelDoors = true;
+        if ( Map.VillageSecured )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_Grate_Tunnel" );
+        }
+        if ( !Map.AlliesCP )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_Command_Post" );
+        }
+        if ( !Map.RiverFlag )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_river_flag" );
+        }
+        if ( !Map.GrateTunnel )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_Grate_Tunnel" );
+        }
+        SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Tunnel_Doors" );
+
+        Wp.SetWaypointFlag("Door_T_Left_In", "team1", false);
+        Wp.SetWaypointFlag("Door_T_Left_Out", "team1", false);
+        Wp.SetWaypointFlag("Door_T_Left_In", "door", false);
+        Wp.SetWaypointFlag("Door_T_Left_Out", "door", false);
+        Wp.SetWaypointFlag("Door_T_Right_In", "team1", false);
+        Wp.SetWaypointFlag("Door_T_Right_Out", "team1", false);
+        Wp.SetWaypointFlag("Door_T_Right_In", "door", false);
+        Wp.SetWaypointFlag("Door_T_Right_Out", "door", false);
+
+        Util.MapDebugPrint( "Tunnel_Doors_Destroyed" );
+    },
+
+    Allied_Command_Post_Built = function( trigger )
+    {
+        Map.AlliesCP = true;
+        SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Allied_Command_Post" );
+        if ( !Map.RiverSecured & !Map.RiverFlag )
+	    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Allied_Command_Post" );
+        }
+
+        Util.MapDebugPrint( "Allied_Command_Post_Built" );
+    },
+
+    Allied_Command_Post_Destroyed = function( trigger )
+    {
+        Map.AlliesCP = false;
+        if ( Map.TunnelDoors )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_Command_Post" );
+        }
+        SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Allied_Command_Post" );
+
+        Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+    },
+
+    Tank_Passed_Tunnel_Doors = function( trigger )
+    {
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+            "DEFEND_Charlie.*",
+            "DEFEND_Delta.*",
+        });
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+            "DEFEND_Echo.*",
+        });
+
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            "BUILD_Allied_Command_Post",
+            "ATTACK_Echo.*",
+        });
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+            "ATTACK_Charlie.*",
+            "ATTACK_Delta.*",
+        });
+
+        Util.MapDebugPrint( "Tank_Passed_Tunnel_Doors" );
+    },
+
+    river_flag_Axis_Captured = function( trigger )
+    {
+        Map.RiverFlag = false;
+        if ( Map.TunnelDoors )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_river_flag" );
+        }
+        if ( Map.AlliesCP )
+	    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Allied_Command_Post" );
+        }
+        if ( Map.GrateTunnel )
+	    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Grate_Tunnel" );
+        }
+        SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_river_flag" );
+
+        Util.MapDebugPrint( "river_flag_Axis_Captured" );
+    },
+
+    river_flag_Allies_Captured = function( trigger )
+    {
+        Map.RiverFlag = true;
+        if ( Map.GrateTunnel )
+	    {
+        SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Grate_Tunnel" );
+        }
+        SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_river_flag" );
+
+        SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_river_flag" );
+
+        Util.MapDebugPrint( "river_flag_Allies_Captured" );
+    },
+
+    River_Secured = function( trigger )
+    {
+        Map.RiverSecured = true;
+        if ( !Map.BridgeBuild )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Bridge" );
+        }
+        SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Foxtrot.*" );
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Echo.*" );
+
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Foxtrot.*" );
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Echo.*" );
+
+        Util.DisableGoal( "PLANT_Allied_Command_Post" );
+        Util.DisableGoal( "CHECKPOINT_river_flag" );
+        Util.DisableGoal( "SWITCH_Grate_Tunnel" );
+        Util.MapDebugPrint( "River_Secured" );
+    },
+
+    Bridge_Built = function( trigger )
+    {
+        Map.BridgeBuild = true;
+        SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Bridge" );
+        if ( !Map.TankAcrossBridge )
+	    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Bridge" );
+        }
+
+        Util.MapDebugPrint( "Bridge_Built" );
+    },
+
+    Bridge_Destroyed = function( trigger )
+    {
+        Map.BridgeBuild = false;
+        if ( Map.RiverSecured & !Map.TankAcrossBridge )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Bridge" );
+        }
+        SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Bridge" );
+
+        Util.MapDebugPrint( "Bridge_Destroyed" );
+    },
+
+    Tank_Across_Bridge = function( trigger )
+    {
+        Map.TankAcrossBridge = true;
+        Util.DisableGoal( "PLANT_Bridge" );
+        Util.MapDebugPrint( "Tank_Across_Bridge" );
+    },
+
+    Cellar_Door_Built = function( trigger )
+    {
+        Map.CellarDoor = true;
+        if ( Map.CastleWolfensteinBreached )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Cellar_Door" );
+        }
+        SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Cellar_Door" );
+
+        Util.MapDebugPrint( "Cellar_Door_Built" );
+    },
+
+    Cellar_Door_Destroyed = function( trigger )
+    {
+        Map.CellarDoor = false;
+        SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Cellar_Door" );
+        if ( Map.CastleWolfensteinBreached )
+	    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Cellar_Door" );
+        }
+        Util.MapDebugPrint( "Cellar_Door_Destroyed" );
+    },
+
+    Castle_Wolfenstein_Breached = function( trigger )
+    {
+        Map.CastleWolfensteinBreached = true;
+        if ( Map.SuitcaseTaken or Map.SuitcaseSecured )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Hotel.*" );
+
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Hotel.*" );
+        }
+        else
+        {
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            "FLAG_suitcase",
+            "ATTACK_Golf.*",
+        });
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Golf.*" );
+        }
+        if ( !Map.CastleStairs )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Castle_Stairs" );
+        }
+        if ( Map.AxisCP )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Command_Post" );
+        }
+        else
+        {
+        SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Command_Post" );
+        }
+        if ( Map.CellarDoor )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Cellar_Door" );
+        }
+        else
+        {
+        SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Cellar_Door" );
+        }
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Foxtrot.*" );
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Foxtrot.*" );
+
+        Wp.SetWaypointFlag("Castle_Door_In", "team1", false);
+        Wp.SetWaypointFlag("Castle_Door_Out", "team1", false);
+        Wp.SetWaypointFlag("Castle_Door_In", "door", false);
+        Wp.SetWaypointFlag("Castle_Door_Out", "door", false);
+
+        Util.DisableGoal("MOUNT_Tank.*");
+        Util.DisableGoal("BUILD_Tank");
+        Util.EnableGoal("SWITCH_Room_Door");
+        Util.EnableGoal("SWITCH_Room_Door");
+        Util.EnableGoal(".*CAB_castle.*");
+        Util.MapDebugPrint( "Castle_Wolfenstein_Breached" );
+    },
+
+    Axis_Command_Post_Built = function( trigger )
+	{
+	    Map.AxisCP = true;
+	    SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Axis_Command_Post" );
+
+	    if ( Map.CastleWolfensteinBreached )
+	    {
+	    SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Command_Post" );
+        }
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Destroyed = function( trigger )
+	{
+	    Map.AxisCP = false;
+
+    	if ( Map.CastleWolfensteinBreached )
+	    {
+	    SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Command_Post" );
+	    }
+        SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_Command_Post" );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+    Castle_Stairs_Built = function( trigger )
+    {
+        Map.CastleStairs = true;
+        SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Castle_Stairs" );
+
+        Util.MapDebugPrint( "Castle_Stairs_Built" );
+    },
+
+    suitcase_Taken = function( trigger )
+    {
+        Map.SuitcaseTaken = true;
+        if ( Map.CastleWolfensteinBreached )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            "CAPPOINT_Suitcase_Bomb_Dropoff",
+            "ATTACK_Hotel.*"
+        });
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+            "FLAG_suitcase",
+            "ATTACK_Golf.*",
+        });
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Hotel.*" );
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Golf.*" );
+        }
+
+        Util.MapDebugPrint( "suitcase_Taken" );
+    },
+
+    suitcase_Returned = function( trigger )
+    {
+        if ( Map.CastleWolfensteinBreached )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            "ATTACK_Golf.*",
+            "FLAG_suitcase",
+        });
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Hotel.*" );
+
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Golf.*" );
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Hotel.*" );
+        }
+
+        Util.MapDebugPrint( "suitcase_Returned" );
+    },
+
+    suitcase_Secured = function( trigger )
+    {
+        Map.SuitcaseSecured = true;
+        if ( Map.CastleWolfensteinBreached )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Suitcase_Bomb_Allies" );
+        SetAvailableMapGoals( TEAM.ALLIES, false, "CAPPOINT_Suitcase_Bomb_Dropoff" );
+        }
+        Util.MapDebugPrint( "suitcase_Secured" );
+    },
+
+    suitcase_Armed = function( trigger )
+    {
+        SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Suitcase_Bomb_Allies" );
+
+        SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Suitcase_Bomb_Axis" );
+
+        Util.MapDebugPrint( "suitcase_Armed" );
+    },
+
+    suitcase_Disarmed = function( trigger )
+    {
+        if ( Map.CastleWolfensteinBreached )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Suitcase_Bomb_Allies" );
+        }
+        SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Suitcase_Bomb_Axis" );
+
+        Util.MapDebugPrint( "suitcase_Disarmed" );
+    },
+
+    Generator_Destroyed = function( trigger )
+    {
+       SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Generator" );
+        Util.MapDebugPrint( "Generator_Destroyed" );
+    },
+
+    grate_tunnel = function ( trigger )
+	{
+		vec = ToVector(trigger.Action);
+		//reference the changing value to determine the direction
+		if ( vec.x < 0 )
+		{
+        Map.GrateTunnel = true;
+        if ( !Map.RiverSecured & !Map.RiverFlag )
+	    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Grate_Tunnel" );
+        }
+        SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Grate_Tunnel" );
+            Util.EnableGoal( "ROUTE_Tunnel_Grate");
+            sleep(3.5);
+			Util.MapDebugPrint("grate tunnel opened");
+		}
+		else if ( vec.x > 0 )
+		{
+        Map.GrateTunnel = false;
+        if ( !Map.RiverSecured & Map.TunnelDoors & Map.VillageSecured )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_Grate_Tunnel" );
+        }
+        SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Grate_Tunnel" );
+            Util.DisableGoal( "ROUTE_Tunnel_Grate");
+        	sleep(3.5);
+			Util.MapDebugPrint("grate tunnel closed");
+		}
+	},
+
+    room_door = function ( trigger )
+	{
+		vec = ToVector(trigger.Action);
+		//reference the changing value to determine the direction
+		if ( vec.z > 0 )
+		{
+        Map.RoomDoor = true;
+        if ( Map.CastleWolfensteinBreached )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+            "SWITCH_Room_Door",
+            "SWITCH_Generator_Room_Door",
+        });
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+            "SWITCH_Room_Door",
+            "SWITCH_Generator_Room_Door",
+        });
+		}
+            //sleep(3.5);
+			Util.MapDebugPrint("room door opened");
+        }
+		else if ( vec.z < 0 )
+		{
+        Map.RoomDoor = false;
+        if ( Map.CastleWolfensteinBreached )
+	    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            "SWITCH_Room_Door",
+            "SWITCH_Generator_Room_Door",
+        });
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+            "SWITCH_Room_Door",
+            "SWITCH_Generator_Room_Door",
+        });
+		}
+            //sleep(3.5);
+			Util.MapDebugPrint("room door closed");
+        }
+    },
+};
+global OnMapLoad = function()
+{
+    OnTrigger( "^5The Tank has been repaired!", Map.Tank_Built );
+    OnTrigger( "^1The Tank has been damaged!", Map.Tank_Destroyed );
+    OnTrigger( "^1Axis team has built the Barrier!", Map.Tank_Barrier_Built );
+    OnTrigger( "^5Allied team has destroyed the Barrier!", Map.Tank_Barrier_Destroyed );
+    OnTrigger( "^1The Axis have reclaimed the Village!", Map.village_flag_Axis_Captured );
+    OnTrigger( "^5The Allies have captured the Village!", Map.village_flag_Allies_Captured );
+    OnTrigger( "axis_capture_village_flag", Map.village_flag_Axis_Captured );
+    OnTrigger( "^5The Allies have destroyed the Tunnel Doors!", Map.Tunnel_Doors_Destroyed );
+
+    OnTrigger( "^5Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+    OnTrigger( "^1The Axis have destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+    OnTrigger( "^5The Allies have constructed the Bridge!", Map.Bridge_Built );
+    OnTrigger( "^1The Axis have destroyed the Bridge!", Map.Bridge_Destroyed );
+    OnTrigger( "^1The Axis have reclaimed the River!", Map.river_flag_Axis_Captured );
+    OnTrigger( "axis_capture_river_flag", Map.river_flag_Axis_Captured );
+    OnTrigger( "^5The Allies have captured the River!", Map.river_flag_Allies_Captured );
+
+    // Tank progress triggers
+    OnTrigger( "^5The Tank has passed the Tank Barrier!", Map.Tank_Passed_Barrier );
+    OnTrigger( "^5The Allies have secured the Village and can now capture the River!", Map.Village_Secured );
+    OnTrigger( "^5The Tank has passed the Tunnel Doors!", Map.Tank_Passed_Tunnel_Doors );
+    OnTrigger( "^5The Allies have secured the River!", Map.River_Secured );
+    OnTrigger( "^5The Tank is across the Bridge!", Map.Tank_Across_Bridge );
+    OnTrigger( "^5The Allies have breached Castle Wolfenstein!", Map.Castle_Wolfenstein_Breached );
+
+    // Final map triggers
+    OnTrigger( "^1Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "^5The Allies have destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+    OnTrigger( "^5The Allies have constructed the Castle Stairs!", Map.Castle_Stairs_Built );
+    OnTrigger( "^1The Axis have constructed the Cellar Door!", Map.Cellar_Door_Built );
+    OnTrigger( "^1The Axis have constructed the Cellar Door!", Map.Cellar_Door_Built );
+    OnTrigger( "^5The Allies have destroyed the Cellar Door!", Map.Cellar_Door_Destroyed );
+    OnTrigger( "^5The Allies have picked up the Suitcase Bomb!", Map.suitcase_Taken );
+    OnTrigger( "^1The Axis have returned the Suitcase Bomb!", Map.suitcase_Returned );
+    OnTrigger( "^5The Allies have planted the Suitcase Bomb!", Map.suitcase_Secured );
+    OnTrigger( "^5The Allies have armed the Suitcase Bomb!", Map.suitcase_Armed );
+    OnTrigger( "^1The Axis have disarmed the Suitcase Bomb!", Map.suitcase_Disarmed );
+    OnTrigger("GRENADE_test Exploded.", Map.Generator_Destroyed );
+
+    Switch_Grate_Switch = OnTriggerRegion(AABB(-1504.875,2351.125,545.125,-1279.125,2632.875,738.875), RegionTrigger.DisableCombatMovement);
+    //OnTrigger( "cmd_door_lever_Moving", Map.Conference_Room_Door_Lever_Dispatch );
+    OnTrigger( "tunnel_grate_goto", Map.grate_tunnel );
+    OnTrigger( "cmd_door_goto", Map.room_door );
+
+
+    // *** CLEAR ALL GOALS FOR BOTH TEAMS ***
+    Util.DisableGoal( ".*", true ); // All but routes
+    Util.DisableGoal( "ROUTE_Tunnel_Grate");
+
+    // *** AXIS GOALS ***
+    SetAvailableMapGoals( TEAM.AXIS, true, {
+        "CHECKPOINT_village_flag",
+        "DEFEND_Alpha.*",
+        ".*CAB_village.*",
+    });
+
+    // *** ALLIED GOALS ***
+    SetAvailableMapGoals( TEAM.ALLIES, true, {
+        "CHECKPOINT_village_flag",
+        "BUILD_Tank",
+        "DYNAMITE_Tank_Barrier",
+        "ATTACK_Alpha.*",
+        ".*CAB_village.*",
+        "PLANT_Generator",
+    });
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "ATTACK.*" );
+	Util.SetMaxUsers( 1, "DEFEND.*" );
+	Util.SetMaxUsers( 2, "CHECKPOINT.*" );
+	Util.SetMaxUsers( 1, "MOUNT.*" );
+	Util.SetMaxUsers( 2, "BUILD.*" );
+	Util.SetMaxUsers( 1, "PLANT.*" );
+    Util.SetMaxUsers( 1, "DYNAMITE.*" );
+    Util.SetMaxUsers( 1, "SWITCH.*" );
+
+	// Camp times
+	//SetMapGoalProperties( "MOUNTMG42.*", {MinCampTime=15, MaxCampTime=90} );
+    SetMapGoalProperties( "ATTACK.*", {MinCampTime=40, MaxCampTime=80} );
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=40, MaxCampTime=80} );
+
+	//SetPriority
+	SetGoalPriority( "DYNAMITE_Tank_Barrier", 0.96, TEAM.ALLIES, CLASS.ENGINEER );
+    SetGoalPriority( "BUILD_Tank", 1.0, TEAM.ALLIES, CLASS.ENGINEER );
+    SetGoalPriority( "PLANT_Axis_Command_Post", 1.0, TEAM.ALLIES, CLASS.COVERTOPS );
+    SetGoalPriority( "BUILD_Allied_Command_Post", 0.96, TEAM.ALLIES, CLASS.ENGINEER );
+    SetGoalPriority( "CHECKPOINT.*", 1.0, 0, CLASS.MEDIC, CLASS.COVERTOPS, CLASS.MEDIC, CLASS.FIELDOPS );
+    SetGoalPriority( "SWITCH_Grate_Tunnel.*", 1.0, TEAM.ALLIES, CLASS.MEDIC, CLASS.COVERTOPS, CLASS.MEDIC, CLASS.FIELDOPS );
+    SetGoalPriority( "BUILD_Suitcase_Bomb_Allies", 1.0, TEAM.ALLIES, CLASS.ENGINEER );
+    SetGoalPriority( "PLANT_Cellar_Door", 1.0, TEAM.ALLIES, CLASS.COVERTOPS );
+    SetGoalPriority( "SWITCH_Grate_Tunnel.*", 0.94, TEAM.AXIS );
+    SetGoalPriority( "BUILD_Suitcase_Bomb_Axis", 1.0, TEAM.AXIS, CLASS.ENGINEER );
+    SetGoalPriority( "BUILD_Cellar_Door", 0.94, TEAM.AXIS, CLASS.ENGINEER );
+    SetGoalPriority( "BUILD_Tank_Barrier", 0.96, TEAM.AXIS, CLASS.ENGINEER );
+    SetGoalPriority( "PLANT_Bridge", 0.98, TEAM.AXIS, CLASS.ENGINEER );
+    SetGoalPriority( "BUILD_Axis_Command_Post", 0.96, TEAM.AXIS, CLASS.ENGINEER );
+    SetGoalPriority( "PLANT_Allied_Command_Post", 1.0, TEAM.AXIS, CLASS.COVERTOPS );
+
+    // Set Goal Role
+    SetGoalRole("PLANT_Axis_Command_Post", ROLE.INFILTRATOR);
+
+    // Misc.
+    Util.AddUsePoint( "PLANT_Tunnel_Doors", Vec3( -1230, 2360, 250 ) );
+    Util.AddUsePoint( "PLANT_Tunnel_Doors", Vec3( -1341, 2495, 224 ) );
+    Util.AddUsePoint( "PLANT_Bridge", Vec3( -4910, 3060, 555 ) );
+    Util.AddUsePoint( "PLANT_Cellar_Door", Vec3( -1932, 5185, 868 ) );
+    Util.AddUsePoint( "PLANT_Cellar_Door", Vec3( -1790, 5198, 856 ) );
+
+	Wp.SetWaypointFlag("Door_T_Left_In", "team1", true);
+    Wp.SetWaypointFlag("Door_T_Left_Out", "team1", true);
+    Wp.SetWaypointFlag("Door_T_Left_In", "door", true);
+    Wp.SetWaypointFlag("Door_T_Left_Out", "door", true);
+    Wp.SetWaypointFlag("Door_T_Right_In", "team1", true);
+    Wp.SetWaypointFlag("Door_T_Right_Out", "team1", true);
+    Wp.SetWaypointFlag("Door_T_Right_In", "door", true);
+    Wp.SetWaypointFlag("Door_T_Right_Out", "door", true);
+    Wp.SetWaypointFlag("Castle_Door_In", "team1", true);
+    Wp.SetWaypointFlag("Castle_Door_Out", "team1", true);
+    Wp.SetWaypointFlag("Castle_Door_In", "door", true);
+    Wp.SetWaypointFlag("Castle_Door_Out", "door", true);
+
+    Util.MapDebugPrint( "Omni-Bot 0.87+ map script for Dingenskirchen (Beta 9) executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+    // For shootable breakables
+    bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+        CAPPOINT_Suitcase_Bomb_Dropoff =
+		{
+			ROUTE_Suitcase_Bomb  =
+			{
+				ROUTE_Stairs_CP_Axis  =
+				{
+					ROUTE_CP_Axis  =
+					{
+						ROUTE_Gallery  = {},
+						ROUTE_Door_Conference_Room  =
+						{
+							ROUTE_Generator  = {},
+						},
+					},
+				},
+				ROUTE_Cellar  =
+				{
+					ROUTE_Cellar_Split  =
+					{
+						ROUTE_Below_CP_Axis  =
+						{
+							ROUTE_CP_Axis  =
+							{
+								ROUTE_Gallery  = {},
+							},
+						},
+						ROUTE_Door_Conference_Room  =
+						{
+							ROUTE_Generator  = {},
+						},
+					},
+					ROUTE_Cellar_Split_Stairs  =
+					{
+						ROUTE_Door_Conference_Room  =
+						{
+							ROUTE_Generator  = {},
+						},
+					},
+					ROUTE_Cellar_Door_Split  =
+					{
+						ROUTE_Door_Conference_Room  =
+						{
+							ROUTE_Generator  = {},
+						},
+					},
+				},
+			},
+			ROUTE_Below_CP_Axis  =
+			{
+				ROUTE_Door_Conference_Room  =
+				{
+					ROUTE_Generator  = {},
+				},
+				ROUTE_CP_Axis  =
+				{
+					ROUTE_Gallery  = {},
+				},
+			},
+		},
+        DYNAMITE_Tank_Barrier =
+		{
+			ROUTE_First_Spawn_Ally  =
+			{
+				ROUTE_Road_Main_Split  = {},
+				ROUTE_First_S_Ally_Left  = {},
+				ROUTE_First_S_Ally_Right  =
+				{
+					ROUTE_Stairs_Barrier  = {},
+				},
+			},
+		},
+	    CHECKPOINT_village_flag =
+		{
+			ROUTE_River_Spawn  =
+			{
+				ROUTE_Tunnel_Door_Left  =
+				{
+					ROUTE_Road_Tunnel_Door  = {},
+				},
+				ROUTE_Tunnel_Door_Right  =
+				{
+					ROUTE_Stairs_Cave  =
+					{
+						ROUTE_Cave_Tunnel  = {},
+					},
+				},
+			},
+			ROUTE_First_Spawn_Ally  =
+			{
+				ROUTE_First_S_Ally_Left  =
+				{
+					ROUTE_Mill_Low  = {},
+					ROUTE_Mill_Top  = {},
+				},
+				ROUTE_First_S_Ally_Right  =
+				{
+					ROUTE_Stairs_Barrier  =
+					{
+						ROUTE_Village_Cab  = {},
+						ROUTE_Right_Dam  = {},
+					},
+				},
+			},
+		},
+	    PLANT_Tunnel_Doors =
+		{
+			ROUTE_Village_Spawn  =
+			{
+				ROUTE_Road_Tunnel_Door  = {},
+				ROUTE_Cave_Tunnel  =
+				{
+					ROUTE_Stairs_Cave  = {},
+				},
+			},
+		},
+		PLANT_Bridge ={},
+		BUILD_Tank ={},
+		FLAG_suitcase =
+		{
+			ROUTE_Castle_Ally_S  =
+			{
+				ROUTE_Castle_Stairs  = {},
+				ROUTE_Main_Road_Castle  =
+				{
+					ROUTE_Castle_Main_Door  = {},
+					ROUTE_Castle_Door  = {},
+				},
+			},
+		},
+		BUILD_Axis_Command_Post ={},
+		PLANT_Axis_Command_Post ={},
+		BUILD_Generator ={},
+		PLANT_Generator ={},
+		BUILD_Allied_Command_Post ={},
+		PLANT_Allied_Command_Post ={},
+		BUILD_Cellar_Door ={},
+		PLANT_Cellar_Door ={},
+		BUILD_Castle_Stairs ={},
+		CHECKPOINT_river_flag =
+		{
+			ROUTE_Village_Spawn  =
+			{
+				ROUTE_Road_Tunnel_Door  =
+				{
+					ROUTE_Tunnel_Door_Left  =
+					{
+						ROUTE_Flag_River  = {},
+					},
+					ROUTE_Tunnel_Door_Right  =
+					{
+						ROUTE_Flag_River  = {},
+					},
+					ROUTE_Tunnel_Doors  =
+					{
+						ROUTE_Flag_River  = {},
+					},
+				},
+				ROUTE_Cave_Tunnel  =
+				{ Weight = 3,
+					ROUTE_Stairs_Cave  =
+					{
+						ROUTE_Tunnel_Door_Right  =
+						{
+							ROUTE_Ally_CP  =
+							{
+								ROUTE_Flag_River  = {},
+							},
+						},
+						ROUTE_Tunnel_Grate  =
+						{
+							ROUTE_Flag_River  = {},
+							ROUTE_Ally_CP  = {},
+						},
+					},
+				},
+			},
+			ROUTE_Church_Spawn  =
+			{
+				ROUTE_Castle_Door  =
+				{
+					ROUTE_Main_Road_Castle  =
+					{
+						ROUTE_Road_Left_Bridge  = {},
+					},
+				},
+				ROUTE_Castle_Stairs  =
+				{
+					ROUTE_Under_River_Right  =
+					{
+						ROUTE_Jump_In_River  =
+						{
+							ROUTE_Flag_River  = {},
+						},
+						ROUTE_Ally_CP  =
+						{
+							ROUTE_Flag_River  = {},
+						},
+					},
+				},
+			},
+		},
+	};
+    MapRoutes["ATTACK_Alpha.*"] =
+		{
+			ROUTE_First_S_Ally_Left  =
+			{
+			},
+			ROUTE_First_S_Ally_Right  =
+			{
+				ROUTE_Stairs_Barrier  =
+				{
+				},
+			},
+			ROUTE_Road_Main_Split  =
+			{
+			},
+		};
+    MapRoutes["ATTACK_Bravo.*"] =
+		{
+			ROUTE_First_S_Ally_Left  =
+			{
+				ROUTE_Mill_Low  =
+				{
+				},
+				ROUTE_Mill_Top  =
+				{
+				},
+			},
+			ROUTE_First_S_Ally_Right  =
+			{
+				ROUTE_Stairs_Barrier  =
+				{
+					ROUTE_Right_Dam  =
+					{
+					},
+				},
+				ROUTE_Village_Cab  =
+				{
+				},
+			},
+		};
+    MapRoutes["DEFEND_Alpha.*"] =
+		{
+			ROUTE_River_Spawn  =
+			{
+				ROUTE_Tunnel_Door_Left  =
+				{
+					ROUTE_Road_Tunnel_Door  =
+					{
+						ROUTE_Village_Cab  = {},
+						ROUTE_Right_Dam  = {},
+					},
+				},
+				ROUTE_Tunnel_Door_Right  =
+				{
+					ROUTE_Stairs_Cave  =
+					{
+						ROUTE_Cave_Tunnel  =
+						{
+							ROUTE_Village_Cab  = {
+							},
+							ROUTE_Right_Dam  = {},
+						},
+					},
+				},
+			},
+			ROUTE_Village_Spawn  =
+			{
+				ROUTE_Right_Dam  = {},
+				ROUTE_Village_Cab  = {},
+			},
+		};
+		MapRoutes["DEFEND_Bravo.*"] =
+		{
+			ROUTE_River_Spawn  =
+			{
+				ROUTE_Tunnel_Door_Left  =
+				{
+					ROUTE_Road_Tunnel_Door  = {},
+				},
+				ROUTE_Tunnel_Door_Right  =
+				{
+					ROUTE_Stairs_Cave  =
+					{
+						ROUTE_Cave_Tunnel  = {},
+					},
+				},
+			},
+		};
+        MapRoutes["ATTACK_Foxtrot.*"] =
+		{
+			ROUTE_River_Spawn  =
+			{
+				ROUTE_Ally_CP  =
+				{
+					ROUTE_Under_River_Right  = {},
+				},
+				ROUTE_Jump_In_River  =
+				{
+					ROUTE_Under_River_Left  = {},
+					ROUTE_Under_River_Right  = {},
+				},
+				ROUTE_Road_Left_Bridge  = {},
+				ROUTE_Bridge  = {},
+			},
+		};
+        MapRoutes["DEFEND_Foxtrot.*"] =
+		{
+			ROUTE_Church_Spawn  =
+			{
+				ROUTE_Castle_Stairs  =
+				{
+				},
+				ROUTE_Castle_Door  =
+				{
+					ROUTE_Main_Road_Castle  = {},
+				},
+			},
+		};
+        MapRoutes["ATTACK_Hotel1.*"] =
+		{
+			ROUTE_Castle_Ally_S  =
+			{
+				ROUTE_Main_Road_Castle  =
+				{
+					ROUTE_Castle_Main_Door  =
+					{
+						ROUTE_Cellar  =
+						{
+							ROUTE_Cellar_Split  =
+							{
+								ROUTE_Below_CP_Axis  =
+								{
+									ROUTE_CP_Axis  =
+									{
+										ROUTE_Door_Conference_Room  =
+										{
+											ROUTE_Generator  = {},
+										},
+									},
+								},
+							},
+							ROUTE_Cellar_Door_Split  =
+							{
+								ROUTE_Cellar_Split_Stairs  =
+								{
+									ROUTE_Door_Conference_Room  =
+									{
+										ROUTE_Generator  = {},
+									},
+								},
+								ROUTE_Door_Conference_Room  =
+								{
+									ROUTE_Generator  = {},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Castle_Stairs  =
+				{
+					ROUTE_Stairs_CP_Axis  =
+					{
+						ROUTE_CP_Axis  =
+						{
+							ROUTE_Gallery  = {},
+						},
+						ROUTE_Door_Conference_Room  =
+						{
+							ROUTE_Generator  = {},
+						},
+					},
+				},
+			},
+		};
+    MapRoutes["ATTACK_Delta.*"] = MapRoutes.PLANT_Tunnel_Doors;
+    MapRoutes["ATTACK_Echo.*"] = MapRoutes.CHECKPOINT_river_flag;
+    MapRoutes["DEFEND_Echo.*"] = MapRoutes.CHECKPOINT_river_flag;
+    MapRoutes["ATTACK_Golf.*"] = MapRoutes.FLAG_suitcase;
+	Util.Routes(MapRoutes);
+};

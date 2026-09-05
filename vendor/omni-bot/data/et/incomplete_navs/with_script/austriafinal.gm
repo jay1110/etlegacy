@@ -1,0 +1,211 @@
+//==========================================================================================
+//
+//	austriafinal.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	26 December 2017	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	//Side Tunnel
+	Side_Tunnel_Entrance_Destroyed = function()
+	{
+		Wp.SetWaypointFlag( "SideTunnelPlant_WP", "closed", 1);
+		Util.MapDebugPrint( "Side_Tunnel_Entrance_Destroyed" );
+	},
+
+	//Side Barrier
+	Side_Barrier_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_Side_Barrier" );
+		Util.MapDebugPrint( "Side_Barrier_Built" );
+	},
+
+	Side_Barrier_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Side_Barrier_Destroyed" );
+	},
+
+	//Front Door
+	Front_Gate_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_Main_Entrance" );
+
+		Util.MapDebugPrint( "Front_Gate_Destroyed" );
+	},
+
+	//Main Entrance
+	Main_Entrance_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_Radar_System" );
+		SetAvailableMapGoals( TEAM.AXIS, 0, {
+			"DEFEND_Ax_.*",
+			"MOBILEMG42_Ax_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, 1, {
+			"DEFEND_Radar_.*",
+			"MOBILEMG42_Radar_.*",
+		});
+
+		Util.MapDebugPrint( "Main_Entrance_Destroyed" );
+	},
+
+	//Radar System
+	Radar_System_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Radar_System_Destroyed" );
+	},
+
+	//River Grate
+	River_Grate_Destroyed = function()
+	{
+		Util.MapDebugPrint( "River_Grate_Destroyed" );
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "The Allies have breached the Side Tunnel Entrance!", Map.Side_Tunnel_Entrance_Destroyed );
+	OnTrigger( "The Allies have breached the Stone Barrier!", Map.Front_Gate_Destroyed );
+	OnTrigger( "The Allies have breached the Main Entrance!", Map.Main_Entrance_Destroyed );
+	OnTrigger( "Axis team have built the Side Barrier!", Map.Side_Barrier_Built );
+	OnTrigger( "The Allies have destroyed the Side Barrier!", Map.Side_Barrier_Destroyed );
+	OnTrigger( "The Allies have destroyed the Radar System!", Map.Radar_System_Destroyed );
+	OnTrigger( "The Allies have breached the river grate!", Map.River_Grate_Destroyed );
+
+	//Both
+	Util.DisableGoal( ".*", 1 );
+
+	Util.EnableGoal(".*_Command_Post");
+
+	Util.LimitToClass( "PLANT_Side_Tunnel_Entrance", 2, CLASS.ENGINEER );
+	Util.LimitToClass( "PLANT_Command_Post", 0, CLASS.COVERTOPS );
+	Util.LimitToClass( "PLANT_East_.*", 2, CLASS.COVERTOPS );
+	Util.LimitToClass( "PLANT_West_.*", 2, CLASS.COVERTOPS );
+	Util.LimitToClass( "PLANT_Side_.*", 2, CLASS.COVERTOPS );
+
+	Util.SetGoalPosition( -442, 741, -371, "PLANT_Side_Tunnel_Entrance" );
+	Util.SetGoalPosition( 1507, -1263, -170, "PLANT_River_Grate" );
+
+	//broken goal > Util.SetGoalOffset( "MOUNTMG42_209", -1378, -160, 214 ); //in roof corner
+
+	//Allies
+	SetAvailableMapGoals( TEAM.ALLIES, 1, {
+		"PLANT_Side_Tunnel_Entrance",
+		"PLANT_Side_Barrier",
+		"PLANT_Front_Gate",
+		"SNIPE_Al_.*",
+	});
+	SetGoalPriority( "PLANT_Side_Tunnel_Entrance"  , 0.95 );
+	SetGoalPriority( "BUILD_Command_Post"          , 0.93 );
+	SetGoalPriority( "PLANT_Front_Gate"            , 0.91 );
+
+	//Axis      broken mg > "BUILD_East_MG_Nest",
+	SetAvailableMapGoals( TEAM.AXIS, 1, {
+		"BUILD_West_MG_Nest",
+		"BUILD_Side_Barrier",
+		"PLANTMINE_.*",
+		"DEFEND_Ax_.*",
+		"MOBILEMG42_.*",
+		"MOUNTMG42_.*",
+		"SNIPE_Ax_.*",
+	});
+	SetGoalPriority("BUILD_East_MG_Nest"   , 0.95 );
+	SetGoalPriority("BUILD_West_MG_Nest"   , 0.94 );
+	SetGoalPriority("BUILD_Side_Barrier"   , 0.93 );
+	SetGoalPriority("BUILD_Command_Post"   , 0.92 );
+	SetGoalPriority("BUILD_Side_Barrier"     , 0.91 );
+	SetGoalPriority("PLANTMINE_.*"         , 0.75 );
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_Front_Gate =
+		{
+			ROUTE_AlSp =
+			{
+				ROUTE_Al_Ladder =
+				{
+					ROUTE_Front_Gate = {},
+				},
+			},
+		},
+
+		PLANT_River_Grate = {},
+
+		PLANT_Main_Entrance =
+		{
+			ROUTE_Front_Gate =
+			{
+				ROUTE_Main = {},
+			},
+		},
+
+		PLANT_Radar_System =
+		{
+			ROUTE_Main =
+			{
+				ROUTE_Main_2 =
+				{
+					ROUTE_Main_3 =
+					{
+						ROUTE_Radar = {},
+					},
+				},
+			},
+		},
+
+		PLANT_Side_Tunnel_Entrance = {},
+
+		BUILD_Side_Barrier = {},
+		PLANT_Side_Barrier = {},
+
+		BUILD_Command_Post =
+		{
+			ROUTE_AlSp =
+			{
+				ROUTE_Al_Back =
+				{
+					ROUTE_CP = {},
+				},
+			},
+		},
+
+		PLANT_Command_Post =
+		{
+			ROUTE_AxSp_1 =
+			{
+				ROUTE_AxSp_1a =
+				{
+					ROUTE_Ax_Front_R =
+					{
+						ROUTE_CP = {},
+					},
+				},
+			},
+		},
+
+
+	};
+	Util.Routes(MapRoutes);
+};

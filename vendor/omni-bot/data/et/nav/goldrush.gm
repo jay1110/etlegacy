@@ -1,15 +1,13 @@
 global Map =
 {
-	Debug = 0,
 	start_of_map = true,
 
 	// region triggers
 	iw1 = 0,
 	iw2 = 0,
 	iw3 = 0,
+	
 	DefendingTeam = TEAM.AXIS,
-
-	DispenseAmmoTime = 15,
 
 	rnadehall_bot = false,
 
@@ -18,21 +16,21 @@ global Map =
 		rnadehall =
 		{
 			wpInfo = Util.WpNameInfo("rNadeHall"),
-			EvalFunc = function(_this)
+			EvalFunc = function()
 			{
-				return Map.start_of_map && _this.Bot.HasAmmo(WEAPON.AXIS_GRENADE) && !Map.rnadehall_bot;
+				return Map.start_of_map && this.Bot.HasAmmo(WEAPON.AXIS_GRENADE) && !Map.rnadehall_bot;
 			},
-			navigate = function(_this)
+			navigate = function()
 			{
 				Map.rnadehall_bot = true;
 
-				_this.AddAimRequest(Priority.High, "facing", Map.Navigation.rnadehall.wpInfo.facing);
-				_this.AddWeaponRequest(Priority.High, WEAPON.AXIS_GRENADE );
+				this.AddAimRequest(Priority.High, "facing", Map.Navigation.rnadehall.wpInfo.facing);
+				this.AddWeaponRequest( WEAPON.AXIS_GRENADE );
 
-				if ( _this.Goto(Map.Navigation.rnadehall.wpInfo.position) == EVENT.PATH_SUCCESS )
+				if ( this.Goto(Map.Navigation.rnadehall.wpInfo.position) == EVENT.PATH_SUCCESS )
 				{
-					_this.BlockForWeaponChange( WEAPON.AXIS_GRENADE );
-					_this.Bot.HoldButton(BTN.ATTACK1, 0.5);
+					this.BlockForWeaponChange( WEAPON.AXIS_GRENADE );
+					this.Bot.HoldButton(BTN.ATTACK1, 0.5);
 					sleep(1);
 				}
 			},
@@ -49,21 +47,12 @@ global Map =
 		tankassist =
 		{
 			Enabled = true,
-			Team = (1<<TEAM.ALLIES),
-			Facing = Vector3(-0.601,-0.392,0.696),
-			NoPause = false,
+			Team = 1<<TEAM.ALLIES,
 			Waypoint = "bTankAS1",
 		},
 	},
 
-	slopeNodes = function(close)
-	{
-		for( i = 1; i <= 3; i += 1 ) {
-			Wp.SetWaypointFlag( "slope" + i, "closed", close );
-		}
-	},
-
-	allies_steal_tank = function( trigger )
+	allies_steal_tank = function()
 	{
 		// Allied goals
 		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Depot_.*" );
@@ -95,42 +84,42 @@ global Map =
 		Util.MapDebugPrint( "allies_steal_tank" );
 	},
 
-	Command_Post_Built = function( trigger )
+	Command_Post_Built = function()
 	{
 		Util.MapDebugPrint( "Command_Post_Built" );
 	},
 
-	Command_Post_Destroyed = function( trigger )
+	Command_Post_Destroyed = function()
 	{
 		Util.MapDebugPrint( "Command_Post_Destroyed" );
 	},
 
-	Tank_Built = function( trigger )
+	Tank_Built = function()
 	{
 		Map.start_of_map = false;
 
 		Util.MapDebugPrint( "Tank_Built" );
 	},
 
-	Tank_Destroyed = function ( trigger )
+	Tank_Destroyed = function()
 	{
 		Util.MapDebugPrint( "Tank_Destroyed" );
 	},
 
-	Truck_Built = function( trigger )
+	Truck_Built = function()
 	{
 		Util.MapDebugPrint( "Truck_Built" );
 	},
 
-	Truck_Destroyed = function ( trigger )
+	Truck_Destroyed = function()
 	{
 		Util.MapDebugPrint( "Truck_Destroyed" );
 	},
 
-	tank_past_barrier1 = function( trigger )
+	tank_past_barrier1 = function()
 	{
 		// open these nodes for a more direct path
-		Map.slopeNodes(false);
+		Wp.SetWaypointFlag( "slope.*", "closed", false );
 
 		// Allied goals
 		SetAvailableMapGoals( TEAM.ALLIES, true, {
@@ -168,17 +157,17 @@ global Map =
 		Util.MapDebugPrint( "tank_past_barrier1" );
 	},
 
-	Tank_Barrier_1_Built = function( trigger )
+	Tank_Barrier_1_Built = function()
 	{
 		Util.MapDebugPrint( "Tank_Barrier_1_Built" );
 	},
 
-	Tank_Barrier_1_Destroyed = function( trigger )
+	Tank_Barrier_1_Destroyed = function()
 	{
 		Util.MapDebugPrint( "Tank_Barrier_1_Destroyed" );
 	},
 
-	tank_past_barrier2 = function( trigger )
+	tank_past_barrier2 = function()
 	{
 		// Allied goals
 		SetAvailableMapGoals( TEAM.ALLIES, true, {
@@ -213,23 +202,22 @@ global Map =
 		Util.ForceRouting( "BUILD_Tank", false );
 
 		// routing isn't super reliable here, and we want allies avoiding south stairs
-		Wp.SetWaypointFlag( "southstairs1", "axis", true );
-		Wp.SetWaypointFlag( "southstairs3", "axis", true );
-
+		Wp.SetWaypointFlag( "southstairs[13]", "axis", true );
+		
 		Util.MapDebugPrint( "tank_past_barrier2" );
 	},
 
-	Tank_Barrier_2_Built = function( trigger )
+	Tank_Barrier_2_Built = function()
 	{
 		Util.MapDebugPrint( "Tank_Barrier_2_Built" );
 	},
 
-	Tank_Barrier_2_Destroyed = function( trigger )
+	Tank_Barrier_2_Destroyed = function()
 	{
 		Util.MapDebugPrint( "Tank_Barrier_2_Destroyed" );
 	},
 
-	blow_doors = function( trigger )
+	blow_doors = function()
 	{
 		sleep(0.1);
 		Wp.CheckBlockable();
@@ -260,8 +248,7 @@ global Map =
 		});
 
 		// let allies use south stairs again
-		Wp.SetWaypointFlag( "southstairs1", "axis", false );
-		Wp.SetWaypointFlag( "southstairs3", "axis", false );
+		Wp.SetWaypointFlag( "southstairs[13]", "axis", false );
 
 		// intrusion warning region triggers
 		Map.iw1 = OnTriggerRegion( AABB(1480.742,-2466.167,-403.870,1605.773,-2403.699,-235.466), RegionTrigger.IntrusionWarning );
@@ -271,7 +258,7 @@ global Map =
 		Util.MapDebugPrint( "blow_doors" );
 	},
 
-	allies_taking_gold = function( trigger )
+	allies_taking_gold = function()
 	{
 		// Allied goals
 		SetAvailableMapGoals( TEAM.ALLIES, true, {
@@ -310,7 +297,7 @@ global Map =
 		Util.MapDebugPrint( "allies_taking_gold" );
 	},
 
-	truck_past_barrier1 = function( trigger )
+	truck_past_barrier1 = function()
 	{
 		Util.ChangeSpawn( TEAM.ALLIES, 3 );
 
@@ -327,17 +314,17 @@ global Map =
 		Util.MapDebugPrint( "truck_past_barrier1" );
 	},
 
-	Truck_Barrier_1_Built = function( trigger )
+	Truck_Barrier_1_Built = function()
 	{
 		Util.MapDebugPrint( "Truck_Barrier_1_Built" );
 	},
 
-	Truck_Barrier_1_Destroyed = function( trigger )
+	Truck_Barrier_1_Destroyed = function()
 	{
 		Util.MapDebugPrint( "Truck_Barrier_1_Destroyed" );
 	},
 
-	truck_past_barrier2 = function( trigger )
+	truck_past_barrier2 = function()
 	{
 		// Allied goals
 		SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Escape_.*" );
@@ -357,27 +344,27 @@ global Map =
 		Util.MapDebugPrint( "truck_past_barrier2" );
 	},
 
-	Truck_Barrier_2_Built = function( trigger )
+	Truck_Barrier_2_Built = function()
 	{
 		Util.MapDebugPrint( "Truck_Barrier_2_Built" );
 	},
 
-	Truck_Barrier_2_Destroyed = function( trigger )
+	Truck_Barrier_2_Destroyed = function()
 	{
 		Util.MapDebugPrint( "Truck_Barrier_2_Destroyed" );
 	},
 
-	gold_crate_Taken = function( trigger )
+	gold_crate_Taken = function()
 	{
 		Util.MapDebugPrint( "gold_crate_Taken" );
 	},
 
-	Gold_Dropoff_Captured = function( trigger )
+	Gold_Dropoff_Captured = function()
 	{
 		Util.MapDebugPrint( "Gold_Dropoff_Captured" );
 	},
 
-	vehicle_at_location = function( trigger )
+	vehicle_at_location = function()
 	{
 		switch(Map.VehicleLocation)
 		{
@@ -440,7 +427,7 @@ global OnMapLoad = function()
 	Util.SetGoalOffset( 0, 174, 0, "PLANT_Tank_Barrier_2" );
 
 	// close these waypoints until tank is past barrier
-	Map.slopeNodes(true);
+	Wp.SetWaypointFlag( "slope.*", "closed", true );
 
 	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Command_Post_Built );
 	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Command_Post_Built );
@@ -481,8 +468,7 @@ global OnMapLoad = function()
 	RegionTrigger.Create(AABB(-1818.902,-1406.621,-47.144,-1658.912,-1076.801,37.125), "VehicleTrigger", "barrier4");
 
 	// when tank is between barrier 2 and final spot, force allies anywhere but south stairs
-	Wp.SetWaypointFlag( "southstairs1", "axis", false );
-	Wp.SetWaypointFlag( "southstairs3", "axis", false );
+	Wp.SetWaypointFlag( "southstairs[13]", "axis", false );
 
 	// set some preferred positions to start from for vehicle goals
 	ETUtil.SetStartIndex("BUILD_Truck", 0);
@@ -490,13 +476,8 @@ global OnMapLoad = function()
 	ETUtil.SetStartIndex("BUILD_Tank", 0);
 
 	// Max users per goal
-	Util.SetMaxUsers( 1, "DEFEND_.*" );
-	Util.SetMaxUsersInProgress( 2, "DEFEND_Bank_Roam.*" );
-	Util.SetMaxUsersInProgress( 2, "DEFEND_Tank_Barrier2_Roam.*" );
-	Util.SetMaxUsers( 1, "CAMP_.*" );
-	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
-	Util.SetMaxUsers( 1, "MOUNT_tank.*" );
-	Util.SetMaxUsers( 1, ".*Command_Post" );
+	Util.SetMaxUsers( 1, {"DEFEND.*", "CAMP.*", "MOUNT.*", ".*Command_Post"} );
+	Util.SetMaxUsersInProgress( 2, {"DEFEND_Bank_Roam.*", "DEFEND_Tank_Barrier2_Roam.*"} );
 
 	SetMapGoalProperties( "ATTACK_.*", {MinCampTime=10, MaxCampTime=30});
 	SetMapGoalProperties( "DEFEND_.*", {MinCampTime=15, MaxCampTime=20});
@@ -504,13 +485,11 @@ global OnMapLoad = function()
 	SetMapGoalProperties( "DEFEND_Tank_Barrier2_Roam.*", {MinCampTime=1, MaxCampTime=2});
 	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=45, MaxCampTime=90});
 
-	SetGoalPriority( "MOUNTMG42_.*", 0.0, 0, CLASS.MEDIC );
-	SetGoalPriority( "MOUNTMG42_.*", 0.0, 0, CLASS.ENGINEER );
+	Util.ExcludeClass( "MOUNTMG42_.*", 0,  CLASS.MEDIC, CLASS.ENGINEER );
 	SetGoalPriority( "DEFEND_Bank_Roam.*", 0.49 );
 	SetGoalPriority( "DEFEND_Tank_Barrier2_Roam.*", 0.49 );
-	SetGoalPriority( "PLANT_Command_Post", 0.0, 0, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Command_Post", 0, 0, CLASS.ENGINEER );
 
-	ETUtil.SetCabinets();
 
 	// Allied goals
 	SetGoalPriority( "BUILD_Truck", 0.7 );

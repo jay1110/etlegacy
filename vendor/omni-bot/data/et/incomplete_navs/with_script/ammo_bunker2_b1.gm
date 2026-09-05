@@ -1,0 +1,391 @@
+//==========================================================================================
+//
+//	Who  	When		What
+//------------------------------------------------------------------------------------------
+//	^4Tardis	27 May 2015	Initial Script
+//
+// maker@bigsighstudios.com - 07 June 2018 - Fully reworked
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	North_bunker_wall_intact = 1,
+	South_wall_intact = 1,
+	Front_door_intact = 1,
+	Garden_gate_intact = 1,
+
+	Allied_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+	North_bunker_wall_Planted = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "CAMP_ammo.*" );
+		Util.MapDebugPrint( "North_bunker_wall_Planted" );
+	},
+
+	North_bunker_wall_Destroyed = function()
+	{
+		Map.North_bunker_wall_intact = 0;
+		SetAvailableMapGoals( TEAM.AXIS, 0, {
+			"CAMP_north.*",
+			"CAMP_south.*",
+			"AIRSTRIKE_.*",
+			"CALLARTILLERY_.*",
+			"BUILD_Command_Post",
+			"PLANT_Command_Post",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, 1, {
+			"CAMP_ammo.*",
+			"MOBILEMG42_ammo.*",
+		});
+
+		if ( Map.South_wall_intact == 1 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_South_wall" );
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"PLANT_Ammo_Storage",
+			"CAMP_ammo.*",
+		});
+
+		SetGoalPriority( "PLANT_Ammo_Storage", 0.81, 0, CLASS.ENGINEER );
+
+		Util.MapDebugPrint( "North_bunker_wall_Destroyed" );
+	},
+
+	South_wall_Destroyed = function()
+	{
+		Map.South_wall_intact = 0;
+		SetAvailableMapGoals( TEAM.AXIS, 0, {
+			"CAMP_north.*",
+			"CAMP_south.*",
+			"AIRSTRIKE_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, 1, {
+			"CAMP_ammo.*",
+			"MOBILEMG42_ammo.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"PLANT_Ammo_Storage",
+			"CAMP_ammo.*",
+		});
+
+		Util.MapDebugPrint( "South_wall_Destroyed" );
+	},
+
+	Ammo_Storage_Destroyed = function()
+	{
+		Map.Ammo_Storage_intact = 0;
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"PLANT_Garden_gate",
+			"PLANT_Prision_gate",
+		});
+
+		Util.MapDebugPrint( "Ammo_Storage_Destroyed" );
+	},
+
+	Front_door_Destroyed = function()
+	{
+		Map.Front_door_intact = 0;
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_Prision_Gate" );
+		Util.MapDebugPrint( "Front_door_Destroyed" );
+	},
+
+	Garden_gate_Destroyed = function()
+	{
+		Map.Garden_gate_intact = 0;
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_Rocket" );
+
+		Util.MapDebugPrint( "Garden_gate_Destroyed" );
+	},
+
+	Prision_gate_Built = function()
+	{
+		Map.Prision_gate_intact = 1;
+		Util.MapDebugPrint( "Prision_gate_Built" );
+	},
+
+	Prision_gate_Destroyed = function()
+	{
+		Map.Prision_gate_intact = 0;
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_Rocket" );
+
+		Util.MapDebugPrint( "Prision_gate_Destroyed" );
+	},
+
+	Rocket_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Rocket_Destroyed" );
+	},
+
+	zoneTrigger =
+	{
+		Name = "zoneTrigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, 1, {
+					"AIRSTRIKE_.*",
+					"CALLARTILLERY_.*",
+				});
+			}
+			Util.MapDebugPrint( "ALLIES_Entered_Zone" );
+		},
+		OnExit = function(ent)
+		{
+			Util.MapDebugPrint( "ALLIES_Exited_Zone" );
+		},
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "Allies have destroyed the ammo bunker!", Map.Ammo_Storage_Destroyed );
+	OnTrigger( "Planted at North bunker wall.", Map.North_bunker_wall_Planted );
+	OnTrigger( "Allies have breached the North bunker wall!", Map.North_bunker_wall_Destroyed );
+	OnTrigger( "Allies have breached the South bunker wall!", Map.South_wall_Destroyed );
+	OnTrigger( "Allies have breached the Front door!", Map.Front_door_Destroyed );
+	OnTrigger( "Axis has buld the Prision gate!", Map.Prision_gate_Built );
+	OnTrigger( "Allies have breached the Prision gate!", Map.Prision_gate_Destroyed );
+	OnTrigger( "Garden gate Destroyed.", Map.Garden_gate_Destroyed );
+
+	//CP
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+
+	OnTriggerRegion(AABB(2641.126,-4609.544,33.125,2966.139,-4291.034,146.192), Map.zoneTrigger); //AxisArti
+
+	Util.DisableGoal( ".*", 1 );
+
+	Util.EnableGoal(".*_Command_Post");
+
+	//Allies
+	SetAvailableMapGoals( TEAM.ALLIES, 1, {
+		"PLANT_North_bunker_wall",
+		"PLANT_South_wall",
+		"PLANT_Front_door", //covy
+		"PLANT_Prision_gate",
+	});
+
+	//Axis
+	SetAvailableMapGoals( TEAM.AXIS, 1, {
+		"CAMP_north.*",
+		"CAMP_south.*",
+	});
+
+	//Priorities
+	SetGoalPriority( "PLANT_Front_door"       , 0.84,  TEAM.ALLIES,  CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_North_bunker_wall", 0.83,  0,            CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_South_wall"       , 0.82,  TEAM.ALLIES,  CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Ammo_Storage"     , 0.81,  TEAM.ALLIES,  CLASS.ENGINEER );
+
+	SetGoalPriority( "BUILD_Command_Post"     , 0.6 ,  0,            CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Command_Post"     , 0.6 ,  0,            CLASS.COVERTOPS );
+
+	//Team assignments
+	Util.LimitToClass( "PLANT_Command_Post", 0, CLASS.COVERTOPS );
+	Util.LimitToClass( "PLANT_Front_door", 2, CLASS.COVERTOPS );
+	//Util.LimitToClass( "PLANT_Prision_gate", 2, CLASS.COVERTOPS );
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "CAMP_.*" );
+	Util.SetMaxUsers( 1, "CAMP_.*" );
+	Util.SetMaxUsers( 1, "BUILD_.*" );
+	Util.SetMaxUsers( 1, "PLANT_.*" );
+
+	// Camp times
+	SetMapGoalProperties( "MOBILEMG42_.*", {MinCampTime=10, MaxCampTime=60} );
+
+	Util.AddUsePoint( "PLANT_South_wall", Vec3( 4153, -3300, 70) );
+	Util.AddUsePoint( "PLANT_Front_door", Vec3( 3151, -3761, 60) );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_Front_door =
+		{
+			ROUTE_AlSp_1 =
+			{
+				ROUTE_AlSp_L_1 =
+				{
+					ROUTE_Al_L_Door =
+					{
+						ROUTE_AlSp_L_2 =
+						{
+							ROUTE_Front_Door = {},
+						},
+					},
+				},
+			},
+		},
+
+		BUILD_Command_Post =
+		{
+			ROUTE_AlSp_1 =
+			{
+				ROUTE_AlSp_L_1 =
+				{
+					ROUTE_Al_L_Door =
+					{
+						ROUTE_AlSp_L_2 =
+						{
+							ROUTE_H2 =
+							{
+								ROUTE_CP_High =
+								{
+									ROUTE_CP = {},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+
+		PLANT_South_wall =
+		{
+			ROUTE_Front_Door =
+			{
+				ROUTE_Bath =
+				{
+					ROUTE_South_wall = {},
+				},
+			},
+		},
+
+		PLANT_Rocket =
+		{
+			ROUTE_Garden_gate =
+			{
+				ROUTE_Stair_3 =
+				{
+					ROUTE_Stair_1 =
+					{
+						ROUTE_Al_Door =
+						{
+							ROUTE_Stair_1_a =
+							{
+								ROUTE_Rocket = {},
+							},
+							ROUTE_Stair_1_c =
+							{
+								ROUTE_Rocket = {},
+							},
+						},
+					},
+				},
+				ROUTE_Stair =
+				{
+					ROUTE_Ax_Door =
+					{
+						ROUTE_Stair_3_b =
+						{
+							ROUTE_Rocket = {},
+						},
+						ROUTE_Stair_3_a =
+						{
+							ROUTE_Stair_1_c =
+							{
+								ROUTE_Rocket = {},
+							},
+						},
+					},
+				},
+				ROUTE_Back_Stair =
+				{
+					ROUTE_Balcony =
+					{
+						ROUTE_Prision_gate =
+						{
+							ROUTE_Prision_gate_1 =
+							{
+								ROUTE_Prision_gate =
+								{
+									ROUTE_Stair_3 =
+									{
+										ROUTE_Stair_1 =
+										{
+											ROUTE_Al_Door =
+											{
+												ROUTE_Stair_1_a =
+												{
+													ROUTE_Rocket = {},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+
+		PLANT_Garden_gate =
+		{
+			ROUTE_Main_4 =
+			{
+				ROUTE_Garden_gate = {},
+			},
+		},
+
+		PLANT_Prision_gate =
+		{
+			ROUTE_AlSp_2 =
+			{
+				ROUTE_AlSp_R_1 =
+				{
+					ROUTE_AlSp_R_2 =
+					{
+						ROUTE_Back_Stair =
+						{
+							ROUTE_Balcony =
+							{
+								ROUTE_Prision_gate = {},
+							},
+						},
+					},
+				},
+			},
+		},
+
+	};
+	Util.Routes(MapRoutes);
+};

@@ -1,0 +1,92 @@
+//==========================================================================================
+//
+//	woods.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	22 April 2018	Initial Script
+//	palota	8 August 2025
+//==========================================================================================
+//
+
+global Map =
+{
+	House_Entrance_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.ALLIES, 1, {
+			"FLAG_Secret_Documents",
+			"CAPPOINT_Docs"
+		});
+		Util.MapDebugPrint("House_Entrance_Destroyed");
+	},
+
+	Main_Entrance_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.ALLIES, 0, "CAMP_b1_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, 1, {
+			"PLANT_House_Entrance",
+			"CAMP_b2_.",
+		});
+
+		SetAvailableMapGoals(TEAM.AXIS, 1, {
+			"CAMP_r2_.*",
+			"MOBILEMG42_63",
+			"MOUNTMG42_mg42_allied",
+		});
+
+		Wp.SetWaypointFlag("roof", "closed", 0);
+		Util.MapDebugPrint("Main_Entrance_Destroyed");
+	},
+
+	Secret_Documents_Taken = function()
+	{
+		Util.MapDebugPrint("Secret_Documents_Taken");
+	},
+	Secret_Documents_Returned = function()
+	{
+		Util.MapDebugPrint("Secret_Documents_Returned");
+	},
+	Secret_Documents_Secured = function()
+	{
+		Util.MapDebugPrint("Secret_Documents_Secured");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("The Main Entrance has been breached!", Map.Main_Entrance_Destroyed);
+	OnTrigger("The House Entrance has been breached!", Map.House_Entrance_Destroyed);
+	OnTrigger("Allies have stolen the Secret Documents!", Map.Secret_Documents_Taken);
+	OnTrigger("Axis have returned the Secret Documents!", Map.Secret_Documents_Returned);
+	OnTrigger("Allies have secured the Secret Documents!", Map.Secret_Documents_Secured);
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal(".*CAB.*");
+
+	Wp.SetWaypointFlag("roof", "closed", 1);
+
+	SetAvailableMapGoals(TEAM.ALLIES, 1, {
+		"CAMP_b1_.*",
+		"PLANT_Main_Entrance",
+	});
+
+	SetAvailableMapGoals(TEAM.AXIS, 1, {
+		"CAMP_r1_.*",
+		"PLANTMINE_.*",
+		"REPAIR.*",
+		"MOUNTMG42_223", "MOUNTMG42_230",
+	});
+
+	SetGoalPriority("CAMP_r2.*", 0.51);
+	
+	Util.SetMaxUsers(1, "MOUNTMG42_.*");
+
+	SetMapGoalProperties("MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90});
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};

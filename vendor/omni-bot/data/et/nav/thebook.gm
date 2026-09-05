@@ -1,0 +1,262 @@
+//==========================================================================================
+//
+//	thebook.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	31 October 2017
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	DefendingTeam = TEAM.AXIS,
+
+	West_Gate_Blown = 0,
+	East_Gate_Blown = 0,
+
+	Allied_Command_Center_Dyno = 0,
+	East_Gate_Dyno = 0,
+	West_Gate_Dyno = 0,
+
+	//STAGE 1
+	Allied_Command_Center_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 0, "BUILD_Allied_Command_Center" );
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_East_Gate" );
+		Util.MapDebugPrint( "Allied_Command_Center_Built" );
+	},
+
+	East_Gate_Planted = function()
+	{
+		Map.East_Gate_Dyno += 1;
+		SetAvailableMapGoals( TEAM.ALLIES, 0, "PLANT_East_Gate" );
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_West_Gate" );
+		Util.MapDebugPrint( "East_Gate_Planted" );
+	},
+	East_Gate_Defused = function()
+	{
+		Map.East_Gate_Dyno -= 1;
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_East_Gate" );
+		Util.MapDebugPrint( "East_Gate_Defused" );
+	},
+	East_Gate_Destroyed = function()
+	{
+		Map.East_Gate_Dyno = 0;
+		Map.East_Gate_Blown = 1;
+		SetAvailableMapGoals( TEAM.ALLIES, 0, {
+			"PLANT_East_Gate",
+			"CHECKPOINT_cityflag",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, 0, {
+			"CHECKPOINT_cityflag",
+			{ "CAMP_r_S1_.*", "MOUNTMG42_135" },
+		});
+		SetAvailableMapGoals( TEAM.AXIS, 1, "CAMP_r_S2_.*" );
+
+		Util.MapDebugPrint( "East_Gate_Destroyed" );
+	},
+
+	West_Gate_Planted = function()
+	{
+		Map.West_Gate_Dyno += 1;
+		SetAvailableMapGoals( TEAM.ALLIES, 0, "PLANT_West_Gate" );
+		Util.MapDebugPrint( "West_Gate_Planted" );
+	},
+	West_Gate_Defused = function()
+	{
+		Map.West_Gate_Dyno -= 1;
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_West_Gate" );
+		Util.MapDebugPrint( "West_Gate_Defused" );
+	},
+	West_Gate_Destroyed = function()
+	{
+		Map.West_Gate_Dyno = 0;
+		Map.West_Gate_Blown = 1;
+		SetAvailableMapGoals( TEAM.ALLIES, 0, {
+			"PLANT_West_Gate",
+			"CHECKPOINT_cityflag",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"PLANT_East_Gate",
+			"FLAG_Secret_Book",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, 0, {
+			"CHECKPOINT_cityflag",
+			{ "CAMP_r_FS_.*", "CAMP_r_S1_.*", "MOUNTMG42_135" },
+		});
+		SetAvailableMapGoals( TEAM.AXIS, 1, "CAMP_r_S2_.*" );
+
+		Util.MapDebugPrint( "West_Gate_Destroyed" );
+	},
+
+
+	//STAGE 2
+	cityflag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint( "cityflag_Axis_Captured" );
+	},
+	cityflag_Allies_Captured = function()
+	{
+		Util.MapDebugPrint( "cityflag_Allies_Captured" );
+	},
+
+
+	Secret_Book_Taken = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "CAPPOINT_Docs" );
+		Util.MapDebugPrint( "Secret_Book_Taken" );
+	},
+	Secret_Book_Returned = function()
+	{
+		Util.MapDebugPrint( "Secret_Book_Returned" );
+	},
+	Secret_Book_Secured = function()
+	{
+		Util.MapDebugPrint( "Secret_Book_Secured" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "The Allies have build the Transmitter", Map.Allied_Command_Center_Built );
+
+	OnTrigger( "Planted at The East Gate.", Map.East_Gate_Planted );
+	OnTrigger( "Defused at The East Gate.", Map.East_Gate_Defused );
+	OnTrigger( "Allies have Destroyed the East Gate !", Map.East_Gate_Destroyed );
+
+	OnTrigger( "Planted at The West Gate.", Map.West_Gate_Planted );
+	OnTrigger( "Defused at The West Gate.", Map.West_Gate_Defused );
+	OnTrigger( "Allies have Destroyed the West Gate !", Map.West_Gate_Destroyed );
+
+	OnTrigger( "Allies have stolen the Secret Book!", Map.Secret_Book_Taken );
+	OnTrigger( "Axis have returned the Secret Book!", Map.Secret_Book_Returned );
+	OnTrigger( "Allies Transmited the Secret Documents!", Map.Secret_Book_Secured );
+
+	OnTrigger( "Axis captured the Townhall!", Map.cityflag_Axis_Captured );
+	OnTrigger( "Allies Captured the Town!", Map.cityflag_Allies_Captured );
+
+
+	Util.DisableGoal( ".*", 1 ); // all but routes
+
+	Util.EnableGoal( ".*CAB.*", 0 ); //both teams
+
+	Util.SetGoalPosition( -1356, 1843, 0, "PLANT_East_Gate");
+	Util.SetGoalPosition(  -296, 1843, 0, "PLANT_West_Gate");
+
+	//Allies
+	SetAvailableMapGoals( TEAM.ALLIES, 1, {
+		"CAMP_b_.*",
+		"BUILD_Allied_Command_Center",
+		"CHECKPOINT_cityflag",
+	});
+	Util.ExcludeClass( "CHECKPOINT_cityflag", 2, 3 );
+	Util.LimitToClass( "BUILD_Allied_Command_Center", 2, 3 );
+
+	//Axis
+	SetAvailableMapGoals( TEAM.AXIS, 1, {
+		"CAMP_r_FS_.*",
+		"CAMP_r_S1_.*",
+		"PLANTMINE_.*",
+		"TRIPMINE_.*",
+	});
+
+	Util.LimitToClass( "PLANT_Allied_Command_Center", 1, 5 );
+	Util.AddUsePoint( "PLANT_Allied_Command_Center", Vec3(2395,-7563,24) );
+
+	SetGoalRole( "CHECKPOINT_cityflag", ROLE.DEFENDER, ROLE.DEFENDER1 );
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "CAMP_.*" );
+
+	SetGoalPriority( "MOUNTMG42_135", 1.0, TEAM.AXIS );
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=60, MaxCampTime=300} );
+	SetMapGoalProperties( "CAMP_.*", {MinCampTime=60, MaxCampTime=300} );
+
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		BUILD_Allied_Command_Center = {},
+		PLANT_Allied_Command_Center = {},
+
+		PLANT_West_Gate =
+		{
+			ROUTE_AlSp =
+			{
+				ROUTE_H6 =
+				{
+					ROUTE_West_Gate = {},
+				},
+			},
+			ROUTE_FS =
+			{
+				ROUTE_I5 =
+				{
+					ROUTE_West_Gate = {},
+				},
+			},
+		},
+
+		PLANT_East_Gate =
+		{
+			ROUTE_West_Gate =
+			{
+				ROUTE_East_Gate = {},
+			},
+			ROUTE_AlSp =
+			{
+				ROUTE_G12 =
+				{
+					ROUTE_F11 =
+					{
+						ROUTE_F6 =
+						{
+							ROUTE_East_Gate = {},
+						},
+					},
+				},
+			},
+		},
+
+		FLAG_Secret_Book =
+		{
+			ROUTE_West_Gate =
+			{
+				ROUTE_AxTownSp = {},
+			},
+			ROUTE_East_Gate =
+			{
+				Weight = 2,
+				ROUTE_AxTownSp = {},
+			},
+		},
+
+		CHECKPOINT_cityflag =
+		{
+			ROUTE_AlSp =
+			{
+				ROUTE_I7 =
+				{
+					ROUTE_J6 =
+					{
+						ROUTE_FS = {},
+					},
+				},
+			},
+		},
+	};
+	Util.Routes(MapRoutes);
+};

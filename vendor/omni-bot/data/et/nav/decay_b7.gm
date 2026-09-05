@@ -1,0 +1,1536 @@
+//==========================================================================================
+//
+//	decay_b7.gm
+//
+//	Who      	When		What
+//------------------------------------------------------------------------------------------
+//	Qiki		20.5.2020	Initial Script & waypoints
+//	Native12	06.06.2020	First release for testing
+//	Native12	23.08.2020	Adapted to decay_b7
+//
+//==========================================================================================
+//	Keep your omni-bot scripts up to date!
+
+global Map =
+{
+	Allied_CP = false,
+	Axis_CP = false,
+	Fence = false,
+	Generator = true,
+	Side_Gate = true,
+	Forward_Flag_Axis = true,
+	Gold_1_Taken = false,
+	Gold1_Secured = false,
+	Gold_2_Taken = false,
+	Gold2_Secured = false,
+	SecretDocsTaken = false,
+	SecretDocsSecured = false,
+	count_ally = {},
+	count_ally_eng = {},
+	count_ally_gold = {},
+	DefendingTeam = TEAM.AXIS,
+	DontDispenseAmmo = true,
+
+	Roles =
+	{
+		ALLIES =
+		{
+			AllBots = true, // each bot is considered for a role
+			ATTACKER =
+			{
+				numbots = 5,
+				crucialClass = CLASS.FIELDOPS,
+			},
+			ATTACKER1 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.COVERTOPS,
+			},
+			ATTACKER2 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER3 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+		},
+
+		AXIS =
+		{
+			AllBots = true, // each bot is considered for a role
+			DEFENDER =
+			{
+				numbots = 5,
+				crucialClass = CLASS.SOLDIER,
+			},
+			DEFENDER1 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.FIELDOPS,
+			},
+			DEFENDER2 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER3 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+		},
+	},
+
+	Navigation =
+	{
+		//	/bot waypoint_setproperty paththrough Navigation_PT:jump
+		jump =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:jump_wait
+		jump_wait =
+		{
+			navigate = function(_this)
+			{
+				sleep(0.25);
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:jump_with_crouch
+		jump_with_crouch =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.2);
+				_this.Bot.HoldButton(BTN.CROUCH, 0.3);
+				sleep(0.3);
+			},
+		},
+	},
+
+	Front_Barrier_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Front_Barrier_Destroyed" );
+
+		SetAvailableMapGoals ( TEAM.ALLIES, false, "AIRSTRIKE_Allies_ForwardFlag_10" );
+	},
+
+	Forward_Flag_Axis_Captured = function()
+	{
+		Map.Forward_Flag_Axis = true;
+
+		Util.MapDebugPrint( "Forward_Flag_Axis_Captured" );
+
+		SetAvailableMapGoals ( TEAM.AXIS, false, "CHECKPOINT_forward_flag" );
+
+		Map.SetSpawn();
+	},
+
+	Forward_Flag_Allies_Captured = function()
+	{
+		Map.Forward_Flag_Axis = false;
+
+		Util.MapDebugPrint( "Forward_Flag_Allies_Captured" );
+
+		if ( !Map.SecretDocsSecured )
+		{
+			if ( Map.Generator )
+			{
+				if ( tableCount(Map.count_ally_eng) < 1 )
+				{
+					SetAvailableMapGoals ( TEAM.AXIS, true, "CHECKPOINT_forward_flag" );
+				}
+			}
+			else
+			{
+				if ( tableCount(Map.count_ally) < 1 )
+				{
+					SetAvailableMapGoals ( TEAM.AXIS, true, "CHECKPOINT_forward_flag" );
+				}
+			}
+		}
+
+		Map.SetSpawn();
+	},
+
+	Secret_Docs_Taken = function()
+	{
+		Map.SecretDocsTaken = true;
+
+		Util.MapDebugPrint( "Secret_Docs_Taken" );
+
+		SetAvailableMapGoals ( TEAM.ALLIES, false, "FLAG_secretdocs" );
+
+		Util.CappointForFlag( "FLAG_secretdocs", "CAPPOINT_Radio" );
+
+		SetAvailableMapGoals ( TEAM.ALLIES, true, "CAPPOINT_Radio" );
+	},
+
+	Secret_Docs_Dropped = function()
+	{
+		Util.MapDebugPrint( "Secret_Docs_Dropped" );
+
+		SetGoalRole( "FLAGRETURN_secretdocs_dropped", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2 });
+
+		Util.SetGoalRange( "FLAGRETURN_secretdocs_dropped", 1000);
+
+		SetAvailableMapGoals ( TEAM.ALLIES, false, "CAPPOINT_Radio" );
+	},
+
+	Secret_Docs_Returned = function()
+	{
+		Map.SecretDocsTaken = false;
+
+		Util.MapDebugPrint( "Secret_Docs_Returned" );
+
+		SetAvailableMapGoals ( TEAM.ALLIES, true, "FLAG_secretdocs" );
+	},
+
+	Secret_Docs_Secured = function()
+	{
+		Map.SecretDocsTaken = true;
+		Map.SecretDocsSecured = true;
+		Map.Forward_Flag_Axis = false;
+
+		Util.MapDebugPrint( "Secret_Docs_Secured" );
+
+		Util.DisableGoal("CHECKPOINT_forward_flag");
+
+		ClearGoalRole( "FLAG_axis_gold.*", ROLE.ATTACKER3 );
+
+		DeleteTriggerRegion("InsideTrigger");
+		Map.count_ally[ent] = null;
+		Map.count_ally_eng[ent] = null;
+
+		DeleteTriggerRegion( Map.Warning1 );
+		DeleteTriggerRegion( Map.Warning2 );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_ForwardFlag_.*",
+			".*_Axis_Radio_.*",
+			".*_Axis_SideGate_.*",
+			".*_Axis_PartialGenerator_.*",
+		});
+
+		foreach( goal in Util.GoalTable("DEFUSE_side_gate.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		SetAvailableMapGoals ( TEAM.ALLIES, false, "CAPPOINT_Radio" );
+
+		if ( !Map.Fence )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_Fence",
+			});
+		}
+
+		if ( Map.Generator )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				".*_Axis_Generator_.*",
+			});
+		}
+		else
+		{
+			if ( !Map.Gold_1_Taken )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					".*_Axis_Gold_.*",
+				});
+			}
+			else
+			{
+				if ( Map.Gold1_Secured and !Map.Gold_2_Taken )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						".*_Axis_Gold_.*",
+					});
+				}
+			}
+		}
+
+		if ( Map.Side_Gate )
+		{
+			ClearGoalRole( "PLANT_side_gate", ROLE.ATTACKER2 );
+
+			Util.SetMaxUsers( 1, "PLANT_side_gate" );
+		}
+
+		Map.SetSpawn();
+
+		sleep(4);
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*_Allies_PartialGenerator_.*",
+			".*_Allies_ForwardFlag_.*",
+			".*_Allies_Radio_.*",
+			".*_Allies_SideGate_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"AMMOCAB_t10000465",
+			"HEALTHCAB_t10000466",
+		});
+
+		if ( !Map.Allied_CP and !Map.Axis_CP )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"BUILD_Neutral_Command_Post",
+			});
+		}
+
+		if ( Map.Axis_CP )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"PLANT_Neutral_Command_Post",
+			});
+		}
+
+		if ( Map.Fence )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"PLANT_Fence",
+			});
+		}
+
+		if ( Map.Generator )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				".*_Allies_Generator_.*",
+				"PLANT_Generator",
+			});
+		}
+		else
+		{
+			if ( !Map.Gold_1_Taken )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"FLAG_axis_gold1",
+				});
+			}
+			else
+			{
+				if ( Map.Gold1_Secured and !Map.Gold_2_Taken )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"FLAG_axis_gold2",
+					});
+				}
+			}
+		}
+	},
+
+	Side_Gate_Planted = function()
+	{
+		Util.MapDebugPrint( "Side_Gate_Planted" );
+
+		if ( Map.SecretDocsSecured )
+		{
+			foreach( goal in Util.GoalTable("DEFUSE_side_gate.*") )
+			{
+				goal.SetAvailable(TEAM.AXIS, false);
+			}
+		}
+	},
+
+	Side_Gate_Destroyed = function()
+	{
+		Map.Side_Gate = false;
+
+		Util.MapDebugPrint( "Side_Gate_Destroyed" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_side_gate.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"PLANT_side_gate",
+		});
+
+		if ( !Map.Fence )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_Fence",
+			});
+		}
+
+		sleep(4);
+
+		if ( !Map.SecretDocsSecured )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				".*_Allies_SideGate_.*",
+			});
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"AMMOCAB_t10000465",
+				"HEALTHCAB_t10000466",
+			});
+
+			if ( !Map.Allied_CP and !Map.Axis_CP )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"BUILD_Neutral_Command_Post",
+				});
+			}
+
+			if ( Map.Axis_CP )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"PLANT_Neutral_Command_Post",
+				});
+			}
+
+			if ( Map.Fence )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"PLANT_Fence",
+				});
+			}
+
+			if ( Map.Generator )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"PLANT_Generator",
+					".*_Allies_PartialGenerator_.*",
+				});
+			}
+			else
+			{
+				SetGoalRole( "FLAG_axis_gold.*", ROLE.ATTACKER3 );
+
+				if ( !Map.Gold_1_Taken )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"FLAG_axis_gold1",
+					});
+				}
+				else
+				{
+					if ( Map.Gold1_Secured and !Map.Gold_2_Taken )
+					{
+						SetAvailableMapGoals( TEAM.ALLIES, true, {
+							"FLAG_axis_gold2",
+						});
+					}
+				}
+			}
+		}
+	},
+
+	Allied_CP_Built = function()
+	{
+		Map.Allied_CP = true;
+
+		Util.MapDebugPrint( "Allied_CP_Built" );
+
+		Util.DisableGoal( "BUILD_Neutral_Command_Post" );
+
+		if ( Map.SecretDocsSecured or !Map.Side_Gate )
+		{
+			SetGoalRole( "PLANT_Neutral_Command_Post", ROLE.INFILTRATOR );
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Neutral_Command_Post" );
+
+		Map.SetSpawn();
+	},
+
+	Allied_CP_Destroyed = function()
+	{
+		Map.Allied_CP = false;
+
+		Util.MapDebugPrint( "Allied_CP_Destroyed" );
+
+		foreach( goal in Util.GoalTable("PLANT_Neutral_Command_Post.*") )
+		{
+			goal.SetAvailable(TEAM.ALLIES, false);
+		}
+
+		ClearGoalRole( "PLANT_Neutral_Command_Post", ROLE.INFILTRATOR );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Neutral_Command_Post" );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Neutral_Command_Post" );
+
+		if ( !Map.Side_Gate or Map.SecretDocsSecured )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Neutral_Command_Post" );
+		}
+
+		Map.SetSpawn();
+	},
+
+	CP_Planted = function()
+	{
+		if ( Map.Allied_CP )
+		{
+			Util.MapDebugPrint( "Allied_CP_Planted" );
+		}
+		else
+		{
+			Util.MapDebugPrint( "Axis_CP_Planted" );
+		}
+
+		Util.SetMaxUsers( 1, "DEFUSE_Neutral_Command_Post.*" );
+		Util.SetGoalRange( "DEFUSE_Neutral_Command_Post.*", 1400);
+	},
+
+	Axis_CP_Built = function()
+	{
+		Map.Axis_CP = true;
+
+		Util.MapDebugPrint( "Axis_CP_Built" );
+
+		Util.DisableGoal( "BUILD_Neutral_Command_Post" );
+
+		if ( !Map.Side_Gate or Map.SecretDocsSecured )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Neutral_Command_Post" );
+		}
+	},
+
+	Axis_CP_Destroyed = function()
+	{
+		Map.Axis_CP = false;
+
+		Util.MapDebugPrint( "Axis_CP_Destroyed" );
+
+		foreach( goal in Util.GoalTable("PLANT_Neutral_Command_Post.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Neutral_Command_Post" );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Neutral_Command_Post" );
+
+		if ( !Map.Side_Gate or Map.SecretDocsSecured )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Neutral_Command_Post" );
+		}
+	},
+
+	Fence_Built = function()
+	{
+		Map.Fence = true;
+
+		Util.MapDebugPrint( "Fence_Built" );
+	},
+
+	Fence_Planted = function()
+	{
+		Util.MapDebugPrint( "Fence_Planted" );
+
+		Util.SetMaxUsers( 1, "DEFUSE_Fence.*" );
+		Util.SetGoalRange( "DEFUSE_Fence.*", 1400);
+	},
+
+	Fence_Destroyed = function()
+	{
+		Map.Fence = false;
+
+		Util.MapDebugPrint( "Fence_Destroyed" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_Fence.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+	},
+
+	Generator_Planted = function()
+	{
+		Util.MapDebugPrint( "Generator_Planted" );
+
+		SetGoalPriority( "DEFUSE_Generator.*", 1.1, TEAM.AXIS, 0 );
+	},
+
+	Generator_Destroyed = function()
+	{
+		Map.Generator = false;
+
+		Wp.SetWaypointFlag( "Door_1", "axis", false );
+		Wp.SetWaypointFlag( "Door_1", "door", false );
+		Wp.SetWaypointFlag( "Door_2", "axis", false );
+		Wp.SetWaypointFlag( "Door_2", "door", false );
+		Wp.SetWaypointFlag( "Door_3", "axis", false );
+		Wp.SetWaypointFlag( "Door_3", "door", false );
+		Wp.SetWaypointFlag( "Door_4", "axis", false );
+		Wp.SetWaypointFlag( "Door_4", "door", false );
+		Wp.SetWaypointFlag( "Door_5", "door", false );
+		Wp.SetWaypointFlag( "Door_5", "axis", false );
+		Wp.SetWaypointFlag( "Door_6", "door", false );
+		Wp.SetWaypointFlag( "Door_6", "axis", false );
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Util.MapDebugPrint( "Generator_Destroyed" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_Generator.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		DeleteTriggerRegion("Near_Gold");
+		Map.count_ally_gold[ent] = null;
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_PartialGenerator_.*",
+			".*_Axis_CheckGoldRoom_.*",
+			".*_Axis_Generator_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"PLANT_Generator",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*_Axis_Gold_.*",
+		});
+
+		Map.SetSpawn();
+
+		sleep(4);
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*_Allies_PartialGenerator_.*",
+			".*_Allies_Generator_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"FLAG_axis_gold1",
+			".*_Allies_Gold_.*",
+		});
+	},
+
+	Gold1_Taken = function()
+	{
+		Map.Gold_1_Taken = true;
+
+		Util.MapDebugPrint( "Gold1_Taken" );
+
+		Util.CappointForFlag( "FLAG_axis_gold1", "CAPPOINT_Truck" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_Gold_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*_Axis_CappoitPlace_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			".*_Allies_CappoitPlace_.*",
+			"CAPPOINT_Truck",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"FLAG_axis_gold1",
+			".*_Allies_Gold_.*",
+		});
+	},
+
+	Gold1_Returned = function()
+	{
+		Map.Gold_1_Taken = false;
+
+		Util.MapDebugPrint( "Gold1_Returned" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_CappoitPlace_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*_Axis_Gold_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*_Allies_CappoitPlace_.*",
+			"CAPPOINT_Truck",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"FLAG_axis_gold1",
+			".*_Allies_Gold_.*",
+		});
+
+	},
+
+	Gold1_Secured = function()
+	{
+		Map.Gold_1_Taken = true;
+		Map.Gold1_Secured = true;
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Util.MapDebugPrint( "Gold1_Secured" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_CappoitPlace_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*_Axis_Gold_.*",
+			"DEFEND_Axis_Gold2_.*",
+		});
+
+		sleep(3);
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*_Allies_CappoitPlace_.*",
+			"CAPPOINT_Truck",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"FLAG_axis_gold2",
+			".*_Allies_Gold_.*",
+		});
+	},
+
+	Gold2_Taken = function()
+	{
+		Map.Gold_2_Taken = true;
+
+		Util.MapDebugPrint( "Gold2_Taken" );
+
+		Util.CappointForFlag( "FLAG_axis_gold2", "CAPPOINT_Truck" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_Gold_.*",
+			"DEFEND_Axis_Gold2_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*_Axis_CappoitPlace_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			".*_Allies_CappoitPlace_.*",
+			"CAPPOINT_Truck",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"FLAG_axis_gold2",
+			".*_Allies_Gold_.*",
+		});
+	},
+
+	Gold2_Returned = function()
+	{
+		Map.Gold_2_Taken = false;
+
+		Util.MapDebugPrint( "Gold2_Returned" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_CappoitPlace_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*_Axis_Gold_.*",
+			"DEFEND_Axis_Gold2_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*_Allies_CappoitPlace_.*",
+			"CAPPOINT_Truck",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"FLAG_axis_gold2",
+			".*_Allies_Gold_.*",
+		});
+	},
+
+	Gold2_Secured = function()
+	{
+		Map.Gold_2_Taken = true;
+		Map.Gold2_Secured = true;
+
+		Util.MapDebugPrint( "Gold2_Secured" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CAPPOINT_Truck",
+		});
+
+		ETUtil.WinningChat( TEAM.ALLIES );
+		ETUtil.LosingChat( TEAM.AXIS );
+	},
+
+	InsideTrigger =
+	{
+		Name = "InsideTrigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				if (Map.count_ally[ent])
+				{
+					Map.count_ally[ent] += 1;
+				}
+				else
+				{
+					Map.count_ally[ent] = 1;
+				}
+
+				if ( GetEntClass(ent) == CLASS.ENGINEER )
+				{
+					if (Map.count_ally_eng[ent])
+					{
+						Map.count_ally_eng[ent] += 1;
+					}
+					else
+					{
+						Map.count_ally_eng[ent] = 1;
+					}
+				}
+
+				if ( !Map.SecretDocsSecured )
+				{
+					if ( Map.Generator )
+					{
+						if ( tableCount(Map.count_ally_eng) < 1 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, false, {
+								".*_Axis_SideGate_.*",
+							});
+
+							SetAvailableMapGoals( TEAM.AXIS, true, {
+								".*_Axis_PartialGenerator_.*",
+							});
+						}
+						else
+						{
+							SetAvailableMapGoals( TEAM.AXIS, false, {
+								".*_Axis_ForwardFlag_.*",
+								".*_Axis_Radio_.*",
+								".*_Axis_SideGate_.*",
+								".*_Axis_PartialGenerator_.*",
+							});
+
+							SetAvailableMapGoals( TEAM.AXIS, true, {
+								".*_Axis_Generator_.*",
+							});
+						}
+					}
+					else
+					{
+						SetAvailableMapGoals( TEAM.AXIS, false, {
+							".*_Axis_ForwardFlag_.*",
+							".*_Axis_Radio_.*",
+							".*_Axis_SideGate_.*",
+						});
+
+						if ( !Map.Gold_1_Taken )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, {
+								".*_Axis_Gold_.*",
+							});
+						}
+						else
+						{
+							if ( Map.Gold1_Secured and !Map.Gold_2_Taken )
+							{
+								SetAvailableMapGoals( TEAM.AXIS, true, {
+									".*_Axis_Gold_.*",
+								});
+							}
+						}
+					}
+				}
+
+				Map.SetSpawn();
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.count_ally[ent])
+			{
+				if (Map.count_ally[ent] > 1)
+				{
+					Map.count_ally[ent] -= 1;
+				}
+				else
+				{
+					Map.count_ally[ent] = null;
+					Util.MapDebugPrint("Ally inside: " + tableCount(Map.count_ally));
+				}
+			}
+
+			if (Map.count_ally_eng[ent])
+			{
+				if (Map.count_ally_eng[ent] > 1)
+				{
+					Map.count_ally_eng[ent] -= 1;
+				}
+				else
+				{
+					Map.count_ally_eng[ent] = null;
+					Util.MapDebugPrint("Ally inside: " + tableCount(Map.count_ally_eng));
+				}
+			}
+
+			if ( !Map.SecretDocsSecured )
+			{
+				if ( tableCount(Map.count_ally) < 1 )
+				{
+					Map.SetSpawn();
+
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						".*_Axis_PartialGenerator_.*",
+						".*_Axis_Generator_.*",
+						".*_Axis_Gold_.*",
+					});
+
+					if ( !Map.Forward_Flag_Axis )
+					{
+						SetAvailableMapGoals ( TEAM.AXIS, true, "CHECKPOINT_forward_flag" );
+					}
+
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						".*_Axis_ForwardFlag_.*",
+						".*_Axis_Radio_.*",
+						".*_Axis_SideGate_.*",
+					});
+				}
+				else
+				{
+					if ( tableCount(Map.count_ally_eng) < 1 )
+					{
+						if ( Map.Generator )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, false, {
+								".*_Axis_Generator_.*",
+							});
+
+							SetAvailableMapGoals( TEAM.AXIS, true, {
+								".*_Axis_ForwardFlag_.*",
+								".*_Axis_Radio_.*",
+								".*_Axis_PartialGenerator_.*",
+							});
+
+							if ( !Map.Forward_Flag_Axis )
+							{
+								SetAvailableMapGoals ( TEAM.AXIS, true, "CHECKPOINT_forward_flag" );
+							}
+						}
+					}
+				}
+			}
+		},
+	},
+
+	Near_Gold =
+	{
+		Name = "Near_Gold",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				if (Map.count_ally_gold[ent])
+				{
+					Map.count_ally_gold[ent] += 1;
+				}
+				else
+				{
+					Map.count_ally_gold[ent] = 1;
+					Util.MapDebugPrint("Ally near gold: " + tableCount(Map.count_ally_gold));
+				}
+
+				if ( Map.Generator )
+				{
+					SetAvailableMapGoals ( TEAM.AXIS, true, ".*_Axis_CheckGoldRoom_.*" );
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.count_ally_gold[ent])
+			{
+				if (Map.count_ally_gold[ent] > 1)
+				{
+					Map.count_ally_gold[ent] -= 1;
+				}
+				else
+				{
+					Map.count_ally_gold[ent] = null;
+					Util.MapDebugPrint("Ally near gold: " + tableCount(Map.count_ally_gold));
+				}
+
+				if ( tableCount(Map.count_ally_gold) < 1 )
+				{
+					SetAvailableMapGoals ( TEAM.AXIS, false, ".*_Axis_CheckGoldRoom_.*" );
+				}
+			}
+		},
+	},
+
+	SetSpawn1 = function(bot)
+	{
+		if (bot.GetTeam() == TEAM.ALLIES)
+		{
+			if ( !Map.Generator )
+			{
+				if ( Map.SecretDocsSecured or !Map.Side_Gate )
+				{
+					bot.ChangeSpawnPoint(5);
+				}
+				else
+				{
+					if ( !Map.Forward_Flag_Axis )
+					{
+						bot.ChangeSpawnPoint(1);
+					}
+					else
+					{
+						bot.ChangeSpawnPoint(4);
+					}
+				}
+			}
+			else
+			{
+				if ( Map.Allied_CP )
+				{
+					if ( !Map.SecretDocsSecured and Map.Side_Gate )
+					{
+						if ( !Map.Forward_Flag_Axis )
+						{
+							bot.ChangeSpawnPoint(1);
+						}
+						else
+						{
+							bot.ChangeSpawnPoint(4);
+						}
+					}
+					else
+					{
+						if ( Map.SecretDocsSecured )
+						{
+							if ( RandInt(0,19) < 10 )
+							{
+								bot.ChangeSpawnPoint(3);
+							}
+							else
+							{
+								bot.ChangeSpawnPoint(1);
+							}
+						}
+						else
+						{
+							if ( !Map.Side_Gate )
+							{
+								bot.ChangeSpawnPoint(3);
+							}
+						}
+					}
+				}
+				else
+				{
+					if ( !Map.SecretDocsSecured and Map.Forward_Flag_Axis )
+					{
+						bot.ChangeSpawnPoint(4);
+					}
+					else
+					{
+						if ( Map.SecretDocsSecured or !Map.Forward_Flag_Axis )
+						{
+							bot.ChangeSpawnPoint(1);
+						}
+					}
+				}
+			}
+		}
+		else
+		{
+			if ( !Map.Generator or tableCount(Map.count_ally) > 0 )
+			{
+				bot.ChangeSpawnPoint(2);
+			}
+			else
+			{
+				if ( !Map.SecretDocsSecured )
+				{
+					bot.ChangeSpawnPoint(1);
+				}
+				else
+				{
+					bot.ChangeSpawnPoint(0);
+				}
+			}
+		}
+	},
+
+	SetSpawn = function()
+	{
+		foreach(bot in BotTable)
+		{
+			Map.SetSpawn1(bot);
+		}
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_CP_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_CP_Destroyed );
+
+	OnTrigger( "Planted at the Neutral Command Post.", Map.CP_Planted );
+
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_CP_Built );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_CP_Destroyed );
+
+	OnTrigger( "Axis Team have built the Fence!", Map.Fence_Built );
+	OnTrigger( "Planted at The Fence.", Map.Fence_Planted );
+	OnTrigger( "Allied have destroyed the Fence!", Map.Fence_Destroyed );
+
+	OnTrigger( "Planted at The Generator.", Map.Generator_Planted );
+	OnTrigger( "The Allies have destroyed the generator, the vault doors are opening!", Map.Generator_Destroyed );
+
+	OnTrigger( "Planted at the side gate.", Map.Side_Gate_Planted );
+	OnTrigger( "The Allies have destroyed the side entrance!", Map.Side_Gate_Destroyed );
+
+	OnTrigger( "goldrush_axis_gold1_taken", Map.Gold1_Taken );
+	OnTrigger( "goldrush_axis_gold1_returned", Map.Gold1_Returned );
+	OnTrigger( "goldrush_axis_gold1_secured", Map.Gold1_Secured );
+
+	OnTrigger( "goldrush_axis_gold2_taken", Map.Gold2_Taken );
+	OnTrigger( "goldrush_axis_gold2_returned", Map.Gold2_Returned );
+	OnTrigger( "goldrush_axis_gold2_secured", Map.Gold2_Secured );
+
+	OnTrigger( "Allies have stolen The Access Codes!", Map.Secret_Docs_Taken );
+	OnTrigger( "USA have stolen The Access Codes!", Map.Secret_Docs_Taken );	//ETNam
+	OnTrigger( "Flag dropped secretdocs!", Map.Secret_Docs_Dropped );
+	OnTrigger( "Flag returned secretdocs!", Map.Secret_Docs_Returned );
+	OnTrigger( "The Allies have transmitted the Access codes. The main gate is opening!", Map.Secret_Docs_Secured );
+
+	OnTrigger( "Axis have captured the Forward Flag!", Map.Forward_Flag_Axis_Captured );
+	OnTrigger( "Allies have captured the Forward Flag!", Map.Forward_Flag_Allies_Captured );
+
+	OnTrigger( "GRENADE_Front_Barrier Exploded.", Map.Front_Barrier_Destroyed );
+
+	Util.DisableGoal( ".*", true );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		".*_Axis_ForwardFlag_.*",
+		".*_Axis_Radio_.*",
+		".*_Axis_SideGate_.*",
+		"BUILD_Neutral_Command_Post",
+		"AMMOCAB_.*",
+		"HEALTHCAB_.*",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"CHECKPOINT_forward_flag",
+		"FLAG_secretdocs",
+		"PLANT_side_gate",
+		"AMMOCAB_cabinet_ammo_model",
+		"HEALTHCAB_cabinet_health_model",
+		".*_Allies_ForwardFlag_.*",
+		".*_Allies_Radio_.*",
+		".*_Allies_SideGate_.*",
+	});
+
+
+	Util.LimitToClass("PLANT_Fence", TEAM.ALLIES, CLASS.COVERTOPS);
+
+	Util.SetMaxUsers( 1, "BUILD_.*" );
+	Util.SetMaxUsers( 2, "FLAG_secretdocs" );
+	Util.SetMaxUsers( 2, "PLANT_Neutral_Command_Post" );
+
+	Util.SetGoalRange( "AMMOCAB_.*", 1600);
+	Util.SetGoalRange( "HEALTHCAB_.*", 1600);
+
+	SetGoalRole( "CHECKPOINT_forward_flag", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2, ROLE.DEFENDER3, ROLE.ATTACKER, ROLE.ATTACKER1 });
+
+	SetGoalRole( ".*_Axis_ForwardFlag_.*", { ROLE.DEFENDER, ROLE.DEFENDER1 });
+	SetGoalRole( ".*_Axis_CheckGoldRoom_.*", ROLE.DEFENDER1 );
+	SetGoalRole( ".*_Axis_Radio_.*", ROLE.DEFENDER2 );
+	SetGoalRole( ".*_Axis_SideGate_.*", ROLE.DEFENDER3 );
+	SetGoalRole( ".*_Axis_PartialGenerator_.*", ROLE.DEFENDER3 );
+
+	SetGoalRole( ".*_Allies_ForwardFlag_.*", { ROLE.ATTACKER, ROLE.ATTACKER1 });
+	SetGoalRole( "PLANT_side_gate", { ROLE.ATTACKER2, ROLE.ATTACKER3 });
+	SetGoalRole( ".*_Allies_Radio_.*", ROLE.ATTACKER2 );
+	SetGoalRole( ".*_Allies_SideGate_.*", ROLE.ATTACKER3 );
+	SetGoalRole( ".*_Allies_PartialGenerator_.*", ROLE.ATTACKER3 );
+
+	SetGoalPriority( "DEFEND_Axis_Gold_13", 0.51, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_Gold_14", 0.51, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_Gold2_.*", 0.51, TEAM.AXIS, 0 );
+	SetGoalPriority( ".*_Axis_PartialGenerator_.*", 0.52, TEAM.AXIS, 0 );
+	SetGoalPriority( ".*_Axis_CheckGoldRoom_.*", 0.54, TEAM.AXIS, 0 );
+	SetGoalPriority( "CALLARTILLERY_Axis_ForwardFlag_.*", 0.79, TEAM.AXIS, 0 );
+	SetGoalPriority( "AIRSTRIKE_Axis_ForwardFlag_.*", 0.79, TEAM.AXIS, 0 );
+	SetGoalPriority( "MOBILEMG42_.*", 0.81, TEAM.AXIS, 0 );
+	SetGoalPriority( "CHECKPOINT_forward_flag", 0.82, TEAM.AXIS, 0 );
+
+	SetGoalPriority( "FLAG_secretdocs", 0.81, TEAM.ALLIES, 0 );
+
+	OnTriggerRegion(AABB(-1351.629,1100.261,44.125,-50.125,5293.167,680.000), Map.InsideTrigger);
+	OnTriggerRegion(AABB(-51.298,1619.125,-209.249,3599.875,5464.915,680.000), Map.InsideTrigger);
+	OnTriggerRegion(AABB(11.125,4701.125,219.125,1017.329,5287.875,380.817), Map.Near_Gold);
+	OnTriggerRegion(AABB(582.126,4071.625,219.125,955.875,4712.179,374.495), Map.Near_Gold);
+	OnTriggerRegion(AABB(944.765,4426.625,147.125,1927.174,5342.875,378.136), Map.Near_Gold);
+	OnTriggerRegion(AABB(1299.403,4056.777,147.125,1446.314,4464.625,286.784), Map.Near_Gold);
+	OnTriggerRegion(AABB(1916.577,4348.125,219.125,2396.873,5092.875,398.627), Map.Near_Gold);
+
+	Map.Warning1 = OnTriggerRegion(AABB(-1351.629,1100.261,44.125,-50.125,5293.167,680.000), RegionTrigger.IntrusionWarning );
+	Map.Warning2 = OnTriggerRegion(AABB(-51.298,1619.125,-209.249,3599.875,5464.915,680.000), RegionTrigger.IntrusionWarning );
+
+	RegionTrigger.Create(AABB(122.863,-149.961,65.125,198.298,-84.787,139.125), "DisableCombatMovement", "Axis_ForwardFlag_11");
+	RegionTrigger.Create(AABB(122.863,-149.961,65.125,198.298,-84.787,139.125), "DisableBotPush", "");
+	RegionTrigger.Create(AABB(2826.125,3177.622,1.126,3554.875,3797.867,303.668), "DisableCombatMovement", "Roof");
+	RegionTrigger.Create(AABB(2826.125,3177.622,1.126,3554.875,3797.867,303.668), "DisableBotPush", "");
+
+	RegionTrigger.Create(AABB(-841.690,-704.703,281.146,912.875,664.875,596.557), "DisableCombatMovement", "Floors_above_ForwardFlag");
+	RegionTrigger.Create(AABB(-792.875,-478.129,65.125,-632.733,-41.274,209.092), "DisableCombatMovement", "Around_radio");
+	RegionTrigger.Create(AABB(-1288.507,289.283,50.125,-831.125,527.171,142.348), "DisableCombatMovement", "TankBarrier_SideGate");
+	RegionTrigger.Create(AABB(-897.453,335.125,50.125,-631.606,659.964,157.724), "DisableCombatMovement", "GateWay_SideGate");
+	RegionTrigger.Create(AABB(1291.701,2389.125,0.125,1444.502,2516.759,130.125), "DisableCombatMovement", "Axis_Generator_01");
+	RegionTrigger.Create(AABB(2492.125,2954.126,112.125,2706.871,3202.852,227.875), "DisableCombatMovement", "Windows");
+	RegionTrigger.Create(AABB(-173.866,2228.875,264.125,595.871,3773.875,505.874), "DisableCombatMovement", "Walking_platforms");
+	RegionTrigger.Create(AABB(-15.275,139.674,65.126,410.311,441.110,359.130), "DisableCombatMovement", "Wooden_footbridge_up");
+	RegionTrigger.Create(AABB(702.125,4130.397,255.184,796.373,4256.209,330.091), "DisableCombatMovement", "Allies_Gold_00");
+	RegionTrigger.Create(AABB(-449.875,3716.106,104.125,-149.125,4144.875,585.875), "DisableCombatMovement", "Staircase");
+	RegionTrigger.Create(AABB(1283.218,4056.125,147.125,1458.875,4420.374,285.788), "DisableCombatMovement", "Goldroom");
+
+	Util.AddUseWp( "BUILD_Fence", "Fence_1" );
+	Util.AddUseWp( "PLANT_Fence", "Fence_2" );
+	Util.AddUseWp( "PLANT_Fence", "Fence_3" );
+	Util.AddUseWp( "PLANT_Generator", "Generator_1" );
+	Util.AddUseWp( "PLANT_Neutral_Command_Post", "Plant_CP_WP" );
+	Util.AddUseWp( "CHECKPOINT_forward_flag", "Flag_1" );
+	Util.AddUseWp( "CHECKPOINT_forward_flag", "Flag_2" );
+	Util.AddUseWp( "CHECKPOINT_forward_flag", "Flag_3" );
+	Util.AddUseWp( "CHECKPOINT_forward_flag", "Flag_4" );
+	Util.AddUseWp( "AMMOCAB_cabinet_ammo_model", "Ammo" );
+	Util.AddUseWp( "HEALTHCAB_cabinet_health_model", "Health" );
+	Util.AddUseWp( "PLANT_side_gate", "Side_Gate_1" );
+	Util.AddUseWp( "PLANT_side_gate", "Side_Gate_2" );
+
+	Wp.SetWaypointFlag( "Door_1", "axis", true );
+	Wp.SetWaypointFlag( "Door_1", "door", true );
+	Wp.SetWaypointFlag( "Door_2", "axis", true );
+	Wp.SetWaypointFlag( "Door_2", "door", true );
+	Wp.SetWaypointFlag( "Door_3", "axis", true );
+	Wp.SetWaypointFlag( "Door_3", "door", true );
+	Wp.SetWaypointFlag( "Door_4", "axis", true );
+	Wp.SetWaypointFlag( "Door_4", "door", true );
+	Wp.SetWaypointFlag( "Door_5", "door", true );
+	Wp.SetWaypointFlag( "Door_5", "axis", true );
+	Wp.SetWaypointFlag( "Door_6", "door", true );
+	Wp.SetWaypointFlag( "Door_6", "axis", true );
+
+	Util.SetGoalPosition(-847.340, 2206.805, 127.125, "BUILD_Neutral_Command_Post");
+	Util.SetGoalPosition(-590.875, 4376.070, 205.125, "AMMOCAB_t10000465");
+	Util.SetGoalPosition(-591.875, 4460.333, 205.125, "HEALTHCAB_t10000466");
+
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.MP40, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.THOMPSON, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.PANZERFAUST, false );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.FLAMETHROWER, false );
+
+	if ( Map.Debug )
+	{
+		Util.DebugColorString = "^3";
+	}
+
+	print( "^3Omni-bot map script and waypoints by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12 ^3for ^1" + GetMapName() + " ^3loaded." );
+
+	if(GetGameState() == "Playing")
+	{
+		sleep(5);
+		Util.BotChat( 0, "say", "^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12^7" , 1 );
+	}
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 120;
+
+	Map.SetSpawn1(bot);
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_forward_flag =
+		{
+			ROUTE_AlliedCampSpawn =
+			{
+				ROUTE_CappointRadio_LW_1 =
+				{
+					ROUTE_CappointRadio_LW_2 =
+					{
+						ROUTE_CappointRadio_LW_3 =
+						{
+							ROUTE_CappointRadio_LW_4 = {},
+						},
+					},
+				},
+				ROUTE_CappointRadio_DW_1 =
+				{
+					ROUTE_CappointRadio_DW_2 =
+					{
+						ROUTE_CappointRadio_DW_3 = {},
+					},
+				},
+				ROUTE_CappointRadio_RW_1 =
+				{
+					ROUTE_CappointRadio_RW_2 =
+					{
+						ROUTE_CappointRadio_RW_3 = {},
+					},
+				},
+			},
+			ROUTE_FlagDocsPlace =
+			{
+				ROUTE_CappointRadio_LW_1 =
+				{
+					ROUTE_CappointRadio_LW_2 =
+					{
+						ROUTE_CappointRadio_LW_3 =
+						{
+							ROUTE_CappointRadio_LW_4 = {},
+						},
+					},
+				},
+				ROUTE_CappointRadio_DW_1 =
+				{
+					ROUTE_CappointRadio_DW_2 =
+					{
+						ROUTE_CappointRadio_DW_3 = {},
+					},
+				},
+				ROUTE_CappointRadio_RW_1 =
+				{
+					ROUTE_CappointRadio_RW_2 =
+					{
+						ROUTE_CappointRadio_RW_3 = {},
+					},
+				},
+			},
+		},
+		CAPPOINT_Radio =
+		{
+			ROUTE_FlagDocsPlace =
+			{
+				ROUTE_CappointRadio_LW_1 =
+				{
+					ROUTE_CappointRadio_LW_2 =
+					{
+						ROUTE_CappointRadio_LW_3 =
+						{
+							ROUTE_CappointRadio_LW_4 = {},
+						},
+					},
+				},
+				ROUTE_CappointRadio_DW_1 =
+				{
+					ROUTE_CappointRadio_DW_2 =
+					{
+						ROUTE_CappointRadio_DW_3 =
+						{
+							ROUTE_CappointRadio_DW_4 = {},
+						},
+					},
+				},
+				ROUTE_CappointRadio_RW_1 =
+				{
+					ROUTE_CappointRadio_RW_2 =
+					{
+						ROUTE_CappointRadio_RW_3 =
+						{
+							ROUTE_CappointRadio_RW_4 = {},
+						},
+					},
+				},
+			},
+		},
+		PLANT_Generator =
+		{
+			ROUTE_ForwardFlagSpawn =
+			{
+				ROUTE_PlantGenerator_LW_1 =
+				{
+					ROUTE_PlantGenerator_LW_2 =
+					{
+						ROUTE_PlantGenerator_LW_3 = {},
+					},
+				},
+				ROUTE_PlantGenerator_DW_1 =
+				{
+					ROUTE_PlantGenerator_DW_2 =
+					{
+						ROUTE_PlantGenerator_DW_3 = {},
+					},
+				},
+				ROUTE_PlantGenerator_RW_1 =
+				{
+					ROUTE_PlantGenerator_RW_2 =
+					{
+						ROUTE_PlantGenerator_RW_3 = {},
+					},
+				},
+			},
+			ROUTE_CP_Spawn =
+			{
+				ROUTE_PlantGenerator_LW_2 =
+				{
+					ROUTE_PlantGenerator_LW_3 = {},
+				},
+				ROUTE_CP_Spawn_RW_1 =
+				{
+					ROUTE_CP_Spawn_RW_2 =
+					{
+						ROUTE_CP_Spawn_RW_2L = {},
+						ROUTE_CP_Spawn_RW_2R = {},
+					},
+				},
+			},
+		},
+		PLANT_side_gate =
+		{
+			ROUTE_AlliedCampSpawn =
+			{
+				ROUTE_CappointRadio_LW_1 =
+				{
+					ROUTE_CappointRadio_LW_2 =
+					{
+						ROUTE_CappointRadio_LW_3 =
+						{
+							ROUTE_ToSideGate_1 =
+							{
+								ROUTE_ToSideGate_2 =
+								{
+									ROUTE_ToSideGate_3 = {},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_CappointRadio_RW_1 =
+				{
+					ROUTE_CappointRadio_RW_2 =
+					{
+						ROUTE_CappointRadio_RW_3 =
+						{
+							ROUTE_CappointRadio_RW_4 = {},
+						},
+					},
+				},
+			},
+			ROUTE_FlagDocsPlace =
+			{
+				ROUTE_CappointRadio_LW_1 =
+				{
+					ROUTE_CappointRadio_LW_2 =
+					{
+						ROUTE_CappointRadio_LW_3 =
+						{
+							ROUTE_ToSideGate_1 =
+							{
+								ROUTE_ToSideGate_2 =
+								{
+									ROUTE_ToSideGate_3 = {},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_CappointRadio_RW_1 =
+				{
+					ROUTE_CappointRadio_RW_2 =
+					{
+						ROUTE_CappointRadio_RW_3 =
+						{
+							ROUTE_CappointRadio_RW_4 = {},
+						},
+					},
+				},
+			},
+		},
+		CAPPOINT_Truck =
+		{
+			ROUTE_FlagGoldPlace =
+			{
+				ROUTE_CappoitTruck_LW_1 =
+				{
+					ROUTE_CappoitTruck_LW_2 =
+					{
+						ROUTE_CappoitTruck_LW_3 = {},
+					},
+					ROUTE_CappoitTruck_LW_2L =
+					{
+						ROUTE_CappoitTruck_LW_2L2 =
+						{
+							ROUTE_CappoitTruck_LW_2L3 = {},
+						},
+					},
+				},
+				ROUTE_CappoitTruck_RW_1 =
+				{
+					ROUTE_CappoitTruck_LW_2L2 =
+					{
+						ROUTE_CappoitTruck_LW_2L3 = {},
+					},
+					ROUTE_CappoitTruck_RW_2 =
+					{
+						ROUTE_CappoitTruck_RW_3 = {},
+					}
+				},
+			},
+		},
+	};
+
+	MapRoutes["FLAG_axis_gold.*"] =
+	{
+		ROUTE_AlliedRoomSpawn =
+		{
+			ROUTE_FlagGold_LW_1 =
+			{
+				ROUTE_FlagGold_LW_2 =
+				{
+					ROUTE_FlagGold_LW_3 = {},
+				},
+			},
+			ROUTE_FlagGold_DW_1 =
+			{
+				ROUTE_FlagGold_DW_2 =
+				{
+					ROUTE_FlagGold_DW_3 = {},
+				},
+				ROUTE_FlagGold_RW_1 =
+				{
+					ROUTE_FlagGold_RW_2 = {},
+				},
+			},
+		},
+	};
+
+	MapRoutes["CAMP_Allies_ForwardFlag_.*"] = MapRoutes.CHECKPOINT_forward_flag;
+	MapRoutes["CAMP_Allies_Radio_.*"] = MapRoutes.CHECKPOINT_forward_flag;
+	MapRoutes["CAMP_Allies_SideGate_.*"] = MapRoutes.PLANT_side_gate;
+	MapRoutes["ATTACK_Allies_Generator_.*"] = MapRoutes.PLANT_Generator;
+	MapRoutes["ATTACK_Allies_CappoitPlace_.*"] = MapRoutes.CAPPOINT_Truck;
+	MapRoutes["DEFEND_Axis_CappoitPlace_.*"] = MapRoutes.CAPPOINT_Truck;
+
+	Util.Routes(MapRoutes);
+};

@@ -1,0 +1,855 @@
+//=============================================================================
+//
+//  Santa's Grotto 1.2 - santas_grotto_v1_2
+//
+//  Who         When            What
+//-----------------------------------------------------------------------------
+//  Mateos      -               Updated waypoint mapping
+//                              + Goals conversion/management + Routing
+//  Mateos      21/04/2010      Added _goals.gm file
+//                              Routing to secure the Key Card
+//
+//=============================================================================
+
+/****************************************************
+Path mapping updated and script by Mateos
+Correspondant WAY file hash: -
+Last update: 29th July 2025
+****************************************************/
+
+global Spawns =
+{
+	OLD_FISHING_HOUSE = 1,
+	LANCASTER_BOMBER_DEPLOYMENT = 2,
+
+	/**
+	 * Axis only, available after the First Gate is destroyed,
+	 * then is unavailable once the Key is secured at the Second Gate.
+	 */
+	WORKSHOP = 3,
+
+	NORTH_POLE = 4,
+	FACTORY = 5,
+	GARAGE = 6,
+	ELF_S_HUT = 7,
+
+	SetSpawn = function( team, spawn, selfkill )
+	{
+		foreach ( bot in BotTable )
+		{
+			if ( bot.GetTeam() == team )
+			{
+				bot.ChangeSpawnPoint( spawn );
+
+				if ( selfkill )
+				{
+					bot.ExecCommand( "kill" );
+				}
+			}
+		}
+	},
+};
+
+global Map =
+{
+	Movers = { "MOVER_gate3" }, // Required for GetGoal in Functions.AxisBotSuicideOnGateKeySecured to work
+
+	isFuseBoxBuilt = false,
+	isSackStolen = false,
+	northPoleTeam = TEAM.AXIS,
+
+	// From alchemycastle_b3.gm by palota
+	NavDoor = function( _this )
+	{
+		wpinfo = _this.navigation.wpinfo;
+		if ( wpinfo == null )
+		{
+			wpinfo = Util.WpNameInfo( _this.CurrentNavigation );
+			_this.navigation.wpinfo = wpinfo;
+		}
+
+		pos = wpinfo.position;
+		vec = wpinfo.facing.Normalize();
+
+		pos1 = pos - vec * 50;
+		pos1 = Vector3( pos1.x, pos1.y, pos.z );
+
+		pos2 = pos + vec * 140;
+		pos2 = Vector3( pos2.x, pos2.y, pos.z );
+
+		for ( i = 0; i < 4; i += 1 )
+		{
+			if ( _this.Goto(pos) == EVENT.PATH_FAILED )
+			{
+				return;
+			}
+
+			_this.AddAimRequest( Priority.High, "facing", wpinfo.facing );
+			tr = TraceLine( pos, pos2, null, TRACE.SOLID, 0, false );
+
+			if ( tr.fraction == 1 )
+			{
+				_this.Bot.MoveTowards( pos2 );
+				sleep( 0.8 );
+				break;
+			}
+
+			sleep( 0.1 );
+
+			_this.Bot.PressButton( BTN.USE );
+			_this.Bot.MoveTowards( pos1 );
+
+			// Wait while door opens
+			sleep( 1 );
+		}
+	},
+
+	// Paththrough Navigational
+	Navigation =
+	{
+		// One-way door
+		cp_door =
+		{
+			navigate = function( _this ) { Map.NavDoor( _this ); },
+		},
+
+		jump =
+		{
+			navigate = function( _this )
+			{
+				// Since this kind of navigation doesn't work well with waypoints
+				wpTable = {};
+				Wp.GetWaypointByName( "top", wpTable );
+
+				// With a good jump while going forward to pass the 2 steps
+				_this.AddAimRequest( Priority.High, "facing", wpTable.facing );
+				_this.Bot.HoldButton( BTN.FORWARD, 1 );
+
+				_this.Bot.HoldButton( BTN.JUMP, 0.5 );
+			},
+		},
+
+		jump_crouch =
+		{
+			navigate = function( _this )
+			{
+				_this.AddAimRequest( Priority.High, "facing", Vec3( 0.2, 0.9, 0.4 ) );
+				sleep( 1 );
+				_this.Bot.HoldButton( BTN.JUMP, 1 );
+				sleep( 0.5 );
+				_this.AddAimRequest( Priority.High, "facing", Vec3( 0.1, 0.6, -0.8 ) );
+				_this.Bot.HoldButton( BTN.CROUCH, 1 );
+				sleep( 1 );
+			},
+		},
+	},
+
+	Roles =
+	{
+		AXIS =
+		{
+			// North Pole flag
+			DEFENDER =
+			{
+				voice = "defend",   // Signals voice chat to randomly announce
+				numbots = 2,        // Maximum of 2 bots
+			},
+		},
+
+		ALLIES =
+		{
+			// North Pole flag
+			ATTACKER =
+			{
+				voice = "attack",   // Signals voice chat to randomly announce
+				numbots = 2,        // Maximum of 2 bots
+			},
+		},
+	},
+
+	// *** TRIGGER CALLBACKS ***
+	First_Gate_Destroyed = function()
+	{
+		SetGoalPriority( "DEFUSE_First_Gate.*", 0.0 );
+
+		// blockwall flags refresh
+		sleep( .5 );
+		Wp.CheckBlockable();
+
+		Goals.First_Gate( false );
+
+		Cabinets.Garage( true );
+
+		Util.EnableGoal( "ATTACK_SG.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, ".*AxisBravo.*" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"FLAG_gate_key",
+			"CAPPOINT_Secondgate",
+		});
+
+		Functions.Print( "First_Gate_Destroyed", true );
+	},
+
+	gate_key_Taken = function()
+	{
+		Util.EnableGoal( "ATTACK_SFB.*" );
+		Util.DisableGoal( "ATTACK_SG.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, ".*AxisBravo.*" );
+		SetAvailableMapGoals( TEAM.AXIS, true, ".*AxisSecondGate.*" );
+
+		Util.MapDebugPrint( "gate_key_taken" );
+	},
+
+	gate_key_returned = function()
+	{
+		Functions.AxisSuicideOnGateKeyReturned();
+
+		Util.EnableGoal( "ATTACK_SG.*" );
+		Util.DisableGoal( "ATTACK_SFB.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, ".*AxisSecondGate.*" );
+		SetAvailableMapGoals( TEAM.AXIS, true, ".*AxisBravo.*" );
+
+		Util.MapDebugPrint( "gate_key_returned" );
+	},
+
+	Secondgate_Captured = function()
+	{
+		Functions.AxisSuicideOnGateKeySecured();
+
+		// Just for Axis mobile mortar
+		Cabinets.Factory( true );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*AxisSecondGate.*",
+			"ATTACK_SFB.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*AxisCharlie.*",
+			"CAMP_FuseBox.*",
+			"CHECKPOINT_.*",
+			"DEFEND_Flag.*",
+			"DEFEND_FuseBox.*",
+		});
+
+		// Disabled because the ceiling is f***ed
+		SetAvailableMapGoals( TEAM.AXIS, false, "MOBILEMORTAR_AxisCharlie" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "CAPPOINT_Secondgate" );
+
+		Functions.Print( "Secondgate_Captured", true );
+	},
+
+	Second_Gate_Open = function()
+	{
+		// blockwall flags refresh
+		sleep( 1 );
+
+		Cabinets.Garage( false );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_SFB.*" );
+
+		Goals.Second_Gate( true );
+
+		Util.MapDebugPrint( "Second_Gate_Open" );
+	},
+
+	north_pole_flag_Axis_Captured = function()
+	{
+		Map.northPoleTeam = TEAM.AXIS;
+
+		Util.MapDebugPrint( "north_pole_flag_Axis_Captured", true );
+	},
+
+	north_pole_flag_Allies_Captured = function()
+	{
+		Map.northPoleTeam = TEAM.ALLIES;
+
+		Util.MapDebugPrint( "north_pole_flag_Allies_Captured", true );
+	},
+
+	Fuse_Box_Built = function()
+	{
+		Map.isFuseBoxBuilt = true;
+
+		Wp.SetWaypointFlag( "3rd_door_1", "axis", false );
+		Wp.SetWaypointFlag( "3rd_door_2", "axis", false );
+
+		Goals.Second_Gate( false );
+
+		// They'll spawn at the Elf's Hut otherwise
+		// Move there only if the Sack isn't in the nature
+		// Also handle a few goals
+		if ( !Map.isSackStolen )
+		{
+			Spawns.SetSpawn( TEAM.AXIS, Spawns.FACTORY, false );
+			Goals.Factory( true );
+		}
+		else
+		{
+			Goals.Santa_S_Grotto( true );
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, false, ".*AxisCharlie.*" );
+
+		Functions.Print( "Fuse_Box_Built", true );
+	},
+
+	Third_Gate_Open = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"CAPPOINT_sackdest",
+			"FLAG_sack",
+		});
+
+		Util.MapDebugPrint( "Third_Gate_Open" );
+	},
+
+	sack_Taken = function()
+	{
+		Map.isSackStolen = true;
+
+		// Move Axis to Elf's Hut spawn,
+		// and selfkill if the spawn time is equal or below 5 seconds
+		selfkill = Functions.CanAxisSelfkill( 5 );
+		Spawns.SetSpawn( TEAM.AXIS, Spawns.ELF_S_HUT, selfkill );
+
+		if ( Map.isFuseBoxBuilt )
+		{
+			Goals.Factory( false );
+			Goals.Santa_S_Grotto( true );
+		}
+		else
+		{
+			// If the Fuse Box isn't built when this event is triggered,
+			// it means a human player bypassed the protected door to steal the objective...
+			// Allied bots will keep their goals as is then (because reachability), but not Axis!
+			SetAvailableMapGoals( TEAM.AXIS, false, ".*" );
+			SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_SD.*" );
+		}
+
+		Util.MapDebugPrint( "sack_taken" );
+	},
+
+	sack_returned = function()
+	{
+		Map.isSackStolen = false;
+
+		Goals.Santa_S_Grotto( false );
+
+		// Consider that Allies can only bypass the Second Gate door,
+		// since they're all covi-protected;
+		// so it only depends on the Fuse Box status
+		if ( Map.isFuseBoxBuilt )
+		{
+			Spawns.SetSpawn( TEAM.AXIS, Spawns.FACTORY, false );
+
+			Goals.Factory( true );
+		}
+		else
+		{
+			if ( Map.northPoleTeam == TEAM.AXIS )
+			{
+				Spawns.SetSpawn( TEAM.AXIS, Spawns.NORTH_POLE, false );
+			}
+			else
+			{
+				Spawns.SetSpawn( TEAM.AXIS, Spawns.FACTORY, false );
+			}
+
+			// Just re-enable what was disabled for Axis
+			Util.EnableGoal( "ATTACK_TG.*" );
+			Util.EnableGoal( "CHECKPOINT_.*" );
+
+			SetAvailableMapGoals( TEAM.AXIS, true, ".*AxisCharlie.*" );
+
+			// Disabled because the ceiling is f***ed
+			SetAvailableMapGoals( TEAM.AXIS, false, "MOBILEMORTAR_AxisCharlie" );
+
+			Cabinets.North_Pole( true );
+		}
+
+		Util.MapDebugPrint( "sack_returned" );
+	},
+
+	sack_secured = function()
+	{
+		Functions.Print( "sack_secured", false );
+	},
+};
+
+global OnMapLoad = function()
+{
+	Functions.timeLimitInMinutes = Ceil( GetGameTimeLeft() ) / 60;
+
+	// *** TRIGGERS ***
+	OnTrigger( "^1Allies have blown the First Gate!", Map.First_Gate_Destroyed );
+	OnTrigger( "^1Key for the Second Gate has been stolen by Allies!", Map.gate_key_Taken );
+	OnTrigger( "^1Key for the Second Gate has been returned to the House!", Map.gate_key_returned );
+	OnTrigger( "^1Second Gate Key has been secured, Second Gate opening!", Map.Secondgate_Captured );
+	OnTrigger( "^1Second Gate open!", Map.Second_Gate_Open );
+	OnTrigger( "^1Axis have captured the North Pole!", Map.north_pole_flag_Axis_Captured );
+	OnTrigger( "^1Allies have Captured the North Pole!", Map.north_pole_flag_Allies_Captured );
+	OnTrigger( "^1Fuse Box has been repaired", Map.Fuse_Box_Built );
+	OnTrigger( "^1Third Gate open!", Map.Third_Gate_Open );
+	OnTrigger( "^1Allies have got Santa's Sack!", Map.sack_Taken );
+	OnTrigger( "^1Santa's Sack has been taken back to the Factory!", Map.sack_returned );
+	OnTrigger( "^1Santa's Sack has been returned to Santa, Christmas can continue! :D", Map.sack_secured );
+
+	// *** CLEAR ALL GOALS FOR BOTH TEAMS ***
+	Util.DisableGoal( ".*", true ); // All but Routes
+
+	Goals.First_Gate( true );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_First_Gate" );
+
+	// *** GOALS PROPERTIES ***
+	Wp.SetWaypointFlag( "3rd_door_1", "axis", true );
+	Wp.SetWaypointFlag( "3rd_door_2", "axis", true );
+
+	Util.ExcludeClass( "MOUNTMG42_.*", TEAM.AXIS, CLASS.MEDIC, CLASS.ENGINEER );
+	Util.ExcludeClass( "MOUNTMG42_.*", TEAM.ALLIES, CLASS.MEDIC, CLASS.ENGINEER );
+
+	Util.SetGoalOffset( 300, -20, -375, "PLANT_First_Gate" );
+
+	SetMapGoalProperties( "ATTACK_.*",      { DisableCM = 1, MinCampTime = 20, MaxCampTime = 42 } );
+	SetMapGoalProperties( "CAMP_.*",        { DisableCM = 1, MinCampTime = 20, MaxCampTime = 42 } );
+	SetMapGoalProperties( "DEFEND_.*",      { DisableCM = 1, MinCampTime = 20, MaxCampTime = 42 } );
+	SetMapGoalProperties( "MOUNTMG42_.*",   { MinCampTime = 15, MaxCampTime = 60 } );
+
+	// *** ROLES ***
+	SetGoalRole( "CHECKPOINT_north_pole_flag", { ROLE.ATTACKER, ROLE.DEFENDER } );
+	SetGoalRole( "ATTACK_Flag.*", ROLE.ATTACKER );
+	SetGoalRole( "DEFEND_Flag.*", ROLE.DEFENDER );
+
+	Util.MapDebugPrint( "Omni-Bot 0.8x map script for Santa's Grotto 1.2 by Mateos executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.MaxViewDistance = 1000.0;
+};
+
+global Goals =
+{
+	First_Gate = function( bAvailability )
+	{
+		Cabinets.Old_Fishing_House( bAvailability );
+
+		if ( bAvailability )
+		{
+			Util.EnableGoal( "CAMP_FirstGate.*" );
+		}
+		else
+		{
+			Util.DisableGoal( "CAMP_FirstGate.*" );
+		}
+
+		// *** AXIS GOALS ***
+		SetAvailableMapGoals( TEAM.AXIS, bAvailability, {
+			".*AxisAlpha.*",
+			"DEFEND_FirstGate.*",
+		});
+
+		// *** ALLIED GOALS ***
+		SetAvailableMapGoals( TEAM.ALLIES, bAvailability, {
+			".*AlliesAlpha.*",
+			"ATTACK_FirstGate.*",
+		});
+	},
+
+	Second_Gate = function( bAvailability )
+	{
+		Cabinets.North_Pole( bAvailability );
+
+		if ( bAvailability )
+		{
+			Util.EnableGoal( "CAMP_FuseBox.*" );
+		}
+		else
+		{
+			Util.DisableGoal( "CAMP_FuseBox.*" );
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, bAvailability, {
+			"DEFEND_Flag.*",
+			"DEFEND_FuseBox.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, bAvailability, {
+			"ATTACK_Flag.*",
+			"ATTACK_FuseBox.*",
+			"BUILD_Fuse_Box",
+		});
+	},
+
+	Factory = function( bAvailability )
+	{
+		Cabinets.Factory( bAvailability );
+		Cabinets.Command_Post( bAvailability );
+
+		if ( bAvailability )
+		{
+			Util.EnableGoal( "ATTACK_Sack.*" );
+			Util.EnableGoal( "BUILD_Command_Post" );
+			Util.EnableGoal( "PLANT_Command_Post" );
+		}
+		else
+		{
+			Util.DisableGoal( "ATTACK_Sack.*" );
+			Util.DisableGoal( "BUILD_Command_Post" );
+			Util.DisableGoal( "PLANT_Command_Post" );
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, bAvailability, {
+			".*AxisDelta.*",
+			"MOUNTMG42_Factory_MG",
+			"REPAIRMG42_Factory_MG",
+		});
+	},
+
+	Santa_S_Grotto = function( bAvailability )
+	{
+		if ( bAvailability )
+		{
+			Util.EnableGoal( "ATTACK_SD.*" );
+		}
+		else
+		{
+			Util.DisableGoal( "ATTACK_SD.*" );
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, bAvailability, ".*AxisEcho.*" );
+	},
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CAMP_FirstGate1 =
+		{
+			ROUTE_LancasterDeploymentSpawn =
+			{
+				ROUTE_EastSea1 = {},
+
+				ROUTE_MiddleSea1 =
+				{
+					ROUTE_MiddleSea2 = {},
+				},
+			},
+		},
+
+		CAPPOINT_sackdest =
+		{
+			ROUTE_Sack =
+			{
+				ROUTE_Sack_Back1 =
+				{
+					Weight = 4, // Prefer ROUTE_Sack_Back1 4 times more
+					ROUTE_Sack_Back2 =
+					{
+						ROUTE_Sack_Junction1  =
+						{
+							ROUTE_Sack_Junction2 = {},
+						},
+					},
+				},
+				ROUTE_Sack_Low_Left =
+				{
+					Weight = 2, // Prefer ROUTE_Sack_Low_Left twice more
+					ROUTE_Sack_Junction1  =
+					{
+						ROUTE_Sack_Junction2 = {},
+					},
+				},
+				ROUTE_Sack_Low_Right =
+				{
+					ROUTE_Sack_Junction1  =
+					{
+						ROUTE_Sack_Junction2 = {},
+					},
+				},
+			},
+		},
+
+		CAPPOINT_Secondgate =
+		{
+			ROUTE_GateKeyTaken =
+			{
+				ROUTE_KeyToSafe1 =
+				{
+					ROUTE_KeyToSafe2 =
+					{
+						ROUTE_KeyToSafe3 =
+						{
+							ROUTE_KeyToSafe4 =
+							{
+								ROUTE_KeyToSafe5 =
+								{
+									ROUTE_KeyToSafe6 =
+									{
+										ROUTE_KeyToSafe7 =
+										{
+											ROUTE_KeySecured = {},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+
+		FLAG_gate_key =
+		{
+			ROUTE_Old_Fishing_House =
+			{
+				ROUTE_ToGateKey =
+				{
+					ROUTE_ToGateKeyLeft = { Weight = 3 },
+					ROUTE_ToGateKeyMiddle = { Weight = 2 },
+					ROUTE_ToGateKeyRight = {},
+				},
+			},
+		},
+
+		PLANT_First_Gate =
+		{
+			ROUTE_LancasterDeploymentSpawn =
+			{
+				ROUTE_EastSea1 = {},
+
+				ROUTE_MiddleSea1 =
+				{
+					ROUTE_MiddleSea2 = {},
+				},
+
+				ROUTE_WestSea1 =
+				{
+					ROUTE_WestSea2 = {},
+				},
+			},
+		},
+	};
+
+	// Copy routes
+	MapRoutes.ATTACK_FirstGate2 = MapRoutes.CAMP_FirstGate1;
+	MapRoutes.ATTACK_FirstGate3 = MapRoutes.CAMP_FirstGate1;
+	MapRoutes.CAMP_FirstGate2 = MapRoutes.CAMP_FirstGate1;
+	MapRoutes.CAMP_FirstGate3 = MapRoutes.CAMP_FirstGate1;
+
+	Util.Routes( MapRoutes );
+};
+
+global Cabinets =
+{
+	Lancaster = function( bAvailability )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, bAvailability, {
+			"AMMOCAB_t6",
+			"HEALTHCAB_t7",
+		});
+	},
+
+	Old_Fishing_House = function( bAvailability )
+	{
+		if ( bAvailability )
+		{
+			Util.EnableGoal( "AMMOCAB_t2" );
+			Util.EnableGoal( "HEALTHCAB_t1" );
+		}
+		else
+		{
+			Util.DisableGoal( "AMMOCAB_t2" );
+			Util.DisableGoal( "HEALTHCAB_t1" );
+		}
+	},
+
+	Garage = function( bAvailability )
+	{
+		if ( bAvailability )
+		{
+			Util.EnableGoal( "AMMOCAB_t19" );
+			Util.EnableGoal( "HEALTHCAB_t20" );
+		}
+		else
+		{
+			Util.DisableGoal( "AMMOCAB_t19" );
+			Util.DisableGoal( "HEALTHCAB_t20" );
+		}
+	},
+
+	North_Pole = function( bAvailability )
+	{
+		if ( bAvailability )
+		{
+			Util.EnableGoal( "AMMOCAB_t22" );
+			Util.EnableGoal( "HEALTHCAB_t23" );
+		}
+		else
+		{
+			Util.DisableGoal( "AMMOCAB_t22" );
+			Util.DisableGoal( "HEALTHCAB_t23" );
+		}
+	},
+
+	Factory = function( bAvailability )
+	{
+		if ( bAvailability )
+		{
+			Util.EnableGoal( "AMMOCAB_t25" );
+			Util.EnableGoal( "HEALTHCAB_t26" );
+		}
+		else
+		{
+			Util.DisableGoal( "AMMOCAB_t25" );
+			Util.DisableGoal( "HEALTHCAB_t26" );
+		}
+	},
+
+	Command_Post = function( bAvailability )
+	{
+		if ( bAvailability )
+		{
+			Util.EnableGoal( "AMMOCAB_t66" );
+			Util.EnableGoal( "HEALTHCAB_t67" );
+		}
+		else
+		{
+			Util.DisableGoal( "AMMOCAB_t66" );
+			Util.DisableGoal( "HEALTHCAB_t67" );
+		}
+	},
+};
+
+global Functions =
+{
+	/**
+	 * Map time limit.
+	 */
+	timeLimitInMinutes,
+
+	/**
+	 * Prints a text with elapsed and left times.
+	 * @param text Text to print.
+	 * @param printActiveGoals Either print or not active goals.
+	 */
+	Print = function( text, printActiveGoals )
+	{
+		Util.MapDebugPrint( text + Functions.GetFormattedElaspedTime() + Functions.GetFormattedTimeLeft(), !printActiveGoals );
+	},
+
+	/**
+	 * Builds and returns the elapsed time since the round has started.
+	 */
+	GetFormattedElaspedTime = function()
+	{
+		totalTimeInSeconds = Functions.timeLimitInMinutes * 60;
+		gameTimeLeftInSeconds = Floor( GetGameTimeLeft() );
+		elapsedTimeInSeconds = totalTimeInSeconds - gameTimeLeftInSeconds;
+
+		elapsedTimeMinutes = Floor( elapsedTimeInSeconds / 60 );
+		elapsedTimeSeconds = elapsedTimeInSeconds - elapsedTimeMinutes * 60;
+		if ( elapsedTimeSeconds < 10 )
+		{
+			elapsedTimeSeconds = "0" + elapsedTimeSeconds;
+		}
+
+		return " (" + elapsedTimeMinutes + ":" + elapsedTimeSeconds + " elapsed)";
+	},
+
+	/**
+	 * Builds and returns the game time left, formatted as mm:ss.
+	 */
+	GetFormattedTimeLeft = function()
+	{
+		gameTimeLeft = Floor( GetGameTimeLeft() );
+		minutes = Floor( gameTimeLeft / 60 );
+		seconds = gameTimeLeft - minutes * 60;
+		if ( seconds < 10 )
+		{
+			seconds = "0" + seconds;
+		}
+
+		return " (" + minutes + ":" + seconds + " left)";
+	},
+
+	/**
+	 * Upon Gate Key Returned event,
+	 * if an Axis bot is far away from the Key,
+	 * and its spawn time it close, just selfkill.
+	 * Note: The distance calculation is only done on XY plane (that's enough).
+	 */
+	AxisSuicideOnGateKeyReturned = function()
+	{
+		selfkill = Functions.CanAxisSelfkill( 5 );
+		if ( !selfkill )
+		{
+			return;
+		}
+
+		keyPosition = GetGoal( "FLAG_gate_key" ).GetPosition();
+		foreach ( id and bot in BotTable )
+		{
+			if ( bot.GetTeam() == TEAM.AXIS )
+			{
+				botPosition = bot.GetPosition();
+				x = botPosition.x - keyPosition.x;
+				y = botPosition.y - keyPosition.y;
+				distance = Sqrt( x * x + y * y );
+				if ( distance > 1000. )
+				{
+					bot.ExecCommand( "kill" );
+					Util.MapDebugPrint( bot.Name + "^b selfkilled because he was too far away (" + distance + ") from the key", true );
+				}
+			}
+		}
+	},
+
+	/**
+	 * Upon Gate Key Secured event,
+	 * if an Axis bot is too far away from the Second Gate,
+	 * prevent him from missing the North Pole area action: just selfkill.
+	 */
+	AxisSuicideOnGateKeySecured = function()
+	{
+		foreach ( id and bot in BotTable )
+		{
+			if ( bot.GetTeam() != TEAM.AXIS ) { continue; }
+			thread( Functions.AxisBotSuicideOnGateKeySecured, bot );
+		}
+	},
+
+	// Note 1: called in a thread
+	// Note 2: 5 200 is to cover the whole area, including spawn room, between Gate #2 and Gate #3, and a bit beyond Gate #2
+	AxisBotSuicideOnGateKeySecured = function( bot )
+	{
+		ETUtil.WaitForSpawn( bot.GetTeam() );
+		if ( !bot.Name) { return; } // Disconnected meanwhile
+		dist = DistanceBetween( bot.GetPosition(), GetGoal( "MOVER_gate3" ).GetPosition() );
+		health = bot.Health;
+		if ( dist > 5200 || health <= 30 )
+		{
+			bot.ExecCommand( "kill" );
+			Util.MapDebugPrint( format( "%s%s selfkilled (distance: %f, health: %d)", bot.Name, Util.DebugColorString, dist, health ), true );
+		}
+	},
+
+	/**
+	 * Indicates if Axis can selfkill based on a given time left.
+	 * @param seconds Number of seconds below which reinforce time will allow selfkill.
+	 */
+	CanAxisSelfkill = function( seconds )
+	{
+		axisReinforceTime = ETUtil.GetReinforceTime( TEAM.AXIS );
+		selfkill = axisReinforceTime <= seconds;
+		Util.MapDebugPrint( "Axis reinforce time: " + axisReinforceTime + " => Suicide: " + selfkill, true );
+
+		return selfkill;
+	},
+};

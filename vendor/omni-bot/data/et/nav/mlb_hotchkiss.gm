@@ -1,0 +1,1185 @@
+//==========================================================================================
+//
+//	mlb_hotchkiss.gm
+//
+//	Who          	When		What
+//------------------------------------------------------------------------------------------
+//	^1[UJE]^3Captain	08 June 2018	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	Factory_Entrance_Gates = 0,
+	Factory_Main_Wall = 0,
+	Factory_Main_Gate = 0,
+	Allied_Command_Post = 0,
+	Access_Tunnel = 0,
+	Explosive = 0,
+	AxisIns1 = 0,
+	AxisIns2 = 0,
+	Crates_Bots = 0,
+	Elevator_Pos = bottom, // down at start
+	Elevator_Pos = top,
+	Generator = 0,
+
+	Movers =
+	{
+	"MOVER_lift",
+	},
+	//Rôles
+	Roles =
+	{
+		AXIS =
+		{
+		AllBots = true, // each bot is considered for a role
+			INFILTRATOR = //PLANT CP
+			{
+				numbots = 1,
+				crucialClass = CLASS.COVERTOPS,
+			},
+		},
+		ALLIES =
+		{
+			AllBots = true, // default: every other bot
+			DEFENDER = //Cappoint
+			{
+				numbots = 4,
+			},
+			DEFENDER1 = //Missile
+			{
+				numbots = 10,
+				crucialClass = CLASS.ENGINEER,
+			},
+		      INFILTRATOR = //PLANT CP
+			{
+			      numbots = 1,
+				crucialClass = CLASS.COVERTOPS,
+			},
+		},
+	},
+	//Navigation
+	Navigation =
+	{     // /bot waypoint_setproperty paththrough Navigation_PT:access_tunnel
+		access_tunnel =
+		{
+			gotowp = "cratetunnel",
+			EvalFunc = function()
+			{
+				return !Map.Access_Tunnel && Map.Crates_Bots < 1;
+			},
+
+			navigate = function(_this)
+			{
+			Map.Crates_Bots += 1;
+				if ( Map.Access_Tunnel )
+				{
+					yield();
+					return;
+				}
+
+				if( GetModName() == "noquarter" )
+				{
+					_this.AddWeaponRequest(Priority.VeryHigh, WEAPON.KNIFE_KABAR );
+				}
+				else
+				{
+					_this.AddWeaponRequest(WEAPON.KNIFE);
+				}
+
+				_this.AddAimRequest(Priority.VeryHigh, "facing", Vector3(-0.316, -0.894, -0.318));
+
+				while( !Map.Access_Tunnel )
+				{
+					_this.Bot.HoldButton(BTN.ATTACK1, 3.5);
+					_this.Bot.HoldButton(BTN.CROUCH, 3.5);
+					yield();
+				}
+
+				_this.ReleaseAimRequest();
+				_this.ReleaseWeaponRequest();
+			Map.Crates_Bots -= 1;
+			},
+		},
+		leave_jump =
+		{
+			navigate = function(_this)
+			{
+				wpTable = {};
+				Wp.GetWaypointByName("leave_jump", wpTable);
+				if ( _this.Goto(wpTable.position) == EVENT.PATH_SUCCESS )
+				{
+				    _this.AddAimRequest(Priority.High, "facing", wpTable.facing);
+				    _this.Bot.HoldButton(BTN.FORWARD, 0.5);
+				    _this.ReleaseAimRequest();
+				}
+			},
+		},
+	},
+
+      //Switch Front Door
+	front_door = function( trigger )
+	{
+		vel = ToVector(trigger.Action);
+		if ( vel.z > 0 && !Map.Factory_Entrance_Gates )
+		{
+		sleep (5);
+	      SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_Front_Door" );
+	      SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Front_Door" );
+		Util.EnableGoal("ROUTE_Garage_Door");
+			Util.MapDebugPrint("front door opened!");
+		}
+		else if ( vel.z < 0 && !Map.Factory_Entrance_Gates )
+		{
+		sleep (5);
+	      SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Front_Door" );
+	      SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Front_Door" );
+            Util.DisableGoal("ROUTE_Garage_Door");
+			Util.MapDebugPrint("front door closed!");
+		}
+	},
+	//Elevator switch control
+	Elevator = function(trigger)
+	{
+	if (Map.Debug) { print("elevator moving"); }
+		Map.Elevator_pos = "Moving"; //elevator moving now
+	      Util.DisableGoal("SWITCH_Elevator");
+		sleep(5.0); //wait is 6.5 in map script
+		vel = ToVector(trigger.Action);
+		if(vel.z < 0) //going down
+		{
+		//enable switche
+		      sleep(5.0); //wait elevator bottom
+			Map.Elevator_Pos = bottom;
+			if ( Map.Generator == 0 )
+			{
+                  Util.EnableGoal("SWITCH_Elevator");
+			}
+			Util.MapDebugPrint("elevator is down");
+		}
+		//going up
+		else if(vel.z > 0)
+		{
+		      sleep(5.0); //wait elevator top
+			Map.Elevator_Pos = top;
+			if ( Map.Generator == 0 )
+			{
+                  Util.EnableGoal("SWITCH_Elevator");
+			}
+			Util.DisableGoal("RIDE_Elevator");
+			Util.MapDebugPrint("elevator is up");
+		}
+      },
+	//lever
+	Lever1 = function(trigger)
+	{
+	      if (Map.Debug) { print("lift_lever1_Moving"); }
+		vel = ToVector(trigger.Action);
+		if(vel.z < 0)
+		{
+			Util.MapDebugPrint("lever down");
+		}
+		else if(vel.z > 0)
+		{
+                  Util.EnableGoal("RIDE_Elevator");
+			Util.MapDebugPrint("lever up");
+		}
+      },
+	Axis_Ins1 = //explosive intrusion area without destruction factory gates
+	{
+		Name = "Axis_Ins1",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.AXIS )
+			{
+				if ( Map.AxisIns1 == 0 )
+				{
+				      if ( !Map.Factory_Entrance_Gates )
+					{
+					SetGoalRole( "DEFEND_Second.*", ROLE.DEFENDER );
+					SetAvailableMapGoals( TEAM.ALLIES, true, {"DEFEND_Second.*",".*MG42_77.*"});
+					Util.MapDebugPrint( "Trigger region - AxisIns entered" );
+					}
+				}
+				Map.AxisIns1 += 1;
+
+			}
+		},
+		OnExit = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.AXIS )
+			{
+				Map.AxisIns1 -= 1;
+
+				if ( Map.AxisIns1 == 0 )
+				{
+				      if ( !Map.Factory_Entrance_Gates )
+					{
+					ClearGoalRole( "DEFEND_Second.*", ROLE.DEFENDER );
+					SetAvailableMapGoals( TEAM.ALLIES, true, {"DEFEND_Second.*",".*MG42_77.*"});
+					Util.MapDebugPrint( "Trigger region - Explosive is safe" );
+					}
+				}
+			}
+		},
+	},
+
+	Axis_Ins2 = //Intrusion engineer missile area
+	{
+		Name = "Axis_Ins2",
+		TriggerOnClass = CLASS.ENGINEER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.AXIS )
+			{
+				if ( Map.AxisIns2 == 0 )
+				{
+
+				SetAvailableMapGoals( TEAM.ALLIES, false, {".*MG42_t.*","DEFEND_Factory_Low.*"} );
+				ClearGoalRole("DEFEND_Factory_Top.*", ROLE.DEFENDER1);
+				Util.MapDebugPrint( "Trigger region - AxisIns Missile Factory" );
+				}
+				Map.AxisIns2 += 1;
+
+			}
+		},
+		OnExit = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.AXIS )
+			{
+				Map.AxisIns2 -= 1;
+
+				if ( Map.AxisIns2 == 0 )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {".*MG42_t.*","DEFEND_Factory_Low.*"} );
+					SetGoalRole("DEFEND_Factory_Top.*", ROLE.DEFENDER1);
+
+					Util.MapDebugPrint( "Trigger region - Missile is safe" );
+				}
+			}
+		},
+	},
+	Allied_Command_Post_Built = function( trigger )
+	{
+	Map.Allied_Command_Post = 1;
+	if ( Map.Factory_Entrance_Gates )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Command_Post" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"PLANT_Command_Post","BUILD_Command_Post"} );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+	Allied_Command_Post_Destroyed = function( trigger )
+	{
+	Map.Allied_Command_Post = 0;
+	if ( !Map.Factory_Main_Wall )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+	if ( Map.Factory_Entrance_Gates )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+      Axis_Command_Post_Built = function( trigger )
+	{
+	if ( !Map.Factory_Main_Wall )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, {"BUILD_Command_Post","PLANT_Command_Post"} );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Destroyed = function( trigger )
+	{
+	if ( !Map.Factory_Main_Wall )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+	if ( Map.Factory_Entrance_Gates )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+	scaffolding_Built = function( trigger )
+	{
+	if ( !Map.Factory_Entrance_Gates )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_scaffolding" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_scaffolding" );
+
+		Util.EnableGoal("ROUTE_Scaffoldinf");
+		Util.MapDebugPrint( "scaffolding_Built" );
+	},
+	scaffolding_Destroyed = function( trigger )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_scaffolding" );
+	if ( !Map.Factory_Entrance_Gates )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_scaffolding" );
+	}
+
+            Util.DisableGoal("ROUTE_Scaffoldinf");
+		Util.MapDebugPrint( "scaffolding_Destroyed" );
+	},
+
+	side_entrance_Destroyed = function( trigger )
+	{
+	      Util.EnableGoal("ROUTE_Side_Entrance");
+	      Util.DisableGoal( "Switch_Crane" );
+		Util.MapDebugPrint( "side_entrance_Destroyed" );
+	},
+
+	factory_entrance_gates_Destroyed = function( trigger )
+	{
+	Map.Factory_Entrance_Gates = 1;
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {"DEFEND_Second.*",".*MG42_77.*"} );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"DEFEND_First.*","SWITCH_Front_Door","PLANT_scaffolding",".*CAB_north.*"});
+	if ( Map.Allied_Command_Post )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Command_Post" );
+	}
+	else
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+	}
+	if ( Map.Barricade_Built )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Barricade" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, true, {"FLAG.*","ATTACK_Second.*","BUILD_protection_net"
+	} );
+	SetAvailableMapGoals( TEAM.AXIS, false, {"ATTACK_First.*",".*MG42_76.*","SWITCH_Front_Door"} );
+
+		Util.MapDebugPrint( "factory_entrance_gates_Destroyed" );
+	},
+
+	Access_Tunnel_Exploded = function( trigger )
+	{
+		Map.Access_Tunnel = 1;
+		Util.EnableGoal("ROUTE_Tunnel_Ent");
+		Util.MapDebugPrint( "^5Access_Tunnel_Exploded" );
+	},
+
+	Barricade_Built = function( trigger )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Barricade" );
+
+	if ( Map.Factory_Entrance_Gates )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Barricade" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_generator" );
+
+		Util.DisableGoal("ROUTE_Barricade");
+		Util.MapDebugPrint( "Barricade_Built" );
+	},
+
+	Barricade_Destroyed = function( trigger )
+	{
+	if ( !Map.Factory_Main_Wall )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Barricade" );
+	}
+      SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_Barricade" );
+
+	      Util.EnableGoal("ROUTE_Barricade");
+		Util.MapDebugPrint( "Barricade_Destroyed" );
+	},
+
+	protection_net_Built = function( trigger )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_protection_net" );
+	if ( !Map.Factory_Main_Wall )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_protection_net" );
+	}
+		Util.MapDebugPrint( "protection_net_Built" );
+	},
+
+	protection_net_Destroyed = function( trigger )
+	{
+	if ( !Map.Factory_Main_Wall )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_protection_net" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_protection_net" );
+
+		Util.MapDebugPrint( "protection_net_Destroyed" );
+	},
+
+	explosive1_Taken = function( trigger )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "CAPPOINT_Explosive" );
+
+		Util.MapDebugPrint( "explosive1_Taken" );
+	},
+
+	explosive1_Returned = function( trigger )
+	{
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "CAPPOINT_Explosive" );
+
+		Util.MapDebugPrint( "explosive1_Returned" );
+	},
+
+	explosive1_Secured = function( trigger )
+	{
+
+		Util.MapDebugPrint( "explosive1_Secured" );
+	},
+
+	explosive2_Taken = function( trigger )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "CAPPOINT_Explosive" );
+
+		Util.MapDebugPrint( "explosive2_Taken" );
+	},
+
+	explosive2_Returned = function( trigger )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "CAPPOINT_Explosive" );
+		Util.MapDebugPrint( "explosive2_Returned" );
+	},
+
+	explosive2_Secured = function( trigger )
+	{
+
+		Util.MapDebugPrint( "explosive2_Secured" );
+	},
+
+	explosive_ready = function( trigger )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Explosive" );
+	SetAvailableMapGoals( TEAM.AXIS, false, {"CAPPOINT_Explosive","FLAG.*"} );
+
+		Util.MapDebugPrint( "explosive_ready" );
+	},
+
+	countdown_activated = function( trigger )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Explosive" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_Explosive" );
+
+		Util.MapDebugPrint( "countdown_activated" );
+	},
+
+	countdown_interrupted = function( trigger )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Explosive" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Explosive" );
+		Util.MapDebugPrint( "countdown_interrupted" );
+	},
+
+	factory_main_wall_Destroyed = function( trigger )
+	{
+	Map.Factory_Main_Wall = 1;
+	foreach(bot in BotTable)
+		{
+			if(bot.GetTeam() == TEAM.ALLIES)
+			{
+				bot.ExecCommand("kill");
+			}
+		}
+	SetAvailableMapGoals( TEAM.AXIS, true, {"PLANT_factory_main_gate","CAMP_Wait.*"});
+
+	SetAvailableMapGoals( TEAM.AXIS, false, { "SWITCH_Explosive","BUILD_protection_net","ATTACK_Second.*",".*CAB_north"});
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {"BUILD_generator","BUILD_factory_mg_nest","PLANTMINE_Main_Gate.*","DEFEND_Factory_Low.*","DEFEND_Factory_Top.*",".*MG42_t.*"});
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"SWITCH_Explosive","PLANT_Command_Post","BUILD_Barricade","PLANT_protection_net","DEFEND_Second.*",".*MG42_77.*"
+	});
+
+		Util.MapDebugPrint( "factory_main_wall_Destroyed" );
+	},
+
+	factory_main_gate_Destroyed = function( trigger )
+	{
+	Map.Factory_Main_Gate = 1;
+	SetAvailableMapGoals( TEAM.ALLIES, true, ".*CAB_north.*2" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_Main_Gate.*" );
+	SetGoalRole("DEFEND_Factory_Top.*", ROLE.DEFENDER1);
+	if ( Map.generator_Built )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_generator" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, true, {"ATTACK_Missile.*","PLANT_missile"});
+	if ( Map.Generator == 0 )
+	{
+	      Util.EnableGoal("SWITCH_Elevator");
+	}
+	Util.MapDebugPrint( "factory_main_gate_Destroyed" );
+	sleep (2);
+	SetAvailableMapGoals( TEAM.AXIS, false, "CAMP_Wait.*" );
+	},
+
+	factory_mg_nest_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "factory_mg_nest_Destroyed" );
+	},
+
+	factory_mg_nest_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "factory_mg_nest_Built" );
+	},
+
+	generator_Built = function( trigger )
+	{
+	Map.Generator = 1;
+	if ( Map.Factory_Main_Gate )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_generator" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_generator" );
+
+		Util.DisableGoal({"SWITCH_Elevator","ROUTE_Lift.*","ROUTE_Ladder_Lift"});
+		Util.MapDebugPrint( "generator_Built" );
+	},
+
+	generator_Destroyed = function( trigger )
+	{
+	Map.Generator = 0;
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_generator" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_generator" );
+
+	      Util.EnableGoal({"SWITCH_Elevator","ROUTE_Lift.*","ROUTE_Ladder_Lift"});
+		Util.MapDebugPrint( "generator_Destroyed" );
+	},
+
+	missile_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "missile_Destroyed" );
+	},
+};
+
+global OnMapLoad = function()
+{
+      // Register callback functions
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+
+	OnTrigger( "^6The scaffolding has been built", Map.scaffolding_Built );
+	OnTrigger( "^6The scaffolding has been destroyed", Map.scaffolding_Destroyed );
+	OnTrigger( "^6The crane has breached the side entrance", Map.side_entrance_Destroyed );
+	OnTrigger( "^6Axis have breached the factory entrance gates!!!!", Map.factory_entrance_gates_Destroyed );
+	OnTrigger( "^6The barricade has been built", Map.Barricade_Built );
+	OnTrigger( "^6The barricade has been destroyed", Map.Barricade_Destroyed );
+	OnTrigger( "Axis team has built the protection net!", Map.protection_net_Built );
+	OnTrigger( "Allied team has destroyed the protection net!", Map.protection_net_Destroyed );
+	OnTrigger( "^6Axis have stolen the first explosive charge!!!!", Map.explosive1_Taken );
+	OnTrigger( "^6The first explosive charge has been returned!!!!", Map.explosive1_Returned );
+	OnTrigger( "^6The first explosive charge has been placed!!!!", Map.explosive1_Secured );
+	OnTrigger( "^6Axis have stolen the second explosive charge!!!!", Map.explosive2_Taken );
+	OnTrigger( "^6The second explosive charge has been returned!!!!", Map.explosive2_Returned );
+	OnTrigger( "^6The second explosive charge has been placed!!!!", Map.explosive2_Secured );
+	OnTrigger( "^6countdown activated", Map.countdown_activated	);
+	OnTrigger( "^6countdown interrupted", Map.countdown_interrupted );
+	OnTrigger( "^6The charges is ready to be armed!!!!", Map.explosive_ready );
+
+	OnTrigger( "^6The factory main wall has been breached !!!", Map.factory_main_wall_Destroyed );
+	OnTrigger( "^6Axis have breached the factory vault gate!!!!", Map.factory_main_gate_Destroyed );
+	OnTrigger( "^6Axis have repaired the missile conveyor Generator!", Map.generator_Built );
+	OnTrigger( "^6The missile conveyor Generator has been disabled !", Map.generator_Destroyed );
+	//OnTrigger( "MISSING_STRING", Map.factory_mg_nest_Destroyed );
+      //OnTrigger( "MISSING_STRING", Map.factory_mg_nest_Built );
+	OnTrigger( "^1Axis have destroyed the Missile!", Map.missile_Destroyed );
+	//Intrusion triggers
+	AxisIns1 = OnTriggerRegion(AABB(-483.646,-1310.865,83.620,1339.647,828.479,562.963), Map.Axis_Ins1);
+	AxisIns2_1 = OnTriggerRegion(AABB(3676.629,2721.366,700.412,4104.898,3088.003,890.950), Map.Axis_Ins2);
+	AxisIns2_2 = OnTriggerRegion(AABB(2157.467,2607.351,715.588,3702.328,3642.576,875.525), Map.Axis_Ins2);
+	AxisIns2_3 = OnTriggerRegion(AABB(1866.458,585.619,693.873,3471.307,2100.974,1039.058), Map.Axis_Ins2);
+	AxisIns2_4 = OnTriggerRegion(AABB(2221.957,2030.090,737.125,3200.875,2740.029,893.106), Map.Axis_Ins2);
+    	//Disable Combat Movement triggers
+      Factory_ladder = OnTriggerRegion(AABB(2940.760,1873.084,257.125,3059.656,2046.336,710.875), RegionTrigger.DisableCombatMovement);
+	OnTrigger( "GRENADE_Tunnel Exploded.", Map.Access_Tunnel_Exploded );
+	//Garage Door triggers
+	OnTrigger( "frontdoor_goto", Map.front_door);
+	//Elevator triggers
+      OnTrigger("lift_goto", Map.Elevator);
+	OnTrigger("lift_lever1_goto", Map.Lever1);
+
+	// all but routes
+	Util.DisableGoal( ".*", true );
+
+      //Axis goals activation
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"BUILD_scaffolding",
+		".*MG42_76.*",
+		"SWITCH_Front_Door",
+		"SWITCH_Crane",
+		".*CAB_north.*",
+		"ATTACK_First.*",
+		"PLANT_factory_entrance_gates"
+	});
+
+      //Allies goals activation
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_Command_Post",
+		"BUILD_Barricade",
+		".*CAB_north.*1",
+		"DEFEND_First.*"
+	});
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "DEFEND.*" );
+	Util.SetMaxUsers( 1, "ATTACK.*" );
+	Util.SetMaxUsers( 1, ".*MG42.*" );
+	Util.SetMaxUsers( 1, "FLAG.*" );
+	Util.SetMaxUsers( 1, "BUILD.*" );
+	Util.SetMaxUsers( 1, "PLANT.*" );
+	Util.SetMaxUsers( 1, "SWITCH.*" );
+	Util.SetMaxUsers( 3, "CAMP_Wait.*" );
+
+	//SetGoalPriority
+	SetGoalPriority( "SWITCH.*", 0.96 );
+	SetGoalPriority( "BUILD.*",  0.96, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Command_Post",   0.96,  TEAM.AXIS, CLASS.COVERTOPS );
+	SetGoalPriority( "PLANT_factory_entrance_gates", 0.96, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_factory_main_gate", 0.96, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_missile", 0.96, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_protection_net", 0.96, TEAM.ALLIES, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_scaffolding", 0.96, TEAM.ALLIES, CLASS.ENGINEER );
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42.*", {MinCampTime=40, MaxCampTime=90} );;
+	SetMapGoalProperties( "ATTACK.*", {MinCampTime=20, MaxCampTime=40} );
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=20, MaxCampTime=30} );
+	SetMapGoalProperties( "CAMP.*", {MinCampTime=60, MaxCampTime=90} );
+
+      //Offset Plant/Build Fix
+      Util.SetGoalOffset( 0, 0, 180, "PLANT_scaffolding" );
+	Util.SetGoalOffset( 60, 0, 0, "PLANT_protection_net" );
+      Util.SetGoalOffset( -30, 0, 0, "PLANT_factory_entrance_gates" );
+      Util.SetGoalOffset( 0, -60, -50, "PLANT_Barricade" );
+      Util.SetGoalOffset( 0, 30, 0, "PLANT_Command_Post" );
+	Util.SetGoalOffset( -30, 0, 0, "PLANT_factory_main_gate" );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_factory_entrance_gates =
+		{
+			ROUTE_First_Axis_S  =
+			{
+				ROUTE_Garage_Door  =
+				{
+				},
+				ROUTE_Scaffoldinf  =
+				{
+					ROUTE_Roof  =
+					{
+					},
+				},
+				ROUTE_Side_Entrance  =
+				{
+				},
+				ROUTE_Stairs  =
+				{
+					ROUTE_Roof_Access  =
+					{
+					},
+				},
+			},
+		},
+		SWITCH_Crane =
+		{
+			ROUTE_First_Axis_S  =
+			{
+				ROUTE_Scaffoldinf  =
+				{
+				},
+				ROUTE_Stairs  =
+				{
+					ROUTE_Roof_Access  =
+					{
+						ROUTE_Roof  =
+						{
+						},
+					},
+				},
+			},
+		},
+		SWITCH_Front_Door =
+		{
+			ROUTE_First_Axis_S  =
+			{
+				ROUTE_Scaffoldinf  =
+				{
+					ROUTE_Roof  =
+					{
+					},
+				},
+				ROUTE_Stairs  =
+				{
+					ROUTE_Roof_Access  =
+					{
+					},
+				},
+				ROUTE_Side_Entrance  =
+				{
+				},
+			},
+		},
+		FLAG_gold =
+		{
+			ROUTE_Axis_Entrance_Gates_S  =
+			{
+				ROUTE_Entrance_Gates_Right  =
+				{
+				      Weight = 4,
+					ROUTE_Tunnel_Ent  =
+					{
+						ROUTE_Tunnel_Midle  =
+						{
+							ROUTE_Tunnel_Ext_Dyna  =
+							{
+							},
+						},
+					},
+					ROUTE_Big_Door  =
+					{
+						ROUTE_Explosive_Right  =
+						{
+						},
+						ROUTE_Explosive_Center  =
+						{
+						},
+						ROUTE_Protect_Net  =
+						{
+						},
+					},
+					ROUTE_Little_Door  =
+					{
+						ROUTE_Protect_Net  =
+						{
+						},
+						ROUTE_Explosive_Center  =
+						{
+						},
+						ROUTE_Explosive_Right  =
+						{
+						},
+					},
+				},
+				ROUTE_Entrance_Gates_Left  =
+				{
+					ROUTE_Big_Door  =
+					{
+						ROUTE_Protect_Net  =
+						{
+						},
+						ROUTE_Explosive_Center  =
+						{
+						},
+						ROUTE_Explosive_Right  =
+						{
+						},
+					},
+					ROUTE_Little_Door  =
+					{
+						ROUTE_Protect_Net  =
+						{
+						},
+						ROUTE_Explosive_Right  =
+						{
+						},
+						ROUTE_Explosive_Center  =
+						{
+						},
+					},
+				},
+			},
+		},
+		CAPPOINT_Explosive =
+		{
+			ROUTE_Explosive  =
+			{
+				ROUTE_Barricade  =
+				{
+					ROUTE_Ladder_CP  =
+					{
+						ROUTE_Left_Net  =
+						{
+						},
+						ROUTE_Right_Net  =
+						{
+						},
+					},
+					ROUTE_Stairs_CP  =
+					{
+						ROUTE_Cappoint_Left  =
+						{
+						},
+						ROUTE_Cappoint_Right  =
+						{
+						},
+					},
+				},
+				ROUTE_Protect_Net  =
+				{
+					ROUTE_Stairs_Net  =
+					{
+						ROUTE_Left_Net  =
+						{
+						},
+						ROUTE_Right_Net  =
+						{
+						},
+					},
+				},
+				ROUTE_Explosive_Center  =
+				{
+					ROUTE_Little_Door  =
+					{
+						ROUTE_Entrance_Gates_Left  =
+						{
+							ROUTE_Roof_Access  =
+							{
+								ROUTE_Roof  =
+								{
+									ROUTE_Left_Net  =
+									{
+									},
+									ROUTE_Right_Net  =
+									{
+									},
+								},
+							},
+						},
+					},
+					ROUTE_Big_Door  =
+					{
+						ROUTE_Entrance_Gates_Right  =
+						{
+							ROUTE_Roof_Access  =
+							{
+								ROUTE_Roof  =
+								{
+									ROUTE_Right_Net  =
+									{
+									},
+									ROUTE_Left_Net  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Explosive_Right  =
+				{
+					ROUTE_Big_Door  =
+					{
+						ROUTE_Entrance_Gates_Right  =
+						{
+							ROUTE_Roof_Access  =
+							{
+								ROUTE_Roof  =
+								{
+									ROUTE_Left_Net  =
+									{
+									},
+									ROUTE_Right_Net  =
+									{
+									},
+								},
+							},
+						},
+						ROUTE_Entrance_Gates_Left  =
+						{
+							ROUTE_Roof_Access  =
+							{
+								ROUTE_Roof  =
+								{
+									ROUTE_Right_Net  =
+									{
+									},
+									ROUTE_Left_Net  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		PLANT_generator =
+		{
+			ROUTE_Axis_Main_Gate_S  =
+			{
+				ROUTE_Split_Factory_Low  =
+				{
+					ROUTE_Generator  =
+					{
+					},
+				},
+			},
+		},
+		PLANT_missile =
+		{
+			ROUTE_Axis_Main_Gate_S  =
+			{
+				ROUTE_MG42_T382  =
+				{
+					ROUTE_Factory_Radio  =
+					{
+						ROUTE_Lift  =
+						{
+							ROUTE_Lift_Top  =
+							{
+							},
+							ROUTE_Ladder_Allied_S  =
+							{
+							},
+						},
+						ROUTE_Split_WC  =
+						{
+						},
+						ROUTE_Ladder_Lift  =
+						{
+						},
+					},
+					ROUTE_Depot_Factory  =
+					{
+					},
+				},
+				ROUTE_Split_Factory_Low  =
+				{
+					ROUTE_Ladder_Factory_Top  =
+					{
+					},
+					ROUTE_Ladder_Allied_S  =
+					{
+						ROUTE_Ladder_Missile_Top  =
+						{
+						},
+					},
+				},
+			},
+		},
+
+	};
+		MapRoutes["DEFEND_First.*"] =
+		{
+			ROUTE_First_Allied_S  =
+			{
+				ROUTE_West_Doors  = {Weight = 5},
+				ROUTE_North_Doors  =
+				{
+				},
+			},
+		};
+		MapRoutes["DEFEND_Second.*"] =
+		{
+			ROUTE_First_Allied_S  =
+			{Weight = 5,
+				ROUTE_West_Doors  = {Weight = 5},
+				ROUTE_North_Doors  =
+				{
+				},
+			},
+		};
+		MapRoutes["ATTACK_First.*"] =
+		{
+			ROUTE_First_Axis_S  =
+			{
+				ROUTE_Scaffoldinf  =
+				{
+					ROUTE_Roof  =
+					{
+					},
+				},
+				ROUTE_Side_Entrance  =
+				{
+				},
+				ROUTE_Stairs  =
+				{
+					ROUTE_Roof_Access  =
+					{
+					},
+				},
+				ROUTE_Garage_Door  =
+				{
+				},
+			},
+		};
+		MapRoutes["ATTACK_Second.*"] =
+		{
+			ROUTE_Axis_Entrance_Gates_S  =
+			{
+				ROUTE_Entrance_Gates_Left  =
+				{
+					ROUTE_Big_Door  =
+					{
+						ROUTE_Explosive_Center  =
+						{
+							ROUTE_Barricade  =
+							{
+								ROUTE_Stairs_CP  =
+								{
+									ROUTE_Cappoint_Left  =
+									{
+									},
+									ROUTE_Cappoint_Right  =
+									{
+									},
+								},
+							},
+						},
+						ROUTE_Protect_Net  =
+						{
+							ROUTE_Stairs_Net  =
+							{
+							},
+						},
+					},
+					ROUTE_Little_Door  =
+					{
+						ROUTE_Explosive_Center  =
+						{
+							ROUTE_Barricade  =
+							{
+								ROUTE_Ladder_CP  =
+								{
+								},
+								ROUTE_Stairs_CP  =
+								{
+									ROUTE_Cappoint_Left  =
+									{
+									},
+									ROUTE_Cappoint_Right  =
+									{
+									},
+								},
+							},
+						},
+						ROUTE_Protect_Net  =
+						{
+							ROUTE_Stairs_Net  =
+							{
+							},
+						},
+					},
+				},
+				ROUTE_Entrance_Gates_Right  =
+				{
+					ROUTE_Big_Door  =
+					{
+						ROUTE_Explosive_Center  =
+						{
+							ROUTE_Barricade  =
+							{
+								ROUTE_Ladder_CP  =
+								{
+								},
+								ROUTE_Stairs_CP  =
+								{
+									ROUTE_Cappoint_Left  =
+									{
+									},
+									ROUTE_Cappoint_Right  =
+									{
+									},
+								},
+							},
+						},
+						ROUTE_Protect_Net  =
+						{
+							ROUTE_Stairs_Net  =
+							{
+							},
+						},
+					},
+					ROUTE_Little_Door  =
+					{
+						ROUTE_Explosive_Center  =
+						{
+							ROUTE_Barricade  =
+							{
+								ROUTE_Ladder_CP  =
+								{
+								},
+								ROUTE_Stairs_CP  =
+								{
+									ROUTE_Cappoint_Left  =
+									{
+									},
+									ROUTE_Cappoint_Right  =
+									{
+									},
+								},
+							},
+						},
+						ROUTE_Protect_Net  =
+						{
+							ROUTE_Stairs_Net  = {},
+						},
+					},
+				},
+				ROUTE_Roof_Access  =
+				{
+					ROUTE_Roof  = {},
+				},
+			},
+		};
+		MapRoutes["DEFEND_Factory_Low.*"] =
+		{
+			ROUTE_Factory_Allied_S  =
+			{
+				ROUTE_Exit_Allied_S_Low  = {},
+				},
+		};
+		MapRoutes["DEFEND_Factory_Top.*"] =
+		{
+			ROUTE_Factory_Allied_S  =
+			{
+				ROUTE_Cab_North_2  =
+				{
+				},
+			},
+			ROUTE_Ladder_Missile_Top  = {},
+		};
+	MapRoutes.SWITCH_Front_Door = MapRoutes.PLANT_factory_entrance_gates;
+	MapRoutes.PLANT_Barricade = MapRoutes.FLAG_gold;
+	MapRoutes["ATTACK_Missile.*"] = MapRoutes.PLANT_missile;
+
+	Util.Routes(MapRoutes);
+	Util.DisableGoal("ROUTE_Side_Entrance");
+	Util.DisableGoal("ROUTE_Garage_Door");
+	Util.DisableGoal("ROUTE_Tunnel_Ent");
+	Util.DisableGoal("ROUTE_Scaffoldinf");
+};

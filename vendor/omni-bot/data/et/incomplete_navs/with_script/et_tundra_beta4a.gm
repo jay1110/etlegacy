@@ -1,0 +1,244 @@
+//==========================================================================================
+//
+//	et_tundra_beta4a.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	10 January 2018	Initial Script
+//  palota	25 June 2025
+//==========================================================================================
+//
+
+global Map =
+{
+	Navigation =
+	{
+		grate =
+		{
+			EvalFunc = function()
+			{
+				return !Map.grateBroken;
+			},
+			navigate = function()
+			{
+				this.AddWeaponRequest(WEAPON.KNIFE);
+				this.AddAimRequest(Priority.Medium, "facing", Vec3(0.149, 0.009, 0.989));
+				for(i=0; i<20; ++i){
+					this.Bot.HoldButton(BTN.ATTACK1, 1);
+					this.Bot.HoldButton(BTN.FORWARD, 1);
+					this.Bot.ResetStuckTime();
+					sleep(1);
+					if (this.Bot.GetPosition().z > 1350) {
+						Map.grateBroken = 1;
+						break;
+					}
+				}
+			},
+		},
+	},
+
+	tunnelflag_Allies_Captured = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"MOBILEMG42_CP_.*",
+			"SNIPE_Al_CP_.*",
+		});
+
+		Util.MapDebugPrint( "tunnelflag_Allies_Captured" );
+	},
+
+	tunnelflag_Axis_Captured = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 0, {
+			"MOBILEMG42_CP_.*",
+			"SNIPE_Al_CP_.*",
+		});
+
+		Util.MapDebugPrint( "tunnelflag_Axis_Captured" );
+	},
+
+	Outpost_Gate_Destroyed = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals( TEAM.ALLIES, 0, {
+			"ATTACK_.*",
+			"MOBILEMG42_CP_.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"ATTACK_PG.*",
+			"PLANT_Power_Grid",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, 0, {
+			"CHECK.*",
+			"DEFEND_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, 1, {
+			"DEFEND_PG_.*",
+			"MOBILEMG42_PG_.*",
+		});
+		
+		SetGoalPriority("BUILD_Command_Post", 0.81);
+		Util.LimitToClass("PLANT_Command_Post", 0, CLASS.COVERTOPS );
+		Util.MapDebugPrint( "Outpost_Gate_Destroyed" );
+	},
+
+	Power_Grid_Destroyed = function()
+	{
+		//end game
+		Util.MapDebugPrint( "Power_Grid_Destroyed" );
+	},
+
+	North_MG42_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_North_MG42" );
+		Util.MapDebugPrint( "North_MG42_Built" );
+	},
+	North_MG42_Destroyed = function()
+	{
+		Util.MapDebugPrint( "North_MG42_Destroyed" );
+	},
+
+	South_MG42_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_South_MG42" );
+		Util.MapDebugPrint( "South_MG42_Built" );
+	},
+	South_MG42_Destroyed = function()
+	{
+		Util.MapDebugPrint( "South_MG42_Destroyed" );
+	},
+
+	Allied_CP_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"SNIPE_Al_CP_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, 0, "SNIPE_Ax_FS_.*" );
+
+		Util.MapDebugPrint( "Allied_CP_Built" );
+	},
+
+	Allied_CP_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Allied_CP_Destroyed" );
+	},
+
+	Axis_CP_Built = function()
+	{
+		Util.MapDebugPrint( "Axis_CP_Built" );
+	},
+
+	Axis_CP_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Axis_CP_Destroyed" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "^1Axis control the Flag!", Map.tunnelflag_Axis_Captured );
+	OnTrigger( "^1Allies control the Flag!", Map.tunnelflag_Allies_Captured );
+
+	OnTrigger( "Axis team has built the North MG42!", Map.North_MG42_Built );
+	OnTrigger( "Allied team has destroyed the North MG42!", Map.North_MG42_Destroyed );
+
+	OnTrigger( "Axis team has built the South MG42!", Map.South_MG42_Built );
+	OnTrigger( "Allied team has destroyed the South MG42!", Map.South_MG42_Destroyed );
+
+	OnTrigger( "^1The Compound Gate has been breached! ^4The Allied team owns the flag", Map.Outpost_Gate_Destroyed );
+
+	OnTrigger( "Allies Destroyed the Power Grid!", Map.Power_Grid_Destroyed );
+
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!",  Map.Allied_CP_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!",          Map.Allied_CP_Destroyed );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!",    Map.Axis_CP_Built );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!",          Map.Axis_CP_Destroyed );
+
+	Util.DisableGoal( ".*", 1 );
+
+	Util.EnableGoal({
+		"CHECK.*",
+		"BUILD_Command_Post",
+		"PLANT_Command_Post",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, 1, {
+		"ATTACK_Gate_.*",
+		"ATTACK_CP_.*",
+		"PLANT_Outpost_Gate",
+	});
+
+	SetAvailableMapGoals( TEAM.AXIS, 1, {
+		"DEFEND_FS_.*",
+		"DEFEND_Flag_.*",
+		"SNIPE_Ax_FS_.*",
+		"BUILD_North_MG42",
+		"BUILD_South_MG42",
+		"MOUNTMG42.*",
+		"REPAIRMG42.*",
+	});
+
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=30, MaxCampTime=300} );
+
+	Util.LimitToClass( "PLANT_North_MG42", 2, CLASS.COVERTOPS );
+	Util.LimitToClass( "PLANT_South_MG42", 2, CLASS.COVERTOPS );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 100;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_Outpost_Gate =
+		{
+			ROUTE_CP =
+			{
+				ROUTE_Gate = {},
+				ROUTE_Tunnel_T =
+				{
+					Weight=3,
+					ROUTE_Tunnel_1 = {}
+				},
+			},
+		},
+
+		PLANT_Power_Grid =
+		{
+			ROUTE_FS =
+			{
+				ROUTE_Radio = {},
+				ROUTE_Gate =
+				{
+					Weight=2,
+					ROUTE_PG_Stairs = {},
+					ROUTE_Ladders = {},
+				},
+				ROUTE_Tunnel_T =
+				{
+					ROUTE_Tunnel_1 =
+					{
+						ROUTE_Tunnel_2 =
+						{
+							ROUTE_South_MG42 = {},
+						},
+					},
+				},
+			},
+		},
+	};
+	
+	MapRoutes["ATTACK_PG.*"] = MapRoutes.PLANT_Power_Grid;
+	
+	Util.Routes(MapRoutes);
+};

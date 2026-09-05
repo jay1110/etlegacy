@@ -1,0 +1,485 @@
+//==========================================================================================
+//
+//	hkf1.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	25 October 2017	incomplete waypoints
+//	palota	6 July 2025	rope bridge path, ladders, houses in the city, script, goals
+//==========================================================================================
+//
+
+global Map =
+{
+	SaveGroups = 0,
+	DispenseAmmoTime = 7,
+	DispenseHealthTime = 7,
+	gateDestroyed=0,
+	prisonGateBuilt=0,
+	garageDoorDestroyed=0,
+	tankStolen=0,
+	cpAllied=0,
+
+	Navigation =
+	{
+		ladder = //allied spawn
+		{
+			navigate = function()
+			{
+				this.AddAimRequest(Priority.High, "facing", Vec3(-0.167, -0.760, 0.629));
+				for(i=0;i<50;++i){
+					if(this.Bot.GetPosition().z > 40){
+						break;
+					}
+					yield();
+				}
+				this.Bot.HoldButton(BTN.STRAFE_L, 1);
+				sleep(1);
+			},
+		},
+	},
+
+	Axis_RoadBlock_Built = function(trigger)
+	{
+		if (trigger.Entity == Map.roadBlockEnt){
+			Util.MapDebugPrint("RoadBlock2_Built");
+		}else{
+			Util.DisableGoal("ROUTE_block.*");
+			SetAvailableMapGoals(TEAM.ALLIES, !Map.gateDestroyed, "ATTACK_block.*");
+			Util.MapDebugPrint("RoadBlock1_Built");
+		}
+	},
+
+	Axis_RoadBlock_Destroyed = function(trigger)
+	{
+		if (trigger.Entity == Map.roadBlockEnt){
+			Util.MapDebugPrint("RoadBlock2_Destroyed");
+		}else{
+			Wp.CheckBlockable();
+			Util.EnableGoal("ROUTE_block.*");
+			SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_block.*");
+			Util.MapDebugPrint("RoadBlock1_Destroyed");
+
+			SetGoalPriority("PLANT_City_Gate", 0.9);
+			sleep(1);
+			SetGoalPriority("PLANT_City_Gate", 0.81);
+		}
+	},
+
+	Rope_Bridge_Built = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.ALLIES, true, "PLANT_Upper_Bunker_Door", true);
+		Util.MapDebugPrint("Rope_Bridge_Built");
+	},
+
+	Rope_Bridge_Destroyed = function()
+	{
+		Util.MapDebugPrint("Rope_Bridge_Destroyed");
+	},
+
+	Upper_Bunker_Door_Destroyed = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.AXIS, true, "PLANT_Rope_Bridge");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "PLANT_Door_Controls");
+		Util.MapDebugPrint("Upper_Bunker_Door_Destroyed");
+	},
+
+	Door_Controls_Destroyed = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			".*MG42_upper",
+			"PLANT_Rope_Bridge",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, !Map.gateDestroyed, {
+			"PLANT_a_weakened_wall",
+			"ATTACK_wall.*",
+		});
+		Util.MapDebugPrint("Door_Controls_Destroyed");
+	},
+
+	Wall_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		Util.EnableGoal(".*Command_Post");
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"BUILD_Prison_Gate",
+			"BUILD_RoadBlock",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_wall.*");
+		Map.SetTank();
+		Util.MapDebugPrint("Wall_Destroyed");
+	},
+
+	Gate_Destroyed = function()
+	{
+		Map.gateDestroyed=1;
+		sleep(0.1);
+		Wp.CheckBlockable();
+		Wp.SetWaypointFlag("axis_door.*", {"axis", "door"}, false);
+
+		Util.DisableGroup("ax1");
+		Util.DisableGroup("al1");
+		Util.EnableGoal(".*Command_Post");
+
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"PLANT_Rope_Bridge",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"BUILD_Prison_Gate",
+			"BUILD_RoadBlock",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"PLANT_a_weakened_wall",
+			"ATTACK_wall.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"PLANT_garage_side_door",
+			"PLANT_Prison_Gate",
+			"PLANT_RoadBlock",
+		});
+		Map.SetTank();
+		Map.SetCP();
+		Util.MapDebugPrint("Gate_Destroyed");
+	},
+
+	SetTank = function()
+	{
+		if(!Map.tankStolen){
+			b = !Map.prisonGateBuilt || Map.garageDoorDestroyed;
+			SetAvailableMapGoals(TEAM.ALLIES, b, {
+				"BUILD_Tank",
+				"MOUNT_tank",
+			});
+			SetAvailableMapGoals(0, !b, "ROUTE_prison_tower.*");
+			b2 = Map.gateDestroyed || Map.cpAllied;
+			SetAvailableMapGoals(TEAM.ALLIES, b && b2, "ATTACK_prison.*");
+			SetAvailableMapGoals(TEAM.ALLIES, !Map.garageDoorDestroyed && b2, "ATTACK_garage.*");
+		}
+	},
+
+	Prison_Gate_Built = function()
+	{
+		Map.prisonGateBuilt=1;
+		Util.DisableGoal("ROUTE_prison_gate");
+		Util.EnableGoal("ROUTE_prison_tower.*");
+		Map.SetTank();
+		Util.MapDebugPrint("Prison_Gate_Built");
+	},
+
+	Prison_Gate_Destroyed = function()
+	{
+		Map.prisonGateBuilt=0;
+		Wp.CheckBlockable();
+		Util.EnableGoal("ROUTE_prison_gate");
+		Util.DisableGoal("ROUTE_prison_tower.*");
+		Map.SetTank();
+		Util.MapDebugPrint("Prison_Gate_Destroyed");
+	},
+
+	Garage_Door_Destroyed = function()
+	{
+		Map.garageDoorDestroyed=1;
+		sleep(0.1);
+		Wp.CheckBlockable();
+		Map.SetTank();
+		Util.MapDebugPrint("Garage_Door_Destroyed");
+	},
+
+	SetCP = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, !Map.tankStolen && !Map.cpAllied && Map.gateDestroyed, "DEFEND_enter.*");
+		SetAvailableMapGoals(TEAM.AXIS, !Map.tankStolen && Map.cpAllied, "DEFEND_cp.*");
+		if(!Map.tankStolen && !Map.gateDestroyed){
+			Map.SetTank();
+			if(Map.cpAllied){
+				Util.DisableGroup("ax1");
+				Util.DisableGroup("al1");
+			}else{
+				Util.EnableGroup("ax1", TEAM.AXIS);
+				Util.EnableGroup("al1", TEAM.ALLIES);
+			}
+		}
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+		Map.cpAllied=1;
+		Map.SetCP();
+		Util.MapDebugPrint("Allied_Command_Post_Built");
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+		Map.cpAllied=0;
+		Map.SetCP();
+		Util.MapDebugPrint("Allied_Command_Post_Destroyed");
+	},
+
+	Tank_Built = function()
+	{
+		Util.MapDebugPrint("Tank_Built");
+	},
+
+	Tank_Stolen = function()
+	{
+		Map.tankStolen=1;
+		Map.SetCP();
+		if(!Map.gateDestroyed){
+			Util.DisableGroup("ax1");
+			Util.DisableGroup("al1");
+		}
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"DEFEND_city.*",
+			"MOUNT_tank_axis",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"ATTACK_prison.*",
+			"ATTACK_garage.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"BUILD_Tank",
+			"ESCORT_tank",
+			"MOUNT_tank",
+			"PLANT_Prison_Gate",
+		});
+		SetGoalPriority("BUILD_Prison_Gate", 0.6);
+
+		OnTriggerRegion(Vec3(-3579, -1765, 920), 100, RegionTrigger.VehicleTrigger);
+		OnTriggerRegion(Vec3(-3900, -3804, 920), 100, RegionTrigger.VehicleTrigger);
+
+		Map.DispenseAmmoTime = 3;
+		Map.DispenseHealthTime = 3;
+		Util.MapDebugPrint("Tank_Stolen");
+	},
+
+	tank_at_location = function()
+	{
+		switch(Map.VehicleLocation)
+		{
+			case 1:
+			{
+				SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_corner.*");
+			}
+			case 2:
+			{
+				SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_corner.*");
+				SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_armory.*");
+			}
+		}
+		Util.MapDebugPrint("tank at location " + Map.VehicleLocation, 1);
+	},
+
+	Armory_Breached = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"DEFEND_armory.*",
+			"DEFEND_city.*",
+			"BUILD_Prison_Gate",
+			"BUILD_RoadBlock",
+			"MOUNT_tank_axis",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			".*MG42_bridge1",
+			".*MG42_east",
+			"DEFEND_bridge.*",
+			"SNIPE_bridge.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"ESCORT_tank",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"FLAG_dyno",
+			"CAPPOINT.*",
+			"ATTACK_bridge.*",
+			"ATTACK_armory.*",
+		});
+		ETUtil.SetAimModeForMount("MOUNT_tank", Vec3(832, -3225, 912));
+		Util.MapDebugPrint("Armory_Breached");
+	},
+
+	dyno_Taken = function()
+	{
+		Util.MapDebugPrint("dyno_Taken");
+	},
+
+	dyno_Returned = function()
+	{
+		Util.MapDebugPrint("dyno_Returned");
+	},
+
+	dyno_Secured = function(i)
+	{
+		Util.DisableGoal("CAPPOINT_"+i);
+		Util.MapDebugPrint("dyno_Secured " + i);
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("The Axis team has built the Roadblock!", Map.Axis_RoadBlock_Built);
+	OnTrigger("The Allied team has destroyed the Roadblock!", Map.Axis_RoadBlock_Destroyed);
+	OnTrigger("Allied team has built the Rope Bridge!", Map.Rope_Bridge_Built);
+	OnTrigger("The Axis team has destroyed the Rope Bridge!", Map.Rope_Bridge_Destroyed);
+	OnTrigger("The allied team has destroyed the Upper Bunker door and gained access t", Map.Upper_Bunker_Door_Destroyed);
+	OnTrigger("The allied team has destroyed the Lower Bunker door controls and secure", Map.Door_Controls_Destroyed);
+	OnTrigger("The Allies have collapsed the bunker wall and gained access to the city", Map.Wall_Destroyed);
+	OnTrigger("The allied team has destroyed the gate and gained access to the city!", Map.Gate_Destroyed);
+	OnTrigger("The Axis team has built the Prison Gate!", Map.Prison_Gate_Built);
+	OnTrigger("The Allied team has destroyed the Prison Gate!", Map.Prison_Gate_Destroyed);
+	OnTrigger("The allied team has destroyed the garage side door!", Map.Garage_Door_Destroyed);
+	OnTrigger("The Tank has been repaired!", Map.Tank_Built);
+	OnTrigger("Allies have stolen the tank!!!", Map.Tank_Stolen);
+	OnTrigger("tank at location", Map.tank_at_location);
+	OnTrigger("Allies have breached the armory!!!", Map.Armory_Breached);
+	OnTrigger("Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built);
+	OnTrigger("Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed);
+	OnTrigger("Allies have stolen Dynomite!", Map.dyno_Taken);
+	OnTrigger("Flag returned dyno!", Map.dyno_Returned);
+	OnTrigger("Allies captured exitpoint1", function(){ Map.dyno_Secured(1); });
+	OnTrigger("Allies captured exitpoint2", function(){ Map.dyno_Secured(2); });
+	OnTrigger("Allies captured exitpoint3", function(){ Map.dyno_Secured(3); });
+
+	OnTriggerRegion(AABB(-8918.736,-4018.475,1139.873,-7204.183,-3532.275,1523.982), RegionTrigger.DisableCombatMovement); //rope bridge
+	OnTriggerRegion(AABB(-3448.875,-131.868,1041.125,-1530.991,819.330,1392.270), RegionTrigger.DisableCombatMovement); //prison
+	Util.DisableGoal(".*", true);
+	Util.DisableGoal("ROUTE_block.*");
+	Util.EnableGoal({
+		"AMMOCAB.*",
+		"HEALTHCAB.*",
+	});
+	SetGoalGroup({
+		"BUILD_axis_roadblock",
+		".*MG42_bunker",
+		".*MG42_controls",
+		".*MG42_upper",
+		"DEFEND_gate.*",
+		"PLANTMINE_g.*",
+	}, "ax1");
+	Util.EnableGroup("ax1", TEAM.AXIS);
+
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"PLANT_City_Gate",
+	});
+	SetGoalGroup({
+		"ATTACK_gate.*",
+		"ATTACK_block.*",
+		"ATTACK_upper.*",
+		"BUILD_Rope_Bridge",
+		"PLANT_axis_roadblock",
+		"GRENADE_controls",
+		"GRENADE_bunker",
+	}, "al1");
+	Util.EnableGroup("al1", TEAM.ALLIES);
+
+	SetGoalPriority("Build_Rope_Bridge", 0.81);
+	SetGoalPriority("BUILD_Neutral_Command_Post", 0.81);
+	SetGoalPriority("BUILD_RoadBlock", 0.81);
+	SetGoalPriority("PLANT_Rope_Bridge", 0.5);
+	SetGoalPriority("MOUNTMG42_upper", 0.5);
+	SetGoalPriority("REPAIRMG42_controls", 0.9);
+	SetGoalPriority("ATTACK_upper.*", 0);
+	SetGoalPriority("ATTACK_upper.*", 0.8, 0, CLASS.ENGINEER);
+	SetGoalPriority("GRENADE.*", 0.5);
+	SetGoalPriority("DEFEND_corner.*", 0.51);
+	SetGoalPriority("SNIPE_bridge.*", 0.81);
+	SetGoalPriority("DEFUSE_Upper.*", 0, 0, 0, true);
+	SetGoalPriority("DEFUSE_axis_roadblock.*", 0.8, 0, 0, true);
+	Util.ExcludeClass("PLANT_Rope_Bridge", TEAM.AXIS, CLASS.ENGINEER);
+	Util.ExcludeClass("MOUNTMG42_upper", TEAM.AXIS, CLASS.ENGINEER, CLASS.MEDIC);
+
+	Util.SetMaxUsers(1, {"MOUNTMG42.*", "MOUNT_tank_axis", "GRENADE.*", ".*Command_Post", "CAPPOINT.*", "PLANT_a_weakened_wall"});
+	Util.SetMaxUsers(3, "FLAG.*");
+	Util.SetMaxUsersInProgress(2, "ATTACK.*");
+
+	SetMapGoalProperties("ATTACK.*", {MaxCampTime=30});
+	SetMapGoalProperties("ATTACK_upper.*", {MinCampTime=30}); //wait for charge
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=30, MaxCampTime=60});
+	SetMapGoalProperties("SNIPE.*", {MinCampTime=30, MaxCampTime=60});
+	SetMapGoalProperties("MOUNTMG42.*", {MaxCampTime=90});
+
+	Util.AddUsePoint("PLANT_axis_roadblock", Vec3(-5866, 94, 495));
+	Util.AddUsePoint("PLANT_City_Gate", { Vec3(-5368, -868, 914), Vec3(-5206, -852, 920)});
+	Util.AddUsePoint("BUILD_Rope_Bridge", Vec3(-7745,-3914,1288));
+	Util.AddUsePoint("PLANT_Prison_Gate", { Vec3(-2490, -94, 920), Vec3(-2376, 56, 920)});
+
+	Wp.SetWaypointFlag("axis_door.*", {"axis", "door"}, true);
+
+	Map.roadBlockEnt = GetGoal("PLANT_RoadBlock").GetEntity();
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.TargetBreakableDist = 100;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_City_Gate =
+		{
+			ROUTE_allied_spawn =
+			{
+				ROUTE_a3 ={},
+				ROUTE_a4 ={},
+				ROUTE_block1 ={},
+				ROUTE_block2 ={},
+			},
+		},
+		PLANT_axis_roadblock =
+		{
+			ROUTE_allied_spawn =
+			{
+				ROUTE_a1 ={},
+				ROUTE_a2 ={},
+			},
+		},
+		CAPPOINT_1 = //east
+		{
+			ROUTE_dyno =
+			{
+				ROUTE_bridgeN4 ={},
+				ROUTE_bridgeN1 ={},
+				ROUTE_bridgeN2 ={},
+				ROUTE_bridgeS1 ={},
+				ROUTE_bridgeS2 ={},
+			},
+		},
+		CAPPOINT_2 = //west
+		{
+			ROUTE_dyno =
+			{
+				ROUTE_bridgeN3 ={},
+				ROUTE_bridgeS3 ={},
+			},
+		},
+		CAPPOINT_3 = //center
+		{
+			ROUTE_dyno =
+			{
+				ROUTE_bridgeN1 ={},
+				ROUTE_bridgeN2 ={},
+				ROUTE_bridgeS1 ={},
+				ROUTE_bridgeS2 ={},
+			},
+		},
+	};
+	MapRoutes["DEFEND_enter.*"]={
+		ROUTE_prison_spawn =
+		{
+			ROUTE_prison_gate ={},
+			ROUTE_tank ={},
+			ROUTE_prison_towerE ={},
+			ROUTE_prison_towerW ={},
+		},
+	};
+	MapRoutes["ATTACK_gate.*"] = MapRoutes.PLANT_City_Gate;
+	MapRoutes["ATTACK_block.*"] = MapRoutes.PLANT_axis_roadblock;
+	Util.Routes(MapRoutes);
+};

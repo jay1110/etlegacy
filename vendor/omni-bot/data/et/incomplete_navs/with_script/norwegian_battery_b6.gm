@@ -1,0 +1,289 @@
+//==========================================================================================
+//
+//	norwegian_battery_b6.gm
+//
+//	Who                            	When		What
+//------------------------------------------------------------------------------------------
+//	jcfgonc@gmail.com	20 October 2016	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	DefaultTargetBreakableDist = 150.0,
+	commandPostHouseDoorDestroyed = false,
+
+	commandPostHouseDoor = function()
+	{
+		Util.MapDebugPrint( "thread commandPostHouseDoor started", true );
+		wpOne = Util.WpNameInfo("commandposthouse_1");	//top
+		wpTwo = Util.WpNameInfo("commandposthouse_2");	//bottom
+		startoffset = Vector3(0,0,0);
+		endoffset = Vector3(0,0,0);
+
+		while( true ) {
+			tr = TraceLine( wpOne.position + startoffset, wpTwo.position + endoffset, null, TRACE.SHOT, 0, false );
+
+			if ( tr.fraction < 0.9 ) {
+				if ( Map.Debug )
+				{ DrawDebugLine(wpOne.position + startoffset, wpTwo.position + endoffset, COLOR.RED, 0.25); }
+
+				SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_door_of_the_commandpost_house" );
+//				Map.door_of_the_commandpost_house_Built();
+				Map.commandPostHouseDoorDestroyed = false;
+			}
+			else  {
+				if ( Map.Debug )
+				{ DrawDebugLine(wpOne.position + startoffset, wpTwo.position + endoffset, COLOR.GREEN, 0.25); }
+
+//				Map.door_of_the_commandpost_house_Destroyed();
+				SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_door_of_the_commandpost_house" );
+				Map.commandPostHouseDoorDestroyed = true;
+				//	Wp.SetWaypointFlag("axis_mg_roof_1", "closed", true);
+				//	Wp.SetWaypointFlag("axis_mg_roof_2", "closed", true);
+			}
+
+			sleep(1);
+		}
+
+	},
+
+	AxisCPConstructed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Command_Post" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_Command_Post",
+			"PLANT_Command_Post",
+		});
+		Util.MapDebugPrint( "AxisCPConstructed" );
+	},
+
+	AlliedCPConstructed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"BUILD_Command_Post",
+			"PLANT_Command_Post",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Command_Post" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Command_Post" );
+		Util.MapDebugPrint( "AlliedCPConstructed" );
+	},
+
+	AxisCPDestroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+		Util.MapDebugPrint( "AxisCPDestroyed" );
+	},
+
+	AlliedCPDestroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+		Util.MapDebugPrint( "AlliedCPDestroyed" );
+	},
+
+	door_of_the_commandpost_house_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"BUILD_Command_Post",
+			"PLANT_Command_Post",
+		});
+//		Util.MapDebugPrint( "door_of_the_commandpost_house_Built" );
+	},
+
+	door_of_the_commandpost_house_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Command_Post",
+			"PLANT_Command_Post",
+		});
+//		Util.MapDebugPrint( "door_of_the_commandpost_house_Destroyed" );
+	},
+
+	gate_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("overthewalljump", "closed", true);
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"FLAG_keycard",
+			"MOUNTMG42_1441",
+		});
+		SetGoalPriority( "DEFEND_axis_Gate.*", 0.5 , TEAM.AXIS);
+		Util.MapDebugPrint( "gate_Destroyed" );
+	},
+
+	gate_Planted = function()
+	{
+		SetGoalPriority( "DEFEND_axis_Gate.*", 0.85 , TEAM.AXIS);
+		Util.MapDebugPrint( "gate_Planted" );
+	},
+
+	gate_Defused = function()
+	{
+		SetGoalPriority( "DEFEND_axis_Gate.*", 0.5 , TEAM.AXIS);
+		Util.MapDebugPrint( "gate_Defused" );
+	},
+
+	gun_controls_Destroyed = function()
+	{
+		Util.MapDebugPrint( "gun_controls_Destroyed" );
+	},
+
+	keycard_Taken = function()
+	{
+		Util.MapDebugPrint( "keycard_Taken" );
+	},
+
+	keycard_Returned = function()
+	{
+		Util.MapDebugPrint( "keycard_Returned" );
+	},
+
+	keycard_Secured = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_gun_controls" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "MOUNTMG42_1441" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "MOUNTMG42_516" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "MOUNTMG42_516" );
+		Util.MapDebugPrint( "keycard_Secured" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.AxisCPConstructed );
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.AlliedCPConstructed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.AxisCPDestroyed );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.AlliedCPDestroyed );
+
+	OnTrigger( "the axis has rebuilded the door of the commandpost house", Map.door_of_the_commandpost_house_Built );
+	OnTrigger( "the allies has destroyed the door of the commandpost house!", Map.door_of_the_commandpost_house_Destroyed );
+	OnTrigger( "the gate is destroyed", Map.gate_Destroyed );
+	OnTrigger( "Planted at the gate.", Map.gate_Planted );
+	OnTrigger( "Defused at the gate.", Map.gate_Defused );
+	OnTrigger( "the allies have taken the keycard", Map.keycard_Taken );
+	OnTrigger( "the axis returned their keycard", Map.keycard_Returned );
+	OnTrigger( "keycard in placed, doors opening", Map.keycard_Secured );
+
+	Util.DisableGoal( ".*", true ); // all but routes
+	Map.door_of_the_commandpost_house_Built();
+	SetAvailableMapGoals( TEAM.AXIS, false, "REPAIRMG42.*" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "MOUNTMG42_1441" );		//not initially
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"BUILD_Command_Post",
+		"BUILD_door_of_the_commandpost_house",
+		"DEFEND_axis_p1.*",
+		"DEFEND_axis_Gate.*",
+		"AMMOCAB_.*",
+		"HEALTHCAB_.*",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "REPAIRMG42.*" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "CAPPOINT_keycard_delivery" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Command_Post" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"FLAG_keycard",
+		"PLANT_Command_Post",
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"PLANT_gate",
+		"PLANT_door_of_the_commandpost_house",
+		"AMMOCAB_.*",
+		"HEALTHCAB_.*",
+	});
+
+	Util.SetGoalPosition( 1027.875, 2462.459, 24.125, "PLANT_door_of_the_commandpost_house");
+	Util.SetGoalPosition( 1142.125, 2530.863, 24.125, "BUILD_door_of_the_commandpost_house");
+	Util.SetGoalPosition( -637.153, 2325.875, 24.125, "CAPPOINT_keycard_delivery");
+	Util.SetGoalPosition( 1964.297, 1474.967, 24.125, "PLANT_gate");
+//	Util.SetGoalPosition( 2502.000, 1318.000, 288.000, "REPAIRMG42_1441");
+//	Util.SetGoalPosition( 2502.000, 1318.000, 288.000, "MOUNTMG42_1441");
+//	Util.SetGoalPosition( 173.000, 548.000, 344.000, "MOUNTMG42_1690");
+//	Util.SetGoalPosition( 173.000, 548.000, 344.000, "REPAIRMG42_1690");
+
+	SetGoalPriority( "DEFUSE_gate_1", 1.1 , TEAM.AXIS, CLASS.ENGINEER, true);
+	SetGoalPriority( "PLANT_door_of_the_commandpost_house.*", 1.1, TEAM.ALLIES, CLASS.COVERTOPS, true  );
+	SetGoalPriority( "PLANT_Command_Post.*", 1.2, TEAM.ALLIES, CLASS.COVERTOPS, true  );
+	SetGoalPriority( "PLANT_Command_Post.*", 1.1, TEAM.AXIS, CLASS.COVERTOPS, true  );
+
+	SetMapGoalProperties( "ATTACK.*", {MinCampTime=20, MaxCampTime=45});
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=20, MaxCampTime=45});
+
+	SetMapGoalProperties( "SNIPE.*", {MinCampTime=180, MaxCampTime=600});
+	SetMapGoalProperties( "MOBILEMG42.*", {MinCampTime=180, MaxCampTime=600});
+
+	// Max users per goal
+	Util.SetMaxUsers( 2, "PLANT.*" );
+	Util.SetMaxUsers( 1, "MOUNTMG42.*" );
+	Util.SetMaxUsers( 1, "FLAG_keycard" );
+	Util.SetMaxUsers( 3, "DEFEND_.*" );
+	//Util.SetMaxUsers( 1, "ATTACK_.*" );
+
+	// Camp times
+	//SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+
+
+	thread(Map.commandPostHouseDoor);
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot ) {
+	//jcfgonc destroy breakables
+	bot.TargetBreakableDist = Map.DefaultTargetBreakableDist;
+	weaps = { WEAPON.THOMPSON, WEAPON.MP40, WEAPON.SHOTGUN, WEAPON.M97,
+		WEAPON.M7, WEAPON.GARAND, WEAPON.K43, WEAPON.BAR, WEAPON.STEN,
+		WEAPON.MP34, WEAPON.BAR, WEAPON.STG44, WEAPON.FG42,
+		WEAPON.MOBILE_MG42,	WEAPON.MOBILE_MG42_SET,	WEAPON.MOUNTABLE_MG42,
+
+		WEAPON.SHOTGUN,
+		WEAPON.STG44,
+		WEAPON.BAR,
+		WEAPON.MP34,
+		WEAPON.VENOM,
+
+		WEAPON.M97,
+		WEAPON.PPSH,
+
+		WEAPON.LAW,
+		WEAPON.M79,
+		WEAPON.ITHACA,
+		WEAPON.RPD,
+		WEAPON.M3A1,
+		WEAPON.SAK47,
+		WEAPON.REVOLVER,
+		WEAPON.AKIMBO_MAC10
+
+	};
+
+	foreach( id and weap in weaps ) {
+		w = bot.GetWeapon(weap);
+		w.PrimaryFire.SetTargetBias(CLASS.BREAKABLE, 1.2);
+		//	w.PrimaryFire.SetDesirabilityRange(0, 300, 1.0);
+	}
+
+	w = bot.GetWeapon(WEAPON.KNIFE);
+	w.PrimaryFire.SetTargetBias(CLASS.BREAKABLE, 0.5);
+	w.PrimaryFire.SetDesirabilityRange(0, 15, 0.8);
+
+	toIgnore = {216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 230, 231, 237, 238, 239, 240, 243, 270, 271, 272, 273, 378, 376, 377, 381, 380, 379, 373, 374, 375, 372, 370, 371, 207, 208, 209, 204, 205, 206};
+
+	foreach( entityid in toIgnore ) {
+		bot.IgnoreTarget(entityid, 32767);
+		Util.MapDebugPrint( "IgnoreTarget: "+entityid );
+	}
+
+	if ( bot.GetClass() == CLASS.COVERTOPS  && bot.HasWeapon(WEAPON.FG42) ) {
+		bot.PickNewPrimaryWeapon( WEAPON.STEN );
+	}
+
+};
+

@@ -1,0 +1,592 @@
+//==============================================================================
+//
+//	Blackops Operation Ostra Brama 1.0 - ostrabrama.gm
+//
+//	Who				When				What
+//------------------------------------------------------------------------------
+//	Mateos			24 August 2024		Cleanup, Tank escorting
+//	IRATA [*]		2009				See below
+//	Sylar/Blowfish	25 May 2009			Map release waypoints
+//
+//==============================================================================
+
+/****************************************************
+Script updated by Mateos
+Correspondant WAY file hash: -
+Last update: 25th August 2024
+****************************************************/
+
+// 2009 IRATA [*]
+// Did use the 0.66 wps which comes which the map.
+// TODO:
+// Check routes
+// Enable 'small' wall break, looks like cops don't fine the goal (me2)
+//
+
+global Map =
+{
+	TankStatus = 0,
+	HouseFlagStatus = 0,
+
+	MainGateStatus = 0,
+	DocumentsStatus = 0,
+
+	AlSpawnAmmo = "AMMOCAB_first_ammocabinet_1",
+	AlSpawnHealth = "HEALTHCAB_first_healthcabinet_1",
+	TownAmmo = "AMMOCAB_first_ammocabinet",
+	TownHealth = "HEALTHCAB_first_healthcabinet",
+
+	Allies_Capture_Flag = function()
+	{
+		Map.HouseFlagStatus = 1;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CHECKPOINT_house_spawn_flag",
+			"ATTACK_Tent.*"
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Town.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_Tent.*",
+			"PLANTMINE_TentMine.*",
+			"SNIPE_TentSnipe1"
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_house_spawn_flag" );
+
+		Util.MapDebugPrint( "Allies_Capture_Flag" );
+	},
+
+	Axis_Capture_Flag = function()
+	{
+		Map.HouseFlagStatus = 2;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Town.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"CHECKPOINT_house_spawn_flag",
+			"ATTACK_Tent.*"
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_house_spawn_flag" );
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_Tent.*",
+			"PLANTMINE_TentMine.*",
+			"SNIPE_TentSnipe1"
+		});
+
+		Util.MapDebugPrint( "Axis_Capture_Flag" );
+	},
+
+	Tank_Repaired = function()
+	{
+		Map.TankStatus = 1;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_tank" );
+		if( Map.MainGateStatus == 0 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true , "MOVER_tank" );
+		}
+
+		Util.MapDebugPrint( "Tank_Repaired", true );
+	},
+
+	Tank_Destroyed = function()
+	{
+		Map.TankStatus = 0;
+
+		SetAvailableMapGoals( TEAM.ALLIES, true , "BUILD_tank" );
+		if( Map.MainGateStatus == 0 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "MOVER_tank" );
+		}
+
+		Util.MapDebugPrint( "Tank_Destroyed", true );
+	},
+
+	Tank_Passed_Tent = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true , "MOVER_tank" );
+
+		Util.MapDebugPrint( "Tank_Passed_Tent" );
+	},
+
+	Main_Gate_Destroyed = function()
+	{
+		Map.MainGateStatus = 1;
+
+		Util.DisableGoal( "CHECKPOINT_house_spawn_flag" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_.*",
+			"BUILD_Tank",
+			"MOUNT_Tank",
+			"MOVER_tank",
+			//"PLANT_broken_wall_planks"
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true , {
+			"ATTACK_Tower.*",
+			"FLAG_tower_docs",
+			"PLANT_Broken_wall"
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"MOVER_tank",
+			"AMMOCAB_.*",
+			"HEALTHCAB_.*",
+			"DEFEND_.*",
+			"PLANTMINE_.*",
+			"SNIPE_.*"
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true , {
+			Map.TownAmmo,
+			Map.TownHealth,
+			"DEFEND_Tower.*",
+			"PLANTMINE_MainGateMine1",
+			"PLANTMINE_BrokenWallMine1",
+			"PLANTMINE_TowerMine1",
+			"SNIPE_Tower.*"
+		});
+
+		Util.MapDebugPrint( "Main_Gate_Destroyed" );
+	},
+
+	Broken_Wall_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Broken_wall" );
+		// SetAvailableMapGoals( TEAM.AXIS  , true , "BUILD_broken_wall_planks" );
+		SetAvailableMapGoals( TEAM.AXIS  , true , "DEFEND_BrokenWall.*" );
+
+		Util.MapDebugPrint( "Broken_Wall_Destroyed" );
+	},
+	Broken_Wall_Defence_Built = function()
+	{
+		// SetAvailableMapGoals( TEAM.ALLIES, true , "PLANT_broken_wall_planks" );
+		// SetAvailableMapGoals( TEAM.AXIS  , false, "BUILD_broken_wall_planks" );
+		SetAvailableMapGoals( TEAM.AXIS  , false, "DEFEND_BrokenWall.*" );
+
+		Util.MapDebugPrint( "Broken_Wall_Defence_Built" );
+	},
+
+	Broken_Wall_Defence_Destroyed = function()
+	{
+		// SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_broken_wall_planks" );
+		// SetAvailableMapGoals( TEAM.AXIS  , true , "BUILD_broken_wall_planks" );
+		SetAvailableMapGoals( TEAM.AXIS  , true , "DEFEND_BrokenWall.*" );
+
+		Util.MapDebugPrint( "Broken_Wall_Defence_Destroyed" );
+	},
+
+	Broken_Wall_Plant = function()
+	{
+		Util.MapDebugPrint( "Broken_Wall_Plant" );
+	},
+
+	Broken_Wall_Defuse = function()
+	{
+		Util.MapDebugPrint( "Broken_Wall_Defuse" );
+	},
+
+	Broken_Wall_Defence_Plant = function()
+	{
+		Util.MapDebugPrint( "Broken_Wall_Defence_Plant" );
+	},
+
+	Broken_Wall_Defence_Defuse = function()
+	{
+		Util.MapDebugPrint( "Broken_Wall_Defence_Defuse" );
+	},
+
+	Documents_Stolen = function()
+	{
+		Map.DocumentsStatus = 1;
+		SetAvailableMapGoals( TEAM.AXIS  , false, "DEFEND_Tower.*" );
+		SetAvailableMapGoals( TEAM.AXIS  , true , "DEFEND_Radio.*" );
+
+		Util.MapDebugPrint( "Documents_Stolen" );
+	},
+
+	Documents_Returned = function()
+	{
+		Map.DocumentsStatus = 0;
+		SetAvailableMapGoals( TEAM.AXIS  , true , "DEFEND_Tower.*" );
+		SetAvailableMapGoals( TEAM.AXIS  , false, "DEFEND_Radio.*" );
+
+		Util.MapDebugPrint( "Documents_Returned" );
+	}
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "Allies captured House!", Map.Allies_Capture_Flag );
+	OnTrigger( "Axis reclaimed House!", Map.Axis_Capture_Flag );
+
+	OnTrigger( "Broken wall has been destroyed!", Map.Broken_Wall_Destroyed );
+	OnTrigger( "Broken wall defence has been built!", Map.Broken_Wall_Defence_Built );
+	OnTrigger( "Broken wall defence has been destroyed!", Map.Broken_Wall_Defence_Destroyed );
+
+	OnTrigger( "The Tank has been repaired!", Map.Tank_Repaired );
+	OnTrigger( "The Tank has been damaged!", Map.Tank_Destroyed );
+
+	OnTrigger( "Tank passed tent!", Map.Tank_Passed_Tent );
+
+	OnTrigger( "Main gate has been destroyed!", Map.Main_Gate_Destroyed );
+
+	OnTrigger( "Allies have stolen Axis Secret Documents!", Map.Documents_Stolen );
+	OnTrigger( "Axis have returned Axis Secret Documents!", Map.Documents_Returned );
+
+	Util.SetMaxUsers( 1, "ATTACK.*" );
+	Util.SetMaxUsers( 1, "DEFEND.*" );
+	SetMapGoalProperties( "ATTACK_.*", {MinCampTime=15, MaxCampTime=30});
+	SetMapGoalProperties( "DEFEND_.*", {MinCampTime=30, MaxCampTime=60});
+	SetMapGoalProperties( "SNIPE_.*", {MinCampTime=60, MaxCampTime=120});
+
+	// Allied goals
+	SetGoalPriority( "MOVER_tank", 0.8 );
+	SetGoalPriority( "BUILD_tank", 0.8 );
+	// SetGoalPriority( "MAP_CONSTRUCTION_tank_construct", 1.3 );
+	SetGoalPriority( "CHECKPOINT_house_spawn_flag", 0.75 );
+	SetGoalPriority( "FLAG_tower_docs", 0.8 );
+	SetGoalPriority( "PLANT_Broken_wall", 0.75 );
+	// SetGoalPriority( "PLANT_broken_wall_planks", 1.2 );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"AMMOCAB_.*",
+		"HEALTHCAB_.*",
+		//".*ARTILLERY_.*" ); // TODO: check!
+		"MOUNTMG42_.*",
+		"REPAIRMG42_.*",
+		//"MAP_MOBILE_MG42_SPOT_.*",
+		"SNIPE_.*",
+		"PLANTMINE_.*",
+		"DEFEND_.*",
+		"ATTACK_.*",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, true , {
+		"ATTACK_Tent.*",
+		"BUILD_tank",
+		"CHECKPOINT_house_spawn_flag",
+		"ESCORT_Tank",
+		"MOUNT_Tank"
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"FLAG_tower_docs",
+		"MOVER_tank",
+		"PLANT_Broken_wall",
+		//"PLANT_broken_wall_planks"
+	});
+
+	// Axis goals
+	SetGoalPriority( "CHECKPOINT_house_spawn_flag", 1.3, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_Tower.*", 1.2 );
+	SetGoalPriority( "DEFEND_BrokenWall.*", 1.1 );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+		"AMMOCAB_.*",
+		"HEALTHCAB_.*",
+		//".*ARTILLERY_.*",
+		"MOUNTMG42_.*",
+		"REPAIRMG42_.*",
+		//"MAP_MOBILE_MG42_SPOT_.*",
+		"SNIPE_.*",
+		"PLANT_.*",
+		"DEFEND_.*",
+		"ATTACK_.*",
+		Map.AlSpawnAmmo,
+		Map.AlSpawnHealth,
+	});
+
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+		"BUILD_broken_wall",
+		//"BUILD_broken_wall_planks",
+		"CHECKPOINT_house_spawn_flag"
+	});
+	SetAvailableMapGoals( TEAM.AXIS, true , {
+		"DEFEND_Tent.*",
+		"PLANTMINE_TentMine.*",
+		"SNIPE_TentSnipe1",
+	});
+
+	Util.MapDebugPrint( "Omni-bot map script for Blackops Operation Ostra Brama 1.0 executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	// limit: we have wide areas - it's unplayable for humans if we don't set this
+	bot.MaxViewDistance = 2800;
+	team = bot.GetTeam();
+	class = bot.GetClass();
+
+	if ( team == TEAM.ALLIES && class != CLASS.ENGINEER )
+	{
+		if ( RandInt( 0, 1 ) < 1 )
+		{
+			bot.ChangeSpawnPoint( 4 ); // River spawn
+		}
+	}
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_house_spawn_flag =
+		{
+			ROUTE_AlSpawn1 =
+			{
+				ROUTE_AlSpawnExit1 =
+				{
+					ROUTE_TankRoute1 =
+					{
+						ROUTE_TankRoute2 =
+						{
+						},
+					},
+					ROUTE_AlSpawnFront =
+					{
+						ROUTE_ShortCut1 =
+						{
+							ROUTE_TentFarLeft =
+							{
+							},
+							ROUTE_TankRoute2 =
+							{
+							},
+						},
+					},
+					ROUTE_AlSpawnBack =
+					{
+						ROUTE_AlSpawnExit2 =
+						{
+							ROUTE_ShortCut1 =
+							{
+								ROUTE_TentFarLeft =
+								{
+								},
+								ROUTE_TankRoute2 =
+								{
+								},
+							},
+							ROUTE_AlSpawnFront =
+							{
+								ROUTE_TankRoute1 =
+								{
+									ROUTE_TankRoute2 =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			ROUTE_AlSpawn2 =
+			{
+				ROUTE_AlSpawnExit2 =
+				{
+					ROUTE_ShortCut1 =
+					{
+						ROUTE_TentFarLeft =
+						{
+						},
+						ROUTE_TankRoute2 =
+						{
+						},
+					},
+					ROUTE_AlSpawnFront =
+					{
+						ROUTE_TankRoute1 =
+						{
+							ROUTE_TankRoute2 =
+							{
+							},
+						},
+					},
+					ROUTE_AlSpawnBack =
+					{
+						ROUTE_AlSpawnExit1 =
+						{
+							ROUTE_AlSpawnFront =
+							{
+								ROUTE_ShortCut1 =
+								{
+									ROUTE_TentFarLeft =
+									{
+									},
+									ROUTE_TankRoute2 =
+									{
+									},
+								},
+							},
+							ROUTE_TankRoute1 =
+							{
+								ROUTE_TankRoute2 =
+								{
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		PLANT_Broken_wall =
+		{
+			ROUTE_TentSpawn1 =
+			{
+				ROUTE_TentSpawnExit1 =
+				{
+					ROUTE_TankRoute3 =
+					{
+						ROUTE_RiverRoute1 =
+						{
+						},
+						ROUTE_RiverRoute2 =
+						{
+						},
+					},
+					ROUTE_FarRight =
+					{
+						ROUTE_RiverRoute3 =
+						{
+						},
+						ROUTE_Bridge =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_TentSpawn2 =
+			{
+				ROUTE_TentSpawnExit2 =
+				{
+					ROUTE_TentSpawnFront =
+					{
+						ROUTE_TankRoute3 =
+						{
+							ROUTE_RiverRoute1 =
+							{
+							},
+							ROUTE_RiverRoute2 =
+							{
+							},
+						},
+						ROUTE_FarRight =
+						{
+							ROUTE_RiverRoute3 =
+							{
+							},
+							ROUTE_Bridge =
+							{
+							},
+						},
+					},
+				},
+			},
+		},
+		CAPPOINT_Radio =
+		{
+			ROUTE_Documents =
+			{
+				ROUTE_MainGate =
+				{
+				},
+				ROUTE_Roof =
+				{
+					ROUTE_RoofFall =
+					{
+					},
+					ROUTE_Ropes =
+					{
+					},
+				},
+			},
+		},
+		FLAG_tower_docs =
+		{
+			ROUTE_TentSpawn1 =
+			{
+				ROUTE_TentSpawnExit1 =
+				{
+					ROUTE_TankRoute3 =
+					{
+						ROUTE_RiverRoute1 =
+						{
+						},
+						ROUTE_RiverRoute2 =
+						{
+						},
+					},
+					ROUTE_FarRight =
+					{
+						ROUTE_RiverRoute3 =
+						{
+						},
+						ROUTE_Bridge =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_TentSpawn2 =
+			{
+				ROUTE_TentSpawnExit2 =
+				{
+					ROUTE_TentSpawnFront =
+					{
+						ROUTE_TankRoute3 =
+						{
+							ROUTE_RiverRoute1 =
+							{
+								ROUTE_Ropes =
+								{
+									ROUTE_Roof =
+									{
+									},
+								},
+								ROUTE_MainGate =
+								{
+								},
+							},
+							ROUTE_RiverRoute2 =
+							{
+								ROUTE_Ropes =
+								{
+									ROUTE_Roof =
+									{
+									},
+								},
+								ROUTE_MainGate =
+								{
+								},
+							},
+						},
+						ROUTE_FarRight =
+						{
+							ROUTE_RiverRoute3 =
+							{
+								ROUTE_MainGate =
+								{
+								},
+							},
+							ROUTE_Bridge =
+							{
+								ROUTE_MainGate =
+								{
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	};
+
+	MapRoutes.ATTACK_Tent1 = MapRoutes.CHECKPOINT_house_spawn_flag;
+	MapRoutes.ATTACK_Tent2 = MapRoutes.CHECKPOINT_house_spawn_flag;
+	MapRoutes.ATTACK_Tent3 = MapRoutes.CHECKPOINT_house_spawn_flag;
+	// MapRoutes.PLANT_broken_wall_planks = MapRoutes.PLANT_Broken_wall;
+	MapRoutes.ATTACK_Tower1 = MapRoutes.MAP_FLAG_tower_docs;
+	MapRoutes.ATTACK_Tower2 = MapRoutes.MAP_FLAG_tower_docs;
+	MapRoutes.ATTACK_Tower3 = MapRoutes.MAP_FLAG_tower_docs;
+
+	Util.Routes( MapRoutes );
+};

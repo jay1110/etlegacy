@@ -1,0 +1,2367 @@
+//==========================================================================================
+//
+//	himmelsdorf.gm
+//
+//	Who      	When		What
+//------------------------------------------------------------------------------------------
+//	Qiki		18.04.2025	Initial Script, Waypoints, Navigation
+//	native12	06.06.2025	Script, goals
+//	Qiki		06.06.2025	Stuckages
+//	native12	07.06.2025	Release
+//==========================================================================================
+//Thx Palota for corrections
+//adapted for version: himmelsdorf_b6, himmelsdorf_b7, himmelsdorf_b8
+
+global Map =
+{
+	Allied_Command_Post = false,
+	Axis_Command_Post = false,
+	Tank = false,
+	Truck = true,
+	Truck_Barrier_1 = false,
+	Truck_Barrier_2 = false,
+	Tunnel_Door = true,
+	Brickwall = true,
+	Depot_Side_Door = true,
+	Gold_Depository_Door = true,
+	Main_Gate = true,
+	Gold_Taken = 0,
+	Gold_Secured = 0,
+	Tank_Fuel = "Returned",
+	Lift = "Down",
+	Lift_botId = {-1, -1, -1, -1, -1, -1, -1, -1},
+	Bot_Ready = {false, false, false, false, false, false, false, false},
+	boarding = false,
+	Bookcase = "Closed",
+	First_corner = false,
+	Second_corner = false,
+	TruckAtBarrier_1 = false,
+	TruckPastBarrier_1 = false,
+	TruckAtBarrier_2 = false,
+	TruckPastBarrier_2 = false,
+	SpawnChange = false,
+	Version = null,
+	MG_Mount_Team = 0,
+	
+	Lift_Positions =
+	{
+		Vec3(-42.125, -1573.875, -351.875),		//ride pos 0
+		Vec3(-42.125, -1474.125, -351.875),		//ride pos 1
+		Vec3(-221.875, -1573.875, -351.875),	//ride pos 2
+		Vec3(-221.875, -1474.125, -351.875),	//ride pos 3
+		Vec3(-107.739, -1573.875, -351.875),	//ride pos 4
+		Vec3(-42.125, -1522.628, -351.875),		//ride pos 5
+		Vec3(-221.875, -1522.786, -351.875),	//ride pos 6
+		Vec3(-160.704, -1573.875, -351.875),	//ride pos 7
+		Vec3(-129.022, -1521.078, -351.875),	//board pos
+	},
+	
+	Strings =
+	{
+		"Ride_Pos_0",
+		"Ride_Pos_1",
+		"Ride_Pos_2",
+		"Ride_Pos_3",
+		"Ride_Pos_4",
+		"Ride_Pos_5",
+		"Ride_Pos_6",
+		"Ride_Pos_7",
+		"Board_Pos",
+	},
+	
+	Navigation =
+	{
+		//	/bot waypoint_setproperty paththrough Navigation_PT:jump
+		jump =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+		
+		//	/bot waypoint_setproperty paththrough Navigation_PT:lift
+		lift =
+		{
+			OnExit = function()
+			{
+				for ( i = 0; i <= 7; i+=1 )
+				{
+					if ( Map.Lift_botId[i] == this.Bot.GetGameId() )
+					{
+						Map.Lift_botId[i] = -1;
+						Map.Bot_Ready[i] = false;
+					}
+				}
+				Map.boarding = false;
+				this.Bot.DisableCombatMovement = false;
+			},
+
+			navigate = function()
+			{
+				this.Goto(this.Bot.GetPosition());
+				this.Bot.DisableCombatMovement = true;
+
+				for ( i = 0; ; i+= 1 )
+				{
+					if ( i == 8 )
+					{
+						sleep(0.5);
+						return;
+					}
+					
+					if ( Map.Lift_botId[i] == -1 )
+					{
+						Map.Lift_botId[i] = this.Bot.GetGameId();
+						slot = i;
+						break;
+					}
+				}
+
+				while ( Map.Lift != "Down" or Map.boarding )
+				{
+					yield();
+				}
+				
+				if ( Map.Lift != "Down" )
+				{
+					return;
+				}
+				
+				timer = 0;
+				while ( !this.Bot.MoveTowards(Map.Lift_Positions[8], 35) )
+				{
+					Map.boarding = true;
+					sleep(0.1);
+					timer += 1;
+					if ( timer == 100 )
+					{
+						return;
+					}
+				}
+				Map.boarding = false;
+				timer = 0;
+				while ( !this.Bot.MoveTowards(Map.Lift_Positions[slot], 20) )
+				{
+					sleep(0.1);
+					timer += 1;
+					
+					if ( Map.Lift == "Up" or timer == 50 )
+					{
+						return;
+					}
+				}
+
+				Map.Bot_Ready[i] = true;
+				
+				for ( i = 0; i <= 7; i+= 1 )
+				{
+					if ( Map.Lift_botId[i] != -1 )
+					{
+						while ( !Map.Bot_Ready[i] and Map.Lift_botId[i] != -1 )
+						{
+							yield();
+							
+							if ( Map.Lift == "Up" )
+							{
+								return;
+							}
+						}
+					}
+				}
+				
+				while ( Map.Lift != "Moving" )
+				{
+					this.AddAimRequest(Priority.VeryHigh, "facing", Vec3(0, 0, -1));
+					sleep(0.1);
+					this.Bot.PressButton(BTN.USE);
+					
+					if ( Map.Lift == "Up" )
+					{
+						return;
+					}
+				}
+				this.ReleaseAimRequest();
+				
+				while ( Map.Lift != "Up" )
+				{
+					this.Bot.MoveTowards(this.Bot.GetPosition());
+					yield();
+				}
+			},
+		},
+		
+		//	/bot waypoint_setproperty paththrough Navigation_PT:bookcase
+		bookcase =
+		{
+			EvalFunc = function()
+			{
+				return Map.Bookcase != "Opened";
+			},
+			navigate = function()
+			{
+				this.Goto(this.Bot.GetPosition());
+				
+				while ( Map.Bookcase == "Moving" )
+				{
+					yield();
+				}
+				
+				if ( Map.Bookcase == "Closed" )
+				{
+					if ( this.Bot.GetPosition().x < 716 )	//Outside
+					{
+						this.AddAimRequest(Priority.VeryHigh, "facing", Vec3( 1, 0, 0 ));
+					}
+					else
+					{
+						this.AddAimRequest(Priority.VeryHigh, "facing", Vec3( -1, 0, 0 ));
+					}
+					sleep(0.5);
+					timer = 0;
+					
+					while ( Map.Bookcase != "Moving" )
+					{
+						sleep(0.1);
+						timer += 1;
+						this.Bot.HoldButton(BTN.USE, 0.1);
+						
+						if ( timer == 50 )
+						{
+							return;
+						}
+					}
+					this.ReleaseAimRequest();
+				}
+				
+				while ( Map.Bookcase == "Moving" )
+				{
+					yield();
+				}
+			},
+		},
+	},
+	
+	Allied_Command_Post_Built = function()
+	{
+		Map.Allied_Command_Post = true;
+		
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Allied_Command_Post");
+		
+		if ( !Map.TruckPastBarrier_1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Allied_Command_Post");
+		}
+	},
+	
+	Allied_Command_Post_Destroyed = function()
+	{
+		Map.Allied_Command_Post = false;
+		
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Allied_Command_Post");
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_Command_Post");
+	},
+	
+	Tunnel_Door_Planted = function()
+	{
+		Wp.SetWaypointFlag( "Old_City_Spawn_Exit", "closed", false );
+		
+		Util.MapDebugPrint( "Tunnel_Door_Planted" );
+	},
+	
+	Tunnel_Door_Defused = function()
+	{
+		if ( tableCount(Util.GoalTable("DEFUSE_Tunnel_Door_.*")) == 1 )
+		{
+			Wp.SetWaypointFlag( "Old_City_Spawn_Exit", "closed", true );
+			
+			Util.MapDebugPrint( "WP closed" );
+		}
+		
+		Util.MapDebugPrint( "Tunnel_Door_Defused" );
+	},
+	
+	Tunnel_Door_Destroyed = function()
+	{
+		Map.Tunnel_Door = false;
+		
+		Util.MapDebugPrint( "Tunnel_Door_Destroyed" );
+		
+		Wp.SetWaypointFlag( "Old_City_Spawn_Exit", "closed", true );
+		
+		foreach( goal in Util.GoalTable("DEFUSE_Tunnel_Door_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Tunnel_Door" );
+		
+		sleep(2.5);
+		
+		Util.SetGoalPosition(-965.811, 1687.875, -382.875, "DEFEND_Axis_Fuel_04");
+		Util.SetGoalPosition(-850.125, 1687.875, -372.875, "DEFEND_Axis_Fuel_06");
+		GetGoal("DEFEND_Axis_Fuel_04").AimVectors = { Vec3(0.280, -0.960, 0.023) };
+		GetGoal("DEFEND_Axis_Fuel_06").AimVectors = { Vec3(-0.315, -0.949, -0.013) };
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, ".*_Allies_Fuel_.*" );
+		
+		if ( Map.Tank_Fuel != "Taken" )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"FLAG_tank_fuel",
+				"SMOKEBOMB_Allies_Fuel_.*"
+			});
+		}
+	},
+	
+	Tank_Fuel_Taken = function()
+	{
+		Map.Tank_Fuel = "Taken";
+		
+		Util.MapDebugPrint( "Tank_Fuel_Taken" );
+		
+		Wp.SetWaypointFlag( "Old_City_Spawn_Exit", "closed", false );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_tank_fuel" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"CAPPOINT_Tank",
+			".*_Allies_Tank_.*",
+			".*_Allies_CappointTankWay_.*"
+		});
+		
+		sleep(2);
+		
+		if ( Map.Tank_Fuel == "Taken" )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, ".*_Axis_Fuel_.*" );
+			
+			SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_Tank_.*" );
+			
+			SetAvailableMapGoals( TEAM.ALLIES, false, "SMOKEBOMB_Allies_Fuel_.*" );
+		}
+	},
+
+	Tank_Fuel_Dropped = function()
+	{
+		Map.Tank_Fuel = "Dropped";
+		
+		Util.MapDebugPrint( "Tank_Fuel_Dropped" );
+	},
+
+	Tank_Fuel_Returned = function()
+	{
+		Map.Tank_Fuel = "Returned";
+		
+		Util.MapDebugPrint( "Tank_Fuel_Returned" );
+		
+		Wp.SetWaypointFlag( "Old_City_Spawn_Exit", "closed", true );
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, ".*_Axis_Tank_.*" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CAPPOINT_Tank",
+			".*_Allies_Tank_.*",
+			".*_Allies_CappointTankWay_.*"
+		});
+		
+		SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_Fuel_.*" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"FLAG_tank_fuel",
+			"SMOKEBOMB_Allies_Fuel_.*",
+		});
+	},
+
+	Tank_Fuel_Secured = function()
+	{
+		Map.Tank_Fuel = "Secured";
+		
+		Util.MapDebugPrint( "Tank_Fuel_Secured" );
+		
+		Wp.SetWaypointFlag( "Old_City_Spawn_Exit", "closed", true );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, "CAPPOINT_Tank" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank" );
+	},
+	
+	Tank_Built = function()
+	{
+		Map.Tank = true;
+		
+		Util.MapDebugPrint( "Tank_Built" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CAPPOINT_Tank",
+			"BUILD_Tank",
+			".*_Allies_Tank_.*",
+			".*_Allies_CappointTankWay_.*"
+		});
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, ".*_Axis_Tank_.*" );
+		
+		if ( Map.Main_Gate )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"ESCORT_Tank",
+			});
+			
+			if ( !Map.First_corner )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_FirstTankWay_.*" );
+			}
+			if ( !Map.Second_corner )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					".*_Axis_SecondTankWay_.*",
+					".*MG42_Tank_Route",
+				});
+				
+				SetAvailableMapGoals( TEAM.ALLIES, true, ".*_Allies_TankPathStart_.*" );
+			}
+		}
+	},
+	
+	Tank_Destroyed = function()
+	{
+		Map.Tank = false;
+		
+		Util.MapDebugPrint( "Tank_Destroyed" );
+		
+		if ( Map.Main_Gate )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank" );
+		}
+	},
+	
+	Tank_At_Corner_1 = function()
+	{
+		Util.MapDebugPrint( "Tank_At_Corner_1" );
+		
+		Map.First_corner = true;
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, ".*_Axis_FirstTankWay_.*" );
+		
+		ETUtil.SetExcludeIndexes( "BUILD_Tank", { 1, 2, 3, 4 } );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, ".*_Allies_TankPastCorn1_.*" );
+	},
+	
+	Tank_At_Corner_2 = function()
+	{
+		Util.MapDebugPrint( "Tank_At_Corner_2" );
+		
+		Map.Second_corner = true;
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, ".*_Axis_SecondTankWay_.*" );
+		
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*_Axis_ThirdTankWay_.*",
+			".*MG42_Watchtower",
+			"PLANTMINE_Axis_DepotWay_.*"
+		});
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*_Allies_TankPathStart_.*",
+			".*_Allies_TankPastCorn1_.*"
+		});
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, ".*_Allies_TankPathEnd_.*" );
+	},
+	
+	Tank_At_Barrier = function()
+	{
+		Util.MapDebugPrint( "Tank_At_Barrier" );
+		
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Axis_DepotSideDoor_.*" );
+	},
+	
+	Main_Gate_Destroyed = function()
+	{
+		Map.Main_Gate = false;
+		
+		thread ( Map.MG_Facing );
+		
+		Wp.SetWaypointFlag( "Tank_Path_.*", "blockwall", false );
+		Wp.SetWaypointFlag( "Truck_Path_.*", "blockwall", true );
+		
+		Util.MapDebugPrint( "Main_Gate_Destroyed" );
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_ThirdTankWay_.*",
+			".*MG42_Tank_Route",
+			".*MG42_Watchtower",
+			"PLANTMINE_Axis_DepotWay_.*"
+		});
+		
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*MG42_Gold_Depository",
+			".*MG42_Truck_Barrier_1",
+			".*MG42_Road_1",
+			".*_Axis_GoldDeposDoor_.*",
+			".*_Axis_GoldDeposWay_.*",
+			".*_Axis_DepotSideDoor_.*"
+		});
+		
+		if ( !Map.Truck_Barrier_1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Truck_Barrier_1" );
+		}
+		
+		if ( !Map.Tank )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Tank" );
+		}
+		
+		sleep(2.5);
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ESCORT_Tank",
+			".*_Allies_TankPathEnd_.*"
+		});
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Depot_Side_Door",
+			"PLANT_GOLD_DEPOSITORY_DOOR",
+			"MOUNTMG42_Gold_Depository",
+			".*_Allies_GoldDeposDoor_.*",
+			".*_Allies_GoldDeposWay_.*",
+			".*_Allies_DepotSideDoor_.*",
+			".*MG42_Factory_.*"
+		});
+		
+		if ( Map.Version != "b6" )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Brickwall" );
+		}
+		
+		if ( Map.Brickwall )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "SMOKEBOMB_Allies_GoldDeposWay_30" );
+		}
+	},
+	
+	Truck_Barrier_1_Built = function()
+	{
+		Map.Truck_Barrier_1 = true;
+		
+		Wp.SetWaypointFlag( "Truck_Barrier_1_1", "closed", false );
+		
+		Util.MapDebugPrint( "Truck_Barrier_1_Built" );
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Truck_Barrier_1" );
+		
+		if ( Map.Version == "b6" )
+		{
+			if ( Map.Gold_Secured != 2 )
+			{
+				GetGoal("MOBILEMORTAR_Allies_Barrier1_31").MortarAim = {
+				Vec3(0.493, 0.861, 0.126), Vec3(0.606, 0.777, 0.170), Vec3(0.415, 0.906, 0.087), Vec3(0.174, 0.968, 0.181),
+				Vec3(0.335, 0.928, 0.162), Vec3(0.428, 0.893, 0.140), Vec3(0.517, 0.852, 0.081) };
+			}
+			else
+			{
+				GetGoal("MOBILEMORTAR_Allies_Barrier1_31").MortarAim = {
+				Vec3(0.493, 0.861, 0.126), Vec3(0.415, 0.906, 0.087), Vec3(0.174, 0.968, 0.181),
+				Vec3(0.335, 0.928, 0.162), Vec3(0.428, 0.893, 0.140), Vec3(0.517, 0.852, 0.081) };
+			}
+		}
+		else
+		{
+			if ( Map.Gold_Secured != 2 )
+			{
+				GetGoal("MOBILEMORTAR_Allies_Barrier1_31").MortarAim = { Vec3(0.511, 0.852, 0.128), Vec3(0.615, 0.771, 0.166), Vec3(0.410, 0.907, 0.093),
+				Vec3(0.202, 0.962, 0.182), Vec3(0.431, 0.892, 0.134), Vec3(0.349, 0.923, 0.166), Vec3(0.527, 0.846, 0.077) };
+			}
+			else
+			{
+				GetGoal("MOBILEMORTAR_Allies_Barrier1_31").MortarAim = { Vec3(0.511, 0.852, 0.128), Vec3(0.410, 0.907, 0.093),
+				Vec3(0.202, 0.962, 0.182), Vec3(0.431, 0.892, 0.134), Vec3(0.349, 0.923, 0.166), Vec3(0.527, 0.846, 0.077) };
+			}
+		}
+		
+		if ( Map.Gold_Secured == 2 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Truck_Barrier_1" );
+		}
+		
+		if ( Map.TruckAtBarrier_1 and !Map.Truck )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Truck" );
+		}
+	},
+
+	Truck_Barrier_1_Destroyed = function()
+	{
+		Map.Truck_Barrier_1 = false;
+		
+		Wp.SetWaypointFlag( "Truck_Barrier_1_1", "closed", true );
+		
+		Util.MapDebugPrint( "Truck_Barrier_1_Destroyed" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Truck_Barrier_1" );
+		
+		foreach( goal in Util.GoalTable("DEFUSE_Truck_Barrier_1_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+		
+		if ( !Map.Main_Gate and !Map.TruckPastBarrier_1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Truck_Barrier_1" );
+		}
+		
+		if ( Map.TruckAtBarrier_1 )
+		{
+			if ( Map.Version == "b6" )
+			{
+				GetGoal("MOBILEMORTAR_Allies_Barrier1_31").MortarAim = { Vec3(0.497, 0.852, 0.165) };
+			}
+			else
+			{
+				GetGoal("MOBILEMORTAR_Allies_Barrier1_31").MortarAim = { Vec3(0.500, 0.850, 0.164) };
+			}
+			
+			if ( !Map.Truck )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Truck" );
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "ESCORT_Truck" );
+			}
+		}
+	},
+	
+	Brickwall_Planted = function()
+	{
+		Util.MapDebugPrint( "Brickwall_Planted" );
+		
+		foreach( goal in Util.GoalTable("DEFUSE_Brickwall_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+	},
+	
+	Brickwall_Destroyed = function()
+	{
+		Map.Brickwall = false;
+		
+		Util.EnableGoal( "ROUTE_BrickWall_.*" );
+		
+		Util.MapDebugPrint( "Brickwall_Destroyed" );
+		
+		foreach( goal in Util.GoalTable("DEFUSE_Brickwall_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+		
+		if ( !Map.Main_Gate )
+		{
+			if ( Map.Gold_Secured < 2 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "SMOKEBOMB_Allies_GoldDeposWay_30" );
+			}
+			
+			if ( !Map.SpawnChange and Map.Gold_Secured == 2 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "SMOKEBOMB_Allies_Barrier1_21" );
+			}
+		}
+	},
+
+	Depot_Side_Door_Planted = function()
+	{
+		Util.MapDebugPrint( "Depot_Side_Door_Planted" );
+		
+		foreach( goal in Util.GoalTable("DEFUSE_Depot_Side_Door_.*") )
+		{
+			pos1 = goal.GetPosition();
+			if( pos1.y < 5095 )
+			{
+				goal.SetAvailable(TEAM.AXIS, false);
+			}
+		}
+	},
+
+	Depot_Side_Door_Destroyed = function()
+	{
+		Map.Depot_Side_Door = false;
+		
+		Util.EnableGoal( "ROUTE_SideDoor_.*" );
+		
+		Util.MapDebugPrint( "Depot_Side_Door_Destroyed" );
+		
+		foreach( goal in Util.GoalTable("DEFUSE_Depot_Side_Door_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+		
+		GetGoal("DEFEND_Axis_GoldDeposDoor_01").AimVectors = { Vec3(0.281, 0.955, 0.098), Vec3(0.961, 0.252, 0.117) };
+		GetGoal("DEFEND_Axis_GoldDeposDoor_03").AimVectors = { Vec3(-0.927, -0.374, 0.026), Vec3(-0.320, -0.947, 0.026) };
+		GetGoal("DEFEND_Axis_GoldDeposDoor_04").AimVectors = { Vec3(-0.992, -0.128, 0.010), Vec3(-0.534, -0.844, 0.052) };
+		GetGoal("DEFEND_Axis_DepotSideDoor_00").AimVectors = { Vec3(-0.933, 0.273, 0.237), Vec3(-0.191, 0.962, 0.195) };
+		GetGoal("DEFEND_Axis_DepotSideDoor_01").AimVectors = { Vec3(-0.204, -0.979, 0.027), Vec3(-0.222, 0.935, 0.278) };
+		GetGoal("DEFEND_Axis_DepotSideDoor_02").AimVectors = { Vec3(0.339, -0.933, -0.123), Vec3(-0.086, 0.955, 0.284) };
+		GetGoal("DEFEND_Axis_DepotSideDoor_03").AimVectors = { Vec3(0.067, -0.979, -0.191), Vec3(-0.152, 0.977, 0.150) };
+		GetGoal("DEFEND_Axis_DepotSideDoor_04").AimVectors = { Vec3(0.220, -0.947, -0.236), Vec3(0.186, 0.982, 0.043) };
+		GetGoal("DEFEND_Axis_DepotSideDoor_05").AimVectors = { Vec3(0.073, -0.972, -0.223), Vec3(-0.256, 0.966, -0.048) };
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"PLANT_Depot_Side_Door",
+			".*_Allies_DepotSideDoor_.*"
+		});
+		
+		if ( Map.Gold_Secured < 2 and !Map.Gold_Depository_Door )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "SMOKEBOMB_Allies_Gold_00" );
+		}
+		
+		if ( Map.Gold_Depository_Door )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Allies_GoldMG42_.*" );
+		}
+	},
+
+	Gold_Depository_Door_Destroyed = function()
+	{
+		Map.Gold_Depository_Door = false;
+		
+		Util.MapDebugPrint( "Gold_Depository_Door_Destroyed" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_GOLD_DEPOSITORY_DOOR" );
+		
+		foreach( goal in Util.GoalTable("DEFUSE_GOLD_DEPOSITORY_DOOR_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+		
+		if ( !Map.Depot_Side_Door )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "SMOKEBOMB_Allies_Gold_00" );
+		}
+		
+		sleep(2);
+		
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Axis_GoldCrates_.*" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"FLAG_gold_crate",
+			".*MG42_Gold_Depository"
+		});
+	},
+
+	Gold_Crate_Taken = function()
+	{
+		Map.Gold_Taken += 1;
+		
+		Util.MapDebugPrint( "Gold_Crate_Taken" );
+		Util.MapDebugPrint( "^1Taken: ^3" + Map.Gold_Taken );
+		Util.MapDebugPrint( "^1Secured: ^3" + Map.Gold_Secured );
+		
+		if ( Map.Gold_Taken == 2 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_gold_crate" );
+		}
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, "CAPPOINT_Truck" );
+		
+		sleep(3);
+		
+		if ( Map.Gold_Taken == 1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Axis_Truck_0[13]" );
+		}
+		
+		if ( Map.Gold_Taken == 2 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"DEFEND_Axis_GoldCrates_.*",
+				".*_Axis_GoldDeposDoor_.*",
+			});
+			
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				".*_Allies_GoldDeposDoor_.*",
+				".*_Allies_Gold_.*"
+			});
+			
+			if ( Map.Gold_Secured != 2 )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Axis_Truck_.*" );
+			}
+		}
+	},
+	
+	Gold_Crate_Dropped = function()
+	{
+		Map.Gold_Taken -= 1;
+		
+		Util.MapDebugPrint( "Gold_Crate_Dropped" );
+		Util.MapDebugPrint( "^1Taken: ^3" + Map.Gold_Taken );
+		Util.MapDebugPrint( "^1Secured: ^3" + Map.Gold_Secured );
+	},
+	
+	Gold_Crate_Returned = function()
+	{
+		Util.MapDebugPrint( "Gold_Crate_Returned" );
+		Util.MapDebugPrint( "^1Taken: ^3" + Map.Gold_Taken );
+		Util.MapDebugPrint( "^1Secured: ^3" + Map.Gold_Secured );
+		
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_Axis_GoldCrates_.*",
+			".*_Axis_GoldDeposDoor_.*",
+		});
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"FLAG_gold_crate",
+			".*_Allies_GoldDeposDoor_.*",
+			".*_Allies_Gold_.*"
+		});
+		
+		if ( Map.Gold_Taken > 0 and Map.Gold_Secured == 0 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_Truck_0[024]" );
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_Truck_.*" );
+			
+			SetAvailableMapGoals( TEAM.ALLIES, false, "CAPPOINT_Truck" );
+		}
+	},
+
+	Gold_Crate_Secured = function()
+	{
+		Map.Gold_Secured += 1;
+		
+		Util.MapDebugPrint( "Gold_Crate_Secured" );
+		Util.MapDebugPrint( "^1Taken: ^3" + Map.Gold_Taken );
+		Util.MapDebugPrint( "^1Secured: ^3" + Map.Gold_Secured );
+		
+		if ( Map.Gold_Taken == 1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_Truck_.*" );
+		}
+		
+		if ( Map.Gold_Secured == 2 )
+		{
+			SetGoalPriority( "REPAIRMG42_.*", 0.81, TEAM.ALLIES );
+			
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				".*MG42_Gold_Depository",
+				"ATTACK_Axis_Truck_.*",
+				".*_Axis_GoldDeposWay_.*",
+				".*_Axis_DepotSideDoor_.*"
+			});
+			
+			SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_Barrier1_.*" );
+			
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"CAPPOINT_Truck",
+				".*_Allies_GoldDeposWay_.*",
+				".*_Allies_Gold_.*",
+				".*_Allies_DepotSideDoor_.*",
+				"CAMP_Allies_GoldMG42_.*.*",
+				".*MG42_Factory_.*"
+			});
+			
+			if ( Map.Version == "b6" )
+			{
+				GetGoal("MOBILEMORTAR_Allies_Barrier1_31").MortarAim = {
+				Vec3(0.493, 0.861, 0.126), Vec3(0.415, 0.906, 0.087), Vec3(0.174, 0.968, 0.181),
+				Vec3(0.335, 0.928, 0.162), Vec3(0.428, 0.893, 0.140), Vec3(0.517, 0.852, 0.081) };
+			}
+			else
+			{
+				GetGoal("MOBILEMORTAR_Allies_Barrier1_31").MortarAim = { Vec3(0.511, 0.852, 0.128), Vec3(0.410, 0.907, 0.093),
+				Vec3(0.202, 0.962, 0.182), Vec3(0.431, 0.892, 0.134), Vec3(0.349, 0.923, 0.166), Vec3(0.527, 0.846, 0.077) };
+			}
+			
+			if ( !Map.Truck )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Truck" );
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "ESCORT_Truck" );
+			}
+			
+			if ( Map.Truck_Barrier_1 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Truck_Barrier_1" );
+			}
+			
+			SetAvailableMapGoals( TEAM.ALLIES, true, ".*_Allies_Barrier1_.*" );
+			
+			if ( Map.Brickwall )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, "SMOKEBOMB_Allies_Barrier1_21" );
+			}
+			
+			sleep(5);
+			
+			ETUtil.SetExcludeIndexes( "BUILD_Truck", { 2, 3, 4 } );
+		}
+	},
+	
+	Truck_Built = function()
+	{
+		Map.Truck = true;
+		
+		Util.MapDebugPrint( "Truck_Built" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Truck" );
+		
+		if ( !Map.Main_Gate and Map.Gold_Secured == 2 )
+		{
+			if ( Map.TruckAtBarrier_1 and !Map.Truck_Barrier_1 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "ESCORT_Truck" );
+			}
+			else if ( Map.TruckAtBarrier_2 and !Map.Truck_Barrier_2 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "ESCORT_Truck" );
+			}
+			else if ( !Map.TruckAtBarrier_1 and !Map.TruckAtBarrier_2 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "ESCORT_Truck" );
+			}
+		}
+	},
+	
+	Truck_Destroyed = function()
+	{
+		Map.Truck = false;
+		
+		Util.MapDebugPrint( "Truck_Destroyed" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ESCORT_Truck" );
+		
+		if ( !Map.Main_Gate and Map.Gold_Secured == 2 )
+		{
+			if ( Map.TruckAtBarrier_1 and Map.Truck_Barrier_1 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Truck" );
+			}
+			else if ( Map.TruckAtBarrier_2 and Map.Truck_Barrier_2 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Truck" );
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Truck" );
+			}
+		}
+	},
+	
+	Truck_At_Turn = function()
+	{
+		Util.MapDebugPrint( "Truck_At_Turn" );
+		
+		ETUtil.SetExcludeIndexes( "BUILD_Truck", { 1, 2, 3, 4 } );
+	},
+	
+	Truck_At_Barrier_1 = function()
+	{
+		Util.MapDebugPrint( "Truck_At_Barrier_1" );
+		
+		Map.TruckAtBarrier_1 = true;
+		
+		ETUtil.SetExcludeIndexes( "BUILD_Truck", { 0, 1, 2 } );
+		
+		Util.SetGoalPosition(1523.697, 5278.244, 128.134, "PLANT_Truck_Barrier_1");
+		
+		if ( Map.Truck_Barrier_1 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "ESCORT_Truck" );
+		}
+		else
+		{
+			if ( !Map.Truck )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Truck" );
+			}
+		}
+		
+		GetGoal("PLANT_Truck_Barrier_1").CoverSpots[0].position =  Vec3(1464.975, 5322.276, 122.811);
+		GetGoal("PLANT_Truck_Barrier_1").CoverSpots[0].AimVectors = { Vec3(-0.996, 0.091, 0.010), Vec3(0.975, -0.107, 0.195) };
+		GetGoal("PLANT_Truck_Barrier_1").CoverSpots[0].stance = "crouch";
+		GetGoal("PLANT_Truck_Barrier_1").CoverSpots[1].position = Vec3(1408.413, 5338.806, 115.350);
+		GetGoal("PLANT_Truck_Barrier_1").CoverSpots[1].AimVectors = { Vec3(-0.985, 0.169, 0.017), Vec3(0.935, -0.274, 0.224) };
+		GetGoal("PLANT_Truck_Barrier_1").CoverSpots[1].stance = "crouch";
+		GetGoal("PLANT_Truck_Barrier_1").CoverSpots[2].position = Vec3(2370.125, 5435.815, 152.361);
+		GetGoal("PLANT_Truck_Barrier_1").CoverSpots[2].AimVectors = { Vec3(-0.960, -0.266, -0.085) };
+		GetGoal("PLANT_Truck_Barrier_1").CoverSpots[2].stance = "stand";
+		GetGoal("PLANT_Truck_Barrier_1").CoverSpots[2].DisableCM = 1;
+	},
+	
+	Truck_Past_Barrier_1 = function()
+	{
+		Util.MapDebugPrint( "Truck_Past_Barrier_1" );
+		
+		Map.TruckAtBarrier_1 = false;
+		Map.TruckPastBarrier_1 = true;
+		
+		if ( Map.Allied_Command_Post )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Allied_Command_Post");
+		}
+		
+		if ( !Map.Truck_Barrier_1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Truck_Barrier_1" );
+		}
+		
+		if ( Map.Version == "b6" )
+		{
+			GetGoal("MOBILEMORTAR_Allies_Barrier1_31").MortarAim = {
+			Vec3(0.493, 0.861, 0.126), Vec3(0.415, 0.906, 0.087), Vec3(0.174, 0.968, 0.181),
+			Vec3(0.335, 0.928, 0.162), Vec3(0.428, 0.893, 0.140), Vec3(0.517, 0.852, 0.081) };
+		}
+		else
+		{
+			GetGoal("MOBILEMORTAR_Allies_Barrier1_31").MortarAim = { Vec3(0.511, 0.852, 0.128), Vec3(0.410, 0.907, 0.093),
+			Vec3(0.202, 0.962, 0.182), Vec3(0.431, 0.892, 0.134), Vec3(0.349, 0.923, 0.166), Vec3(0.527, 0.846, 0.077) };
+		}
+		GetGoal("SMOKEBOMB_Allies_Barrier1_20").AimVectors = { Vec3(-0.318, 0.389, 0.865) };
+		Util.SetGoalPosition(1338.057, 4710.529, 81.125, "SMOKEBOMB_Allies_Barrier1_21");
+		GetGoal("SMOKEBOMB_Allies_Barrier1_21").AimVectors = { Vec3(-0.205, 0.769, 0.605) };
+	},
+	
+	Spawn_Change = function()
+	{
+		Util.MapDebugPrint( "Spawn_Change" );
+		
+		Map.SpawnChange = true;
+		
+		Map.SetSpawn();
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*MG42_Gold_Depository",
+			".*MG42_Truck_Barrier_1",
+			".*MG42_Road_1",
+			".*_Axis_Barrier1_.*"
+		});
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*MG42_Gold_Depository",
+			".*_Allies_Barrier1_.*",
+			".*_Allies_DepotSideDoor_.*"
+		});
+		
+		if ( Map.Version != "b6" and Map.Brickwall )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Brickwall" );
+		}
+		
+		if ( Map.Depot_Side_Door )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Depot_Side_Door" );
+		}
+		
+		if ( !Map.Truck_Barrier_2 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Truck_Barrier_2" );
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Truck_Barrier_2" );
+		}
+		
+		if ( !Map.Axis_Command_Post )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Command_Post" );
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Command_Post" );
+		}
+		
+		SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_Barrier2_.*" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, ".*_Allies_Barrier2_.*" );
+		
+		ETUtil.SetExcludeIndexes( "BUILD_Truck", {} );
+	},
+	
+	SetSpawn = function()
+	{
+		foreach ( id and bot in BotTable )
+		{
+			Map.SetSpawn1(bot);
+		}
+	},
+	
+	SetSpawn1 = function(bot)
+	{
+		if ( bot.GetTeam() == TEAM.AXIS )
+        {
+			if ( !Map.TruckPastBarrier_2 )
+			{
+				bot.ChangeSpawnPoint(4);
+			}
+			else
+			{
+				if ( RandInt(0,1 ) < 1)
+				{
+					bot.ChangeSpawnPoint(4);
+				}
+				else
+				{
+					bot.ChangeSpawnPoint(6);
+				}
+			}
+		}
+	},
+	
+	Axis_Command_Post_Built = function()
+	{
+		Map.Axis_Command_Post = true;
+		
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Axis_Command_Post" );
+		
+		if ( Map.TruckPastBarrier_1 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Command_Post" );
+		}
+	},
+	
+	Axis_Command_Post_Destroyed = function()
+	{
+		Map.Axis_Command_Post = false;
+		
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+		
+		foreach( goal in Util.GoalTable("DEFUSE_Axis_Command_Post_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_Command_Post" );
+		
+		if ( Map.TruckPastBarrier_1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Command_Post" );
+		}
+	},
+	
+	Truck_Barrier_2_Built = function()
+	{
+		Map.Truck_Barrier_2 = true;
+		
+		Wp.SetWaypointFlag( "Truck_Barrier_2_1", "closed", false );
+		
+		Util.MapDebugPrint( "Truck_Barrier_2_Built" );
+		
+		if ( Map.TruckAtBarrier_2 and !Map.Truck )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Truck" );
+		}
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Truck_Barrier_2" );
+		
+		if ( Map.TruckPastBarrier_1 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Truck_Barrier_2" );
+		}
+	},
+	
+	Truck_Barrier_2_Destroyed = function()
+	{
+		Map.Truck_Barrier_2 = false;
+		
+		Wp.SetWaypointFlag( "Truck_Barrier_2_1", "closed", true );
+		
+		Util.MapDebugPrint( "Truck_Barrier_2_Destroyed" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Truck_Barrier_2" );
+		
+		foreach( goal in Util.GoalTable("DEFUSE_Truck_Barrier_2_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+		
+		if ( Map.TruckAtBarrier_2 )
+		{
+			if ( !Map.Truck )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Truck" );
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "ESCORT_Truck" );
+			}
+		}
+		
+		if ( Map.TruckPastBarrier_1 and !Map.TruckPastBarrier_2 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Truck_Barrier_2" );
+		}
+	},
+	
+	Truck_At_Bridge = function()
+	{
+		Util.MapDebugPrint( "Truck_At_Bridge" );
+		
+		ETUtil.SetExcludeIndexes( "BUILD_Truck", { 1, 2, 3, 4 } );
+	},
+	
+	Truck_At_Barrier_2 = function()
+	{
+		Util.MapDebugPrint( "Truck_At_Barrier_2" );
+		
+		ETUtil.SetExcludeIndexes( "ESCORT_Truck", { 0 } );
+		Util.SetGoalPosition(-3621.860, 4866.830, 120.171, "PLANT_Truck_Barrier_2");
+		Util.SetMaxUsersInUse( 1, "PLANT_Truck_Barrier_2" );
+		
+		Map.TruckAtBarrier_2 = true;
+		
+		if ( !Map.Truck and !Map.Truck_Barrier_2 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Truck" );
+		}
+		
+		if ( Map.Truck_Barrier_2 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "ESCORT_Truck" );
+		}
+		
+		GetGoal("PLANT_Truck_Barrier_2").CoverSpots[0].position =  Vec3(-3580.994, 5056.310, 120.125);
+		GetGoal("PLANT_Truck_Barrier_2").CoverSpots[0].AimVectors = { Vec3(-0.747, 0.662, 0.062), Vec3(-0.228, -0.974, -0.007) };
+		GetGoal("PLANT_Truck_Barrier_2").CoverSpots[0].stance = "stand";
+		GetGoal("PLANT_Truck_Barrier_2").CoverSpots[0].DisableCM = 1;
+		GetGoal("PLANT_Truck_Barrier_2").CoverSpots[1].position = Vec3(-3587.359, 4995.675, 120.125);
+		GetGoal("PLANT_Truck_Barrier_2").CoverSpots[1].AimVectors = { Vec3(-0.654, -0.752, 0.082) };
+		GetGoal("PLANT_Truck_Barrier_2").CoverSpots[1].stance = "crouch";
+		GetGoal("PLANT_Truck_Barrier_2").CoverSpots[1].DisableCM = 1;
+	},
+	
+	Truck_Past_Barrier_2 = function()
+	{
+		Util.MapDebugPrint( "Truck_Past_Barrier_2" );
+		
+		Map.TruckAtBarrier_2 = false;
+		Map.TruckPastBarrier_2 = true;
+		
+		ETUtil.SetExcludeIndexes( "ESCORT_Truck", {} );
+		Util.SetMaxUsers( 8, "ESCORT_.*" );
+		
+		Map.SetSpawn();
+		
+		if ( !Map.Truck_Barrier_2 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Truck_Barrier_2" );
+		}
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Truck_Barrier_2" );
+		
+		Util.SetGoalPosition(-4825.730, 7698.786, 97.125, "MOBILEMG42_Axis_Barrier2_02");
+		GetGoal("MOBILEMG42_Axis_Barrier2_02").AimVectors = { Vec3(-0.139, -0.990, 0.023) };
+		Util.SetGoalPosition(-5012.675, 7969.130, 97.125, "MOBILEMG42_Axis_Barrier2_03");
+		GetGoal("MOBILEMG42_Axis_Barrier2_03").AimVectors = { Vec3(0.252, -0.966, 0.059) };
+		Util.SetGoalPosition(-5071.599, 7749.381, 97.125, "DEFEND_Axis_Barrier2_50");
+		GetGoal("DEFEND_Axis_Barrier2_50").AimVectors = { Vec3(0.126, -0.992, -0.006), Vec3(0.718, -0.695, -0.039) };
+		GetGoal("DEFEND_Axis_Barrier2_50").Stance = "stand";
+		
+		Util.SetGoalPosition(-4885.326, 7899.609, 97.125, "DEFEND_Axis_Barrier2_57");
+		GetGoal("DEFEND_Axis_Barrier2_57").AimVectors = { Vec3(-0.043, -0.999, 0.000) };
+		GetGoal("DEFEND_Axis_Barrier2_57").Stance = "stand";
+		Util.SetGoalPosition(-4811.696, 7829.615, 97.125, "DEFEND_Axis_Barrier2_53");
+		GetGoal("DEFEND_Axis_Barrier2_53").AimVectors = { Vec3(-0.196, -0.980, 0.041) };
+		GetGoal("DEFEND_Axis_Barrier2_53").Stance = "stand";
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, ".*_Allies_Barrier2_.*" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, ".*_Allies_PastBarr2_.*" );
+	},
+	
+	Truck_At_Final_Turn = function()
+	{
+		Util.MapDebugPrint( "Truck_At_Final_Turn" );
+		
+		ETUtil.SetExcludeIndexes( "BUILD_Truck", { 0, 3, 4 } );
+		
+		SetGoalPriority( "ATTACK_Allies_Barrier2_.*", 0.51, TEAM.ALLIES );
+		
+		if ( Map.Version == "b8" )
+		{
+			GetGoal("SMOKEBOMB_Allies_PastBarr2_33").AimVectors = { Vec3(-0.287, 0.366, 0.885) };
+		}
+	},
+	
+	Truck_Near_Tunnel = function()
+	{
+		Util.MapDebugPrint( "Truck_Near_Tunnel" );
+		
+		Route_66 =
+		{
+			BUILD_Truck =
+			{
+				ROUTE_Allied_ChangeSpawn =
+				{
+					ROUTE_Around_AxisSpawn_1 =
+					{
+						ROUTE_Around_AxisSpawn_2 =
+						{
+							ROUTE_BackCabinetsWay = {},
+						},
+					},
+					ROUTE_InsideBuilding_1 =
+					{
+						ROUTE_InsideBuilding_2 =
+						{
+							ROUTE_BackCabinetsWay = {},
+						},
+					},
+				},		
+            },
+		};
+		
+		Route_66["ATTACK_Allies_PastBarr2_07"] = 
+		{
+			ROUTE_Allied_ChangeSpawn =
+			{
+				ROUTE_InsideBuilding_1 =
+				{
+					ROUTE_InsideBuilding_2 =
+					{
+						ROUTE_BackCabinetsWay =
+						{
+							ROUTE_BackWay_to_Tunnel_1 =
+							{
+								ROUTE_BackWay_to_Tunnel_2 = {},
+							},
+						},
+					},
+				},
+			},
+		};
+		
+		Route_66["ATTACK_Allies_PastBarr2_1[678]"] = Route_66["ATTACK_Allies_PastBarr2_07"];
+		Route_66["ATTACK_Allies_PastBarr2_02"] = Route_66["ATTACK_Allies_PastBarr2_07"];
+		
+		Util.Routes(Route_66);
+		
+		Util.ForceRouting("BUILD_Truck", true );
+		
+		GetGoal("SMOKEBOMB_Allies_PastBarr2_30").AimVectors = { Vec3(-0.951, 0.065, 0.302) };
+		GetGoal("SMOKEBOMB_Allies_PastBarr2_31").AimVectors = { Vec3(-0.892, 0.143, 0.430) };
+		Util.SetGoalPosition(-4872.142, 5277.349, 97.125, "ATTACK_Allies_PastBarr2_01");
+		GetGoal("ATTACK_Allies_PastBarr2_01").AimVectors = { Vec3(-0.388, 0.919, 0.065), Vec3(-0.839, -0.544, 0.010) };
+		Util.SetGoalPosition(-4920.657, 4947.333, 97.125, "ATTACK_Allies_PastBarr2_03");
+		GetGoal("ATTACK_Allies_PastBarr2_03").AimVectors = { Vec3(-0.250, 0.968, 0.020), Vec3(-0.971, -0.089, 0.223) };
+		Util.SetGoalPosition(-5213.848, 6138.272, 97.125, "ATTACK_Allies_PastBarr2_00");
+		GetGoal("ATTACK_Allies_PastBarr2_00").AimVectors = { Vec3(0.231, 0.972, 0.049), Vec3(0.295, -0.956, 0.003) };
+		Util.SetGoalPosition(-5090.336, 7280.560, 97.125, "ATTACK_Allies_PastBarr2_02");
+		GetGoal("ATTACK_Allies_PastBarr2_02").AimVectors = { Vec3(0.296, 0.955, -0.016), Vec3(0.215, -0.977, -0.003) };
+		Util.SetGoalPosition(-5477.872, 6233.176, 97.125, "ATTACK_Allies_PastBarr2_05");
+		GetGoal("ATTACK_Allies_PastBarr2_05").AimVectors = { Vec3(0.362, -0.932, 0.007), Vec3(0.535, 0.845, -0.000) };
+		Util.SetGoalPosition(-5450.708, 5365.074, 97.125, "ATTACK_Allies_PastBarr2_06");
+		GetGoal("ATTACK_Allies_PastBarr2_06").AimVectors = { Vec3(0.487, 0.873, 0.010), Vec3(0.174, -0.984, 0.033) };
+		Util.SetGoalPosition(-5034.323, 7961.235, 97.125, "ATTACK_Allies_PastBarr2_07");
+		GetGoal("ATTACK_Allies_PastBarr2_07").AimVectors = { Vec3(0.475, -0.880, -0.016), Vec3(-0.021, -1.000, -0.000) };
+		Util.SetGoalPosition(-5155.455, 6808.976, 97.125, "ATTACK_Allies_PastBarr2_10");
+		GetGoal("ATTACK_Allies_PastBarr2_10").AimVectors = { Vec3(0.551, 0.833, -0.036), Vec3(-0.022, -1.000, -0.013) };
+		Util.SetGoalPosition(-5185.620, 4906.898, 97.125, "ATTACK_Allies_PastBarr2_04");
+		GetGoal("ATTACK_Allies_PastBarr2_04").AimVectors = { Vec3(0.055, 0.998, 0.013), Vec3(0.402, -0.916, -0.000) };
+		Util.SetGoalPosition(-5064.806, 7700.034, 97.125, "ATTACK_Allies_PastBarr2_18");
+		GetGoal("ATTACK_Allies_PastBarr2_18").AimVectors = { Vec3(0.015, -1.000, 0.020), Vec3(0.875, -0.484, -0.007) };
+		
+		if ( Map.Version != "b8" )
+		{
+			Util.SetGoalPosition(-4681.770, 5597.670, 120.125, "SMOKEBOMB_Allies_PastBarr2_33");
+			GetGoal("SMOKEBOMB_Allies_PastBarr2_33").AimVectors = { Vec3(-0.122, 0.693, 0.710) };
+		}
+		
+		SetGoalPriority( "ATTACK_Allies_PastBarr2_07", 0.52, TEAM.ALLIES );
+		SetGoalPriority( "ATTACK_Allies_PastBarr2_1[678]", 0.52, TEAM.ALLIES );
+		
+	},
+	
+	Truck_Inside_Tunnel = function()
+	{
+		Util.MapDebugPrint( "Truck_Inside_Tunnel" );
+		
+		Util.DisableGoal("ROUTE_Around_AxisSpawn_.*");
+		
+		GetGoal("SMOKEBOMB_Allies_PastBarr2_30").AimVectors = { Vec3(-0.633, 0.411, 0.696) };
+		Util.SetGoalPosition(-4615.930, 6491.290, 134.447, "SMOKEBOMB_Allies_PastBarr2_31");
+		GetGoal("SMOKEBOMB_Allies_PastBarr2_31").AimVectors = { Vec3(-0.440, 0.723, 0.533) };
+		GetGoal("SMOKEBOMB_Allies_PastBarr2_31").Stance = "crouch";
+		
+		Route_Inside =
+		{
+			BUILD_Truck =
+			{
+				ROUTE_Allied_ChangeSpawn =
+				{
+					ROUTE_InsideBuilding_1 =
+					{
+						Weight = 4,
+						ROUTE_InsideBuilding_2 =
+						{
+							ROUTE_BackCabinetsWay =
+							{
+								ROUTE_FrontWay_to_Tunnel = {},
+								ROUTE_BackWay_to_Tunnel_1 =
+								{
+									Weight = 5,
+									ROUTE_BackWay_to_Tunnel_2 = {},
+								},
+							},
+						},
+					},
+					ROUTE_Bridge_1 =
+					{
+						ROUTE_Bridge_2 = {},
+					},
+				},		
+            },
+		};
+		
+		Route_Inside["ATTACK_Allies_PastBarr2_0[01345689]"] = Route_Inside.BUILD_Truck;
+		Route_Inside["ATTACK_Allies_PastBarr2_1[0123459]"] = Route_Inside.BUILD_Truck;
+		
+		Util.ForceRouting("BUILD_Truck", true );
+		
+		Util.Routes(Route_Inside);
+	},
+	
+	Allies_Won = function()
+	{
+		Util.MapDebugPrint( "Allies_Won" );
+		
+		ETUtil.WinningChat( TEAM.ALLIES );
+		ETUtil.LosingChat( TEAM.AXIS );
+	},
+	
+	Brickwall_Test = function()
+	{
+		sleep(0.5);
+		start = Vector3(1314, 4844, 181);
+		end = Vector3(1314, 4692, 181);
+		while ( Map.Brickwall )
+		{
+			tr = TraceLine( start, end, null, TRACE.SOLID, 0, false );
+			if ( tr.fraction == 1 )
+			{
+				Map.Brickwall_Destroyed();
+				
+				if ( Map.Debug )
+				{
+					DrawDebugLine( start, end, COLOR.GREEN, 0.25 );
+				}
+			}
+			else
+			{
+				if ( Map.Debug )
+				{
+					DrawDebugLine( start, end, COLOR.RED, 0.25 );
+				}
+			}
+			sleep(0.25);
+		}
+	},
+	
+	MG_Facing = function()
+	{
+		ent = GetGoal("MOUNTMG42_Gold_Depository").GetEntity();
+		
+		while ( !Map.SpawnChange )
+		{
+			if ( GetEntFlags(GetGoal("MOUNTMG42_Gold_Depository").GetEntity(), ENTFLAG.MOUNTED) )
+			{
+				foreach ( bot in BotTable )
+				{
+					owner = bot.GetMountedPlayerOnMG42(ent);
+				}
+				
+				if ( owner )
+				{
+					if ( GetEntTeam(owner) == TEAM.AXIS )
+					{
+						if ( Map.MG_Mount_Team != TEAM.AXIS )
+						{
+							Map.MG_Mount_Team = TEAM.AXIS;
+							
+							GetGoal("MOUNTMG42_Gold_Depository").AimVectors = { Vec3(-0.583, -0.812, 0.007), Vec3(-0.965, -0.259, -0.045) };
+							
+							Util.MapDebugPrint( "MOUNTMG42_Gold_Depository mounted by Axis" );
+						}
+					}
+					else if ( GetEntTeam(owner) == TEAM.ALLIES )
+					{
+						if ( Map.MG_Mount_Team != TEAM.ALLIES )
+						{
+							Map.MG_Mount_Team = TEAM.ALLIES;
+							
+							GetGoal("MOUNTMG42_Gold_Depository").AimVectors = { Vec3(-0.739, 0.670, 0.072), Vec3(-0.949, 0.313, 0.046) };
+							
+							Util.MapDebugPrint( "MOUNTMG42_Gold_Depository mounted by Allies" );
+						}
+					}
+				}
+			}
+			sleep(1);
+		}
+	},
+
+	Lift_Position = function()
+	{
+		tr = TraceLine( Vec3(-120, -1448, -351), Vec3(-120, -1478, -383), null, TRACE.SOLID, 0, false );
+		while ( tr.entity )
+		{
+			if ( Round(GetEntPosition(tr.entity).z ) == -264 )
+			{
+				if ( Map.Lift != "Down" )
+				{
+					Map.Lift = "Down";
+					Util.MapDebugPrint( "Lift_Down" );
+				}
+			}
+			else if ( Round(GetEntPosition(tr.entity).z ) == -30 )
+			{
+				if ( Map.Lift != "Up" )
+				{
+					Map.Lift = "Up";
+					Util.MapDebugPrint( "Lift_Up" );
+				}
+			}
+			else
+			{
+				if ( Map.Lift != "Moving" )
+				{
+					Map.Lift = "Moving";
+					Util.MapDebugPrint( "Lift_Moving" );
+				}
+			}
+			yield();
+		}
+	},
+	
+	Bookcase_Test = function()
+	{
+		tr = TraceLine( Vec3(670.963, -1363.427, -82.697), Vec3(803.450, -1365.773, -87.184), null, TRACE.SOLID, 0, false );
+		
+		while ( 1 )
+		{
+			if ( Round(GetEntPosition(tr.entity).y ) == -1376 )
+			{
+				if ( Map.Bookcase != "Closed" )
+				{
+					Map.Bookcase = "Closed";
+					Util.MapDebugPrint( "Bookcase_Closed" );
+				}
+			}
+			else if ( Round(GetEntPosition(tr.entity).y ) == -1434 )
+			{
+				if ( Map.Bookcase != "Opened" )
+				{
+					Map.Bookcase = "Opened";
+					Util.MapDebugPrint( "Bookcase_Opened" );
+				}
+			}
+			else
+			{
+				if ( Map.Bookcase != "Moving" )
+				{
+					Map.Bookcase = "Moving";
+					Util.MapDebugPrint( "Bookcase_Moving" );
+				}
+			}
+			sleep(0.2);
+		}
+	},
+	
+	Supply_Test = function()
+    {
+        traceData = {
+            { start = Vec3(-40, -1293, -343), end = Vec3(-40, -1335, -343) },
+            { start = Vec3(-40, -1293, -343), end = Vec3(-40, -1254, -343) },
+            { start = Vec3(630, -1005, 195),  end = Vec3(630, -972, 195) },
+            { start = Vec3(630, -1005, 195),  end = Vec3(630, -1041, 195) },
+            { start = Vec3(653, -1006, 195),  end = Vec3(653, -972, 195) },
+            { start = Vec3(653, -1006, 195),  end = Vec3(653, -1041, 195) },
+            { start = Vec3(1239, -507, -365),  end = Vec3(1241, -461, -365) }
+        };
+        meal1 = GetGoal("HEALTHCAB_Hot_Meal_1");
+        meal2 = GetGoal("HEALTHCAB_Hot_Meal_2");
+        ammo1 = GetGoal("AMMOCAB_Allied_HQ");
+        
+        while ( 1 )
+        {
+            foreach (data in traceData)
+            {
+                data.result = TraceLine(data.start, data.end, null, TRACE.ALL, 0, false).fraction != 1;
+
+                if ( Map.Debug )
+                {
+                    if ( data.result )
+                    {
+                        c = COLOR.RED;
+                    }
+                    else
+                    {
+                        c = COLOR.GREEN;
+                    }
+                    DrawDebugLine(data.start, data.end, c, 0.2);
+                }
+            }
+
+            meal2.SetAvailable(0, traceData[2].result or traceData[3].result or traceData[4].result or traceData[5].result);
+			
+            if ( Map.Version == "b8" )
+			{
+				meal1.SetAvailable(0, traceData[0].result or traceData[1].result);
+				ammo1.SetAvailable(0, traceData[6].result);
+			}
+
+            sleep(0.2);
+        }
+    },
+	
+	Lift_Position_Debug = function()
+	{
+		for(;;)
+        {
+            for ( i = 0; i <= 8; i += 1 )
+            {
+                pos = Map.Lift_Positions[i];
+                DrawText3d( pos + Vec3(0,0,40), Map.Strings[i], COLOR.LIGHT_GREY, 0.2 );
+                if ( i == 8 )
+                {
+                    c = COLOR.BLUE;
+                }
+                else if ( Map.Lift_botId[i] == -1 )
+                {
+                    c = COLOR.GREEN;
+                }
+                else if ( Map.Bot_Ready[i] )
+                {
+                    c = COLOR.RED;
+                }
+                else
+                {
+                    c = COLOR.YELLOW;
+                }
+                DrawDebugLine( pos + Vec3(0,0,40), pos - Vec3(0,0,25), c, 0.2 );
+            }
+            sleep(0.2);
+        }
+	},
+	
+	Ignore_Target =
+	{
+		Name = "Ignore_Target",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			b = Util.IsBot(ent);
+			if ( b )
+			{
+				for ( q = 0; q < 64; q += 1 )
+				{
+					if ( EntityIsValid(q) and q != b.GetGameId() and !GetEntFlags(q,ENTFLAG.CARRYINGGOAL) )
+					{
+						b.IgnoreTarget(q, 999);
+					}
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			b = Util.IsBot(ent);
+			if ( b )
+			{
+				for ( q = 0; q < 64; q += 1 )
+				{
+					if ( EntityIsValid(q) and q != b.GetGameId() )
+					{
+						b.IgnoreTarget(q, 0.1);
+					}
+				}
+			}
+		},
+	},
+};
+
+global OnMapLoad = function()
+{
+	Wp.Connect(560, 3618);
+	Wp.Connect(3618, 560);
+	Wp.Connect(561, 560);
+	Wp.Connect(560, 561);
+	Wp.Connect(3821, 571);
+	Wp.Connect(571, 3821);
+	Wp.Connect(3821, 3820);
+	Wp.Connect(3820, 3821);
+	Wp.Connect(3678, 576);
+	Wp.Connect(576, 3678);
+	Wp.Connect(3677, 576);
+	Wp.Connect(576, 3677);
+	Wp.Connect(3671, 576);
+	Wp.Connect(576, 3671);
+	Wp.Connect(3671, 577);
+	Wp.Connect(577, 3671);
+	Wp.Connect(3670, 3671);
+	Wp.Connect(3671, 3670);
+	Wp.Connect(576, 3676);
+	Wp.Connect(3676, 576);
+	Wp.Connect(576, 3679);
+	Wp.Connect(3679, 576);
+	
+	Util.DisableGoal( ".*", true );
+	
+	SetAvailableMapGoals( 0, true, "AMMOCAB_.*" );
+	SetAvailableMapGoals( 0, true, "HEALTHCAB_.*" );
+	
+	Wp.SetWaypointFlag( "Wine_Cellar_.*", "closed", true );
+	Wp.SetWaypointFlag( "Axis_MG42_Room_.*", "closed", true );
+	Wp.SetWaypointFlag( "Under_Bridge_Scaffolding_.*", "closed", true );
+	Wp.SetWaypointFlag( "Road_2_MG42_.*", "closed", true );
+	Wp.SetWaypointFlag( "Tunnel_.*", "closed", false );
+	Wp.SetWaypointFlag( "Last_Axis_Spawn_.*", "closed", false );
+	Wp.SetWaypointFlag( "Axis_Spawn_.*", "closed", false );
+	Wp.SetWaypointFlag( "Axis_Shortcut_.*", "closed", true );
+	Wp.SetWaypointFlag( "Truck_Path_256", "jumplow", false );
+	
+	//common static goals for version b6 and b7
+	Util.SetGoalPosition(-5213.829, 4703.634, 97.125, "ATTACK_Allies_Barrier2_15");
+	GetGoal("ATTACK_Allies_Barrier2_15").AimVectors = { Vec3(0.041, 0.987, 0.155), Vec3(0.512, -0.859, 0.012) };
+	Util.SetGoalPosition(-5213.875, 4922.520, 97.125, "ATTACK_Allies_Barrier2_16");
+	GetGoal("ATTACK_Allies_Barrier2_16").AimVectors = { Vec3(0.129, 0.990, 0.051), Vec3(0.556, -0.831, 0.015) };
+	Util.SetGoalPosition(-5213.827, 6142.683, 97.125, "ATTACK_Allies_Barrier2_17");
+	GetGoal("ATTACK_Allies_Barrier2_17").AimVectors = { Vec3(0.225, -0.974, 0.015), Vec3(0.402, 0.916, 0.005) };
+	
+	//common goals for version b6 and b7 changing during game
+	Util.SetGoalPosition(-4500.124, 4887.469, 97.125, "SMOKEBOMB_Allies_PastBarr2_33");
+	GetGoal("SMOKEBOMB_Allies_PastBarr2_33").AimVectors = { Vec3(-0.452, 0.665, 0.595) };
+	
+	if ( GetGoal("MOUNTMG42_Road_2") == null )
+	{
+		Map.Version = "b6";
+		
+		Wp.SetWaypointFlag( "Road_2_MG42_.*", "closed", false );
+		Wp.SetWaypointFlag( "Tunnel_.*", "closed", true );
+		Wp.SetWaypointFlag( "Last_Axis_Spawn_.*", "closed", true );
+		
+		//static goals for version b6
+		Util.SetGoalPosition(-836.747, 2265.542, -142.875, "MOBILEMORTAR_Allies_GoldDeposWay_21");
+		GetGoal("MOBILEMORTAR_Allies_GoldDeposWay_21").MortarAim = { Vec3(0.493, 0.861, 0.126),
+		Vec3(0.606, 0.777, 0.170), Vec3(0.174, 0.968, 0.181),Vec3(0.335, 0.928, 0.162) };
+		Util.SetGoalPosition(-3041.181, 4821.804, 119.850, "CALLARTILLERY_Allies_Barrier2_40");
+		Util.SetGoalPosition(-3041.181, 4821.804, 119.850, "CALLARTILLERY_Allies_PastBarr2_40");
+		Util.SetGoalPosition(-2835.944, 6509.602, 195.914, "CALLARTILLERY_Allies_Barrier2_41");
+		Util.SetGoalPosition(-2835.944, 6509.602, 195.914, "CALLARTILLERY_Allies_PastBarr2_42");
+		Util.SetGoalPosition(-3226.758, 4838.759, 102.748, "SMOKEBOMB_Allies_Barrier2_20");
+		GetGoal("SMOKEBOMB_Allies_Barrier2_20").AimVectors = { Vec3(-0.671, 0.095, 0.735) };
+		Util.SetGoalPosition(-3226.758, 4838.759, 102.748, "SMOKEBOMB_Allies_PastBarr2_32");
+		GetGoal("SMOKEBOMB_Allies_PastBarr2_32").AimVectors = { Vec3(-0.671, 0.095, 0.735) };
+		Util.SetGoalPosition(-5195.759, 6811.724, 97.125, "ATTACK_Allies_Barrier2_14");
+		GetGoal("ATTACK_Allies_Barrier2_14").AimVectors = { Vec3(0.021, -1.000, 0.012), Vec3(0.932, 0.361, 0.005) };
+		Util.SetGoalPosition(-2828.424, 6217.382, 196.384, "SMOKEBOMB_Allies_PastBarr2_34");
+		GetGoal("SMOKEBOMB_Allies_PastBarr2_34").AimVectors = { Vec3(-0.758, 0.413, 0.495) };
+		
+		//goals for version b6 changing during game
+		Util.SetGoalPosition(-836.747, 2265.542, -142.875, "MOBILEMORTAR_Allies_Barrier1_31");
+		GetGoal("MOBILEMORTAR_Allies_Barrier1_31").MortarAim = {
+		Vec3(0.493, 0.861, 0.126), Vec3(0.606, 0.777, 0.170), Vec3(0.415, 0.906, 0.087), Vec3(0.174, 0.968, 0.181),
+		Vec3(0.335, 0.928, 0.162), Vec3(0.428, 0.893, 0.140), Vec3(0.517, 0.852, 0.081) };
+		
+		Util.MapDebugPrint( "b6" );
+	}
+	else
+	{
+		SetGoalPriority( "PLANT_Brickwall", 0.75, TEAM.ALLIES );
+		Util.AddUseWp( "PLANT_Brickwall",  "Brickwall_1" );
+		SetGoalPriority( "PLANT_Brickwall", 0.81, TEAM.ALLIES, CLASS.COVERTOPS );
+		
+		//common static goals for version b7 and b8
+		Util.SetGoalPosition(-907.953, 2274.152, -142.875, "MOBILEMORTAR_Allies_GoldDeposWay_21");
+		GetGoal("MOBILEMORTAR_Allies_GoldDeposWay_21").MortarAim = {Vec3(0.511, 0.852, 0.128),
+		Vec3(0.615, 0.771, 0.166), Vec3(0.202, 0.962, 0.182), Vec3(0.349, 0.923, 0.166), };
+		
+		Util.SetGoalPosition(-3016.683, 4935.800, 432.125, "CALLARTILLERY_Allies_Barrier2_40");
+		Util.SetGoalPosition(-3016.683, 4935.800, 432.125, "CALLARTILLERY_Allies_PastBarr2_40");
+		Util.SetGoalPosition(-3037.860, 6580.390, 433.125, "CALLARTILLERY_Allies_Barrier2_41");
+		Util.SetGoalPosition(-3037.860, 6580.390, 433.125, "CALLARTILLERY_Allies_PastBarr2_42");
+		Util.SetGoalPosition(-2994.308, 4881.620, 433.125, "SMOKEBOMB_Allies_Barrier2_20");
+		GetGoal("SMOKEBOMB_Allies_Barrier2_20").AimVectors = { Vec3(-0.667, 0.070, 0.650) };
+		Util.SetGoalPosition(-2994.308, 4881.620, 433.125, "SMOKEBOMB_Allies_PastBarr2_32");
+		GetGoal("SMOKEBOMB_Allies_PastBarr2_32").AimVectors = { Vec3(-0.667, 0.070, 0.650) };
+		Util.SetGoalPosition(-3037.875, 6559.958, 433.125, "ATTACK_Allies_Barrier2_14");
+		GetGoal("ATTACK_Allies_Barrier2_14").AimVectors = { Vec3(-0.982, -0.050, -0.182), Vec3(-0.736, -0.663, -0.136) };
+		Util.SetGoalPosition(-3011.617, 6517.449, 433.125, "SMOKEBOMB_Allies_PastBarr2_34");
+		GetGoal("SMOKEBOMB_Allies_PastBarr2_34").AimVectors = { Vec3(-0.698, 0.066, 0.713) };
+		
+		//common goals for version b7 and b8 changing during game
+		Util.SetGoalPosition(-907.953, 2274.152, -142.875, "MOBILEMORTAR_Allies_Barrier1_31");
+		GetGoal("MOBILEMORTAR_Allies_Barrier1_31").MortarAim = { Vec3(0.511, 0.852, 0.128), Vec3(0.615, 0.771, 0.166), Vec3(0.410, 0.907, 0.093),
+		Vec3(0.202, 0.962, 0.182), Vec3(0.431, 0.892, 0.134), Vec3(0.349, 0.923, 0.166), Vec3(0.527, 0.846, 0.077) };
+		
+		if ( GetGoal("AMMOCAB_Axis_Back_Spawn") == null )
+		{
+			Map.Version = "b7";
+			
+			thread ( Map.Brickwall_Test );
+			
+			Util.MapDebugPrint( "b7" );
+		}
+		else
+		{
+			Map.Version = "b8";
+			
+			if ( Map.Debug )
+			{
+				thread ( Map.Lift_Position_Debug );
+			}
+			
+			thread ( Map.Lift_Position );
+			thread ( Map.Brickwall_Test );
+			
+			Wp.SetWaypointFlag( "Wine_Cellar_.*", "closed", false );
+			Wp.SetWaypointFlag( "Axis_MG42_Room_0", "closed", false );
+			Wp.SetWaypointFlag( "Under_Bridge_Scaffolding_.*", "closed", false );
+			Wp.SetWaypointFlag( "Axis_Back_Spawn_.*", "closed", false );
+			Wp.SetWaypointFlag( "Axis_Back_Spawn_3", "closed", true );
+			Wp.SetWaypointFlag( "Axis_Spawn_.*", "closed", true );
+			Wp.SetWaypointFlag( "Axis_Spawn_7", "closed", false );
+			Wp.SetWaypointFlag( "Axis_Shortcut_.*", "closed", false );
+			
+			Util.AddUseWp( "AMMOCAB_Axis_Back_Spawn",  "Axis_Back_Spawn_1" );
+			
+			//static goals for version b8
+			Util.SetGoalPosition(-3037.875, 5568.254, 433.125, "ATTACK_Allies_Barrier2_15");
+			GetGoal("ATTACK_Allies_Barrier2_15").AimVectors = { Vec3(-0.941, 0.313, -0.130), Vec3(-0.962, -0.232, -0.146) };
+			Util.SetGoalPosition(-3037.875, 5418.354, 433.125, "ATTACK_Allies_Barrier2_16");
+			GetGoal("ATTACK_Allies_Barrier2_16").AimVectors = { Vec3(-0.950, -0.276, -0.146), Vec3(-0.908, 0.402, -0.120) };
+			Util.SetGoalPosition(-3037.875, 5277.578, 433.125, "ATTACK_Allies_Barrier2_17");
+			GetGoal("ATTACK_Allies_Barrier2_17").AimVectors = { Vec3(-0.919, 0.375, -0.123), Vec3(-0.967, -0.212, -0.143) };
+			
+			//goals for version b8 changing during game
+			Util.SetGoalPosition(-4434.125, 5377.875, -246.875, "SMOKEBOMB_Allies_PastBarr2_33");
+			GetGoal("SMOKEBOMB_Allies_PastBarr2_33").AimVectors = { Vec3(-0.225, -0.133, 0.965) };
+		
+			Util.MapDebugPrint( "b8" );
+		}
+	}
+	
+	if ( Map.Version == "b6" or Map.Version == "b7" )
+	{
+		Wp.Disconnect(560, 3618);
+		Wp.Disconnect(3618, 560);
+		Wp.Disconnect(561, 560);
+		Wp.Disconnect(560, 561);
+		Wp.Disconnect(3821, 571);
+		Wp.Disconnect(571, 3821);
+		Wp.Disconnect(3821, 3820);
+		Wp.Disconnect(3820, 3821);
+		Wp.Disconnect(3678, 576);
+		Wp.Disconnect(576, 3678);
+		Wp.Disconnect(3677, 576);
+		Wp.Disconnect(576, 3677);
+		Wp.Disconnect(3671, 576);
+		Wp.Disconnect(576, 3671);
+		Wp.Disconnect(3671, 577);
+		Wp.Disconnect(577, 3671);
+		Wp.Disconnect(3670, 3671);
+		Wp.Disconnect(3671, 3670);
+		Wp.Disconnect(576, 3676);
+		Wp.Disconnect(3676, 576);
+		Wp.Disconnect(576, 3679);
+		Wp.Disconnect(3679, 576);
+		
+		SetAvailableMapGoals( 0, false, "HEALTHCAB_Hot_Meal_1" );
+		SetAvailableMapGoals( 0, false, "AMMOCAB_Allied_HQ" );
+		
+		Wp.SetWaypointFlag( "Axis_MG42_Room_.*", "closed", false );
+		Wp.SetWaypointFlag( "Axis_MG42_Room_0", "closed", true );
+		Wp.SetWaypointFlag( "Axis_Back_Spawn_.*", "closed", true );
+		Wp.SetWaypointFlag( "Axis_Back_Spawn_3", "closed", false );
+		Wp.SetWaypointFlag( "Axis_Spawn_7", "closed", true );
+		Wp.SetWaypointFlag( "Truck_Path_256", "jumplow", true );
+	}
+	
+	//common goals for version b6, b7 and b8 changing during game
+	Util.SetGoalPosition(-266.125, 1319.035, -332.216, "DEFEND_Axis_Fuel_04");
+	GetGoal("DEFEND_Axis_Fuel_04").AimVectors = { Vec3(-0.733, 0.680, 0.004), Vec3(-0.627, -0.644, 0.439) };
+	Util.SetGoalPosition(-1481.253, 1426.126, -382.875, "DEFEND_Axis_Fuel_06");
+	GetGoal("DEFEND_Axis_Fuel_06").AimVectors = { Vec3(-0.186, 0.377, 0.907), Vec3(0.994, -0.111, 0.020) };
+	Util.SetGoalPosition(-4804.582, 6010.625, 97.125, "MOBILEMG42_Axis_Barrier2_02");
+	GetGoal("MOBILEMG42_Axis_Barrier2_02").AimVectors = { Vec3(0.813, -0.581, 0.033) };
+	Util.SetGoalPosition(-5117.189, 6360.624, 97.125, "MOBILEMG42_Axis_Barrier2_03");
+	GetGoal("MOBILEMG42_Axis_Barrier2_03").AimVectors = { Vec3(0.977, 0.191, 0.092) };
+	Util.SetGoalPosition(-4760.559, 4464.700, 97.125, "DEFEND_Axis_Barrier2_50");
+	GetGoal("DEFEND_Axis_Barrier2_50").AimVectors = { Vec3(0.962, 0.270, 0.039) };
+	GetGoal("DEFEND_Axis_Barrier2_50").Stance = "prone";
+	Util.SetGoalPosition(-4697.030, 5863.743, 96.125, "DEFEND_Axis_Barrier2_57");
+	GetGoal("DEFEND_Axis_Barrier2_57").AimVectors = { Vec3(0.887, -0.462, 0.022), Vec3(0.053, 0.995, 0.084) };
+	GetGoal("DEFEND_Axis_Barrier2_57").Stance = "crouch";
+	GetGoal("PLANT_Truck_Barrier_1").CoverSpots[0].position =  Vec3(1192.251, 5001.835, 103.131);
+	GetGoal("PLANT_Truck_Barrier_1").CoverSpots[0].AimVectors = { Vec3(-0.077, 0.989, -0.127) };
+	GetGoal("PLANT_Truck_Barrier_1").CoverSpots[0].stance = "stand";
+	GetGoal("PLANT_Truck_Barrier_1").CoverSpots[1].position =  Vec3(1545.837, 5037.875, 140.382);
+	GetGoal("PLANT_Truck_Barrier_1").CoverSpots[1].AimVectors = { Vec3(-0.632, 0.771, 0.075) };
+	GetGoal("PLANT_Truck_Barrier_1").CoverSpots[1].stance = "stand";
+	GetGoal("PLANT_Truck_Barrier_1").CoverSpots[2].position =  Vec3(1353.072, 5092.648, 109.343);
+	GetGoal("PLANT_Truck_Barrier_1").CoverSpots[2].AimVectors = { Vec3(-0.408, 0.905, 0.120) };
+	GetGoal("PLANT_Truck_Barrier_1").CoverSpots[2].stance = "stand";
+	
+	GetGoal("PLANT_Truck_Barrier_2").CoverSpots[0].position =  Vec3(-2413.474, 4884.413, 136.172);
+	GetGoal("PLANT_Truck_Barrier_2").CoverSpots[0].AimVectors = { Vec3(-0.999, 0.010, 0.033) };
+	GetGoal("PLANT_Truck_Barrier_2").CoverSpots[0].stance = "prone";
+	GetGoal("PLANT_Truck_Barrier_2").CoverSpots[1].position = Vec3(-2075.764, 5125.297, 153.504);
+	GetGoal("PLANT_Truck_Barrier_2").CoverSpots[1].AimVectors = { Vec3(-1.000, 0.025, 0.013) };
+	GetGoal("PLANT_Truck_Barrier_2").CoverSpots[1].stance = "prone";
+	GetGoal("SMOKEBOMB_Allies_Barrier1_20").AimVectors = { Vec3(-0.266, 0.429, 0.863) };
+	Util.SetGoalPosition(1224.331, 4717.874, 81.125, "SMOKEBOMB_Allies_Barrier1_21");
+	GetGoal("SMOKEBOMB_Allies_Barrier1_21").AimVectors = { Vec3(-0.009, 0.755, 0.656) };
+	Util.SetGoalPosition(-5073.708, 3953.191, 97.125, "DEFEND_Axis_Barrier2_53");
+	GetGoal("DEFEND_Axis_Barrier2_53").AimVectors = { Vec3(0.874, 0.484, 0.035) };
+	GetGoal("DEFEND_Axis_Barrier2_53").Stance = "prone";
+	
+	GetGoal("SMOKEBOMB_Allies_PastBarr2_30").AimVectors = { Vec3(-0.499, -0.493, 0.713) };
+	GetGoal("SMOKEBOMB_Allies_PastBarr2_31").AimVectors = { Vec3(-0.784, -0.305, 0.541) };
+	Util.SetGoalPosition(-5032.048, 4122.392, 97.125, "ATTACK_Allies_PastBarr2_01");
+	GetGoal("ATTACK_Allies_PastBarr2_01").AimVectors = { Vec3(-0.039, 0.999, 0.003), Vec3(-0.525, 0.840, 0.137) };
+	Util.SetGoalPosition(-4907.662, 4296.438, 97.125, "ATTACK_Allies_PastBarr2_03");
+	GetGoal("ATTACK_Allies_PastBarr2_03").AimVectors = { Vec3(-0.594, 0.781, 0.195), Vec3(-0.098, 0.995, 0.003) };
+	Util.SetGoalPosition(-5177.731, 4280.355, 97.125, "ATTACK_Allies_PastBarr2_00");
+	GetGoal("ATTACK_Allies_PastBarr2_00").AimVectors = { Vec3(-0.447, 0.893, 0.046), Vec3(0.127, 0.992, 0.003) };
+	Util.SetGoalPosition(-5187.152, 4545.568, 97.125, "ATTACK_Allies_PastBarr2_02");
+	GetGoal("ATTACK_Allies_PastBarr2_02").AimVectors = { Vec3(-0.476, 0.820, 0.318), Vec3(0.120, 0.993, 0.003) };
+	Util.SetGoalPosition(-5469.491, 4524.115, 97.125, "ATTACK_Allies_PastBarr2_05");
+	GetGoal("ATTACK_Allies_PastBarr2_05").AimVectors = { Vec3(0.063, 0.998, -0.003), Vec3(0.998, 0.065, -0.023) };
+	Util.SetGoalPosition(-5485.875, 4970.592, 97.125, "ATTACK_Allies_PastBarr2_06");
+	GetGoal("ATTACK_Allies_PastBarr2_06").AimVectors = { Vec3(0.249, 0.968, -0.013), Vec3(0.400, -0.916, -0.013) };
+	Util.SetGoalPosition(-5213.875, 5134.492, 97.125, "ATTACK_Allies_PastBarr2_07");
+	GetGoal("ATTACK_Allies_PastBarr2_07").AimVectors = { Vec3(0.312, 0.950, 0.020), Vec3(0.465, -0.885, -0.000) };
+	Util.SetGoalPosition(-4691.575, 5990.365, 97.125, "ATTACK_Allies_PastBarr2_10");
+	GetGoal("ATTACK_Allies_PastBarr2_10").AimVectors = { Vec3(-0.837, -0.547, 0.020), Vec3(-0.606, 0.795, 0.003) };
+	Util.SetGoalPosition(-4822.853, 4595.639, 97.125, "ATTACK_Allies_PastBarr2_04");
+	GetGoal("ATTACK_Allies_PastBarr2_04").AimVectors = { Vec3(-0.776, 0.582, 0.242), Vec3(-0.169, 0.985, 0.016) };
+	Util.SetGoalPosition(-5143.973, 6957.875, 97.125, "ATTACK_Allies_PastBarr2_18");
+	GetGoal("ATTACK_Allies_PastBarr2_18").AimVectors = { Vec3(0.875, 0.201, 0.441), Vec3(0.083, -0.997, 0.007) };
+	
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	
+	OnTrigger( "The Tank has been repaired!", Map.Tank_Built );
+	OnTrigger( "The Tank has been damaged!", Map.Tank_Destroyed );
+	
+	OnTrigger( "The Truck has been repaired!", Map.Truck_Built );
+	OnTrigger( "The Truck has been damaged!", Map.Truck_Destroyed );
+	
+	OnTrigger( "Truck Barrier #1 has been constructed.", Map.Truck_Barrier_1_Built );
+	OnTrigger( "Truck Barrier #1 has been destroyed.", Map.Truck_Barrier_1_Destroyed );
+	
+	OnTrigger( "Truck Barrier #2 has been constructed.", Map.Truck_Barrier_2_Built );
+	OnTrigger( "Truck Barrier #2 has been destroyed.", Map.Truck_Barrier_2_Destroyed );
+	
+	OnTrigger( "Planted at The Tunnel Door.", Map.Tunnel_Door_Planted );
+	OnTrigger( "Defused at The Tunnel Door.", Map.Tunnel_Door_Defused );
+	OnTrigger( "Allied team have blown the Tunnel door", Map.Tunnel_Door_Destroyed );
+	
+	OnTrigger( "Planted at Depot Side Door.", Map.Depot_Side_Door_Planted );
+	OnTrigger( "^1Depot Side Entrance destroyed!", Map.Depot_Side_Door_Destroyed );
+	
+	OnTrigger( "The depot doors have been destroyed.", Map.Gold_Depository_Door_Destroyed );
+	
+	OnTrigger( "Allies have stolen The Gold Crate!", Map.Gold_Crate_Taken );
+	OnTrigger( "USA have stolen The Gold Crate!", Map.Gold_Crate_Taken );	//ETNam
+	OnTrigger( "Flag dropped gold_crate!", Map.Gold_Crate_Dropped );
+	OnTrigger( "Flag returned gold_crate!", Map.Gold_Crate_Returned );
+	OnTrigger( "Allies captured goldbar_holder", Map.Gold_Crate_Secured );
+	
+	OnTrigger( "Allies have stolen Tank Fuel!", Map.Tank_Fuel_Taken );
+	OnTrigger( "USA have stolen Tank Fuel!", Map.Tank_Fuel_Taken );	//ETNam
+	OnTrigger( "Flag dropped tank_fuel!", Map.Tank_Fuel_Dropped );
+	OnTrigger( "Flag returned tank_fuel!", Map.Tank_Fuel_Returned );
+	OnTrigger( "Allies have secured Tank Fuel!", Map.Tank_Fuel_Secured );
+	
+	OnTrigger( "Allied team has destroyed the Main Gate!", Map.Main_Gate_Destroyed );
+	
+	OnTrigger( "Planted at Brickwall.", Map.Brickwall_Planted );
+	
+	OnTrigger( "Allied team escaped with the Gold Crates!", Map.Allies_Won );
+	OnTrigger( "^1The spawns have moved", Map.Spawn_Change );
+	
+	Util.OnTriggerPosition( "MOVER_tank", Vector3( -2063.870, -804.032, -57 ), 75.0, Map.Tank_At_Corner_1 );
+	Util.OnTriggerPosition( "MOVER_tank", Vector3( 257, -648, -57 ), 75.0, Map.Tank_At_Corner_2 );
+	Util.OnTriggerPosition( "MOVER_tank", Vector3( 576, -138, -57 ), 75.0, Map.Tank_At_Barrier );
+	Util.OnTriggerPosition( "MOVER_truck", Vector3( 1852.050, 5125.890, 207.448 ), 75.0, Map.Truck_At_Turn );
+	Util.OnTriggerPosition( "MOVER_truck", Vector3( 1418.670, 5409.4, 187.652 ), 75.0, Map.Truck_At_Barrier_1 );
+	Util.OnTriggerPosition( "MOVER_truck", Vector3( 1131.620, 5439, 157.424 ), 75.0, Map.Truck_Past_Barrier_1 );
+	Util.OnTriggerPosition( "MOVER_truck", Vector3( -3781.5, 5025.090, 177.5 ), 75.0, Map.Truck_At_Barrier_2 );
+	Util.OnTriggerPosition( "MOVER_truck", Vector3( -4049.5, 5025.770, 177.5 ), 75.0, Map.Truck_Past_Barrier_2 );
+	Util.OnTriggerPosition( "MOVER_truck", Vector3( -2437.280, 4714.380, 197.500 ), 75.0, Map.Truck_At_Bridge );
+	Util.OnTriggerPosition( "MOVER_truck", Vector3( -5067.230, 5481.470, 177.500 ), 75.0, Map.Truck_At_Final_Turn );
+	Util.OnTriggerPosition( "MOVER_truck", Vector3( -4998, 6070, 168 ), 75.0, Map.Truck_Near_Tunnel );
+	Util.OnTriggerPosition( "MOVER_truck", Vector3( -4972.380, 6893.440, 177.500 ), 75.0, Map.Truck_Inside_Tunnel );
+	
+	OnTriggerRegion(AABB(1196.691,-689.126,-126.875,1234.691,-679.126,260.334), Map.Ignore_Target );
+	OnTriggerRegion(AABB(1059.125,-677.125,129.125,1132.875,-667.125,237.773), Map.Ignore_Target );
+	OnTriggerRegion(AABB(2150.875,4255.125,129.125,2160.875,4608.837,244.279), Map.Ignore_Target );
+	OnTriggerRegion(AABB(1759.125,6686.875,137.125,1968.875,6696.875,252.924), Map.Ignore_Target );
+	OnTriggerRegion(AABB(-1714.864,1438.012,-382.875,-1704.864,1476.012,-135), Map.Ignore_Target );
+	OnTriggerRegion(AABB(-713.269,615.135,-382.875,-675.269,625.135,123.453), Map.Ignore_Target );
+	
+	RegionTrigger.Create(AABB(629.809,1871.125,-142.875,749.329,1957.074,-68.875), "DisableBotPush", "MainGate_Door");
+	RegionTrigger.Create(AABB(2351.125,5404.681,129.125,2397.425,5461.962,203.131), "DisableBotPush", "Coverspot_Barr1");
+	
+	RegionTrigger.Create(AABB(-1929.241,1503.447,-126.875,-1823.603,1572.179,-52.875), "DisableCombatMovement", "Allies_Fuel_22");
+	RegionTrigger.Create(AABB(2825.323,4381.696,-19.828,2883.992,4511.668,86.162), "DisableCombatMovement", "Allies_Gold_00");
+	RegionTrigger.Create(AABB(1378.043,4988.986,99.674,1535.724,5093.951,191.343), "DisableCombatMovement", "Jump");
+	RegionTrigger.Create(AABB(-3056.875,4853.668,433.237,-2967.986,4962.203,507.237), "DisableCombatMovement", "Allies_Barrier2_20");
+	RegionTrigger.Create(AABB(-3056.822,6494.124,433.125,-2944.638,6618.323,507.135), "DisableCombatMovement", "Allies_PastBarr2_42");
+	RegionTrigger.Create(AABB(1159.013,4678.365,81.125,1365.461,4744.875,155.126), "DisableCombatMovement", "Brick_Wall");
+	RegionTrigger.Create(AABB(-2880.875,6143.130,194.378,-2677.627,6258.454,276.449), "DisableCombatMovement", "Allies_PastBarr2_34_B6");
+	
+	RegionTrigger.Create(AABB(-760.875,-1008.875,-318.875,-711.125,-943.125,-268.875), "KillTrigger", "Crates" );
+	
+	thread ( Map.Bookcase_Test );
+	thread ( Map.Supply_Test );
+	
+	Util.AddUseWp( "PLANT_Depot_Side_Door", { "Depot_Side_Door_1", "Depot_Side_Door_2" } );
+	Util.AddUseWp( "BUILD_Truck_Barrier_1",  "Truck_Barrier_1_2" );
+	Util.AddUseWp( "BUILD_Truck_Barrier_2",  "Truck_Barrier_2_2" );
+	
+	Wp.SetWaypointFlag( "Old_City_Spawn_Exit", "closed", true );
+	Wp.SetWaypointFlag( "Truck_Barrier_1_1", "closed", true );
+	Wp.SetWaypointFlag( "Truck_Barrier_2_1", "closed", true );
+	Wp.SetWaypointFlag( "Tank_Path_.*", "blockwall", true );
+	Wp.SetWaypointFlag( "Truck_Path_.*", "blockwall", false );
+	
+	Util.DisableGoal( "ROUTE_SideDoor_.*" );
+	Util.DisableGoal( "ROUTE_BrickWall_.*" );
+	
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_Allied_Command_Post",
+		"PLANT_Tunnel_Door",
+		".*_Allies_Fuel_.*",
+	});
+	
+	SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_Fuel_.*" );
+	
+	SetGoalRole( "PLANT_Allied_Command_Post", ROLE.INFILTRATOR );
+	
+	SetGoalPriority( "REPAIRMG42_.*", 0.79, 0 );
+	
+	SetGoalPriority( "DEFEND_Axis_Fuel_0.*", 0.51, TEAM.AXIS );
+	SetGoalPriority( "ATTACK_Axis_Tank_.*", 0.51, TEAM.AXIS );
+	SetGoalPriority( "ATTACK_Axis_Tank_2.*", 0.50, TEAM.AXIS );
+	SetGoalPriority( "ATTACK_Axis_FirstTankWay_2.*", 0.52, TEAM.AXIS );
+	SetGoalPriority( "ATTACK_Axis_SecondTankWay_0.*", 0.51, TEAM.AXIS );
+	SetGoalPriority( "ATTACK_Axis_SecondTankWay_1.*", 0.51, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_Axis_ThirdTankWay_0.*", 0.51, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_Axis_ThirdTankWay_1.*", 0.51, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_Axis_GoldDeposWay_.*", 0.51, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_Axis_Barrier2_5.*", 0.51, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_Axis_DepotSideDoor_0[45]", 0.52, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_Axis_GoldDeposDoor_.*", 0.52, TEAM.AXIS );
+	SetGoalPriority( "ATTACK_Axis_Truck_.*", 0.53, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_Axis_GoldCrates_.*", 0.54, TEAM.AXIS );
+	SetGoalPriority( "MOUNTMG42_Tank_Route", 0.69, TEAM.AXIS );
+	SetGoalPriority( "REPAIRMG42_Tank_Route", 0.80, TEAM.AXIS );
+	SetGoalPriority( "BUILD_Axis_Command_Post", 0.82, TEAM.AXIS );
+	
+	SetGoalPriority( "ATTACK_Allies_Fuel_0.*", 0.51, TEAM.ALLIES );
+	SetGoalPriority( "ATTACK_Allies_Fuel_0[19]", 0.52, TEAM.ALLIES );
+	SetGoalPriority( "DEFEND_Allies_CappointTankWay_0[1469]", 0.51, TEAM.ALLIES );
+	SetGoalPriority( "ATTACK_Allies_DepotSideDoor_0[02]", 0.51, TEAM.ALLIES );
+	SetGoalPriority( "ATTACK_Allies_GoldDeposDoor_.*", 0.51, TEAM.ALLIES );
+	SetGoalPriority( "ATTACK_Allies_Barrier2_0.*", 0.51, TEAM.ALLIES );
+	SetGoalPriority( "ESCORT_.*", 0.69, TEAM.ALLIES );
+	SetGoalPriority( "PLANT_Tunnel_Door", 0.78, TEAM.ALLIES );
+	SetGoalPriority( "PLANT_Axis_Command_Post", 0.78, TEAM.ALLIES );
+	SetGoalPriority( "PLANT_Tunnel_Door", 0.81, TEAM.ALLIES, CLASS.COVERTOPS );
+	SetGoalPriority( "PLANT_Axis_Command_Post", 0.81, TEAM.ALLIES, CLASS.COVERTOPS );
+	SetGoalPriority( "SMOKEBOMB_Allies_Fuel_.*", 0.81, TEAM.ALLIES );
+	SetGoalPriority( "SMOKEBOMB_Allies_PastBarr2_34", 0.82, TEAM.ALLIES );
+	
+	Util.SetGoalRange( "PLANT_Axis_Command_Post", 1300);
+	Util.SetGoalRange( "AMMOCAB_misc_cabinet_supply4", 2500);
+	Util.SetGoalRange( "HEALTHCAB_misc_cabinet_health3", 2500);
+	
+	Util.SetMaxUsersInProgress( 1, "ATTACK_.*" );
+	Util.SetMaxUsersInProgress( 1, "DEFEND_.*" );
+	Util.SetMaxUsersInProgress( 1, "CAMP_.*" );
+	Util.SetMaxUsers( 1, "SMOKEBOMB_.*" );
+	Util.SetMaxUsers( 1, ".*_Allied_Command_Post" );
+	Util.SetMaxUsers( 1, ".*MG42_.*" );
+	Util.SetMaxUsersInUse( 2, "PLANT_Depot_Side_Door" );
+	Util.SetMaxUsersInUse( 3, "PLANT_Tunnel_Door" );
+	Util.SetMaxUsers( 5, "ESCORT_.*" );
+	
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.MP40, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.THOMPSON, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.PANZERFAUST, false );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.FLAMETHROWER, false );
+	
+	
+	if ( GetGameState() == "Playing" )
+	{
+		sleep(5);
+		EchoToScreen(0,"^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12. ^7Version of map: " + GetMapName() +"_" +Map.Version);
+		Util.BotChat( 0, "say", "^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12. ^7Version of map: " + GetMapName() +"_" +Map.Version , 1 );
+	}
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 130;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		MOUNTMG42_Gold_Depository =
+		{
+			ROUTE_OldCity_Spawn =
+			{
+				ROUTE_Near_Truck =
+				{
+					ROUTE_SideDoor_1 =
+					{
+						ROUTE_SideDoor_2 = {},
+					},
+				},
+			},
+		},
+		CAPPOINT_Tank =
+		{
+			ROUTE_FlagFuel_Place =
+			{
+				ROUTE_LadderWay_1 =
+				{
+					ROUTE_LadderWay_2 =
+					{
+						ROUTE_Window =
+						{
+							ROUTE_TankSpawn = {},
+						},
+					},
+				},
+				ROUTE_Boxes =
+				{
+					ROUTE_Room = {},
+				},
+				ROUTE_OutsideLadder =
+				{
+					ROUTE_Tree = {},
+				},
+			},
+		},
+		CAPPOINT_Truck =
+		{
+			ROUTE_FlagGold_Place =
+			{
+				ROUTE_Behind_DepositoryDoor =
+				{
+					ROUTE_SideDoor_2 =
+					{
+						Weight = 4,
+						ROUTE_SideDoor_1 = {},
+					},
+					ROUTE_TruckWay_2 =
+					{
+						ROUTE_TruckWay_1 = {},
+					},
+				},
+			},
+		},
+		SMOKEBOMB_Allies_GoldDeposWay_30 =
+		{
+			ROUTE_OldCity_Spawn =
+			{
+				ROUTE_Building_1 =
+				{
+					ROUTE_Building_2 =
+					{
+						ROUTE_Outside_1 = {},
+					},
+				},
+			},
+		},
+	};
+	
+	if ( Map.Version == "b6" )
+	{
+		MapRoutes.PLANT_GOLD_DEPOSITORY_DOOR =
+		{
+			ROUTE_OldCity_Spawn =
+			{
+				ROUTE_Near_Truck =
+				{
+					Weight = 2,
+					ROUTE_TruckWay_1 =
+					{
+						ROUTE_TruckWay_2 = {},
+					},
+					ROUTE_SideDoor_1 =
+					{
+						Weight = 5,
+						ROUTE_SideDoor_2 = {},
+					},
+				},
+				ROUTE_Building_1 =
+				{
+					ROUTE_Building_2 =
+					{
+						ROUTE_Outside_1 =
+						{
+							ROUTE_Outside_2 =
+							{
+								ROUTE_Outside_3 = {},
+							},
+						},
+					},
+				},
+			},
+		};
+		MapRoutes.PLANT_Truck_Barrier_1 =
+		{
+			ROUTE_OldCity_Spawn =
+			{
+				ROUTE_Building_1 =
+				{
+					ROUTE_Building_2 =
+					{
+						ROUTE_Outside_1 =
+						{
+							ROUTE_Outside_2 =
+							{
+								ROUTE_Outside_3 = {},
+							},
+						},
+					},
+				},
+				ROUTE_Near_Truck =
+				{
+					ROUTE_SideDoor_1 =
+					{
+						ROUTE_SideDoor_2 = {},
+					},
+				},
+			},
+		};
+	}
+	else
+	{
+		MapRoutes.PLANT_GOLD_DEPOSITORY_DOOR =
+		{
+			ROUTE_OldCity_Spawn =
+			{
+				ROUTE_Near_Truck =
+				{
+					Weight = 2,
+					ROUTE_TruckWay_1 =
+					{
+						ROUTE_TruckWay_2 = {},
+					},
+					ROUTE_SideDoor_1 =
+					{
+						Weight = 5,
+						ROUTE_SideDoor_2 = {},
+					},
+				},
+				ROUTE_Building_1 =
+				{
+					ROUTE_Building_2 =
+					{
+						ROUTE_BrickWall_1 =
+						{
+							ROUTE_BrickWall_2 = {},
+						},
+						ROUTE_Outside_1 =
+						{
+							ROUTE_Outside_2 =
+							{
+								ROUTE_Outside_3 = {},
+							},
+						},
+					},
+				},
+			},
+		};
+		MapRoutes.PLANT_Truck_Barrier_1 =
+		{
+			ROUTE_OldCity_Spawn =
+			{
+				ROUTE_Building_1 =
+				{
+					ROUTE_Building_2 =
+					{
+						ROUTE_BrickWall_1 =
+						{
+							Weight = 3,
+							ROUTE_BrickWall_2 = {},
+						},
+						ROUTE_Outside_1 =
+						{
+							ROUTE_Outside_2 =
+							{
+								ROUTE_Outside_3 = {},
+							},
+						},
+					},
+				},
+				ROUTE_Near_Truck =
+				{
+					ROUTE_SideDoor_1 =
+					{
+						Weight = 3,
+						ROUTE_SideDoor_2 = {},
+					},
+					ROUTE_BrickWall_1 =
+					{
+						ROUTE_BrickWall_2 = {},
+					},
+				},
+			},
+		};
+	}
+	
+	MapRoutes["ATTACK_Allies_PastBarr2_1.*"] =
+	{
+		ROUTE_Allied_ChangeSpawn =
+		{
+			ROUTE_Around_AxisSpawn_1 =
+			{
+				ROUTE_Around_AxisSpawn_2 =
+				{
+					ROUTE_BackCabinetsWay = {},
+				},
+			},
+			ROUTE_InsideBuilding_1 =
+			{
+				ROUTE_InsideBuilding_2 =
+				{
+					ROUTE_BackCabinetsWay = {},
+				},
+			},
+		},
+	};
+	
+	MapRoutes.FLAG_gold_crate = MapRoutes.PLANT_GOLD_DEPOSITORY_DOOR;
+	MapRoutes.CALLARTILLERY_Allies_Barrier1_50 = MapRoutes.MOUNTMG42_Gold_Depository;
+	MapRoutes.REPAIRMG42_Gold_Depository = MapRoutes.MOUNTMG42_Gold_Depository;
+	MapRoutes.SMOKEBOMB_Allies_Barrier1_21 = MapRoutes.SMOKEBOMB_Allies_GoldDeposWay_30;
+	MapRoutes["ATTACK_Allies_Barrier1_.*"] = MapRoutes.PLANT_GOLD_DEPOSITORY_DOOR;
+	MapRoutes["ATTACK_Allies_GoldDeposDoor_.*"] = MapRoutes.PLANT_GOLD_DEPOSITORY_DOOR;
+	
+	Util.Routes(MapRoutes);
+};

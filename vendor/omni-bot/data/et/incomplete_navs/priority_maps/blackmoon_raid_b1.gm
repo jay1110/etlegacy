@@ -1,0 +1,145 @@
+//==========================================================================================
+//
+//  BlackMoon Raid (Beta 1) - blackmoon_raid_b1.gm
+//
+//  Who         When                What
+//------------------------------------------------------------------------------------------
+//  Mateos      27 December 2017    Initial Script
+//
+//==========================================================================================
+//
+
+/****************************************************
+Path mapping and script by Mateos
+Correspondant WAY file size: -
+Last update: 13th January 2018
+****************************************************/
+
+global Map =
+{
+    Tank_Built = function()
+    {
+        Util.MapDebugPrint( "Tank_Built", true );
+    },
+
+    Tank_Destroyed = function()
+    {
+        Util.MapDebugPrint( "Tank_Destroyed", true );
+    },
+
+    Tank_Barrier_Built = function()
+    {
+        Util.MapDebugPrint( "Tank_Barrier_Built", true );
+    },
+
+    Tank_Barrier_Destroyed = function()
+    {
+        Util.MapDebugPrint( "Tank_Barrier_Destroyed", true );
+    },
+
+    Tank_At_First_House = function()
+    {
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Alpha.*" );
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Bravo.*" );
+
+        Util.MapDebugPrint( "Tank_At_First_House" );
+    },
+
+    Tank_At_Intersection = function()
+    {
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Bravo.*" );
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Charlie.*" );
+
+        Util.MapDebugPrint( "Tank_At_Intersection" );
+    },
+
+    Tank_Passed_Barrier = function()
+    {
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Charlie.*" );
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Delta.*" );
+
+        Util.MapDebugPrint( "Tank_Passed_Barrier" );
+    },
+
+    Forward_Bunker_Spawn_Secured = function()
+    {
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Delta.*" );
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Echo.*" );
+
+        Util.MapDebugPrint( "Forward_Bunker_Spawn_Secured" );
+    },
+
+    Tank_Escorted = function()
+    {
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Echo.*" );
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Foxtrot.*" );
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ESCORT_Tank" );
+
+        sleep( 7 );
+
+        SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Generator" );
+
+        Util.MapDebugPrint( "Tank_Escorted" );
+    },
+
+    Generator_Destroyed = function()
+    {
+        Util.MapDebugPrint( "Generator_Destroyed", true );
+    },
+
+    vehicle_at_location = function()
+    {
+        switch( Map.VehicleLocation )
+        {
+            case 1:
+            {
+                Map.Tank_At_First_House();
+            }
+
+            case 2:
+            {
+                Map.Tank_At_Intersection();
+            }
+        }
+    },
+};
+
+global OnMapLoad = function()
+{
+    // Register callback functions
+    OnTrigger( "^aThe tank has been repaired!", Map.Tank_Built );
+    OnTrigger( "^aThe tank has been damaged!", Map.Tank_Destroyed );
+
+    OnTrigger( "^aTank barrier has been constructed!", Map.Tank_Barrier_Built );
+    OnTrigger( "^aTank barrier has been destroyed!", Map.Tank_Barrier_Destroyed );
+
+    OnTrigger( "tank at location", Map.vehicle_at_location );
+    OnTriggerRegion( AABB( 3071.040, 2048.072, 1229.377, 3166.845, 2311.220, 1307.125 ), RegionTrigger.VehicleTrigger );
+    OnTriggerRegion( AABB( 5390.772, 1724.530, 1077.612, 5692.292, 1992.831, 1155.125 ), RegionTrigger.VehicleTrigger );
+    OnTrigger( "^aThe tank has passed the barrier!", Map.Tank_Passed_Barrier );
+    OnTrigger( "^aAllies have secured the Foward Bunker spawn!", Map.Forward_Bunker_Spawn_Secured );
+    OnTrigger( "^aThe tank has been escorted to its final position!", Map.Tank_Escorted );
+
+    OnTrigger( "^xStop Fail! ^aThe Generator has been destroyed.", Map.Generator_Destroyed );
+
+    Util.DisableGoal( "DEFEND_.*" );
+
+    // *** AXIS GOALS ***
+    SetAvailableMapGoals( TEAM.AXIS, false, {
+        "ESCORT_Tank",
+        "MOUNT_Tank",
+    });
+    SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Alpha.*" );
+
+    // *** ALLIED GOALS ***
+    SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Generator" );
+
+    // Camp times
+    //SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+
+    // *** GOALS PROPERTIES ***
+    Util.AddUsePoint( "PLANT_Generator", Vec3( 10740, -1015, 1115 ) );
+
+    Util.MapDebugPrint( "Omni-Bot 0.8x map script for BlackMoon Raid (Beta 1) by Mateos executed." );
+};

@@ -1,0 +1,201 @@
+//==========================================================================================
+//
+//	tnt_intrusion.gm
+//
+//	Who  	When		What
+//------------------------------------------------------------------------------------------
+//	TNT|*Cinco	22 May 2013	incomplete waypoints
+// palota    	23 September 2015 Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	wallDestroyed = false,
+	doorAntenneDestroyed = true,
+	garageDestroyed = false,
+	pumpDestroyed = true,
+	waterInTunnel = true,
+	antenneDestroyed = false,
+	flagTeam = 0,
+
+	SetSpawn1 = function(bot)
+	{
+		if (bot.GetTeam() == TEAM.ALLIES)
+		{
+			if(Map.flagTeam == TEAM.ALLIES){
+				s=3; //forward spawn
+			}else{
+				s=RandInt(1,2)*2; //2 or 4
+			}
+		}else{
+			if(Map.flagTeam == TEAM.AXIS && RandInt(0,9) < 7){
+				s=3; //forward spawn
+			}else{
+				s=1; //axis spawn
+			}
+		}
+		bot.ChangeSpawnPoint(s);
+	},
+
+	SetSpawn = function()
+	{
+		foreach(bot in BotTable)
+		{
+			Map.SetSpawn1(bot);
+		}
+	},
+
+	SetObj = function()
+	{
+		b = Map.wallDestroyed || Map.garageDestroyed || !Map.waterInTunnel;
+		SetAvailableMapGoals( TEAM.ALLIES, b && !Map.doorAntenneDestroyed, "PLANT_Door_Control_Antenne");
+		SetAvailableMapGoals( TEAM.ALLIES, b && Map.doorAntenneDestroyed, "PLANT_Control_Antenne");
+		SetAvailableMapGoals( TEAM.ALLIES, b, "ATTACK_antenne.*");
+		SetAvailableMapGoals( TEAM.AXIS, b, "DEFEND_antenne.*");
+		SetAvailableMapGoals( TEAM.AXIS, Map.garageDestroyed || !Map.waterInTunnel, "DEFEND_garage.*");
+		SetAvailableMapGoals( TEAM.AXIS, Map.wallDestroyed, "DEFEND_wall.*");
+	},
+
+	Door_Garage_Built = function()
+	{
+		Map.garageDestroyed = false;
+		Map.SetObj();
+		Util.MapDebugPrint( "Door_Garage_Built" );
+	},
+
+	Door_Garage_Destroyed = function()
+	{
+		sleep(2);
+		Map.garageDestroyed = true;
+		Map.SetObj();
+		Util.MapDebugPrint( "Door_Garage_Destroyed" );
+	},
+
+	Wall_Bunker_Destroyed = function()
+	{
+		sleep(2);
+		Map.wallDestroyed = true;
+		Map.SetObj();
+		Util.MapDebugPrint( "Wall_Bunker_Destroyed" );
+	},
+
+	Water_Pump_Built = function()
+	{
+		Map.pumpDestroyed = false;
+		Util.MapDebugPrint( "Water_Pump_Built" );
+		sleep(70); //wait until water is pumped out
+		if(!Map.pumpDestroyed) {
+			Map.waterInTunnel = false;
+			Map.SetObj();
+			SetGoalPriority( "BUILD_Water_Pump", 0.81, TEAM.ALLIES);
+			Util.MapDebugPrint( "tunnel accessible" );
+		}
+	},
+
+	Water_Pump_Destroyed = function()
+	{
+		Map.pumpDestroyed = true;
+		Map.waterInTunnel = true;
+		Map.SetObj();
+		Util.MapDebugPrint( "Water_Pump_Destroyed" );
+	},
+
+	Door_Control_Antenne_Built = function()
+	{
+		Map.doorAntenneDestroyed = false;
+		Map.SetObj();
+		Util.MapDebugPrint( "Door_Control_Antenne_Built" );
+	},
+
+	Door_Control_Antenne_Destroyed = function()
+	{
+		sleep(2);
+		Map.doorAntenneDestroyed = true;
+		Map.SetObj();
+		SetGoalPriority( "BUILD_Door_Control_Antenne", 0.91, TEAM.AXIS);
+		Util.MapDebugPrint( "Door_Control_Antenne_Destroyed" );
+	},
+
+	forward_spawn_Axis_Captured = function()
+	{
+		Map.flagTeam = TEAM.AXIS;
+		Map.SetSpawn();
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"MOUNTMG42.*",
+			"DEFEND_x.*",
+		});
+		Util.MapDebugPrint( "forward_spawn_Axis_Captured" );
+	},
+
+	forward_spawn_Allies_Captured = function()
+	{
+		Map.flagTeam = TEAM.ALLIES;
+		Map.SetSpawn();
+
+		if(!Map.wallDestroyed) {
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Wall_Bunker");
+		}
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"MOUNTMG42.*",
+			"DEFEND_x.*",
+		});
+		Util.MapDebugPrint( "forward_spawn_Allies_Captured" );
+	},
+
+	Control_Antenne_Destroyed = function()
+	{
+		if(!Map.antenneDestroyed) {
+			Map.antenneDestroyed = true;
+			ETUtil.WinningChat( TEAM.ALLIES );
+			ETUtil.LosingChat( TEAM.AXIS );
+			Util.MapDebugPrint( "Control_Antenne_Destroyed" );
+		}
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "Axis Have Built the DOOR CONTROL ANTENNE", Map.Door_Control_Antenne_Built );
+	OnTrigger( "Axis Have built The Garage Access" , Map.Door_Garage_Built );
+	OnTrigger( "Allies have built the Water Pump! Old mines Clearing.", Map.Water_Pump_Built );
+	OnTrigger( "Allied team has destroyed Axis ANTENNA CONTROL", Map.Control_Antenne_Destroyed );
+	OnTrigger( "Allied team has destroyed THE DOOR CONTROL ANTENNE!", Map.Door_Control_Antenne_Destroyed );
+	OnTrigger( "Allies have Destroyed The Garage Access", Map.Door_Garage_Destroyed );
+	OnTrigger( "The Allies have breached the Wall Bunker!", Map.Wall_Bunker_Destroyed );
+	OnTrigger( "Axis have damaged the Water Pump! Old mines flooding.", Map.Water_Pump_Destroyed );
+	OnTrigger( "Axis capture the forward spawn!", Map.forward_spawn_Axis_Captured );
+	OnTrigger( "Allies capture the forward spawn!", Map.forward_spawn_Allies_Captured );
+
+	Util.LimitToTeam( TEAM.AXIS, ".*MG42_.*");
+	Util.LimitToTeam( TEAM.AXIS, "DEFEND.*");
+	Util.LimitToTeam( TEAM.ALLIES, "ATTACK.*");
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Wall_Bunker");
+	Map.SetObj();
+
+	SetGoalPriority( "BUILD_Command_Post", 0.81, TEAM.ALLIES);
+	SetGoalPriority( "PLANT_Control_Antenne", 0.9, TEAM.ALLIES);
+	SetGoalPriority( "PLANT_Water_Pump", 0.6, TEAM.AXIS);
+	SetGoalPriority( "ATTACK_antenne.*", 0.6, TEAM.ALLIES);
+	SetGoalPriority( "CHECKPOINT_forward_spawn", 0.6);
+	SetGoalPriority( "DEFEND.*", 0.6);
+	SetGoalPriority( "MOUNTMG42.*", 0.6);
+
+   Util.SetMaxUsers( 1, "MOUNTMG42.*" );
+
+	SetMapGoalProperties( "ATTACK.*", {MinCampTime=10, MaxCampTime=30});
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=15, MaxCampTime=50});
+
+	Util.AddUsePoint( "PLANT_Wall_Bunker", Vec3(1660,1258,48) );
+	Util.AddUsePoint( "PLANT_Water_Pump", Vec3(470,-2133,44) );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 250.0;
+	Map.SetSpawn1(bot);
+};

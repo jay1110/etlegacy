@@ -1,0 +1,123 @@
+//==========================================================================================
+//
+//	normandy_final.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	22 October 2017	Initial Script
+//	palota	7 July 2025
+//==========================================================================================
+//
+
+global Map =
+{
+	Bunker_Door_Destroyed = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"CHECK.*",
+			".*Command_Post",
+		});
+		Util.MapDebugPrint("Bunker_Door_Destroyed");
+	},
+
+	Sea_Wall_Destroyed = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.ALLIES, true, "CHECK.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "PLANT_Constructible_Transmitter");
+		Util.MapDebugPrint("Sea_Wall_Destroyed");
+	},
+
+	docs_Taken = function()
+	{
+		Util.MapDebugPrint("docs_Taken");
+	},
+
+	docs_Returned = function()
+	{
+		Util.MapDebugPrint("docs_Returned");
+	},
+
+	docs_Secured = function()
+	{
+		Util.MapDebugPrint("docs_Secured");
+	},
+
+	forward_spawn_Axis_Captured = function()
+	{
+		Map.Set_Stage("Alpha");
+		Util.MapDebugPrint("forward_spawn_Axis_Captured");
+	},
+
+	forward_spawn_Allies_Captured = function()
+	{
+		Map.Set_Stage("Bravo");
+		Util.MapDebugPrint("forward_spawn_Allies_Captured");
+	},
+
+	Set_Stage = function(p)
+	{
+		if (p == "Alpha")
+		{
+			Util.EnableGroup("Allies_Alpha", TEAM.ALLIES);
+			Util.DisableGroup("Allies_Bravo", TEAM.ALLIES);
+
+			Util.EnableGroup("Axis_Alpha", TEAM.AXIS);
+			Util.DisableGroup("Axis_Bravo", TEAM.AXIS);
+		}
+		else
+		{
+			Util.DisableGroup("Allies_Alpha", TEAM.ALLIES);
+			Util.EnableGroup("Allies_Bravo", TEAM.ALLIES);
+
+			Util.DisableGroup("Axis_Alpha", TEAM.AXIS);
+			Util.EnableGroup("Axis_Bravo", TEAM.AXIS);
+		}
+	},
+};
+
+global OnMapLoad = function()
+{
+	//OnTrigger("Allied team has built the Constructible Transmitter!", Map.Transmitter_Built);
+	//OnTrigger("Axis team has destroyed the Constructible Transmitter!", Map.Transmitter_Destroyed);
+
+	OnTrigger("Allies have destroyed the Bunker Door!", Map.Bunker_Door_Destroyed);
+	OnTrigger("Allies have destroyed the Sea Wall!", Map.Sea_Wall_Destroyed);
+
+	OnTrigger("Allies have stolen the Top Secret Documents!", Map.docs_Taken);
+	OnTrigger("Axis have returned the Top Secret Documents!", Map.docs_Returned);
+	OnTrigger("Allies have transmitted the documents", Map.docs_Secured);
+
+	OnTrigger("Axis capture the forward bunker!", Map.forward_spawn_Axis_Captured);
+	OnTrigger("Allies capture the forward bunker!", Map.forward_spawn_Allies_Captured);
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal({ "AMMO.*", "HEALTH.*" });
+
+	Map.Set_Stage("Alpha");
+
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"BUILD_Const.*",
+		"PLANT_Sea_Wall",
+		"PLANT_Bunker_Door",
+		"CAPPOINT.*",
+	});
+
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"CHECK.*",
+		".*Command_Post",
+		"BUILD_Roof_MG42",
+		"PLANT_Trench_MG42",
+	});
+
+	SetGoalPriority("CHECKPOINT.*", 0.5, TEAM.AXIS);
+	SetGoalPriority("DEFUSE_Sea.*", 0, 0, 0, true);
+
+	Util.AddUsePoint("PLANT_Bunker_Door", Vec3(-1153, -480, 52));
+	Util.AddUsePoint("PLANT_Constructible_Transmitter", Vec3(1376,-1198,63) );
+
+	Util.SetMaxUsers(1, {"DEFEND.*", "MOUNTMG42.*", "PLANT.*"});
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};

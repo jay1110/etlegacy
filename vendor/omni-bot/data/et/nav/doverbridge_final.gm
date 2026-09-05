@@ -1,0 +1,712 @@
+//==========================================================================================
+//
+//	doverbridge_final.gm
+//
+//	Who      	When		What
+//------------------------------------------------------------------------------------------
+//	Qiki		29.09.2024	Initial Script, Waypoints, Navigation
+//	native12	29.10.2024	Script done
+//	Qiki		29.10.2024	Stuckages
+//
+//==========================================================================================
+//	Keep your omni-bot scripts up to date!
+//	Bugs and suggestions: PM on https://fearless-assassins.com/
+
+global Map =
+{
+	Allied_CP = false,
+	Axis_CP = false,
+	Allied_Door = true,
+	Axis_Door = true,
+	Allied_Crates = true,
+	Allied_Grate = true,
+	Axis_Crates = true,
+	Axis_Grate = true,
+	count_ally = {},
+	count_axis = {},
+	
+	Roles =
+	{
+		AXIS =
+		{
+			AllBots = true, // each bot is considered for a role
+			OFFENSECAPTAIN =	
+			{
+				numbots = 3,
+				crucialClass = {CLASS.COVERTOPS, CLASS.MEDIC},
+			},
+			ATTACKER =	
+			{
+				numbots = 3,
+				crucialClass = {CLASS.ENGINEER, CLASS.MEDIC},
+			},
+			ATTACKER1 =	
+			{
+				numbots = 4,
+				crucialClass = {CLASS.ENGINEER, CLASS.FIELDOPS},
+			},
+			DEFENDER =	
+			{
+				numbots = 3,
+				crucialClass = {CLASS.ENGINEER, CLASS.MEDIC},
+			},
+			DEFENDER1 =	
+			{
+				numbots = 3,
+				crucialClass = {CLASS.ENGINEER, CLASS.FIELDOPS},
+			},
+		},
+		
+		ALLIES =
+		{
+			AllBots = true, // each bot is considered for a role
+			FIRETEAMCAPTAIN =	
+			{
+				numbots = 3,
+				crucialClass = {CLASS.COVERTOPS, CLASS.MEDIC},
+			},
+			ATTACKER2 =	
+			{
+				numbots = 3,
+				crucialClass = {CLASS.ENGINEER, CLASS.MEDIC},
+			},
+			ATTACKER3 =	
+			{
+				numbots = 4,
+				crucialClass = {CLASS.ENGINEER, CLASS.FIELDOPS},
+			},
+			DEFENDER2 =	
+			{
+				numbots = 3,
+				crucialClass = {CLASS.ENGINEER, CLASS.MEDIC},
+			},
+			DEFENDER3 =	
+			{
+				numbots = 3,
+				crucialClass = {CLASS.ENGINEER, CLASS.FIELDOPS},
+			},
+		},
+	},
+	
+	Navigation =
+	{
+		//	/bot waypoint_setproperty paththrough Navigation_PT:jump_wait
+		jump_wait =
+		{
+			navigate = function(_this)
+			{
+				sleep(0.25);
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+		
+		//	/bot waypoint_setproperty paththrough Navigation_PT:crates_outside
+		crates_outside =
+		{
+			EvalFunc = function(_this)	// if this function returns false, navigation will not run
+			{
+				if ( _this.Bot.GetPosition().y < 1700 )	//Allied_Side
+				{
+					return Map.Allied_Crates;
+				}
+				else
+				{
+					return Map.Axis_Crates;
+				}
+			},
+			navigate = function(_this)
+			{
+				_this.Goto(_this.Bot.GetPosition());
+				_this.AddWeaponRequest(WEAPON.KNIFE);
+				
+				if ( _this.Bot.GetPosition().y < 1700 )	//Allied_Side
+				{
+					_this.AddAimRequest(Priority.VeryHigh, "facing", Vec3( 0, -0.858, -0.514 ));
+					sleep(0.5);
+					
+					while ( Map.Allied_Crates )
+					{
+						_this.Bot.PressButton(BTN.ATTACK1);
+						yield();
+					}
+				}
+				else
+				{
+					_this.AddAimRequest(Priority.VeryHigh, "facing", Vec3( 0, 0.907, -0.422 ));
+					sleep(0.5);
+					
+					while ( Map.Axis_Crates )
+					{
+						_this.Bot.PressButton(BTN.ATTACK1);
+						yield();
+					}
+				}
+			},
+		},
+		
+		//	/bot waypoint_setproperty paththrough Navigation_PT:grate_outside
+		grate_outside =
+		{
+			EvalFunc = function(_this)	// if this function returns false, navigation will not run
+			{
+				if ( _this.Bot.GetPosition().y < 1700 )	//Allied_Side
+				{
+					return Map.Allied_Grate;
+				}
+				else
+				{
+					return Map.Axis_Grate;
+				}
+			},
+			navigate = function(_this)
+			{
+				_this.Goto(_this.Bot.GetPosition());
+				_this.AddWeaponRequest(WEAPON.KNIFE);
+				
+				if ( _this.Bot.GetPosition().y < 1700 )	//Allied_Side
+				{
+					_this.AddAimRequest(Priority.VeryHigh, "facing", Vec3( 0, -0.083, -0.997 ));
+					sleep(0.5);
+					
+					while ( Map.Allied_Grate )
+					{
+						_this.Bot.PressButton(BTN.ATTACK1);
+						_this.Bot.PressButton(BTN.CROUCH);
+						yield();
+					}
+				}
+				else
+				{
+					_this.AddAimRequest(Priority.VeryHigh, "facing", Vec3( 0, 0.279, -0.96 ));
+					sleep(0.5);
+					
+					while ( Map.Axis_Grate )
+					{
+						_this.Bot.PressButton(BTN.ATTACK1);
+						_this.Bot.PressButton(BTN.CROUCH);
+						yield();
+					}
+				}
+			},
+		},
+		
+		//	/bot waypoint_setproperty paththrough Navigation_PT:grate_and_crates_inside
+		grate_and_crates_inside =
+		{
+			EvalFunc = function(_this)	// if this function returns false, navigation will not run
+			{
+				if ( _this.Bot.GetPosition().y < 1700 )	//Allied_Side
+				{
+					return Map.Allied_Grate or Map.Allied_Crates;
+				}
+				else
+				{
+					return Map.Axis_Grate or Map.Axis_Crates;
+				}
+			},
+			navigate = function(_this)
+			{
+				_this.Goto(_this.Bot.GetPosition());
+				_this.AddWeaponRequest(WEAPON.KNIFE);
+				_this.AddAimRequest(Priority.VeryHigh, "facing", Vec3( 0, 0, 1 ));
+				sleep(0.5);
+				
+				if ( _this.Bot.GetPosition().y < 1700 )	//Allied_Side
+				{
+					while ( Map.Allied_Grate or Map.Allied_Crates )
+					{
+						_this.Bot.PressButton(BTN.ATTACK1);
+						yield();
+					}
+				}
+				else
+				{
+					while ( Map.Axis_Grate or Map.Axis_Crates )
+					{
+						_this.Bot.PressButton(BTN.ATTACK1);
+						yield();
+					}
+				}
+			},
+		},
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+		Map.Allied_CP = true;
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Allied_Command_Post" );
+		
+		if ( !Map.Allied_Door )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Allied_Command_Post" );
+		}
+		
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+		Map.Allied_CP = false;
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_Command_Post" );
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Allied_Command_Post" );
+		
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+		Map.Axis_CP = true;
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Axis_Command_Post" );
+		
+		if ( !Map.Axis_Door )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Command_Post" );
+		}
+		
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+		Map.Axis_CP = false;
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_Command_Post" );
+		
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Command_Post" );
+		
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+	
+	Allied_Door_Planted = function()
+	{
+		foreach( goal in Util.GoalTable("DEFUSE_Allied_door.*") )
+		{
+			name = goal.GetName();
+			Util.SetGoalRange( name, 1400);
+		}
+		
+		Util.MapDebugPrint( "Allied_Door_Planted" );
+	},
+	
+	Allied_Door_Destroyed = function()
+	{
+		Map.Allied_Door = false;
+		
+		Util.MapDebugPrint( "Allied_Door_Destroyed" );
+		
+		foreach( goal in Util.GoalTable("DEFUSE_Allied_door.*") )
+		{
+			goal.SetAvailable(TEAM.ALLIES, false);
+		}
+		
+		SetGoalPriority( "PLANTMINE_Allies_Door_.*", 0.70, 0, 0 );
+		
+		sleep(2);
+		
+		SetGoalRole( "PLANT_allies_radio", { ROLE.OFFENSECAPTAIN, ROLE.ATTACKER, ROLE.ATTACKER1} );
+		SetGoalRole( "PLANT_Allied_Command_Post", { ROLE.OFFENSECAPTAIN, ROLE.ATTACKER, ROLE.ATTACKER1} );
+		
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Axis_Radio_.*" );
+		
+		if ( Map.Allied_CP )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Allied_Command_Post" );
+		}
+	},
+	
+	Axis_Door_Planted = function()
+	{
+		foreach( goal in Util.GoalTable("DEFUSE_Axis_door.*") )
+		{
+			name = goal.GetName();
+			Util.SetGoalRange( name, 1400);
+		}
+		
+		Util.MapDebugPrint( "Axis_Door_Planted" );
+	},
+	
+	Axis_Door_Destroyed = function()
+	{
+		Map.Axis_Door = false;
+		
+		Util.MapDebugPrint( "Axis_Door_Destroyed" );
+		
+		foreach( goal in Util.GoalTable("DEFUSE_Axis_door.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+		
+		SetGoalPriority( "PLANTMINE_Axis_Door_.*", 0.70, 0, 0 );
+		
+		sleep(2);
+		
+		SetGoalRole( "PLANT_axis_radio", { ROLE.FIRETEAMCAPTAIN, ROLE.ATTACKER2, ROLE.ATTACKER3} );
+		SetGoalRole( "PLANT_Axis_Command_Post", { ROLE.FIRETEAMCAPTAIN, ROLE.ATTACKER2, ROLE.ATTACKER3} );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Allies_Radio_.*" );
+		
+		if ( Map.Axis_CP )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Command_Post" );
+		}
+	},
+	
+	Allied_Radio_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Allied_Radio_Destroyed" );
+		
+		ETUtil.WinningChat( TEAM.AXIS );
+		ETUtil.LosingChat( TEAM.ALLIES );
+	},
+
+	Axis_Radio_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Axis_Radio_Destroyed" );
+		
+		ETUtil.WinningChat( TEAM.ALLIES );
+		ETUtil.LosingChat( TEAM.AXIS );
+	},
+	
+	Axis_Barrel_Exploded = function()
+	{
+		Wp.SetWaypointFlag( "Axis_Barrel", "closed", false );
+		
+		Util.MapDebugPrint( "Axis_Barrel_Exploded" );
+	},
+	
+	Allied_Crates_Exploded = function()
+	{
+		Map.Allied_Crates = false;
+		
+		Util.MapDebugPrint( "Allied_Crates_Exploded" );
+	},
+	
+	Allied_Grate_Exploded = function()
+	{
+		Map.Allied_Grate = false;
+		
+		Util.MapDebugPrint( "Allied_Grate_Exploded" );
+	},
+	
+	Axis_Crates_Exploded = function()
+	{
+		Map.Axis_Crates = false;
+		
+		Util.MapDebugPrint( "Axis_Crates_Exploded" );
+	},
+	
+	Axis_Grate_Exploded = function()
+	{
+		Map.Axis_Grate = false;
+		
+		Util.MapDebugPrint( "Axis_Grate_Exploded" );
+	},
+	
+	AllyEngOrCovertInTrigger =
+	{
+		Name = "AllyEngOrCovertInTrigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.ALLIES and ( GetEntClass(ent) == CLASS.ENGINEER or GetEntClass(ent) == CLASS.COVERTOPS ))
+			{
+				if (Map.count_ally[ent])
+				{
+					Map.count_ally[ent] += 1;
+				}
+				else
+				{
+					Map.count_ally[ent] = 1;
+				}
+				
+				bot = Util.IsBot(ent);
+				if(bot){ bot.SetRoles(ROLE.ROAMER); }
+			}
+			
+			if ( !Map.Axis_Door )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, false, {
+					"PLANTMINE_Axis_.*",
+					"DEFEND_Axis_.*",
+				});
+				
+				SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Axis_Radio_.*" );
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.count_ally[ent])
+			{
+				if (Map.count_ally[ent] > 1)
+				{
+					Map.count_ally[ent] -= 1;
+				}
+				else
+				{
+					Map.count_ally[ent] = null;
+				}
+                
+				bot = Util.IsBot(ent);
+				if(bot){ bot.ClearRoles(ROLE.ROAMER); }
+				
+                if ( tableCount(Map.count_ally) < 1 )
+                {
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						"PLANTMINE_Axis_.*",
+						"DEFEND_Axis_.*",
+					});
+					
+					SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Axis_Radio_.*" );
+                }
+			}
+		},
+	},
+	
+	AxisEngOrCovertInTrigger =
+	{
+		Name = "AxisEngOrCovertInTrigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.AXIS and ( GetEntClass(ent) == CLASS.ENGINEER or GetEntClass(ent) == CLASS.COVERTOPS ))
+			{
+				if (Map.count_axis[ent])
+				{
+					Map.count_axis[ent] += 1;
+				}
+				else
+				{
+					Map.count_axis[ent] = 1;
+				}
+				
+				bot = Util.IsBot(ent);
+				if(bot){ bot.SetRoles(ROLE.AMBUSHER); }
+			}
+			
+			if ( !Map.Allied_Door )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, {
+					"PLANTMINE_Allies_.*",
+					"DEFEND_Allies_.*",
+				});
+				
+				SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allies_Radio_.*" );
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.count_axis[ent])
+			{
+				if (Map.count_axis[ent] > 1)
+				{
+					Map.count_axis[ent] -= 1;
+				}
+				else
+				{
+					Map.count_axis[ent] = null;
+				}
+                
+				bot = Util.IsBot(ent);
+				if(bot){ bot.ClearRoles(ROLE.AMBUSHER); }
+				
+                if ( tableCount(Map.count_axis) < 1 )
+                {
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"PLANTMINE_Allies_.*",
+						"DEFEND_Allies_.*",
+					});
+					
+					SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allies_Radio_.*" );
+                }
+			}
+		},
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "^dAllied ^7Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "^1Axis team has destroyed the ^dAllied Command Post!", Map.Allied_Command_Post_Destroyed );
+	
+	OnTrigger( "^1Axis ^7Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "^dAllied team has destroyed the ^1Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	
+	OnTrigger( "Planted at the Allied door.", Map.Allied_Door_Planted );
+	OnTrigger( "the Allied door Destroyed.", Map.Allied_Door_Destroyed );
+	OnTrigger( "^1Axis ^7have destroyed the ^dAllied ^7radio equipment!", Map.Allied_Radio_Destroyed );
+	
+	OnTrigger( "Planted at the Axis door.", Map.Axis_Door_Planted );
+	OnTrigger( "the Axis door Destroyed.", Map.Axis_Door_Destroyed );
+	OnTrigger( "^dAllies ^7have destroyed the ^1Axis ^7radio equipment!", Map.Axis_Radio_Destroyed );
+	
+	OnTrigger( "GRENADE_Axis_Barrel Exploded.", Map.Axis_Barrel_Exploded );
+	OnTrigger( "GRENADE_Allied_Crates Exploded.", Map.Allied_Crates_Exploded );
+	OnTrigger( "GRENADE_Allied_Grate Exploded.", Map.Allied_Grate_Exploded );
+	OnTrigger( "GRENADE_Axis_Crates Exploded.", Map.Axis_Crates_Exploded );
+	OnTrigger( "GRENADE_Axis_Grate Exploded.", Map.Axis_Grate_Exploded );
+	
+	RegionTrigger.Create(AABB(1702.125,496.940,305.125,2346.294,717.857,479.818), "DisableBotPush", "Allied_Base");
+	RegionTrigger.Create(AABB(753.094,265.942,65.125,883.820,352.557,139.133), "DisableBotPush", "AlliedCrates");
+	RegionTrigger.Create(AABB(1702.125,3371.351,305.125,2353.437,3563.182,486.955), "DisableBotPush", "Axis_Base");
+	RegionTrigger.Create(AABB(779.212,3696.697,65.128,907.503,3776.115,139.133), "DisableBotPush", "AxisCrates");
+	RegionTrigger.Create(AABB(1705.691,1478.243,73.125,1951.860,2596.668,195.644), "DisableCombatMovement", "Bridge");
+	RegionTrigger.Create(AABB(778.444,195.125,-182.875,878.875,233.154,139.133), "DisableCombatMovement", "AlliedCrates");
+	RegionTrigger.Create(AABB(781.129,3806.869,-182.875,878.875,3844.875,139.133), "DisableCombatMovement", "AxisCrates");
+	
+	Util.SetGoalPosition(2413.316, 3912.694, 441.125, "PLANT_axis_radio");
+	Util.SetGoalPosition(2465.382, 183.830, 450.273, "PLANT_allies_radio");
+	
+	Wp.SetWaypointFlag( "Axis_Barrel", "closed", true );
+
+	Util.DisableGoal( ".*", true );
+	
+	Util.EnableGoal( "AMMOCAB_.*" );
+	Util.EnableGoal( "HEALTHCAB_.*" );
+	Util.EnableGoal( "BUILD_.*_Command_Post" );
+	
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"PLANT_Axis_.*",
+		"PLANT_axis_.*",
+		"PLANTMINE_Allies_.*",
+		"DEFEND_Allies_.*",
+		"ATTACK_Allies_Door_.*",
+	});
+	
+	SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allies_Radio_.*" );
+	
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"PLANT_Allied_.*",
+		"PLANT_allies_.*",
+		"PLANTMINE_Axis_.*",
+		"DEFEND_Axis_.*",
+		"ATTACK_Axis_Door_.*",
+	});
+	
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Axis_Radio_.*" );
+	
+	SetGoalPriority( "PLANTMINE_.*", 0.69, 0, 0 );	//RolePriorityBonus compensation
+	SetGoalPriority( "PLANT_.*", 0.71, 0, 0 );	//RolePriorityBonus compensation
+	SetGoalPriority( "PLANT_.*_Command_Post", 0.65, 0, CLASS.ENGINEER );
+	
+	SetGoalPriority( "ATTACK_Axis_Radio_.*", 0.53, 0, 0 );
+	SetGoalPriority( "DEFEND_Axis_Radio_.*", 0.55, 0, 0 );
+	
+	SetGoalPriority( "ATTACK_Allies_Radio_.*", 0.53, 0, 0 );
+	SetGoalPriority( "DEFEND_Allies_Radio_.*", 0.55, 0, 0 );
+	
+	Util.SetMaxUsers( 1, "BUILD_.*_Command_Post" );
+	
+	SetGoalRole( "PLANTMINE_Axis_.*", { ROLE.DEFENDER, ROLE.DEFENDER1 } );
+	SetGoalRole( "DEFEND_Axis_.*", { ROLE.DEFENDER, ROLE.DEFENDER1 } );
+	SetGoalRole( "PLANT_Allied_door", { ROLE.OFFENSECAPTAIN, ROLE.ATTACKER, ROLE.ATTACKER1} );
+	SetGoalRole( "ATTACK_Axis_Door_.*", { ROLE.OFFENSECAPTAIN, ROLE.ATTACKER, ROLE.ATTACKER1} );
+	SetGoalRole( "ATTACK_Axis_Radio_.*", { ROLE.OFFENSECAPTAIN, ROLE.ATTACKER, ROLE.ATTACKER1} );
+	SetGoalRole( "PLANT_Allied_Command_Post", ROLE.AMBUSHER );
+	SetGoalRole( "PLANT_allies_radio", ROLE.AMBUSHER );
+	
+	SetGoalRole( "PLANTMINE_Allies_.*", { ROLE.DEFENDER2, ROLE.DEFENDER3 } );
+	SetGoalRole( "DEFEND_Allies_.*", { ROLE.DEFENDER2, ROLE.DEFENDER3 } );
+	SetGoalRole( "PLANT_Axis_door", { ROLE.FIRETEAMCAPTAIN, ROLE.ATTACKER2, ROLE.ATTACKER3} );
+	SetGoalRole( "ATTACK_Allies_Door_.*", { ROLE.FIRETEAMCAPTAIN, ROLE.ATTACKER2, ROLE.ATTACKER3} );
+	SetGoalRole( "ATTACK_Allies_Radio_.*", { ROLE.FIRETEAMCAPTAIN, ROLE.ATTACKER2, ROLE.ATTACKER3} );
+	SetGoalRole( "PLANT_Axis_Command_Post", ROLE.ROAMER );
+	SetGoalRole( "PLANT_axis_radio", ROLE.ROAMER );
+	
+	OnTriggerRegion(AABB(2174.125,3463.125,66.125,2671.875,3960.875,652.906), Map.AllyEngOrCovertInTrigger);
+	
+	OnTriggerRegion(AABB(2174.125,135.128,66.125,2671.458,632.875,665.497), Map.AxisEngOrCovertInTrigger);
+	
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.MP40, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.THOMPSON, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.PANZERFAUST, false );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.FLAMETHROWER, false );
+	
+	
+	if ( GetGameState() == "Playing" )
+	{
+		sleep(5);
+		EchoToScreen(0,"^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12 ^3");
+		Util.BotChat( 0, "say", "^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12^7" , 1 );
+	}
+	
+	if ( Map.Debug )
+	{
+		Util.DebugColorString = "^3";
+	}
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 130;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_Axis_door =
+		{
+			ROUTE_Allied_Spawn =
+			{
+				ROUTE_Bridge_2 =
+				{
+					ROUTE_Bridge_1 = {},
+				},
+				ROUTE_Tunnel_6 =
+				{
+					ROUTE_Tunnel_5 =
+					{
+						ROUTE_Tunnel_4 =
+						{
+							ROUTE_Tunnel_3 =
+							{
+								ROUTE_Tunnel_2 =
+								{
+									ROUTE_Tunnel_1 = {},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		PLANT_Allied_door =
+		{
+			ROUTE_Axis_Spawn =
+			{
+				ROUTE_Bridge_1 =
+				{
+					ROUTE_Bridge_2 = {},
+				},
+				ROUTE_Tunnel_1 =
+				{
+					ROUTE_Tunnel_2 =
+					{
+						ROUTE_Tunnel_3 =
+						{
+							ROUTE_Tunnel_4 =
+							{
+								ROUTE_Tunnel_5 =
+								{
+									ROUTE_Tunnel_6 = {},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	};
+	
+	MapRoutes.PLANT_allies_radio = MapRoutes.PLANT_Allied_door;
+	MapRoutes.PLANT_axis_radio = MapRoutes.PLANT_Axis_door;
+	MapRoutes["ATTACK_Axis_.*"] = MapRoutes.PLANT_Allied_door;
+	MapRoutes["ATTACK_Allies_.*"] = MapRoutes.PLANT_Axis_door;
+	
+	Util.Routes(MapRoutes);
+};

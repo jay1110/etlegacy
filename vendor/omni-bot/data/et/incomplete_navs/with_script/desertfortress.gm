@@ -1,0 +1,62 @@
+global Map =
+{
+	Navigation =
+	{
+		ladder =
+		{
+			navigate = function( _this )
+			{
+				_this.Bot.HoldButton( BTN.FORWARD, 2.0 );
+				sleep( 2.0 );
+			},
+		},
+	},
+
+	allied_forward_spawn =
+	{
+		Name = "allied_forward_spawn",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		mutex = false,
+		OnEnter = function( ent )
+		{
+			bot = Util.IsBot( ent );
+			if ( !bot )
+			{
+				return;
+			}
+
+			Util.MapDebugPrint( bot.Name + Util.DebugColorString + " entered " + Map.allied_forward_spawn.Name + " trigger", true );
+
+			// The bot is waiting for the mutex to be released
+			while ( Map.allied_forward_spawn.mutex )
+			{
+				bot.MoveTowards( bot.GetPosition() );
+				//sleep( 3 );
+				yield();
+			}
+
+			// The bot takes the mutex
+			Map.allied_forward_spawn.mutex = true;
+		},
+		OnExit = function( ent )
+		{
+			bot = Util.IsBot( ent );
+			if ( !bot )
+			{
+				return;
+			}
+
+			// The bot releases the mutex
+			Map.allied_forward_spawn.mutex = false;
+
+			Util.MapDebugPrint( bot.Name + Util.DebugColorString + " exited " + Map.allied_forward_spawn.Name + " trigger", true );
+		},
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTriggerRegion( AABB( -641.001, -451.242, 1345.125, -368.191, -177.785, 1419.125 ), Map.allied_forward_spawn );
+
+	Util.MapDebugPrint( "Omni-bot map script for " +  GetMapName() + " executed." );
+};

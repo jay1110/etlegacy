@@ -1,0 +1,167 @@
+//==========================================================================================
+//
+//  alley.gm (opgunfire.pk3)
+//
+// Who	When		What
+//------------------------------------------------------------------------------------------
+// YKM	09 March 2026	Initial Script
+// palota	17 June 2026	
+//==========================================================================================
+//
+
+global Map =
+{
+	SaveCampTime=0,
+	
+	defend_cannon =
+	{
+		Name = "defend_cannon",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if (GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"DEFEND_cannon.*",
+					"MOBILEMG42_cannon",
+				});
+				DeleteTriggerRegion("defend_cannon");
+				Util.MapDebugPrint( "defend_cannon" );
+			}
+		},
+	},
+
+	Gate_Built = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, false, "SMOKEBOMB_2");
+		Util.MapDebugPrint("Gate_Built");
+	},
+
+	Gate_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, true, "SMOKEBOMB_2");
+		Util.MapDebugPrint("Gate_Destroyed");
+	},
+
+	cannon_planted = function()
+	{
+		SetGoalPriority( "DEFEND_cannon.*", 0.95 );
+		SetAvailableMapGoals(TEAM.AXIS, false, "ATTACK_axis1");
+		Util.MapDebugPrint("cannon_planted");
+		sleep(35);
+		SetGoalPriority( "DEFEND_cannon.*", 0.7 );
+		SetAvailableMapGoals(TEAM.AXIS, true, "ATTACK_axis1");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("Allies has rebuilt the Gate!", Map.Gate_Built);
+	OnTrigger("Axis have destroyed the Gate!", Map.Gate_Destroyed);
+	OnTrigger("Planted at the flak cannon.", Map.cannon_planted);
+
+	OnTriggerRegion(AABB(8170,-141,-136,8570,259,264), Map.defend_cannon);
+
+	Util.DisableGoal( ".*", true );
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"ARTILLERY_D_axis1",
+		"CALLARTILLERY_axis1",
+		"ATTACK_axis1",
+		"CAMP_axis1",
+		"DEFEND_axis[12]",
+		"PLANT_Gate",
+		"PLANT_bridge",
+		"SMOKEBOMB_1",
+		".*MG42_289",
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"ATTACK_cannon.*",
+		"AIRSTRIKE_ally1",
+		"ARTILLERY_D_ally1",
+		"CALLARTILLERY_ally1",
+		"BUILD_Gate",
+		"PLANT_flak_cannon",
+		"SMOKEBOMB_3",
+		".*MG42_384",
+		".*MG42_493",
+	});
+
+	SetGoalPriority( "PLANT_Gate", 0.9, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "DEFEND_cannon.*", 0.7 );
+	SetGoalPriority( "ATTACK_axis1", 0.7 );
+
+	Util.SetMaxUsers(1, "MOUNTMG42.*");
+	Util.AddUseWp("PLANT_Gate", {"gate1", "gate2"});
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.TargetBreakableDist = 150;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_flak_cannon =
+		{
+			ROUTE_allyspawn =
+			{
+				/*ROUTE_tunelally2 =
+				{
+					Weight = 5,
+					ROUTE_tunelally1 =
+					{
+						ROUTE_tunelally =
+						{
+							ROUTE_tunelaxis = {},
+						},
+					},
+				},*/
+				ROUTE_gate =
+				{
+					ROUTE_cannon1 = {},
+					ROUTE_cannon2 = {},
+				},
+				ROUTE_stairsally =
+				{
+					Weight = 5,
+					ROUTE_tunelaxis =
+					{
+						ROUTE_ladderaxis =
+						{
+							ROUTE_cannon1 = {},
+							ROUTE_cannon2 = {},
+						},
+					},
+				},
+			},
+		},
+		ATTACK_axis1 =
+		{
+			ROUTE_axisspawn =
+			{
+				ROUTE_ladderaxis =
+				{
+					Weight = 5,
+					ROUTE_tunelaxis =
+					{
+						ROUTE_tunelally =
+						{
+							ROUTE_tunelally1 = {},
+						},
+					},
+				},
+				ROUTE_stairsaxis =
+				{
+					ROUTE_stairsally = {},
+					ROUTE_tunelally = {},
+				},
+			},
+		},
+	};
+	Util.Routes(MapRoutes);
+};

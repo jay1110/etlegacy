@@ -1,0 +1,136 @@
+//==========================================================================================
+//
+//	primesquadron.gm
+//
+//	Who                        	When		What
+//------------------------------------------------------------------------------------------
+//	^1C^2Y^3B^6E^5R^04^1W^2O^3L^6F	21 May 2022	incomplete waypoints
+//	palota	11 July 2025		routes, attack, defend, mountmg42
+//==========================================================================================
+//
+
+global Map =
+{
+	Forward_Bunker_Gate_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		Util.DisableGoal(".*MG42.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"FLAG_case1",
+			"CAPPOINT.*",
+			"AMMOCAB.*",
+			"HEALTHCAB.*",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_gate.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_part.*");
+		++Server.MinClassCount[TEAM.ALLIES][CLASS.COVERTOPS];
+		++Server.MinClassCount[TEAM.AXIS][CLASS.COVERTOPS];
+		Util.MapDebugPrint("Forward_Bunker_Gate_Destroyed");
+	},
+
+	case1_Taken = function()
+	{
+		Util.EnableGoal("DEFEND_cappoint.*");
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_part.*");
+		Util.MapDebugPrint("case1_Taken");
+	},
+
+	case1_Returned = function()
+	{
+		Util.DisableGoal("DEFEND_cappoint.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_part.*");
+		Util.MapDebugPrint("case1_Returned");
+	},
+
+	forwardflag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint("forwardflag_Axis_Captured");
+	},
+
+	forwardflag_Allies_Captured = function()
+	{
+		Util.MapDebugPrint("forwardflag_Allies_Captured");
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("The Allies have breached the Gate!", Map.Forward_Bunker_Gate_Destroyed);
+	OnTrigger("Allies have stolen the Document Case!", Map.case1_Taken);
+	OnTrigger("Flag returned case1!", Map.case1_Returned);
+	OnTrigger("CHECKPOINT_forwardflag to team 1", Map.forwardflag_Axis_Captured);
+	OnTrigger("CHECKPOINT_forwardflag to team 2", Map.forwardflag_Allies_Captured);
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal("CHECKPOINT_forwardflag");
+
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"DEFEND_gate.*",
+		"AMMOCAB.*",
+		"HEALTHCAB.*",
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"PLANT_Forward_Bunker_Gate",
+		"ATTACK_gate.*",
+		".*MG42_center",
+	});
+
+	SetGoalPriority("DEFEND_gate[13]", 0.6); //at the flag and gate
+	SetGoalPriority("DEFEND_part[14]", 0.6); //near the parts
+	SetGoalPriority("DEFEND_cappoint.*", 0.6);
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=15, MaxCampTime=70});
+	SetMapGoalProperties("DEFEND_part.*", {MinCampTime=60, MaxCampTime=150});
+	SetMapGoalProperties("DEFEND_gate[13]", {MinCampTime=60});
+
+	Util.SetMaxUsers(1, {"DEFEND.*", "PLANT.*"});
+
+	Util.MapDebugPrint("^6ETS^4| ^2Custom ^1C ^04 ^1W ^3Omni-bot map script for the map: ^7" + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.TargetBreakableDist = 110;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_forwardflag =
+		{
+			ROUTE_allied_spawn =
+			{
+				ROUTE_a1 ={},
+				ROUTE_a2 ={},
+				ROUTE_sewer ={},
+			},
+		},
+		FLAG_case1 =
+		{
+			ROUTE_forward_spawn =
+			{
+				ROUTE_west =
+				{
+					ROUTE_ramp ={},
+				},
+				ROUTE_bridge =
+				{
+					ROUTE_part1 ={},
+					ROUTE_part2 ={},
+				},
+				ROUTE_east ={},
+			},
+		},
+		CAPPOINT_stolen_objective =
+		{
+			ROUTE_case =
+			{
+				ROUTE_ramp = { ROUTE_west = {}},
+				ROUTE_bridge = {},
+				ROUTE_east = {},
+			}
+		},
+	};
+	Util.Routes(MapRoutes);
+};

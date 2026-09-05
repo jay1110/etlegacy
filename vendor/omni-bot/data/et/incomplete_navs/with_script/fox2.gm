@@ -1,0 +1,193 @@
+//==========================================================================================
+//
+//	fox2.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	25 September 2018	Initial Script
+//	palota	29 June 2025	fixed stuckages, priority, CAPPOINT
+//==========================================================================================
+//
+
+global Map =
+{
+	DefendingTeam = TEAM.AXIS,
+
+	Navigation =
+	{
+		ladder1 =
+		{
+			navigate = function(_this)
+			{
+				wpTable = {};
+				Wp.GetWaypointByName("ladder1", wpTable);
+				if ( _this.Goto(wpTable.position) == EVENT.PATH_SUCCESS )
+				{
+					_this.AddAimRequest(Priority.VeryHigh, "facing", wpTable.facing);
+					yield();
+					yield();
+					_this.Bot.HoldButton(BTN.FORWARD, 1.5);
+					sleep(1.5);
+				}
+			},
+		},
+	},
+
+	//Forward Flag
+	roadbunker_Axis_Captured = function()
+	{
+		Util.MapDebugPrint( "roadbunker_Axis_Captured" );
+	},
+	roadbunker_Allies_Captured = function()
+	{
+		Util.MapDebugPrint( "roadbunker_Allies_Captured" );
+	},
+
+	barricade_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 0, {
+			"CAMP_Barr_.*",
+			"MOBILEMORTAR_Att_Barr",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"PLANT_Side_Entrance",
+			"CAMP_Side_.*",
+			"BUILD_ramp",
+			"CHECKPOINT_roadbunker",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, 0, {
+			"MOBILEMORTAR_Def_Barr",
+			"CAMP_Def_Barr_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, 1, {
+			"CAMP_Side_.*",
+			"CHECKPOINT_roadbunker",
+		});
+		Util.MapDebugPrint( "barricade_Destroyed" );
+	},
+
+	door_Built = function()
+	{
+		Util.MapDebugPrint( "door_Built" );
+	},
+	door_Destroyed = function()
+	{
+		Util.MapDebugPrint( "door_Destroyed" );
+	},
+
+	ramp_Built = function()
+	{
+		Util.MapDebugPrint( "ramp_Built" );
+	},
+	ramp_Destroyed = function()
+	{
+		Util.MapDebugPrint( "ramp_Destroyed" );
+	},
+
+	Side_Entrance_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"PLANT_gate",
+		});
+		Util.MapDebugPrint( "Side_Entrance_Destroyed" );
+	},
+
+	destroyable_Floor_Destroyed = function()
+	{
+		Util.MapDebugPrint( "destroyable_Floor_Destroyed" );
+	},
+
+	gate_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"FLAG_docbox",
+		});
+		Util.MapDebugPrint( "gate_Destroyed" );
+	},
+
+	docbox_Taken = function()
+	{
+		Util.MapDebugPrint( "docbox_Taken" );
+	},
+	docbox_Returned = function()
+	{
+		Util.MapDebugPrint( "docbox_Returned" );
+	},
+	docbox_Secured = function()
+	{
+		Util.MapDebugPrint( "docbox_Secured" );
+	},
+
+	GRENADE_Side_Exploded = function()
+	{
+		Wp.SetWaypointFlag( "side_wp", "closed", 0 );
+		Util.MapDebugPrint( "roadbunker_Allies_Captured" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "GRENADE_Side Exploded.", Map.GRENADE_Side_Exploded );
+	Wp.SetWaypointFlag( "side_wp", "closed", 1 );
+
+	OnTrigger( "The door has been built.", Map.door_Built );
+	OnTrigger( "The door has been destroyed.", Map.door_Destroyed );
+
+	OnTrigger( "The Ramp has been built.", Map.ramp_Built );
+	OnTrigger( "The Ramp has been destroyed.", Map.ramp_Destroyed );
+
+	OnTrigger( "^2Allies have breached the Side Entrance!", Map.Side_Entrance_Destroyed );
+
+	OnTrigger( "^2Allies have breached the Barricade", Map.barricade_Destroyed );
+
+	OnTrigger( "^2Allies have breached the Floor", Map.destroyable_Floor_Destroyed );
+
+	OnTrigger( "^2Allies have breached the gate!", Map.gate_Destroyed );
+
+	OnTrigger( "Axis capture the Road Flag!", Map.roadbunker_Axis_Captured );
+	OnTrigger( "Allies capture the Road Flag!", Map.roadbunker_Allies_Captured );
+
+	OnTrigger( "Allies has stolen the Docbox!", Map.docbox_Taken );
+	OnTrigger( "Axis has secured the Docbox!", Map.docbox_Returned );
+	OnTrigger( "Allied team escaped with the Docbox!", Map.docbox_Secured );
+
+	OnTriggerRegion(AABB(-1836.928,-2191.997,137.125,-1687.536,-1592.760,251.190), RegionTrigger.DisableCombatMovement);
+
+
+	Util.DisableGoal( ".*", true );
+
+	//Allies
+	SetAvailableMapGoals( TEAM.ALLIES, 1, {
+		"CAMP_Barr_.*",
+		"GRENADE_Side",
+		"MOBILEMORTAR_Att_Barr",
+		"PLANT_barricade",
+		"CAPPOINT.*",
+	});
+
+	//Axis
+	SetAvailableMapGoals( TEAM.AXIS, 1, {
+		"CAMP_Def_Barr_.*",
+		"MOBILEMORTAR_Def_Barr",
+		"BUILD_door",
+	});
+
+	SetGoalPriority("FLAG.*", 0.7);
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "CAMP_.*" );
+	Util.SetMaxUsers( 2, "GRENADE_Side" );
+
+	// Camp times
+	SetMapGoalProperties( "CAMP_.*", {MinCampTime=30, MaxCampTime=00} );
+
+	Util.AddUsePoint( "PLANT_barricade", Vec3(-1856,-1869,24) );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90;
+};

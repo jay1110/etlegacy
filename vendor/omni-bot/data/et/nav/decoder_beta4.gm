@@ -1,0 +1,812 @@
+//==========================================================================================
+//
+//	decoder_beta4.gm
+//
+//	        Who          	When		        What
+//------------------------------------------------------------------------------------------
+//	^1[UJE]^3Captain	   14 July 2019	    Initial Script
+//
+//==========================================================================================
+//
+//
+
+global Map =
+{
+	FlagAxis = true,
+	AxisBunkerGate = true,
+	AxisDoor = true,
+	DecoderLab1 = true,
+	DecoderLab2 = true,
+	DecoderLab3 = true,
+	FlagAllied = false,
+	AxisCP = false,
+	AlliesCP = false,
+	FenceBuilt = false,
+	RampBuild = false,
+
+	Allied_Command_Post_Built = function()
+	{
+	Map.AlliedCP = true;
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"BUILD_Command_Post","PLANT_Command_Post"} );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+      Axis_Command_Post_Built = function()
+	{
+	Map.AxisCP = true;
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Command_Post" );
+
+      SetAvailableMapGoals( TEAM.AXIS, false, {"BUILD_Command_Post","PLANT_Command_Post"} );
+
+	      Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+	Map.AxisCP = false;
+	if ( Map.FlagAllied )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+	}
+	if ( Map.FlagAxis )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+
+	      Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+	Map.AlliedCP = false;
+	if ( Map.FlagAllied )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+	}
+	if ( Map.FlagAxis )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+
+	      Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+	fence_Built = function()
+	{
+	Map.FenceBuilt = true;
+
+	if ( !Map.RampBuild && Map.FlagAxis )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Fence.*" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"ATTACK_Flag.*","CHECKPOINT.*"} );
+	}
+	if ( Map.RampBuild && Map.FlagAxis )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Fence.*" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"PLANT_gate_to_the_axis_base","ATTACK_Gate.*"} );
+	}
+	if ( Map.FlagAllied && Map.AxisBunkerGate )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, {"PLANT_gate_to_the_axis_base","ATTACK_Gate.*"} );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"ATTACK_Flag.*","CHECKPOINT.*"} );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_fence" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_fence" );
+
+		Util.MapDebugPrint( "fence_Built" );
+	},
+
+	fence_Planted = function()
+	{
+            Util.SetMaxUsers( 0, "DEFUSE_Fence.*" );
+		Util.MapDebugPrint( "fence_Planted" );
+	},
+
+	fence_Destroyed = function()
+	{
+	Map.FenceBuilt = false;
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_fence" );
+	if ( Map.FlagAxis )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_fence" );
+	sleep(2);
+	SetAvailableMapGoals( TEAM.ALLIES, true, {"ATTACK_Flag.*","CHECKPOINT.*"} );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"ATTACK_Fence.*","PLANT_fence"} );
+	}
+	if ( Map.FlagAllied && Map.AxisBunkerGate )
+	{
+	sleep(2);
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Gate.*" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Fence.*" );
+      }
+		Util.MapDebugPrint( "fence_Destroyed" );
+	},
+
+	ramp_Built = function()
+	{
+	Map.RampBuild = true;
+	if ( Map.FlagAxis )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_ramp" );
+	sleep(2);
+	SetAvailableMapGoals( TEAM.ALLIES, true, {"ATTACK_Flag.*","CHECKPOINT.*"} );
+	}
+	if ( Map.FlagAllied && Map.AxisBunkerGate )
+	{
+	sleep(2);
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Gate.*" );
+      }
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_ramp" );
+
+		Util.EnableGoal("ROUTE_Ramp");
+		Util.MapDebugPrint( "ramp_Built" );
+	},
+
+	ramp_Destroyed = function()
+	{
+	Map.RampBuild = false;
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_ramp" );
+	if ( Map.FenceBuilt && Map.FlagAxis )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"ATTACK_Flag.*","CHECKPOINT.*"} );
+	}
+		Util.DisableGoal("ROUTE_Ramp");
+		Util.MapDebugPrint( "ramp_Destroyed" );
+	},
+
+	Axis_Team_Door_Destroyed = function()
+	{
+	Map.AxisDoor = false;
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANTMINE_Axis_Door.*" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_Team_Door" );
+
+	      Util.EnableGoal("ROUTE_Axis_Door");
+		Util.MapDebugPrint( "Axis_Team_Door_Destroyed" );
+	},
+
+	barracks_spawn_Axis_Captured = function()
+	{
+	Map.FlagAxis = true;
+	Map.FlagAllied = false;
+	if ( Map.AlliedCP )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Command_Post" );
+	}
+	if ( Map.AxisCP )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+	}
+	if ( !Map.AlliedCP && !Map.AxisCP )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+	}
+	if ( !Map.RampBuild && Map.FenceBuilt )
+	{
+	sleep(4);
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Fence.*" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"ATTACK_Flag.*","CHECKPOINT.*"} );
+	}
+	else
+	{
+	sleep(2);
+	SetAvailableMapGoals( TEAM.ALLIES, true, {"ATTACK_Flag.*","CHECKPOINT.*"} );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Fence.*" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"PLANT_gate_to_the_axis_base","ATTACK_Gate.*"} );
+	sleep(2);
+	SetAvailableMapGoals( TEAM.AXIS, true, {"DEFEND_Bridge.*","PLANTMINE_Flag.*","PLANTMINE_Gate.*","PLANTMINE_Bridge.*"} );
+	SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT.*" );
+
+		Util.MapDebugPrint( "barracks_spawn_Axis_Captured" );
+	},
+
+	barracks_spawn_Allies_Captured = function()
+	{
+	Map.FlagAllied = true;
+	Map.FlagAxis = false;
+	if ( Map.AxisCP )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+	}
+	if ( !Map.AlliedCP && !Map.AxisCP )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+	}
+	if ( Map.RampBuild && Map.FenceBuilt or !Map.RampBuild && !Map.FenceBuilt )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Fence.*" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, true, {"CHECKPOINT.*","DEFEND_Flag.*"} );
+	SetAvailableMapGoals( TEAM.AXIS, false, {"DEFEND_Bridge.*","PLANTMINE_Flag.*","PLANTMINE_Gate.*","PLANTMINE_Bridge.*"} );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT.*" );
+      sleep(2);
+	SetAvailableMapGoals( TEAM.ALLIES, true, {"PLANT_gate_to_the_axis_base","ATTACK_Gate.*"} );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Flag.*" );
+
+		Util.MapDebugPrint( "barracks_spawn_Allies_Captured" );
+	},
+
+	gate_to_the_axis_base_Destroyed = function()
+	{
+	Map.FlagAxis = false;
+	Map.FlagAllied = true;
+	Map.AxisBunkerGate = false;
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"PLANT_gate_to_the_axis_base","ATTACK_Gate.*","ATTACK_Fence.*","ATTACK_Flag.*","CHECKPOINT.*"} );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, {"CHECKPOINT.*","DEFEND_Bridge.*","DEFEND_Flag.*","PLANT_.*","BUILD.*",".*MG42.*"} );
+
+	sleep(2);
+	if ( Map.AxisDoor )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANTMINE_Axis_Door.*" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Team_Door" );
+	if ( Map.DecoderLab1 )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, {"PLANT_decoder_in_Lab_1_Grey","ATTACK_Lab1.*"} );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Lab1.*" );
+	}
+	if ( Map.DecoderLab2 )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, {"PLANT_decoder_in_Lab_2_Green","ATTACK_Lab2.*"} );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Lab2.*" );
+	}
+	if ( Map.DecoderLab3 )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, {"PLANT_decoder_in_Lab_3_Yellow","ATTACK_Lab3.*"} );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Lab3.*" );
+	}
+	      Util.MapDebugPrint( "gate_to_the_axis_base_Destroyed" );
+	},
+
+	Axis_Decoder_Lab2 = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Lab2" );
+
+		Util.MapDebugPrint( "axis_decoder_lab2_selected" );
+	},
+
+	Decoder_Change_Location_Locked = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Lab2" );
+
+		Util.MapDebugPrint( "Decoder_Change_Location_Locked" );
+	},
+
+	decoder_in_Lab_1_Grey_Destroyed = function()
+	{
+		Util.MapDebugPrint( "decoder_in_Lab_1_Grey_Destroyed" );
+	},
+
+	decoder_in_Lab_2_Green_Destroyed = function()
+	{
+		Util.MapDebugPrint( "decoder_in_Lab_2_Green_Destroyed" );
+	},
+
+	decoder_in_Lab_3_Yellow_Destroyed = function()
+	{
+		Util.MapDebugPrint( "decoder_in_Lab_3_Yellow_Destroyed" );
+	},
+
+	selected_decoder_Grey = function()
+	{
+	Map.RealDecoderGrey = true;
+
+		Util.MapDebugPrint( "^5selected_decoder_Grey" );
+	},
+
+	selected_decoder_Green = function()
+	{
+	Map.RealDecoderGreen = true;
+
+		Util.MapDebugPrint( "^5selected_decoder_Green" );
+	},
+
+	selected_decoder_Yellow = function()
+	{
+	Map.RealDecoderYellow = true;
+
+		Util.MapDebugPrint( "^5selected_decoder_Yellow" );
+	},
+
+	Planted_Decoder_Lab1 = function()
+	{
+	if ( Map.RealDecoderGrey )
+	{
+		if ( Map.DecoderLab2 )
+	      {
+	      SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Lab2.*" );
+
+	      SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Lab2.*" );
+		}
+		if ( Map.DecoderLab3 )
+	      {
+	      SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Lab3.*" );
+
+	      SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Lab3.*" );
+		}
+	SetGoalPriority( "DEFUSE_decoder_in_Lab_1.*", 0.94, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "DEFEND_Lab1.*", 0.94 );
+	SetGoalPriority( "ATTACK_Lab1.*", 0.94 );
+	}
+		Util.MapDebugPrint( "^5Planted_Decoder_Grey" );
+	},
+
+	Planted_Decoder_Lab2 = function()
+	{
+	if ( Map.RealDecoderGreen )
+	{
+		if ( Map.DecoderLab1 )
+	      {
+	      SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Lab1.*" );
+
+	      SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Lab1.*" );
+		}
+		if ( Map.DecoderLab3 )
+	      {
+	      SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Lab3.*" );
+
+	      SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Lab3.*" );
+		}
+	SetGoalPriority( "DEFUSE_decoder_in_Lab_2.*", 0.94, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "DEFEND_Lab2.*", 0.94 );
+	SetGoalPriority( "ATTACK_Lab2.*", 0.94 );
+	}
+		Util.MapDebugPrint( "^5Planted_Decoder_Green" );
+	},
+
+	Planted_Decoder_Lab3 = function()
+	{
+	if ( Map.RealDecoderYellow )
+	{
+		if ( Map.DecoderLab1 )
+	      {
+	      SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Lab1.*" );
+
+	      SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Lab1.*" );
+		}
+		if ( Map.DecoderLab2 )
+	      {
+	      SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Lab2.*" );
+
+	      SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Lab2.*" );
+		}
+	SetGoalPriority( "DEFUSE_decoder_in_Lab_3.*", 0.94, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "DEFEND_Lab3.*", 0.94 );
+	SetGoalPriority( "ATTACK_Lab3.*", 0.94 );
+	}
+		Util.MapDebugPrint( "^5Planted_Decoder_Yellow" );
+	},
+
+	Defused_Decoder_Lab1 = function()
+	{
+	SetGoalPriority( "DEFUSE_decoder_in_Lab_1.*", 0.82, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "DEFEND_Lab1.*", 0.50 );
+	SetGoalPriority( "ATTACK_Lab1.*", 0.50 );
+	if ( Map.DecoderLab2 && !Map.AxisBunkerGate )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Lab2.*" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Lab2.*" );
+	}
+	if ( Map.DecoderLab3 && !Map.AxisBunkerGate )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Lab3.*" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Lab3.*" );
+	}
+		Util.MapDebugPrint( "^5Defused_Decoder_Grey" );
+	},
+
+	Defused_Decoder_Lab2 = function()
+	{
+	SetGoalPriority( "DEFUSE_decoder_in_Lab_2.*", 0.82, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "DEFEND_Lab2.*", 0.50 );
+	SetGoalPriority( "ATTACK_Lab2.*", 0.50 );
+	if ( Map.DecoderLab1 && !Map.AxisBunkerGate )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Lab1.*" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Lab1.*" );
+	}
+	if ( Map.DecoderLab3 && !Map.AxisBunkerGate )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Lab3.*" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Lab3.*" );
+	}
+		Util.MapDebugPrint( "^5Defused_Decoder_Green" );
+	},
+
+	Defused_Decoder_Lab3 = function()
+	{
+	SetGoalPriority( "DEFUSE_decoder_in_Lab_3.*", 0.82, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "DEFEND_Lab3.*", 0.50 );
+	SetGoalPriority( "ATTACK_Lab3.*", 0.50 );
+	if ( Map.DecoderLab1 && !Map.AxisBunkerGate )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Lab1.*" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Lab1.*" );
+	}
+	if ( Map.DecoderLab2 && !Map.AxisBunkerGate )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Lab2.*" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Lab2.*" );
+	}
+		Util.MapDebugPrint( "^5Defused_Decoder_Yellow" );
+	},
+
+	fake_decoder_in_Lab_1_Grey_Destroyed = function()
+	{
+	Map.DecoderLab1 = false;
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"PLANT_decoder_in_Lab_1_Grey","ATTACK_Lab1.*"} );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Lab1.*" );
+	if ( Map.DecoderLab2 && !Map.AxisBunkerGate )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Lab2.*" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Lab2.*" );
+	}
+	if ( Map.DecoderLab3 && !Map.AxisBunkerGate )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Lab3.*" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Lab3.*" );
+	}
+	SetGoalPriority( "DEFUSE_decoder_in_Lab_1.*", 0.82, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "DEFEND_Lab1.*", 0.50 );
+	SetGoalPriority( "ATTACK_Lab1.*", 0.50 );
+		Util.MapDebugPrint( "fake_decoder_in_Lab_1_Grey_Destroyed" );
+	},
+
+	fake_decoder_in_Lab_2_Green_Destroyed = function()
+	{
+	Map.DecoderLab2 = false;
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"PLANT_decoder_in_Lab_2_Green","ATTACK_Lab2.*"} );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Lab2.*" );
+	if ( Map.DecoderLab1 && !Map.AxisBunkerGate )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Lab1.*" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Lab1.*" );
+	}
+	if ( Map.DecoderLab3 && !Map.AxisBunkerGate )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Lab3.*" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Lab3.*" );
+	}
+	SetGoalPriority( "DEFUSE_decoder_in_Lab_2.*", 0.82, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "DEFEND_Lab2.*", 0.50 );
+	SetGoalPriority( "ATTACK_Lab2.*", 0.50 );
+
+		Util.MapDebugPrint( "fake_decoder_in_Lab_2_Green_Destroyed" );
+	},
+
+	fake_decoder_in_Lab_3_Yellow_Destroyed = function()
+	{
+	Map.DecoderLab3 = false;
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"PLANT_decoder_in_Lab_3_Yellow","ATTACK_Lab3.*"} );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Lab3.*" );
+	if ( Map.DecoderLab1 && !Map.AxisBunkerGate )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Lab1.*" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Lab1.*" );
+	}
+	if ( Map.DecoderLab2 && !Map.AxisBunkerGate )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Lab2.*" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Lab2.*" );
+	}
+	SetGoalPriority( "DEFUSE_decoder_in_Lab_3.*", 0.82, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "DEFEND_Lab3.*", 0.50 );
+	SetGoalPriority( "ATTACK_Lab3.*", 0.50 );
+
+		Util.MapDebugPrint( "fake_decoder_in_Lab_3_Yellow_Destroyed" );
+	},
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+      OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "The axis have built the fence!", Map.fence_Built );
+	OnTrigger( "The allies have destroyed the fence!", Map.fence_Destroyed );
+	OnTrigger( "Planted at the fence.", Map.fence_Planted );
+	OnTrigger( "The allies have built the ramp!", Map.ramp_Built );
+	OnTrigger( "The axis have destroyed the ramp!", Map.ramp_Destroyed );
+	OnTrigger( "Sewer door destroyed!", Map.Axis_Team_Door_Destroyed );
+	OnTrigger( "decoder_axis_decoderingreenlab", Map.Axis_Decoder_Lab2 );
+	OnTrigger( "Axis capture the barracks spawn!", Map.barracks_spawn_Axis_Captured );
+	OnTrigger( "axis_capture_barracks_spawn", Map.barracks_spawn_Axis_Captured );
+	OnTrigger( "Allies capture the barracks spawn!", Map.barracks_spawn_Allies_Captured );
+	OnTrigger( "the gate to the axis base Destroyed.", Map.gate_to_the_axis_base_Destroyed );
+	OnTrigger( "Allies have blown up the real decoder in Lab 1!", Map.decoder_in_Lab_1_Grey_Destroyed );
+	OnTrigger( "Allies have blown up the real decoder in Lab 2!", Map.decoder_in_Lab_2_Green_Destroyed );
+	OnTrigger( "Allies have blown up the real decoder in Lab 3!", Map.decoder_in_Lab_3_Yellow_Destroyed );
+	OnTrigger( "Allies have blown up a fake decoder in Lab 1!", Map.fake_decoder_in_Lab_1_Grey_Destroyed );
+	OnTrigger( "Allies have blown up a fake decoder in Lab 2!", Map.fake_decoder_in_Lab_2_Green_Destroyed );
+	OnTrigger( "Allies have blown up a fake decoder in Lab 3!", Map.fake_decoder_in_Lab_3_Yellow_Destroyed );
+	OnTrigger( "Decoder location can no longer be changed!", Map.Decoder_Change_Location_Locked );
+
+	OnTrigger( "Planted at the decoder in Lab 1 (Grey).", Map.Planted_Decoder_Lab1 );
+	OnTrigger( "Planted at the decoder in Lab 2 (Green).", Map.Planted_Decoder_Lab2 );
+      OnTrigger( "Planted at the decoder in Lab 3 (Yellow).", Map.Planted_Decoder_Lab3 );
+	OnTrigger( "Defused at the decoder in Lab 1 (Grey).", Map.Defused_Decoder_Lab1 );
+	OnTrigger( "Defused at the decoder in Lab 2 (Green).", Map.Defused_Decoder_Lab2 );
+      OnTrigger( "Defused at the decoder in Lab 3 (Yellow).", Map.Defused_Decoder_Lab3);
+
+	OnTriggerRegion(AABB(-2580.883,-512.874,-117.140,-2441.125,-427.055,-36.872), RegionTrigger.DisableCombatMovement);
+
+	//if need be, can be add intrusion in tunnel Sewer door later
+	//OnTriggerRegion(AABB(-2598.874,2023.252,-574.875,1045.936,2432.875,-356.534), Map.TunnelDoor);
+
+	// Clear Roles on Start Map
+	ClearGoalRole( "ATTACK_Lab.*", { ROLE.ATTACKER,ROLE.ATTACKER1,ROLE.ATTACKER2 } );
+	ClearGoalRole( "DEFEND_Lab.*", { ROLE.DEFENDER, ROLE.DEFENDER1,ROLE.DEFENDER2} );
+
+	// Selected Decoder
+	OnTrigger("decoder_axis_decoderingreylab", Map.selected_decoder_Grey);
+	OnTrigger("decoder_axis_decoderingreenlab", Map.selected_decoder_Green);
+      OnTrigger("decoder_axis_decoderinyellowlab", Map.selected_decoder_Yellow);
+
+	// all but routes
+	Util.DisableGoal( ".*", true );
+	// activation ALLIES
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"BUILD_ramp",
+	".*CAB_south.*",
+	"ATTACK_Flag.*",
+	"CHECKPOINT.*"
+	});
+
+	// activation AXIS
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+	"SWITCH_Lab2",
+	"BUILD_Command_Post",
+	"BUILD_fence",
+	"DEFEND_Flag.*",
+	"DEFEND_Bridge.*",
+	"PLANTMINE_Flag.*",
+	"PLANTMINE_Bridge.*",
+	"PLANTMINE_Gate.*",
+	".*MG42.*",
+	"CHECKPOINT.*"
+	});
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "ATTACK.*" );
+	Util.SetMaxUsers( 1, "DEFEND.*" );
+	Util.SetMaxUsers( 2, "BUILD.*" );
+	Util.SetMaxUsers( 1, "PLANT.*" );
+	Util.SetMaxUsers( 2, "CHECKPOINT.*" );
+	Util.SetMaxUsers( 1, "SWITCH.*" );
+	Util.SetMaxUsers( 1, ".*MG42.*" );
+	Util.SetMaxUsers( 2, "PLANTMINE.*" );
+
+	// Priorities
+	SetGoalPriority( "BUILD_fence", 0.94, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "BUILD_Command_Post", 0.92, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANTMINE.*", 0.90 );
+	SetGoalPriority( "CHECKPOINT.*", 0.92 );
+
+	// Camp times
+	SetMapGoalProperties( "ATTACK.*", {MinCampTime=30, MaxCampTime=60} );
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=30, MaxCampTime=45} );
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=45, MaxCampTime=120} );
+
+	Util.AddUseWp( "PLANT_fence", "Fence1" );
+      Util.AddUseWp( "PLANT_fence", "Fence2" );
+	Util.AddUseWp( "PLANT_fence", "Fence3" );
+	Util.AddUseWp( "PLANT_Axis_Team_Door", "Door1" );
+	Util.AddUseWp( "PLANT_Axis_Team_Door", "Door2" );
+	Util.DisableGoal("ROUTE_Ramp");
+	Util.DisableGoal("ROUTE_Axis_Door");
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_decoder_in_Lab_2_Green =
+		{
+			ROUTE_Flag_S  =
+			{
+				ROUTE_Flag  =
+				{
+					ROUTE_Middle_Barracks  =
+					{
+						ROUTE_Bunker_Axis_Gate  =
+						{
+							ROUTE_Stairs1_Lab1  =
+							{
+								ROUTE_Lab1  =
+								{
+								},
+								ROUTE_Stairs2_Lab1  =
+								{
+									ROUTE_Left_Access_Lab2  =
+									{
+									},
+								},
+							},
+							ROUTE_Front_Access_Lab  =
+							{
+								ROUTE_Stairs_Axis_S  =
+								{
+									ROUTE_Right_Acces_Lab2  =
+									{
+									},
+									ROUTE_Left_Access_Lab2  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		PLANT_decoder_in_Lab_3_Yellow =
+		{
+			ROUTE_Flag_S  =
+			{
+				ROUTE_Flag  =
+				{
+					ROUTE_Middle_Barracks  =
+					{
+						ROUTE_Bridge  =
+						{
+							ROUTE_Ent_Tunnel_Door  =
+							{
+								ROUTE_Exit_Tunnel_Door  =
+								{
+									ROUTE_Axis_Door  =
+									{
+									},
+								},
+							},
+						},
+						ROUTE_Bunker_Axis_Gate  =
+						{
+							ROUTE_Front_Access_Lab  =
+							{
+								ROUTE_Right_Access_Lab3  =
+								{
+								},
+								ROUTE_Stairs_Axis_S  =
+								{
+									ROUTE_Left_Access_Lab3  =
+									{
+
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		PLANT_decoder_in_Lab_1_Grey =
+		{
+			ROUTE_Flag_S  =
+			{
+				ROUTE_Flag  =
+				{
+					ROUTE_Middle_Barracks  =
+					{
+						ROUTE_Bunker_Axis_Gate  =
+						{
+							ROUTE_Front_Access_Lab  =
+							{
+								ROUTE_Stairs_Axis_S  =
+								{
+									ROUTE_Stairs2_Lab1  =
+									{
+										ROUTE_Lab1  =
+										{
+										},
+									},
+								},
+							},
+							ROUTE_Stairs1_Lab1  =
+							{
+								ROUTE_Lab1  =
+								{
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		CHECKPOINT_barracks_spawn =
+		{
+			ROUTE_First_Allied_S  =
+			{Weight = 4,
+				ROUTE_Fence_Out  =
+				{
+					ROUTE_Fence_In  =
+					{
+						ROUTE_Flag  =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_Ramp  =
+			{Weight = 3,
+				ROUTE_Bridge  =
+				{
+					ROUTE_Middle_Barracks =
+					{
+						ROUTE_Flag  =
+						{
+						},
+					},
+				},
+			},
+		},
+	};
+		MapRoutes["DEFEND_Lab2.*"] =
+		{
+			ROUTE_Bunker_Axis_S  =
+			{
+				ROUTE_Left  =
+				{
+				},
+				ROUTE_Right  =
+				{
+				},
+				ROUTE_Stairs_Axis_S  =
+				{
+					ROUTE_Right  =
+					{
+					},
+					ROUTE_Left  =
+					{
+					},
+				},
+			},
+     	      };
+	MapRoutes["ATTACK_Flag.*"] = MapRoutes.CHECKPOINT_barracks_spawn;
+	MapRoutes["ATTACK_Lab1.*"] = MapRoutes.PLANT_decoder_in_Lab_1_Grey;
+	MapRoutes["ATTACK_Lab2.*"] = MapRoutes.PLANT_decoder_in_Lab_2_Green;
+	MapRoutes["ATTACK_Lab3.*"] = MapRoutes.PLANT_decoder_in_Lab_3_Yellow;
+	Util.Routes(MapRoutes);
+};

@@ -1,0 +1,632 @@
+//==========================================================================================
+//  UJE_xmas_factory_b1
+//	uje_xmas_factory.gm
+//
+//	Who          	        When		            What
+//---------------------------------------------------------------------------------------------------------
+//	^4[UJE]^3Niek	    01 December 2016	      Initial Script
+//	^4[UJE]^3Captain	04 December 2016	      attack/defense/door switch/escort-mount tank/improvement
+//	^4[UJE]^3Captain	25 December 2016	      Fix Barrier Side Wall/clean/improvement
+//
+//=========================================================================================================
+//
+
+global Map =
+{
+	DoorStatus = 0,
+	StairDoor = false,
+
+	phase = 1,
+
+	// phase 1, first spawn , get tank and escort it
+	// phase 2, second spawn, escort tank
+	// phase 3, third spawn, no need to escort tank anymore
+	// phase 4, forward spawns..
+
+	//The switches are used in reversed order
+	Switches =
+	{
+	axis_door =
+		{
+			Enabled = fase,
+			WaypointName = "GateAxis",
+			Priority = 0.0,
+			Timeout = 10000,
+			LimitBots = 1,
+			LimitClass = Util.AllClasses,
+			AimPosition = Vec3(4152.723, -1600.765, 698.733),
+			Wait = function()
+			{
+				if ( Map.DoorStatus )
+				{
+					sleep(2);
+					return true;
+				}
+				return false;
+			},
+		},
+
+		allies_door =
+		{
+			Enabled = false,
+			WaypointName = "GateAllies",
+			Priority = 0.0,
+			Timeout = 10000,
+			LimitBots = 1,
+			LimitClass = Util.AllClasses,
+			AimPosition = Vec3(4152.723, -1600.765, 698.733),
+			Wait = function()
+			{
+				if ( Map.DoorStatus )
+				{
+					sleep(2);
+					return true;
+				}
+				return false;
+			},
+		},
+
+	},
+
+	axis_radio_built = function( trigger )
+	{
+		if ( Map.phase < 2 )
+		{
+		  SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis.*" );
+		  SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_axis_door" );
+		  sleep(0);
+		  Wp.SetWaypointFlag("door", "closed", false);
+		  Wp.SetWaypointFlag("exit", "closed", true);
+		}
+
+		//If CP Axis rebuilt by bot At the same time map pass phase 2
+		//closed waypoint exit false at cp axis after phase 1, because all switch disable for allbots and door closed, bots is blocked at this location.
+		if ( Map.phase > 1 )
+		{
+			Wp.SetWaypointFlag("exit", "closed", false);
+		}
+		  SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Axis_Command_Post" );
+
+		  Util.MapDebugPrint( "axis_radio_built" );
+	},
+
+	axis_radio_Destroyed = function( trigger )
+	{
+		if ( Map.phase < 2 )
+		{
+		  SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Command_Post" );
+		}
+		  SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_axis_door" );
+		  SetAvailableMapGoals( TEAM.ALLIES, false, {"PLANT_Axis.*","SWITCH.*"} );
+		  sleep(0);
+		  Wp.SetWaypointFlag("door", "closed", true);
+		  Wp.SetWaypointFlag("exit", "closed", false);
+		  Util.MapDebugPrint( "axis_radio_Destroyed" );
+	},
+
+	ramp_obj_Built = function( trigger )
+	{
+		  Util.MapDebugPrint( "ramp_obj_Built" );
+	},
+
+	steps_obj_Built = function( trigger )
+	{
+		  Util.MapDebugPrint( "steps_obj_Built" );
+	},
+
+	tank_repaired = function( trigger )
+	{
+		if ( Map.phase < 4 )
+		{
+		  SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Santas_tank" );
+		  SetAvailableMapGoals( TEAM.AXIS, true, {"MOUNT_Santas_tank","ESCORT_Santas_tank"} );
+
+		  SetAvailableMapGoals( TEAM.ALLIES, true, "MOUNT_Santas_tank" );
+		}
+
+		  Util.MapDebugPrint( "tank_repaired" );
+	},
+
+	tank_damaged = function( trigger )
+	{
+		if ( Map.phase < 4 )
+		{
+		  SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Santas_tank" );
+		  SetAvailableMapGoals( TEAM.AXIS, false, {"MOUNT_Santas_tank","ESCORT_Santas_tank"} );
+
+		  SetAvailableMapGoals( TEAM.ALLIES, false, "MOUNT_Santas_tank" );
+		}
+
+		  Util.MapDebugPrint( "tank_damaged" );
+	},
+
+	B_Spawn = function( trigger )
+	{
+		  Map.phase = 2;
+
+		  SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Palace_gate_.*" );
+		  SetAvailableMapGoals( TEAM.ALLIES, false, {"DEFEND_Garden_.*","PLANT_Axis.*","SWITCH.*"} );
+
+		  Util.MapDebugPrint( "B spawn" );
+	},
+
+	C_Spawn = function( trigger )
+	{
+		  Map.phase = 3;
+
+		  Util.MapDebugPrint( "C spawn" );
+	},
+
+	allied_compost_built = function( trigger )
+	{
+	if ( Map.StairDoor == true )
+	{
+		  SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Stair_Well_Command.*" );
+	}
+		  SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Stair.*" );
+
+		  SetAvailableMapGoals( TEAM.ALLIES, false, {"BUILD_Stair.*","PLANT_Stair_Well_Command.*"} );
+
+		  Util.MapDebugPrint( "allied_compost_built" );
+	},
+
+	allied_compost_Destroyed = function( trigger )
+	{
+
+	if ( Map.StairDoor == true )
+	{
+		  SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Stair.*" );
+
+		  SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Stair.*" );
+		  SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Stair_Well_Command.*" );
+	}
+	else
+	{
+		  SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Stair.*" );
+		  SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Stair_Well_Command.*" );
+
+	}
+
+		  Util.MapDebugPrint( "allied_compost_Destroyed" );
+	},
+
+	axis_compost_built = function( trigger )
+	{
+
+	if ( Map.StairDoor )
+	{
+		  SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Stair_Well_Command.*" );
+	}
+	else
+	{
+		  SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Stair_Well_Command.*" );
+	}
+		  SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Stair.*" );
+
+		  SetAvailableMapGoals( TEAM.ALLIES, false, {"BUILD_Stair.*","PLANT_Stair_Well_Command.*"} );
+
+		  Util.MapDebugPrint( "axis_compost_build" );
+	},
+
+	axis_compost_Destroyed = function( trigger )
+	{
+	if ( Map.StairDoor )
+	{
+		  SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Stair.*" );
+	}
+	else
+	{
+		  SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Stair.*" );
+	}
+		  SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Stair.*" );
+		  SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Stair_Well_Command.*" );
+
+		  SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Stair_Well_Command.*" );
+
+		  Util.MapDebugPrint( "axis_compost_Destroyed" );
+	},
+
+	well_grate_Destroyed = function( trigger )
+	{
+
+		  Util.MapDebugPrint( "well_grate_Destroyed" );
+	},
+
+	well_door_Destroyed = function( trigger )
+	{
+		  SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Sewer_Grate" );
+
+		  Util.MapDebugPrint( "well_door_Destroyed" );
+	},
+
+	garage_wall_Destroyed = function( trigger )
+	{
+		  SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Santas_tank" );
+
+		  Util.MapDebugPrint( "garage_wall_Destroyed" );
+	},
+
+	main_door_Destroyed = function( trigger )
+	{
+
+		  SetAvailableMapGoals( TEAM.ALLIES, false, {
+		  	{"DEFEND_Factory_main_.*","DEFEND_Barrier_side_.*"},
+		  	"DEFEND_Barrier_side_.*",
+		  });
+		  SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Key_.*" );
+
+		  SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Factory_Main_.*" );
+
+		  Util.MapDebugPrint( "main_door_Destroyed" );
+
+	},
+
+	ramp_obj_Destroyed = function( trigger )
+	{
+		  SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_North.*" );
+
+		  Util.MapDebugPrint( "ramp_obj_Destroyed" );
+	},
+
+	tower_wall_Destroyed = function( trigger )
+	{
+
+		  SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Command_Post" );
+
+		  Util.MapDebugPrint( "tower_wall_Destroyed" );
+	},
+
+	steps_obj_Destroyed = function( trigger )
+	{
+		  SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_South.*" );
+
+		  Util.MapDebugPrint( "steps_obj_Destroyed" );
+	},
+
+	weak_closet_Destroyed = function( trigger )
+	{
+		  Util.MapDebugPrint( "weak_closet_Destroyed" );
+	},
+
+	stair_door_Destroyed = function( trigger )
+	{
+		  Map.StairDoor = true;
+		  SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Stair_well_.*" );
+		  SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Barrier_side_.*" );
+
+		  SetAvailableMapGoals( TEAM.AXIS, true, {"ATTACK_Factory_Main_.*","CHECKPOINT.*","PLANT_Stair_Well_Command.*","BUILD_Stair.*","PLANT_Closet.*","BUILD_South.*"} );
+		  SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Stair_Well_.*" );
+
+		  Map.phase = 4;
+		  Wp.SetWaypointFlag("grate", "closed", false);
+		  Util.MapDebugPrint( "stair_door_Destroyed" );
+
+	},
+
+	trench_wall_Destroyed = function( trigger )
+	{
+
+		  SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Barrier_side_.*" );
+		  SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Key_.*" );
+
+		  SetAvailableMapGoals( TEAM.AXIS, true, {"FLAG_gate_key","ATTACK_Key_.*"} );
+		  SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Factory_Main_.*" );
+
+		  Util.MapDebugPrint( "trench_wall_Destroyed" );
+	},
+
+	Palace_gate_Destroyed = function( trigger )
+	{
+		 SetAvailableMapGoals( TEAM.ALLIES, true, {"BUILD_Stair.*","CHECKPOINT.*","DEFEND_Stair_well_.*","DEFEND_Well_house_.*","PLANTMINE_Key_.*"} );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Palace_gate_.*" );
+
+		 SetAvailableMapGoals( TEAM.AXIS, true, {"PLANT_Sewer_Grate","PLANT_Sewer_House_Side_Entrance","PLANT_Stair_Well_Side_Entrance","ATTACK_Stair_Well_.*"} );
+		 SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Palace_gate_.*" );
+
+		 Util.MapDebugPrint( "Palace_gate_Destroyed" );
+	},
+
+	garage_wall2_Destroyed = function( trigger )
+	{
+		 Util.MapDebugPrint( "garage_wall2_Destroyed " );
+	},
+
+	Allies_Capture_Flag = function( trigger )
+	{
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Well_house_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT.*" );
+
+		 SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT.*" );
+
+		 Util.MapDebugPrint( "Allies_Capture_Flag" );
+	},
+
+	Axis_Capture_Flag = function( trigger )
+	{
+		 SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Well_house_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT.*" );
+
+		 SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT.*" );
+
+		 Util.MapDebugPrint( "Axis_Capture_Flag" );
+	},
+	 Axis_Flag = function( trigger )
+	{
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Well_house_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Factory_main_.*" );
+
+		 SetAvailableMapGoals( TEAM.AXIS, true, {"PLANT_Factory.*","BUILD_North.*","PLANT_Barrier.*"} );
+
+		 Util.MapDebugPrint( "Axis_Flag" );
+	},
+
+	Key_Stolen = function( trigger )
+	{
+	  SetAvailableMapGoals( TEAM.ALLIES, false, {"DEFEND_Key_.*","PLANTMINE_Key_.*"} );
+	  SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_DeliverKey_.*" );
+
+	  SetAvailableMapGoals( TEAM.AXIS, true, {"CAPPOINT_DeliverKey","ATTACK_Dagger_.*"} );
+	  SetAvailableMapGoals( TEAM.AXIS, false, {"FLAG_gate_key","ATTACK_Key_.*"} );
+
+		if ( Map.phase < 4 )
+		{
+			//kill tse allies
+			//change spawn
+			// half the allies should spawn at the cp
+			foreach ( id and bot in BotTable )
+			{
+				if ( bot.GetTeam() == TEAM.ALLIES )
+				{
+					bot.ChangeSpawnPoint( 6 ); //last spawn
+					bot.ExecCommand("kill");
+				}
+			}
+		}
+
+		Util.MapDebugPrint( "Key_Stolen" );
+	},
+
+	Key_Returned = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {"DEFEND_Key_.*","PLANTMINE_Key_.*"} );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_DeliverKey_.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {"ATTACK_Key_.*","FLAG_gate_key"} );
+		SetAvailableMapGoals( TEAM.AXIS, false, {"CAPPOINT_DeliverKey","ATTACK_Dagger_.*"} );
+
+		Util.MapDebugPrint( "Key_Returned" );
+	},
+
+	Key_Captured = function( trigger )
+	{
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_StolenDag_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, {"DEFEND_Key_.*","PLANTMINE_Key_.*"} );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "FLAG_dagger" );
+		SetAvailableMapGoals( TEAM.AXIS, false, {"ATTACK_Key_.*","CAPPOINT_DeliverKey","FLAG_gate_key"} );
+
+		Util.MapDebugPrint( "Key_Captured" );
+	},
+
+	// Game lost for allies
+	Dagger_Captured = function( trigger )
+	{
+		Map.phase = 5;
+		Util.MapDebugPrint( "Dagger_Captured" );
+	},
+
+	Dagger_Stolen = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {"DEFEND_DeliverDagger_.*","DEFEND_DeliverKey_.*"} );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_StolenDag_.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "CAPPOINT_DeliverDagger" );
+
+		Util.MapDebugPrint( "Dagger_Stolen" );
+	},
+
+	Dagger_Returned  = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, {"DEFEND_DeliverDagger_.*","DEFEND_DeliverKey_.*"} );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_StolenDag_.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "FLAG_dagger" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT_DeliverDagger" );
+
+		Util.MapDebugPrint( "Dagger_Returned" );
+	},
+
+	 tank_out_garage = function()
+	{
+		Util.MapDebugPrint("tank_out_garage");
+	},
+	 tank_exit_garden = function()
+	{
+		Util.MapDebugPrint("tank_exit_garden");
+	},
+		tank_at_end = function()
+	{
+		Util.MapDebugPrint("tank_at_end");
+	},
+	vehicle_at_location = function( trigger )
+	{
+		switch(Map.VehicleLocation)
+		{
+		case 1:
+			{
+		SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Side_Wall_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Garden_.*" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Side_Wall_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Garden_.*" );
+
+		Map.tank_out_garage();
+
+			}
+		case 2:
+		{
+		  SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Garden_.*" );
+		  SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Palace_gate_.*" );
+		  Util.DisableGoal("MOUNT_Santas_tank");
+		  Util.DisableGoal("BUILD_Santas_tank");
+
+		 Map.tank_exit_garden();
+			}
+		case 3:
+		{
+			 Util.DisableGoal("ESCORT_Santas_tank");
+			 Util.DisableGoal("MOVER_tank");
+			 Util.DisableGoal("MOUNT_Santas_tank");
+			 Util.DisableGoal("BUILD_Santas_tank");
+
+		  Map.tank_at_end();
+			}
+		}
+		 Util.MapDebugPrint("vehicle at location " + Map.VehicleLocation, true);
+	  },
+
+	  Gate = function( trigger )
+	  {
+		vel = ToVector(trigger.Action);
+		if ( vel[0] > 0 )
+		{
+			Map.DoorStatus = 0;
+
+		if ( Map.phase < 2 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_axis_door" );
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_axis_door" );
+			SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_allies_door" );
+		}
+
+			print("gate closing");
+		}
+		else if ( vel[0] < 0 )
+		{
+			Map.DoorStatus = 1;
+
+		if ( Map.phase < 2 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_axis_door" );
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_allies_door" );
+			SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_axis_door" );
+		}
+
+			print("gate opening");
+		}
+
+	},
+};
+global OnMapLoad = function()
+{
+	OnTrigger( "side_door_side_door1_goto", Map.Gate );
+	OnTrigger( "*^4Axis Command Post constructed. Charge speed increased!^7", Map.axis_compost_built );
+	OnTrigger( "*^4Allied Command Post constructed. Charge speed increased!^7", Map.allied_compost_built );
+	OnTrigger( "*^4Axis team has destroyed the Allied Command Post!^7", Map.allied_compost_Destroyed );
+	OnTrigger( "*^4Allied team has destroyed the Axis Command Post!^7", Map.axis_compost_Destroyed );
+	OnTrigger( "*^4Axis have supplied power to the Side Door!", Map.axis_radio_built );
+	OnTrigger( "*^4Allies have disabled the power to the Side Door!", Map.axis_radio_Destroyed );
+
+	OnTrigger( "*^4The Tank has been repaired!^7", Map.tank_repaired );
+	OnTrigger( "*^4The Tank has been damaged!^7", Map.tank_damaged );
+	OnTrigger( "*^1Axis have captured the Palace Garden Courtyard!^7", Map.B_Spawn );
+	OnTrigger( "*^4Axis have captured the Factory Spawn!^7", Map.C_Spawn );
+	OnTrigger( "*^4Axis have constructed the South Assault Ramp!^7", Map.steps_obj_Built );
+	OnTrigger( "*^4Allies have blown the South Assault Ramp!^7", Map.steps_obj_Destroyed );
+	OnTrigger( "*^4Axis have breached a part of the Barrier Side Wall!^7", Map.trench_wall_Destroyed );
+
+	OnTrigger( "*^4Axis have breached the Tower!^7", Map.tower_wall_Destroyed );
+	OnTrigger( "*^4Axis have blown the Factory Main Doors!^7", Map.Palace_gate_Destroyed );
+
+	OnTrigger( "*^4Axis have destroyed the Factory Main Entrance and captured Farm!^7", Map.main_door_Destroyed );
+	OnTrigger( "*^4The Sewer Grate has been blown!^7", Map.well_grate_Destroyed );
+	OnTrigger( "*^4Axis have breached the Tank Side Wall!^7" , Map.garage_wall_Destroyed );
+	OnTrigger( "*^4Axis have crashed through the garage wall!", Map.garage_wall2_Destroyed );
+	OnTrigger( "*^4Allies have blown the North Assault Ramp!", Map.ramp_obj_Destroyed );
+	OnTrigger( "*^4Axis have constructed the North Assault Ramp!", Map.ramp_obj_Built );
+
+	OnTrigger( "*^4Axis have destroyed the Closet Door!^7", Map.weak_closet_Destroyed );
+	OnTrigger( "*^4Axis have destroyed the Sewer House Side Entrance!^7", Map.well_door_Destroyed );
+	OnTrigger( "*^4Axis have destroyed the Stair Sewer Side Entrance!^7", Map.stair_door_Destroyed );
+
+	OnTrigger( "*^4The Old Village is now permanently captured by Axis!^7", Map.Axis_Flag );
+	OnTrigger( "*^4Axis have secured the Old Village and if held for 7 seconds will be Axis permanently!^7", Map.Allies_Capture_Flag );
+	OnTrigger( "*^4Allies have captured the Old Village!^7", Map.Axis_Capture_Flag );
+
+	OnTrigger( "*^4Axis are attempting to unlock the Dagger's Gate!^7", Map.Key_Stolen );
+	OnTrigger( "*^4Allies have returned the Gate Key!^7", Map.Key_Returned );
+	OnTrigger( "*^4The Dagger to assasinate Santa have been breached and are now defens", Map.Key_Captured );
+
+	OnTrigger( "*^4Axis have stolen the Dagger and are attempting to assasinate Santa!^", Map.Dagger_Stolen );
+	OnTrigger( "*^4Allies have returned the Dagger!^7", Map.Dagger_Returned );
+	OnTrigger( "*^4Santa has been assasinated !!^7", Map.Dagger_Captured );
+
+	// *** VEHICLE TRIGGERS ***
+	OnTriggerRegion(AABB(3069.305,-2397.244,641.125,3124.573,-2030.882,715.127), RegionTrigger.VehicleTrigger);
+	OnTriggerRegion(AABB(538.142,-3394.928,493.222,589.281,-3040.034,573.873), RegionTrigger.VehicleTrigger);
+	OnTriggerRegion(AABB(-1924.889,-1776.875,641.125,-1884.330,-1714.988,715.125), RegionTrigger.VehicleTrigger);
+	OnTrigger( "tank at location", Map.vehicle_at_location );
+
+	// *** CLEAR ALL GOALS FOR BOTH TEAMS ***
+	Util.DisableGoal( ".*", true ); // All but routes
+
+	//Allies goals activation
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	 ".*CAB.*",
+	 ".*CAB.*",
+	 "DEFEND_Side_Wall_.*",
+	});
+
+	//Axis goals activation
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+	 ".*CAB.*",
+	 ".*CAB.*",
+	 "PLANT_weak_Tower_Wall",
+	 "PLANT_damaged_Tank_Side_Wall",
+	 "ATTACK_Side_Wall_.*",
+	 "MOVER_tank",
+	});
+
+	//Offset Plant Fix
+	Util.SetGoalOffset( 150, 0, 0, "PLANT_damaged_Tank_Side_Wall" );
+	Util.SetGoalOffset( -150, 0, 0, "PLANT_Barrier_Side_Wall" );
+
+	// Camp times
+	SetMapGoalProperties( "ATTACK_.*", {MinCampTime=20, MaxCampTime=45} );
+	SetMapGoalProperties( "DEFEND_.*", {MinCampTime=20, MaxCampTime=45} );
+
+	//SetMaxUsersInProgress
+	Util.SetMaxUsersInProgress( 1, "DEFEND.*" );
+	Util.SetMaxUsersInProgress( 1, "ATTACK.*" );
+	Util.SetMaxUsersInProgress( 1, "PLANT.*" );
+	Util.SetMaxUsersInProgress( 1, "BUILD.*" );
+	Util.SetMaxUsersInProgress( 1, "MOUNT.*" );
+	Util.SetMaxUsersInProgress( 1, "ESCORT.*" );
+	Util.SetMaxUsersInProgress( 1, "SWITCH.*" );
+	Util.SetMaxUsersInProgress( 2, "CHECKPOINT.*" );
+	Util.SetMaxUsersInProgress( 2, "FLAG_.*" );
+	Util.SetMaxUsersInProgress( 3, "CAPPOINT_.*" );
+
+	//SetGoalPriority
+	SetGoalPriority( "MOUNT_Santas_tank", 0.0, 0, CLASS.MEDIC );
+	SetGoalPriority( "PLANT_weak_Tower_Wall", 1.0, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "BUILD_Axis_Command_Post", 1.0, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_damaged_Tank_Side_Wall", 0.8, TEAM.AXIS, CLASS.ENGINEER );
+
+	Wp.SetWaypointFlag("grate", "closed", true);
+	Wp.SetWaypointFlag("exit", "closed", false);
+	Wp.SetWaypointFlag("door", "closed", true);
+
+	//SwitchData
+	Util.UpdateSwitchData();
+
+	Util.MapDebugPrint( "Omni_bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 300.0;
+};

@@ -1,0 +1,1148 @@
+//==========================================================================================
+//
+//  ETL Warbell - etl_warbell.gm
+//
+//  Who         When                What
+//------------------------------------------------------------------------------------------
+//  Original Warbell Waypoints and Script by Red Dwarf
+//  Updated and edited for Omni-Bot 0.71 and 0.8 by :)BOK(: Naerling
+//  cs: formatting and bugfixes
+//  Mateos: ETL port
+//
+//  Mateos      17th August 2014    Added use points & cover spots for the destructible objectives
+//                                  Moved routing scripting to its own table, and moved few nodes
+//                                  Fixed bot stuckage at Monastery with crates
+//                                  Script clearing
+//    ^4Tardis 23/08/14 - fixes - stuck bots, disable bell plant after ring toll bell, cover spots added
+// VargaTom		7th	July	2024 (for v3)	- fixes
+//											- some new goals
+//											- some new waypoints
+//											- allies bot can open all switch operated doors
+//				2nd  Okt	2025			- CovertOps can destroy Garden Gate and game get feedback from it
+//==========================================================================================
+//
+
+/****************************************************
+Path mapping and script both updated by Mateos
+Correspondant WAY file size: -
+Last update: 18th December 2022
+****************************************************/
+
+/*
+ * TODO:
+ * - Manage Allied spawning (spawn at the CP if possible when the Forward Spawn gets captured by Axis, ...)
+ */
+
+global Map =
+{
+    Quiet = true,
+    Talk = true, // Set Talk to false if you don't want the bots talking ingame
+
+	GM_Version = 3,
+
+    BellTolled = false,
+    Book = false,
+    BookTaken = false,
+    BookDelivered = false,
+    Mechanism = false,
+	GardenGate = true,
+	Generator = true,
+	GuardHouseGate = true,
+	AxisCP = false,
+	AlliesCP = false,
+	Message = false,
+	
+    // *************************************************************************
+	LowerGeneratorDoor_1_Status = 0,
+    LowerGeneratorDoor_2_Status = 0, // Door is closed initially
+    UpperGeneratorDoor_Status = 0, // Door is closed initially
+	MiddleGeneratorDoor_Status = 0,
+	DepotDoor_Status = 0,
+    Switches =
+    {
+        // Allow Allies to get back to the first part of the map if the Forward Spawn is lost
+        // /bot waypoint_setproperty paththrough UseSwitch_PT:lower_generator_door
+        lower_generator_door_switch =
+        {
+            Enabled = true,
+            Priority = 0, // Always set to 0 when using path through
+            WaypointName = "lower_generator_door_switch",
+			LimitTeam = (1<<TEAM.ALLIES),
+            Timeout = 2700,
+            AimPosition = Vec3(-2277.726, -517.125, 294.006), // Use /bot aim_pos to get aim vector. Replaces the unreliable waypoint facing
+            Wait = function() // Optional. Used to have the bot wait a bit for slow moving doors / elevators
+            {
+                return Map.LowerGeneratorDoor_2_Status == 2; // Return true to finish the path through and go through the door
+            },
+        },
+		
+        lower_generator_door_in_switch =
+        {
+            Enabled = true,
+            Priority = 0, // Always set to 0 when using path through
+            WaypointName = "lower_generator_door_in_switch",
+			LimitTeam = (1<<TEAM.ALLIES),
+            Timeout = 2700,
+            AimPosition = Vec3(-2410.875, -414.318, 294.477), // Use /bot aim_pos to get aim vector. Replaces the unreliable waypoint facing
+            Wait = function() // Optional. Used to have the bot wait a bit for slow moving doors / elevators
+            {
+                return Map.LowerGeneratorDoor_2_Status == 2; // Return true to finish the path through and go through the door
+            },
+        },
+
+        // Allow Allies to build the CP and plant landmines beyond the Guard House Gate on map load
+        // /bot waypoint_setproperty paththrough UseSwitch_PT:upper_generator_door
+        upper_generator_door_switch =
+        {
+            Enabled = true,
+            Priority = 0, // Always set to 0 when using path through
+            WaypointName = "upper_generator_door_switch",
+			LimitTeam = (1<<TEAM.ALLIES),
+            Timeout = 2700,
+            AimPosition = Vec3(-2408, -414, 485), // Use /bot aim_pos to get aim vector. Replaces the unreliable waypoint facing
+            Wait = function() // Optional. Used to have the bot wait a bit for slow moving doors / elevators
+            {
+                return Map.UpperGeneratorDoor_Status == 2; // Return true to finish the path through and go through the door
+            },
+        },
+		
+		depot_door_in_switch =
+		{
+			Enabled = true,
+			Priority = 0,
+			WaypointName = "depot_door_in_switch",
+			LimitTeam = (1<<TEAM.ALLIES),
+			Timeout = 2700,
+			AimPosition = Vec3(325.125, -1701.526, -89.701),
+			Wait = function()
+			{
+				return Map.DepotDoor_Status == 2;
+			},
+		},
+		
+		depot_door_out_switch =
+		{
+			Enabled = true,
+			Priority = 0,
+			WaypointName = "depot_door_out_switch",
+			LimitTeam = (1<<TEAM.ALLIES),
+			Timeout = 2700,
+			AimPosition = Vec3(282.875, -1706.134, -89.632),
+			Wait = function()
+			{
+				return Map.DepotDoor_Status == 2;
+			},
+		},
+    },
+	
+	Upper_Generator_Door_GoTo = function( trigger )
+	{
+		Map.Switches.upper_generator_door_switch.Enabled = false;
+		
+		vel = ToVector(trigger.Action);
+
+		if ( vel.z > 0 )
+		{
+			Map.UpperGeneratorDoor_Status = 1;
+
+			sleep(2.76);
+			Map.UpperGeneratorDoor_Status = 2;
+			
+		}
+		else if ( vel.z < 0 )
+		{
+			Map.UpperGeneratorDoor_Status = 1;
+
+			sleep(2.76);
+		
+			Map.DepotDoor_Status = 0;
+			Map.Switches.upper_generator_door_switch.Enabled = true;
+		}
+	},
+	
+	Middle_Generator_Door_GoTo = function( trigger )
+	{
+		vel = ToVector(trigger.Action);
+
+		if ( vel.z > 0 )
+		{
+			Map.MiddleGeneratorDoor_Status = 1;
+
+			sleep(6.96);
+			Map.MidleGeneratorDoorStatus = 2;
+			
+				if(Map.LowerGeneratorDoor_2_Status == 2)
+				{
+					Wp.SetWaypointFlag( "door_2_inside", "closed", true );
+					Wp.SetWaypointFlag( "door_2_outside", "closed", true );
+					Wp.SetWaypointFlag( "bottom_door_inside", "closed", false );
+					Wp.SetWaypointFlag( "bottom_door_outside", "closed", false );
+				}
+				else
+				{
+					Wp.SetWaypointFlag( "door_2_inside", "closed", false );
+					Wp.SetWaypointFlag( "door_2_outside", "closed", false );
+					Wp.SetWaypointFlag( "bottom_door_inside", "closed", true );
+					Wp.SetWaypointFlag( "bottom_door_outside", "closed", true );
+				}
+
+			Map.Switches.lower_generator_door_in_switch.Enabled = false;
+			Map.Switches.lower_generator_door_switch.Enabled = false;
+			Map.Switches.upper_generator_door_switch.Enabled = false;
+		}
+	},
+	
+	DepotDoor_GoTo = function( trigger )
+	{
+		Map.Switches.depot_door_in_switch.Enabled = false;
+		Map.Switches.depot_door_out_switch.Enabled = false;
+		
+		vel = ToVector(trigger.Action);
+
+		if ( vel.z > 0 )
+		{
+			Map.DepotDoor_Status = 1;
+			
+			sleep(2.76);
+			Map.DepotDoor_Status = 2;		
+		}
+		else if ( vel.z < 0 )
+		{
+			Map.DepotDoor_Status = 1;
+			sleep(2.76);
+		
+			Map.DepotDoor_Status = 0;
+			Map.Switches.depot_door_in_switch.Enabled = true;
+			Map.Switches.depot_door_out_switch.Enabled = true;
+		}
+	},
+	
+	LowerGeneratorDoor1_goto = function( trigger )
+	{
+		vel = ToVector(trigger.Action);
+
+		if ( vel.z > 0 )
+		{
+			LowerGeneratorDoor_1_Status = 1;
+			sleep(2.2);
+			LowerGeneratorDoor_1_Status = 2;
+
+				Wp.SetWaypointFlag( "bottom_door_inside", "closed", false );
+				Wp.SetWaypointFlag( "bottom_door_outside", "closed", false );
+				Wp.SetWaypointFlag( "door_2_outside", "closed", false );
+				Wp.SetWaypointFlag( "door_2_inside", "closed", false );
+
+			sleep(0.56);
+		}
+		else if ( vel.z < 0 )
+		{
+			LowerGeneratorDoor_1_Status = 1;
+			sleep(0.56);
+			Wp.SetWaypointFlag( "bottom_door_inside", "closed", true );
+			Wp.SetWaypointFlag( "bottom_door_outside", "closed", true );
+			Wp.SetWaypointFlag( "door_2_inside", "closed", true );
+			Wp.SetWaypointFlag( "door_2_outside", "closed", true );
+			sleep(2.2);
+			LowerGeneratorDoor_1_Status = 0;
+		}
+	},
+	
+	LowerGeneratorDoor2_goto = function( trigger )
+	{
+		Map.Switches.lower_generator_door_in_switch.Enabled = false;
+		Map.Switches.lower_generator_door_switch.Enabled = false;
+		
+		vel = ToVector(trigger.Action);
+
+		if ( vel.z > 0 )
+		{
+			Map.LowerGeneratorDoor_2_Status = 1;
+			sleep(1.36);
+			Map.LowerGeneratorDoor_2_Status = 2;
+		}
+		else if ( vel.z < 0 )
+		{
+			Map.LowerGeneratorDoor_2_Status = 1;
+			sleep(1.36);
+		
+			Map.LowerGeneratorDoor_2_Status = 0;
+			Map.Switches.lower_generator_door_in_switch.Enabled = true;
+			Map.Switches.lower_generator_door_switch.Enabled = true;
+		}
+	},
+
+	GhspawnTrigger =
+	{
+		Name = "GhspawnTrigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+
+		OnEnter = function(ent)
+		{
+			if(GetEntTeam(ent) == TEAM.AXIS)
+			{
+				mg = GetGoal("PLANT_Garden_Gate");
+				if(mg.IsAvailable(TEAM.AXIS))
+				{
+					Util.MapDebugPrint("Garden Gate Is True");
+				}
+				else
+				{
+					Map.GardenGate = false;
+
+					DeleteTriggerRegion("GhspawnTrigger");
+					SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_gardengate" );
+					SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_gardengate" );
+					SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Garden_Gate" );
+					Util.MapDebugPrint("Garden Gate is false");
+				}
+			}
+		},
+	},
+
+    // ========================================================================
+    // First stage
+    // ========================================================================
+    forward_spawn_flag_Axis_Captured = function( trigger )
+    {
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+        	"ATTACK_First_stage.*",
+        	"PLANTMINE_First_FX.*",
+        	"MOBILEMG42_First.*",
+        	"SNIPE_First.*",
+        });
+        SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_forward_spawn_flag" );
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_forward_spawn_flag" );
+        SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_First_stage.*" );
+
+        Util.MapDebugPrint( "forward_spawn_flag_Axis_Captured" );
+    },
+
+    forward_spawn_flag_Allies_Captured = function( trigger )
+    {
+        SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_forward_spawn_flag" );
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+        	"ATTACK_First_stage.*",
+        	"PLANTMINE_First_FX.*",
+        	"MOBILEMG42_First.*",
+        	"SNIPE_First.*",
+        });
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_First_stage.*" );
+        SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_forward_spawn_flag" );
+
+        if ( Map.BookTaken )
+        {
+            SetAvailableMapGoals( TEAM.ALLIES, true, {
+            	"ATTACK_BookAttack",
+            	"DEFEND_Abbey_6",
+            });
+        }
+
+        Util.MapDebugPrint( "forward_spawn_flag_Allies_Captured" );
+    },
+	
+	Generator_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Generator planted" );
+	},
+
+    Generator_Destroyed = function( trigger )
+    {
+		Map.Generator = false;
+        SetAvailableMapGoals( TEAM.AXIS, true, "GRENADE_bookcase" );
+		SetAvailableMapGoals(TEAM.ALLIES, false, "DEFUSE_Generator_.*");
+		SetAvailableMapGoals(TEAM.AXIS, false, 
+		{
+			"ATTACK_Generator_.*",
+			"PLANT_Generator",
+			"MOBILEMG42_First_FX_4",
+		});
+		
+		if(Map.GuardHouseGate)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "ATTACK_GH_Gate_.*");
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, 
+			{
+				"BUILD_Command_Post",
+				"PLANT_Abbey_Main_Gate",
+				"ATTACK_a_Abbey_Main_Gate_.*",
+			});
+			SetAvailableMapGoals(TEAM.ALLIES, true, 
+			{
+				"MOBILEMG42_SEcond_FX_7",
+				"MOBILEMG42_Second_FX_8",
+			});
+		}
+
+		Util.MapDebugPrint("Generator Destroyed");
+    },
+
+    Bookcase_Exploded = function()
+    {
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+        	"FLAG_book",
+        	"CAPPOINT_BOOKOFDEATHPLACE",
+        });
+		SetAvailableMapGoals(TEAM.AXIS, false, "GRENADE_bookcase");
+
+        Util.MapDebugPrint( "Bookcase_Exploded" );
+    },
+
+    book_Taken = function( trigger )
+    {
+        Map.BookTaken = true;
+		SetGoalPriority("DEFEND_d_.*", 1.0, TEAM.ALLIES);
+		SetGoalPriority("MOBILEMG42_Second_FX_10", 1.1, TEAM.ALLIES);
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+        	"ATTACK_BookAttack",
+        	"DEFEND_d_.*",
+			"DEFEND_Abbey_8",
+			"DEFEND_Abbey_1",
+			"MOBILEMG42_Second_FX_10",
+        });
+
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+        	"ATTACK_BookAttack",
+        	"DEFEND_Abbey_6",
+        });
+		
+		if(ETUtil.CountClass(TEAM.ALLIES, CLASS.SOLDIER) > 1)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES , true, "MOBILEMG42_Second_FX_6");
+		}
+
+        Util.MapDebugPrint( "book_Taken" );
+		sleep(20);
+		SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_Book_Place_.*");
+    },
+	
+	Book_Dropped = function( trigger )
+	{
+		SetGoalPriority( "FLAGRETURN_book_dropped", 1.2, TEAM.ALLIES );
+		Util.MapDebugPrint( "book Dropped" );
+	},
+
+    book_Returned = function( trigger )
+    {
+        BookTaken = false;
+		SetGoalPriority("DEFEND_d_.*", 0.6, TEAM.ALLIES);
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+        	"ATTACK_BookAttack",
+        	"DEFEND_Abbey_6",
+			"MOBILEMG42_Second_FX_6",
+			"MOBILEMG42_Second_FX_10",
+			"DEFEND_Book_Place_.*",
+        });
+
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+        	"ATTACK_BookAttack",
+        	"DEFEND_Abbey_6",
+        });
+
+        Util.MapDebugPrint( "book_Returned" );
+    },
+	
+	Guard_House_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Planted_at_the_Guard_House_Gate" );
+	},
+
+    Guard_House_Gate_Destroyed = function( trigger )
+    {
+		Map.GuardHouseGate = false;
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+        	"CHECKPOINT_forward_spawn_flag",
+        	"ATTACK_First_stage.*",
+        	"PLANTMINE_First_FX.*",
+        	"MOBILEMG42_First.*",
+        	"SNIPE_First.*",
+			"ATTACK_GH_Gate_.*",
+        });
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+        	"ATTACK_secondStage.*",
+        	"DEFEND_BellMechanism_5",
+        	"SNIPE_secondStage.*",
+        	"SNIPE_Second_.*",
+        	"CALLARTILLERY_Second.*",
+        	"ARTILLERY_S_Second_.*",
+        	"PLANTMINE_Second_.*",
+			"BUILD_Command_Post",
+			"MOBILEMG42_Second_FX_8",
+			"MOBILEMG42_SEcond_FX_7",
+        });
+
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+			"ATTACK_GH_Gate_.*",
+        	"ATTACK_First_stage.*",
+        	"CHECKPOINT_forward_spawn_flag",
+			"MOBILEMG42_First_FX_1",
+			"PLANT_Guard_House_Gate",
+        });
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+  //      	"ATTACK_a_Abbey_Main_Gate_.*",
+  //      	"BUILD_Command_Post",
+ //       	"PLANT_Abbey_Main_Gate",
+        });
+
+        if ( Map.Talk && MAP_TALK )
+        {
+            foreach ( id and bot in BotTable )
+            {
+                if ( !axisAnnounce && bot.GetTeam() == TEAM.AXIS )
+                {
+                    r = RandRange(0,10);
+                    if( r < 2 )
+                    {
+                        axisAnnounce = true;
+                        bot.ExecCommand("vsay_team FTFollowMe");
+                    }
+                    else if( r > 8 )
+                    {
+                        axisAnnounce = true;
+                        bot.SayVoice(VOICE.REINFORCE_OFF);
+                    }
+                }
+                if ( !alliesAnnounce && bot.GetTeam() == TEAM.ALLIES )
+                {
+                    r = RandRange(0,10);
+                    if( r < 2 )
+                    {
+                        alliesAnnounce = true;
+                        bot.SayVoice(VOICE.DEFEND_OBJECTIVE);
+                    }
+                    else if( r > 8 )
+                    {
+                        alliesAnnounce = true;
+                        bot.ExecCommand("vsay_team FTFallBack");
+                    }
+                }
+            }
+        }
+		
+		if(Map.Generator)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, {
+				"MOBILEMG42_First_FX_4"
+				"ATTACK_Generator_.*",
+				"PLANT_Generator",
+			});
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, 
+			{
+				"ATTACK_a_Abbey_Main_Gate_.*",
+				"PLANT_Abbey_Main_Gate",
+				"PLANT_Command_Post",
+				"MOBILEMG42_Second_FX_6",
+			});
+			SetAvailableMapGoals(TEAM.ALLIES, true, 
+			{
+				"MOBILEMG42_SEcond_FX_7",
+				"MOBILEMG42_Second_FX_8",
+			});
+		}
+
+        Util.MapDebugPrint( "Guard_House_Gate_Destroyed" );
+    },
+
+
+    // ========================================================================
+    // Second stage
+    // ========================================================================
+    Abbey_Main_Gate_Destroyed = function( trigger )
+    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_abbeygate_destroyed" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_abbeygate_destroyed" );
+		Util.MapDebugPrint( "Abbey_Main_Gate_Destroyed" );
+		Wp.SetWaypointFlag( "depot_door_in", "allies", false );
+		Wp.SetWaypointFlag( "depot_door_out", "allies", false );
+		Wp.SetWaypointFlag( "ddout", "allies", false );
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+        	"ATTACK_secondStage_9",
+        	"ATTACK_secondStage_10",
+			"MOBILEMG42_SEcond_FX_7",
+			"MOBILEMG42_Second_FX_8",
+        });
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+        	"DEFEND_BellMechanism.*",
+			"MOBILEMG42_Second_FX_11",
+        	"DEFEND_Abbey_.*",
+        	"DEFEND_d_ab_.*",
+        });
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_a_Abbey_Main_Gate_.*" );
+		SetAvailableMapGoals(TEAM.AXIS, false, 
+		{
+			"PLANT_Abbey_Main_Gate",
+			"MOBILEMG42_Second_FX_6",
+		});
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+        	"BUILD_Bell_Mechanism",
+        	"PLANT_Garden_Gate",
+        	"PLANT_Crypt_Gate",
+        	"DEFEND_d_ab_.*",
+        	"DEFEND_BellMechanism_5",
+        });
+
+        if ( Map.Talk && MAP_TALK )
+        {
+            foreach ( id and bot in BotTable )
+            {
+                if ( !axisAnnounce && bot.GetTeam() == TEAM.AXIS )
+                {
+                    r = RandRange(0,10);
+                    if( r < 2 )
+                    {
+                        axisAnnounce = true;
+                        bot.ExecCommand("vsay_team FTFollowMe");
+                    }
+                    else if( r > 8 )
+                    {
+                        axisAnnounce = true;
+                        bot.SayVoice(VOICE.REINFORCE_OFF);
+                    }
+                }
+
+                if ( !alliesAnnounce && bot.GetTeam() == TEAM.ALLIES )
+                {
+                    r = RandRange(0,10);
+                    if( r < 2 )
+                    {
+                        alliesAnnounce = true;
+                        bot.SayVoice(VOICE.DEFEND_OBJECTIVE);
+                    }
+                    else if( r > 8 )
+                    {
+                        alliesAnnounce = true;
+                        bot.ExecCommand("vsay_team FTFallBack");
+                    }
+                }
+            }
+        }
+		sleep(4.0);
+		
+		Map.DepotDoor_Status = 1; //opened
+		Map.Switches.depot_door_in_switch.Enabled = false;
+		Map.Switches.depot_door_out_switch.Enabled = false;
+        
+		Util.MapDebugPrint( "depot_door_in_switch Disabled" );
+		Util.MapDebugPrint( "depot_door_out_switch Disabled" );
+    },
+
+    Bell_Mechanism_Built = function( trigger )
+    {
+        Map.Mechanism = true;
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_BellMechanism.*" );
+		SetAvailableMapGoals(TEAM.AXIS, false, "BUILD_Bell_Mechanism");
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+        	"PLANT_Bell_Mechanism",
+        	"DEFEND_BellMechanism_5",
+        });
+		
+		if(Server.NumBots < 3 )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, false, "DEFUSE_Bell_Mechanism_.*" );
+			}
+
+        SetAvailableMapGoals( TEAM.ALLIES, !Map.BookDelivered, {
+            "ATTACK_GardenGate",
+            "ATTACK_AbbeyGate",
+            "ATTACK_Cryptgate",
+        });
+
+        Map.Manage_Bell_Tolling();
+
+        Util.MapDebugPrint( "Bell_Mechanism_Built" );
+    },
+	
+	Bell_Mechanism_Planted = function( trigger )
+	{
+		if(Map.BellTolled)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, false, "DEFUSE_Bell_Mechanism_.*");
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "DEFUSE_Bell_Mechanism_.*");
+		}
+		
+		Util.MapDebugPrint("Planted_at_Mechanism");
+	},
+
+    Bell_Mechanism_Destroyed = function( trigger )
+    {
+        Map.Mechanism = false;
+        Map.Manage_Bell_Tolling();
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_BellMechanism.*" );
+		SetAvailableMapGoals(TEAM.ALLIES, false, "PLANT_Bell_Mechanism");
+		
+		if(Map.BellTolled)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, false, "BUILD_Bell_Mechanism");
+			SetAvailableMapGoals(TEAM.AXIS, false, "DEFUSE_Bell_Mechanism_.*");
+			SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_BellMechanism_.*");
+		}
+		
+        Util.MapDebugPrint( "Bell_Mechanism_Destroyed" );
+    },
+
+    First_Sacrifice = function( trigger )
+    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Pentagramm_1" );
+
+        Util.MapDebugPrint( "First_Sacrifice" );
+    },
+
+    First_Sacrifice_Performed = function( trigger )
+    {
+        SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Pentagramm_1" );
+
+        Util.MapDebugPrint( "First_Sacrifice_Performed" );
+    },
+
+    Second_Sacrifice = function( trigger )
+    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Pentagramm_2" );
+
+        Util.MapDebugPrint( "Second_Sacrifice" );
+    },
+
+    Second_Sacrifice_Performed = function( trigger )
+    {
+        SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Pentagramm_2" );
+
+        Util.MapDebugPrint( "Second_Sacrifice_Performed" );
+    },
+
+    Third_Sacrifice = function( trigger )
+    {
+        SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Bell_Mechanism" );
+
+        SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Pentagramm_3" );
+
+        Util.MapDebugPrint( "Third_Sacrifice" );
+    },
+
+    Crypt_Gate_Destroyed = function( trigger )
+    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_crypt" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_crypt" );
+		SetAvailableMapGoals(TEAM.AXIS, false, "PLANT_Crypt_Gate");
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFUSE_Crypt_Gate_.*");
+
+        Util.MapDebugPrint( "Crypt_Gate_Destroyed" );
+		if(!Map.GardenGate)
+		{
+			DeleteTriggerRegion("flagspawn");
+		}
+    },
+
+    Garden_Gate_Destroyed = function( trigger )
+    {
+		Map.GardenGate = false;
+        SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_gardengate" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_gardengate" );
+		SetAvailableMapGoals(TEAM.AXIS, false, "PLANT_Garden_Gate");
+		
+		DeleteTriggerRegion("GhspawnTrigger");
+
+        Util.MapDebugPrint( "Garden_Gate_Destroyed" );
+    },
+
+    BOOKOFDEATHPLACE_Captured = function( trigger )
+    {
+        Map.BookDelivered = true;
+		
+		SetGoalPriority("DEFEND_d_.*", 0.6, TEAM.ALLIES);
+		
+		SetAvailableMapGoals(TEAM.ALLIES, false, "MOBILEMG42_Second_FX_10");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_Book_Place_.*");
+		SetAvailableMapGoals(TEAM.AXIS, false, "FLAG_book");
+		SetAvailableMapGoals(TEAM.AXIS, false, "CAPPOINT_BOOKOFDEATHPLACE");
+
+        SetAvailableMapGoals( TEAM.ALLIES, !Map.Mechanism, {
+            "ATTACK_GardenGate",
+            "ATTACK_AbbeyGate",
+            "ATTACK_Cryptgate",
+        });
+
+        Map.Manage_Bell_Tolling();
+
+        Util.MapDebugPrint( "BOOKOFDEATHPLACE_Captured" );
+    },
+
+    Axis_Win = function( trigger )
+    {
+        ETUtil.WinningChat( TEAM.AXIS );
+        ETUtil.LosingChat( TEAM.ALLIES );
+
+        Util.MapDebugPrint( "Axis_Win", true );
+    },
+
+    Axis_CP_Build = function( trigger )
+    {
+		Map.AxisCP = true;
+		SetAvailableMapGoals(TEAM.AXIS, false, "BUILD_Command_Post");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "BUILD_Command_Post");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "PLANT_Command_Post");
+        Util.MapDebugPrint( "Axis_CP_Build", true );
+    },
+	
+	Axis_CP_Destroyed = function( trigger )
+	{
+		Map.AxisCP = false;
+		SetAvailableMapGoals(TEAM.ALLIES, true, "BUILD_Command_Post");
+		SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Command_Post");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "PLANT_Command_Post");
+		Util.MapDebugPrint("Axis_CP_Destroyed", true);
+	},
+	
+	Allies_CP_Build = function( trigger )
+	{
+		Map.AlliesCP = true;
+		SetAvailableMapGoals(TEAM.ALLIES, false, "BUILD_Command_Post");
+		SetAvailableMapGoals(TEAM.AXIS, false, "BUILD_Command_Post");
+		SetAvailableMapGoals(TEAM.AXIS, true, "PLANT_Command_Post");
+		Util.MapDebugPrint("Allies_CP_Build", true);
+	},
+	
+	Allies_CP_Destroyed = function( trigger )
+	{
+		Map.AlliesCP = false;
+		SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Command_Post");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "BUILD_Command_Post");
+		SetAvailableMapGoals(TEAM.AXIS, false, "PLANT_Command_Post");
+		Util.MapDebugPrint("Allies_CP_Destroyed", true);
+	},
+
+    Bell_Tolled = function( trigger )
+    {
+        if ( trigger.Action == "axis_complete" )
+        {
+            Map.BellTolled = true;
+            Map.Manage_Bell_Tolling();
+
+            Util.MapDebugPrint( "Bell_Tolled" );
+        }
+		SetAvailableMapGoals(TEAM.ALLIES, false, "PLANT_Bell_Mechanism");
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFUSE_Bell_Mechanism_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_BellMechanism_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_d_ab_8");
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_BellMechanism_.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_Abbey_6");
+    },
+
+    Manage_Bell_Tolling = function()
+    {
+        SetAvailableMapGoals( TEAM.AXIS, !Map.BellTolled && Map.BookDelivered && Map.Mechanism, "SWITCH_BellRope" );
+    }
+};
+
+global OnMapLoad = function()
+{
+    // Triggers
+    OnTrigger( "^1The Axis repaired the Bell Mechanism!", Map.Bell_Mechanism_Built );
+	OnTrigger( "Planted at the Bell Mechanism.", Map.Bell_Mechanism_Planted );
+	OnTrigger( "Planted at the Guard House Gate.", Map.Guard_House_Planted );
+	OnTrigger( "Planted at the Generator.", Map.Generator_Planted );
+    OnTrigger( "^1The Axis have destroyed the Abbey Main Gate!", Map.Abbey_Main_Gate_Destroyed );
+    OnTrigger( "^1Allies have destroyed the Bell Mechanism!", Map.Bell_Mechanism_Destroyed );
+    OnTrigger( "^1Heinrich awaits his first Sacrifice!", Map.First_Sacrifice );
+    OnTrigger( "^1First Sacrifice performed!", Map.First_Sacrifice_Performed );
+    OnTrigger( "^1Heinrich awaits his second Sacrifice!", Map.Second_Sacrifice );
+    OnTrigger( "^1Second Sacrifice performed!", Map.Second_Sacrifice_Performed );
+    OnTrigger( "^1Heinrich awaits his third Sacrifice!", Map.Third_Sacrifice );
+    OnTrigger( "^1The Axis have destroyed the Crypt Gate!", Map.Crypt_Gate_Destroyed );
+    OnTrigger( "^1The Axis have destroyed the Garden Gate!", Map.Garden_Gate_Destroyed );
+    OnTrigger( "^1The Axis have destroyed the Guardhouse Gate!", Map.Guard_House_Gate_Destroyed );
+    OnTrigger( "^1The Axis have destroyed the Generator!", Map.Generator_Destroyed );
+    OnTrigger( "Axis have stolen the Book of Death!", Map.book_Taken );
+    OnTrigger( "Flag returned book!", Map.book_Returned );
+    OnTrigger( "^1Axis have delivered the Book of Death!", Map.BOOKOFDEATHPLACE_Captured );
+    OnTrigger( "^1The Axis have captured the Guardhouse Flag!", Map.forward_spawn_flag_Axis_Captured );
+    OnTrigger( "allies_capture_forward_spawn_flag", Map.forward_spawn_flag_Allies_Captured );
+    OnTrigger( "^1Third Sacrifice performed!", Map.Axis_Win );
+    OnTrigger( "^1Axis Command Post constructed. Charge speed increased!", Map.Axis_CP_Build );
+	OnTrigger( "^5The Allies have destroyed the Axis Command Post!", Map.Axis_CP_Destroyed );
+	OnTrigger( "^5Allied Command Post constructed. Charge speed increased!", Map.Allies_CP_Build );
+	OnTrigger( "^1The Axis have destroyed the Allied Command Post!", Map.Allies_CP_Destroyed );
+    OnTrigger( "GRENADE_bookcase Exploded.", Map.Bookcase_Exploded);
+    OnTrigger( "bell_rope", Map.Bell_Tolled);
+    OnTrigger( "middle_generator_door_goto", Map.Middle_Generator_Door_GoTo );
+    OnTrigger( "upper_generator_door_goto", Map.Upper_Generator_Door_GoTo );
+	OnTrigger( "depot_door_goto", Map.DepotDoor_GoTo );
+	OnTrigger( "lower_generator_door2_goto", Map.LowerGeneratorDoor2_goto);
+	OnTrigger( "lower_generator_door1_goto", Map.LowerGeneratorDoor1_goto);
+	OnTrigger( "Flag dropped book!", Map.Book_Dropped ); 
+	
+	OnTriggerRegion(AABB(-2940.027,-317.677,449.125,-2468.400,-28.116,523.126), Map.GhspawnTrigger);
+
+    // Disable goals
+    Util.DisableGoal( ".*", true ); // All but routes
+
+    // Disable some routes
+    SetAvailableMapGoals( TEAM.AXIS, false, {
+    	"ROUTE_abbeygate_destroyed",
+    	"ROUTE_gardengate",
+    	"ROUTE_crypt",
+    });
+    SetAvailableMapGoals( TEAM.ALLIES, false, {
+    	"ROUTE_abbeygate_destroyed",
+    	"ROUTE_gardengate",
+    	"ROUTE_crypt",
+    });
+
+    // Fix as some mod's breaking
+    Util.AddUseWp("PLANT_Generator", "hidden");
+	
+    // Some goal use points & offsets
+    Util.AddUsePoint("PLANT_Abbey_Main_Gate", {Vec3(585, -2255, -125), Vec3(611.616, -2032.145, -119.809)});
+    Util.AddUsePoint("PLANT_Garden_Gate", {Vec3(2315, -2885, -135), Vec3(2300.109, -2768.660, -111.453)});
+    Util.AddUsePoint("PLANT_Generator", Vec3(-2900, -300, 475) );
+    Util.AddUsePoint("PLANT_Guard_House_Gate", {Vec3(-2550, -430, 25), Vec3(-2737.751, -589.237, 24.125)});
+	Util.AddUsePoint("PLANT_Crypt_Gate", {Vec3(948.060, -1118.774, -215.875), Vec3(985.765, -1258.244, -215.875)});
+	
+	Wp.SetWaypointFlag( "depot_door_in", "allies", true );
+	Wp.SetWaypointFlag( "depot_door_out", "allies", true );
+	Wp.SetWaypointFlag( "bottom_door_outside", "closed", true );
+	Wp.SetWaypointFlag( "bottom_door_inside", "closed", true );
+	Wp.SetWaypointFlag( "door_2_inside", "closed", true );
+	Wp.SetWaypointFlag( "door_2_outside", "closed", true );
+	Wp.SetWaypointFlag( "ddout", "allies", true );
+
+    Util.SetGoalOffset( -20, 0, 0, "PLANT_Bell_Mechanism" );
+
+    // Some goal properties
+    SetMapGoalProperties( "ATTACK_.*",      {MinCampTime=15, MaxCampTime=30} );
+    SetMapGoalProperties( "DEFEND_.*",      {MinCampTime=15, MaxCampTime=30} );
+    SetMapGoalProperties( "MOBILEMG42_.*",  {MinCampTime=60, MaxCampTime=120} );
+    SetMapGoalProperties( "SNIPE_.*",       {MinCampTime=30, MaxCampTime=60} );
+
+    Util.SetMaxUsersInProgress( 1, "BUILD_Command_Post" );
+    Util.SetMaxUsersInProgress( 2, "PLANT.*" );
+    Util.SetMaxUsersInProgress( 3, "FLAG.*" );
+    Util.SetMaxUsersInProgress( 1, "DEFEND_.*" );
+    Util.SetMaxUsersInProgress( 1, "ATTACK_a_.*" );
+    Util.SetMaxUsersInProgress( 1, "ATTACK_second.*" );
+    Util.SetMaxUsersInProgress( 1, "ATTACK_Ga.*" );
+    Util.SetMaxUsersInProgress( 1, "ATTACK_F.*" );
+    Util.SetMaxUsersInProgress( 1, "ATTACK_C.*" );
+    Util.SetMaxUsersInProgress( 1, "ATTACK_Book.*" );
+    Util.SetMaxUsersInProgress( 1, "ATTACK_Bell" );
+    Util.SetMaxUsers( 8, "SWITCH_BellRope" );
+    Util.SetMaxUsers( 8, "ATTACK_Pentagramm_.*" );
+	
+	SetGoalPriority( "PLANT_Command_Post", 0.7, 0, CLASS.ENGINEER );
+    SetGoalPriority( "BUILD_Command_Post", 0.81 );  //0.75
+    SetGoalPriority( "BUILD_Bell_Mechanism", 0.8 );
+    SetGoalPriority( "PLANT_Guard_House_Gate", 0.95 );
+    SetGoalPriority( "PLANT_Generator", 0.9 );
+	SetGoalPriority( "GRENADE_bookcase", 0.89, TEAM.AXIS, 0 );
+    SetGoalPriority( "PLANT_Abbey_Main_Gate", 0.85 );
+    SetGoalPriority( "PLANT_Garden_Gate", 0.9, TEAM.AXIS, CLASS.COVERTOPS );
+    SetGoalPriority( "PLANT_Garden_Gate", 0.75, TEAM.AXIS, CLASS.ENGINEER );
+
+    SetGoalPriority( "ATTACK_secondStage_4", 0.52 );
+    SetGoalPriority( "ATTACK_secondStage_6", 0.52 );
+    SetGoalPriority( "ATTACK_secondStage_9", 0.52 );
+    SetGoalPriority( "ATTACK_a_Abbey_.*", 0.52 );
+    SetGoalPriority( "ATTACK_Pentagramm_.*", 0.7 );
+    SetGoalPriority( "ATTACK_BookAttack", 0.52 );
+    SetGoalPriority( "SWITCH_BellRope", 0.6 );
+    SetGoalPriority( "DEFEND_Abbey_6", 0.52 );
+    SetGoalPriority( "DEFEND_BellMechanism_5", 0.52 );
+	SetGoalPriority( "DEFEND_Book_Place_.*", 1.3, TEAM.ALLIES, 0 );
+	SetGoalPriority( "DEFEND_.*", 0.0, 0, CLASS.ENGINEER );
+	SetGoalPriority( "ATTACK_.*", 0.0, 0, CLASS.ENGINEER );
+
+    SetGoalPriority( "DEFUSE_Bell_Mechanism_.*", 1.10, TEAM.AXIS, CLASS.ENGINEER, true );
+
+	SetGoalPriority( "FLAGRETURN_book_dropped", 1.2, TEAM.ALLIES, 0, true );
+    SetGoalPriority( "DEFUSE_Guard_House_Gate_.*", 1.10, TEAM.ALLIES, CLASS.ENGINEER, true );
+    SetGoalPriority( "DEFUSE_Generator_.*", 1.15, TEAM.ALLIES, CLASS.ENGINEER, true );
+    SetGoalPriority( "DEFUSE_Garden_Gate_.*", 1.20, TEAM.ALLIES, CLASS.ENGINEER, true );
+    SetGoalPriority( "DEFUSE_Crypt_Gate_.*", 1.20, TEAM.ALLIES, CLASS.ENGINEER, true );
+    SetGoalPriority( "DEFUSE_Abbey_Main_Gate_.*", 1.25, TEAM.ALLIES, CLASS.ENGINEER, true );
+	SetGoalPriority( "DEFUSE_Command_Post_.*", 0.8, TEAM.AXIS, CLASS.ENGINEER, true );
+	
+    // Available map goals at start
+    SetAvailableMapGoals( TEAM.AXIS, true, {
+		"ATTACK_GH_Gate_.*",
+    	"PLANT_Guard_House_Gate",
+    	"PLANT_Generator",
+		"PLANT_Garden_Gate",
+		"MOBILEMG42_First_FX_1",
+    	"CHECKPOINT_forward_spawn_flag",
+    });
+
+    SetAvailableMapGoals( TEAM.ALLIES, true, {
+    	"ATTACK_First_stage.*",
+    	"PLANTMINE_First_FX.*",
+		"MOBILEMG42_First_FX_2",
+    	"MOBILEMG42_First_FX_3",
+		"MOBILEMG42_First_FX_5",
+    	"SNIPE_First.*",
+		"ATTACK_GH_Gate_1",
+		"ATTACK_GH_Gate_2",
+		"ATTACK_GH_Gate_3",
+    });
+	Util.UpdateSwitchData();
+
+    Util.MapDebugPrint( "Omni-bot 0.8x map script for "+ GetMapName() +" v"+ Map.GM_Version +" executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+    bot.TargetBreakableDist = 100.0;
+};
+
+global InitializeRoutes = function()
+{
+    MapRoutes =
+    {
+        PLANT_Guard_House_Gate =
+        {
+            ROUTE_ax_spawn1 =
+            {
+                ROUTE_hill1 = {},
+                ROUTE_cave1 = {},
+                ROUTE_road1 =
+                {
+                    ROUTE_road2 = {},
+                },
+            },
+        },
+		
+		PLANT_Garden_Gate = 
+		{
+			ROUTE_ax_spawn1 = 
+			{
+				ROUTE_road1 = 
+				{
+					ROUTE_road2 = 
+					{
+						ROUTE_abbeyroad = 
+						{
+							ROUTE_garden = {},
+						},
+					},
+				},
+				ROUTE_cave1 = 
+				{
+					ROUTE_cave2 = 
+					{
+						ROUTE_abbeygate = 
+						{
+							ROUTE_gardengate = {},
+						},
+					},
+					ROUTE_abbeyroad = 
+					{
+						ROUTE_garden = {},
+					},
+				},
+			},
+			ROUTE_flagspawn = 
+			{
+				ROUTE_tower = 
+				{
+					ROUTE_cave2 = 
+					{
+						ROUTE_abbeygate = 
+						{
+							ROUTE_gardengate = {},
+						},
+					},
+					ROUTE_abbeyroad = 
+					{
+						ROUTE_garden = {},
+					},
+				},
+			},
+		},
+
+        CHECKPOINT_forward_spawn_flag =
+        {
+            ROUTE_ax_spawn1 =
+            {
+                ROUTE_hill1 =
+                {
+                    ROUTE_beds = {},
+                    ROUTE_beds =
+                    {
+                        ROUTE_hall = {},
+                    },
+                },
+
+                ROUTE_cave1 =
+                {
+                    ROUTE_beds = {},
+                    ROUTE_beds =
+                    {
+                        ROUTE_hall = {},
+                    },
+                },
+
+                ROUTE_road1 =
+                {
+                    ROUTE_road2 =
+                    {
+                        ROUTE_beds = {},
+                        ROUTE_beds =
+                        {
+                            ROUTE_hall = {},
+                        },
+                    },
+                },
+            },
+        },
+
+        CAPPOINT_BOOKOFDEATHPLACE =
+        {
+            ROUTE_book =
+            {
+                ROUTE_abbeyroad =
+                {
+                    ROUTE_abbeygate_destroyed = {}
+                },
+
+                ROUTE_garden =
+                {
+                    ROUTE_gardengate = {},
+                    ROUTE_gardengate =
+                    {
+                        ROUTE_abbey = {},
+                    },
+                },
+
+                ROUTE_tower =
+                {
+                    ROUTE_cave2 =
+                    {
+                        ROUTE_crypt = {},
+                        ROUTE_abbeygate = {},
+                    },
+                },
+            },
+        },
+    };
+
+    // Copy some routes
+    MapRoutes.BUILD_Bell_Mechanism = MapRoutes.CAPPOINT_BOOKOFDEATHPLACE;
+    MapRoutes.ATTACK_BookAttack = MapRoutes.CAPPOINT_BOOKOFDEATHPLACE;
+    MapRoutes.SWITCH_BellRope = MapRoutes.CAPPOINT_BOOKOFDEATHPLACE;
+    MapRoutes.ATTACK_Pentagramm_1 = MapRoutes.CAPPOINT_BOOKOFDEATHPLACE;
+    MapRoutes.ATTACK_Pentagramm_2 = MapRoutes.CAPPOINT_BOOKOFDEATHPLACE;
+    MapRoutes.ATTACK_Pentagramm_3 = MapRoutes.CAPPOINT_BOOKOFDEATHPLACE;
+    MapRoutes.DEFEND_Abbey_6 = MapRoutes.CAPPOINT_BOOKOFDEATHPLACE;
+	MapRoutes.PLANT_Generator = MapRoutes.CHECKPOINT_forward_spawn_flag;
+
+    Util.Routes(MapRoutes);
+};

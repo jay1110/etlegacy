@@ -1,0 +1,1292 @@
+//==========================================================================================
+//
+//	ffm.gm (frankfurt_b1.pk3)
+//
+//	Who                      	When		What
+//------------------------------------------------------------------------------------------
+//	^0F^1F^3M^7*^lSE^-NT^lEN^-ZA	14 April 2020	Initial Script
+//	^0F^1F^3M^7*^lSE^-NT^lEN^-ZA	16 October 2020	Map Expansion #1 (beta1)
+//	palota	27 June 2025
+//==========================================================================================
+//
+
+global Map =
+{
+
+	ElevatorPos = "bottom",      // this is hardcoded in the map and the map script
+	TruckLoaded = false,         // the Truck has initially no objectives loaded
+
+
+	// =======================================================================
+	// MOVERS
+	// =======================================================================
+	Movers =
+	{
+		"MOVER_tank",
+		"MOVER_truck",
+		"MOVER_lift",
+	},
+
+
+
+	// =======================================================================
+	// ELEVATOR	SWITCHES
+	// =======================================================================
+	Switches =
+	{
+		e_top1 =
+		{
+			Enabled = true,
+			Priority = 0.0,
+			WaypointName = "e_top1",
+			AimPosition = Vec3(-3608.000, 4336.000, 592.000),
+			Timeout = 2000,
+
+			ExitConditions =
+			{
+				someFunc = function(bot){
+					while(Map.ElevatorPos=="moving"){
+						sleep(1);
+					}
+					return false;
+				}
+			},
+		},
+		e_top2 =
+		{
+			Enabled = false,
+			Priority = 0.0,
+			WaypointName = "e_top2",
+			AimPosition = Vec3(-3764.000, 4382.000, 582.000),
+			Timeout = 2000,
+
+			ExitConditions =
+			{
+				someFunc = function(bot){
+					while(Map.ElevatorPos=="moving"){
+						sleep(0.5);
+					}
+					return false;
+				}
+			},
+		},
+		e_bot1 =
+		{
+			Enabled = false,
+			Priority = 0.0,
+			WaypointName = "e_bot1",
+			AimPosition = Vec3(-3608.000, 4320.000, -448.000),
+			Timeout = 2000,
+
+			ExitConditions =
+			{
+				someFunc = function(bot){
+					while(Map.ElevatorPos=="moving"){
+						sleep(0.5);
+					}
+					return false;
+				}
+			},
+		},
+		e_bot2 =
+		{
+			Enabled = true,
+			Priority = 0.0,
+			WaypointName = "e_bot2",
+			AimPosition = Vec3(-3764.000, 4382.000, -446.000),
+			Timeout = 2000,
+
+			ExitConditions =
+			{
+				someFunc = function(bot){
+					while(Map.ElevatorPos=="moving"){
+						sleep(0.5);
+					}
+					return false;
+				}
+			},
+		},
+	},
+
+
+
+	// =======================================================================
+	// ELEVATOR	CALLED
+	// =======================================================================
+	ElevatorCalled = function()
+	{
+		sleep(5);
+
+		// wait until the elevator is not moving anymore
+		while(Map.ElevatorPos=="moving"){
+			Util.MapDebugPrint("Waiting", 1);
+			sleep(1);
+		}
+
+	},
+
+
+
+	// =======================================================================
+	// ELEVATOR	MOVING
+	// =======================================================================
+	ElevatorMoving = function(trigger)
+	{
+		Map.ElevatorPos = "moving";
+		Util.MapDebugPrint("Elevator moving", 1);
+
+		// disable all elevator switches
+		Map.Switches.e_top1.Enabled = false;
+		Map.Switches.e_top2.Enabled = false;
+		Map.Switches.e_bot1.Enabled = false;
+		Map.Switches.e_bot2.Enabled = false;
+
+		// wait while elevator is moving
+		sleep(7);
+
+		vel = ToVector(trigger.Action);
+
+		if (vel.z < 0)
+		{
+			// Elevator is at the bottom
+			Map.ElevatorPos = "bottom";
+
+			// Change Switch availability
+			Map.Switches.e_top1.Enabled = true;
+			Map.Switches.e_top2.Enabled = false;
+			Map.Switches.e_bot1.Enabled = false;
+			Map.Switches.e_bot2.Enabled = true;
+
+			Util.MapDebugPrint("Elevator at bottom", 1);
+		}
+		else
+		{
+			// Elevator is at the top
+			Map.ElevatorPos = "top";
+
+			// Change Switch availability
+			Map.Switches.e_top1.Enabled = false;
+			Map.Switches.e_top2.Enabled = true;
+			Map.Switches.e_bot1.Enabled = true;
+			Map.Switches.e_bot2.Enabled = false;
+
+			Util.MapDebugPrint("Elevator at top", 1);
+		}
+	},
+
+
+
+	// =======================================================================
+	// SPAWN AT RIVER IN LAST PHASE LOGIC
+	// =======================================================================
+	SetSpawn1 = function(bot)
+	{
+		// Allies Team only
+		if (bot.GetTeam() == TEAM.ALLIES)
+		{
+			// 80% possibility to spawn at Point 0 = River
+			if (Map.TruckLoaded && RandInt(0,9) < 2)
+			{
+				bot.ChangeSpawnPoint(1);
+			}
+			else
+			{
+				bot.ChangeSpawnPoint(0);
+			}
+		}
+	},
+
+	// affects all Bots in BotTable
+	SetSpawn = function()
+	{
+		foreach(bot in BotTable)
+		{
+			Map.SetSpawn1(bot);
+		}
+	},
+
+
+
+	// =======================================================================
+	// TANK AND TRUCK: GENERAL
+	// =======================================================================
+	Ebbelwoi_Express_Built = function()
+	{
+		Util.MapDebugPrint( "Ebbelwoi_Express_Built" );
+	},
+
+	Ebbelwoi_Express_Damaged = function ()
+	{
+		Util.MapDebugPrint( "Ebbelwoi_Express_Damaged" );
+	},
+
+	Truck_Built = function()
+	{
+		Util.MapDebugPrint( "Truck_Built" );
+	},
+
+	Truck_Damaged = function ()
+	{
+		Util.MapDebugPrint( "Truck_Damaged" );
+	},
+
+	Escape = function()
+	{
+		// ALLIES: Build the Old Bridge, plant at the Truck Barriers
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Truck_Barrier.*",                 // Plant at the Truck Barriers
+			"BUILD_truck",                           // Repair the Truck
+			"ESCORT_truck",                          // Escort the Truck
+		});
+
+		// ALLIES: Stop targeting the Truck Cappoint, stealing the Recipe and the Bembel
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CAPPOINT_TRUCK",                        // ignore Truck Cappoint
+			"ATTACK_DISCO.*",                        // stop attacking the disco
+			"ATTACK_KAISERSAAL.*",                   // stop attacking the Kaisersaal
+			"DEFEND_TRUCK.*",                        // stop attacking the Truck Initial position
+			"MOUNT_tank",                            // ignore the Tank seat
+			"SWITCH.*",                              // ignore all Switches
+			"BUILD_Ebbelwoi_Express",                // ignore tank repair
+		});
+
+		// AXIS: Start Build of Truck Barriers, Attack the Truck
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"BUILD_Truck_Barrier.*",                 // Build the Truck Barriers
+		});
+
+		// AXIS: Stop defending the Objectives
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_DISCO.*",                        // ignore Disco
+			"DEFEND_KAISERSAAL.*",                   // ignore Kaisersaal
+			"ATTACK_TRUCK.*",                        // ignore Truck Initial position
+			"MOUNT_tank_axis",                       // ignore the Tank seat
+			"SWITCH.*",                              // ignore all Switches
+		});
+
+		// Reorganize Axis priorities
+		SetGoalPriority( "CHECKPOINT_spawn_bunker_flag", 0.89);      // Flagpole: Bunker
+		SetGoalPriority( "PLANT_Old_Bridge", 0.93);                  // Old Bridge
+		SetGoalPriority( "CHECKPOINT_spawn_cathedral_flag", 0.88);   // Flagpole: Cathedral
+		SetGoalPriority( "CHECKPOINT_spawn_oldcity_flag", 0.87);     // Flagpole: Old City
+		SetGoalPriority( "BUILD_Truck_Barrier_1", 0.94 );            // Truck Barrier #1
+		SetGoalPriority( "BUILD_Truck_Barrier_2", 0.93 );            // Truck Barrier #2
+		Util.SetMaxUsers( 8, "CHECKPOINT.*" );
+
+		// ALLIES: spawn on the other river side, too (to repair the Old bridge if damaged)
+		Map.TruckLoaded = true;
+		Map.SetSpawn();
+
+		Util.MapDebugPrint( "Truck_Escape_Start" );
+	},
+
+
+
+	// =======================================================================
+	// TANK: PASSING POSITION
+	// =======================================================================
+	Tank_Passes_Old_Bridge = function ()
+	{
+		// Allies: action
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Tank_Barrier_1",                  // Plant at Tank Barrier #1
+		});
+
+		// Axis: action
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"BUILD_Tank_Barrier_2",                  // Build Tank Barrier #2
+		});
+
+		// Tank passes the Old Bridge
+		Util.MapDebugPrint( "Tank_Passes_Old_Bridge" );
+	},
+
+	Tank_Passes_Barrier1 = function ()
+	{
+		// Allies: action
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Tank_Barrier_2",                  // Plant at Tank Barrier #2
+			"CHECKPOINT_spawn_cathedral_flag",       // Capture Cathedral Flag
+			"CHECKPOINT_spawn_oldcity_flag",         // Capture Old City Flag
+		});
+
+		// Axis: action
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"CHECKPOINT_spawn_cathedral_flag",       // Capture the Cathedral Flag
+			"CHECKPOINT_spawn_oldcity_flag",         // Capture the Old City Flag
+			"SWITCH_Anti_Tank_Gun",                  // Use Anti-Tank-Gun
+			"BUILD_Anti_Tank_Gun",
+		});
+
+		// Axis: ignore
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"MOUNTMG42.*",                            // Mount MG42 guns
+			"REPAIRMG42.*",                           // Repair MG42 guns
+			"MOBILEMORTAR_D",                         // River mortar
+			"MOBILEMORTAR_E",                         // River mortar
+		});
+
+		// Tank passes Tank Barrier #1
+		Util.MapDebugPrint( "Tank_Passes_Barrier1" );
+	},
+
+	Tank_Passes_Barrier2 = function ()
+	{
+		// Allies: action
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Side_Door",
+		});
+
+		// Tank passes Tank Barrier #2
+		Util.MapDebugPrint( "Tank_Passes_Barrier2" );
+	},
+
+
+	Tank_Final_Position = function ()
+	{
+		// Allies: ignore
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ESCORT_tank",                           // ignore the tank
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_Anti_Tank_Gun",
+			"SWITCH_Anti_Tank_Gun",
+		});
+
+		// Tank reaches the final Position
+		Util.MapDebugPrint( "Tank_Final_Position" );
+	},
+
+
+
+	// =======================================================================
+	// TANK: STUCK AT POSITION
+	// =======================================================================
+	Tank_Stuck_Old_Bridge = function ()
+	{
+		// Allies: action
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Old_Bridge",                      // Repair the Old Bridge
+		});
+
+		// Tank is stuck at the Old Bridge
+		Util.MapDebugPrint( "Tank_Stuck_Old_Bridge" );
+	},
+
+	Tank_Stuck_Barrier1 = function ()
+	{
+		// Allies: action
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Tank_Barrier_1",                  // Plant at Tank Barrier #1
+		});
+
+		// Tank is stuck at Tank Barrier #1
+		Util.MapDebugPrint( "Tank_Stuck_Barrier1" );
+	},
+
+	Tank_Stuck_Barrier2 = function ()
+	{
+		// Allies: action
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Tank_Barrier_2",                  // Plant at Tank Barrier #2
+		});
+
+		// Tank is stuck at Tank Barrier #2
+		Util.MapDebugPrint( "Tank_Stuck_Barrier2" );
+	},
+
+
+
+	// =======================================================================
+	// TRUCK: PASSING POSITION
+	// =======================================================================
+	Truck_Passes_Barrier2 = function ()
+	{
+		// Axis: action
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"MOUNTMG42.*",                            // Mount MG42 guns
+			"REPAIRMG42.*",                           // Repair MG42 guns
+			"MOBILEMORTAR_D",                         // River mortar
+			"MOBILEMORTAR_E",                         // Old City mortar
+		});
+
+		// Axis final phase top priorities change
+		SetGoalPriority( "PLANT_Old_Bridge", 1.0, TEAM.AXIS );
+		SetGoalPriority( "CHECKPOINT.*", 0.8, TEAM.AXIS );
+		SetGoalPriority( "CHECKPOINT_spawn_bunker_flag", 0.9, TEAM.AXIS );
+		Util.SetMaxUsers( 5, "PLANT_Old_Bridge" );
+
+		// Truck passes Truck Barrier #2
+		Util.MapDebugPrint( "Truck_Passes_Barrier2" );
+	},
+
+
+
+	// =======================================================================
+	// TRUCK: STUCK AT POSITION
+	// =======================================================================
+	Truck_Stuck_Barrier1 = function ()
+	{
+		// Allies: action
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Truck_Barrier_1",                 // Plant at Truck Barrier #1
+		});
+
+		// Truck is stuck at Truck Barrier #1
+		Util.MapDebugPrint( "Truck_Stuck_Barrier1" );
+	},
+
+	Truck_Stuck_Barrier2 = function ()
+	{
+		// Allies: action
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Truck_Barrier_2",                 // Plant at Truck Barrier #2
+		});
+
+		// Truck is stuck at Truck Barrier #2
+		Util.MapDebugPrint( "Truck_Stuck_Barrier2" );
+	},
+
+	Truck_Stuck_Barrier3 = function ()
+	{
+		// Allies: action
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Tank_Barrier_1",                 // Plant at Tank Barrier #1
+		});
+
+		// Truck is stuck at Tank Barrier #1
+		Util.MapDebugPrint( "Truck_Stuck_Barrier3" );
+	},
+
+	Truck_Stuck_Old_Bridge = function ()
+	{
+		// Allies: action
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Old_Bridge",                      // Build the Old Bridge
+		});
+
+		// Allies final phase top priorities change
+		SetGoalPriority( "BUILD_Old_Bridge", 1.0, TEAM.ALLIES );
+		SetGoalPriority( "BUILD_Truck", 1.0, TEAM.ALLIES );
+		SetGoalPriority( "ESCORT_truck", 0.8, TEAM.ALLIES );
+		SetGoalPriority( "CHECKPOINT.*", 0.7, TEAM.ALLIES );
+		SetGoalPriority( "CHECKPOINT_spawn_bunker_flag", 0.8, TEAM.ALLIES );
+		Util.SetMaxUsers( 5, "BUILD_Old_Bridge");
+
+		// Truck is stuck at the Old Bridge
+		Util.MapDebugPrint( "Truck_Stuck_Old_Bridge" );
+	},
+
+
+
+	// =======================================================================
+	// ROEMER IS OPEN
+	// =======================================================================
+	Roemer_Open = function()
+	{
+		// ALLIES: Start stealing the Recipe and planting at the Vault
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"CAPPOINT.*",                             // enable Truck Capture Point
+			"FLAG_recipe",                            // focus on Recipe
+			"PLANT_Vault",                            // focus on Vault
+			"ATTACK_DISCO.*",                         // Attack the Disco (Vault, Bembel)
+			"ATTACK_KAISERSAAL.*",                    // Attack the Kaisersaal (Recipe)
+			"DEFEND_TRUCK.*",                         // Defend the Truck
+			//"SWITCH_ROEMER.*",                      // Use the Elevator switches
+		});
+
+		SetGoalPriority( "MOBILEMORTAR.*", 0.4 );
+		Util.SetMaxUsers( 1, "MOBILEMORTAR_A");
+		Util.SetMaxUsers( 0, "MOBILEMORTAR_B");
+		Util.SetMaxUsers( 0, "MOBILEMORTAR_C");
+
+
+		// AXIS: Defend the Recipe and the Bembel, Attack the Kaisersaal and the Disco
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_DISCO.*",                         // Defend the Disco
+			"DEFEND_KAISERSAAL.*",                    // Defend the Kaisersaal
+			"ATTACK_TRUCK.*",                         // Attack the Truck
+			//"SWITCH_ROEMER.*",                        // Use the Elevator switches
+		});
+
+		Util.MapDebugPrint( "Roemer_Door_Destroyed" );
+	},
+
+
+
+	// =======================================================================
+	// VAULT DESTROYED
+	// =======================================================================
+	Vault_Destroyed = function()
+	{
+		// ALLIES: action
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"FLAG_bembel",
+		});
+
+		Util.MapDebugPrint( "Vault_Destroyed" );
+	},
+
+
+
+	// =======================================================================
+	// BEMBEL SECURED
+	// =======================================================================
+	Bembel_Secured = function()
+	{
+		// ALLIES: ignore
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"FLAG_bembel",
+			"ATTACK_DISCO.*",                   // ignore Disco
+		});
+
+		// AXIS: ignore
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_DISCO.*",                   // ignore Disco
+		});
+
+		Util.MapDebugPrint( "Bembel_Secured" );
+	},
+
+
+
+	// =======================================================================
+	// RECIPE SECURED
+	// =======================================================================
+	Recipe_Secured = function()
+	{
+		// ALLIES: ignore
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"FLAG_recipe",
+			"ATTACK_KAISERSAAL.*",                   // ignore Kaisersaal
+		});
+
+		// AXIS: ignore
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_KAISERSAAL.*",                   // ignore Kaisersaal
+		});
+
+		Util.MapDebugPrint( "Recipe_Secured" );
+	},
+
+
+
+	// =======================================================================
+	// FLAGPOLE: BUNKER
+	// =======================================================================
+	spawn_bunker_flag_Axis_Captured = function()
+	{
+		// ALLIES: Start attacking the Bunker with mortars
+		SetAvailableMapGoals( TEAM.ALLIES, true, "MOBILEMORTAR_[ABC]" );
+
+		Util.MapDebugPrint( "spawn_bunker_flag_Axis_Captured" );
+	},
+
+	spawn_bunker_flag_Allies_Captured = function()
+	{
+		// ALLIES: Stop attacking the Bunker with mortars
+		SetAvailableMapGoals( TEAM.ALLIES, false, "MOBILEMORTAR_[ABC]" );
+
+		Util.MapDebugPrint( "spawn_bunker_flag_Allies_Captured" );
+	},
+
+};
+
+
+
+// ===========================================================================
+// Initial settings at startup
+// ===========================================================================
+global OnMapLoad = function()
+{
+	// Plant Dynamite on Tank Barriers a little bit ahead to avoid stuckages
+	Util.SetGoalOffset( 0, -160, 0, "PLANT_Tank_Barrier_1" );
+	Util.SetGoalOffset( 160, 0, 0, "PLANT_Tank_Barrier_2" );
+
+	Util.AddUsePoint( "PLANT_Vault", Vec3(-2882,2417,-486) );
+
+	// =======================================================================
+	// TRIGGERS: call functions on specific wm_announce messages
+	// =======================================================================
+
+	// Primary Targets have been destroyed/dynamited
+	OnTrigger( "^2The SIDE ENTRANCE has been destroyed", Map.Roemer_Open );
+	OnTrigger( "^2The ROEMER TOWNHALL DOORS have been destroyed", Map.Roemer_Open );
+	OnTrigger( "^2The ROEMER VAULT has been breached. The ^3BEMBEL ^2can be stolen!", Map.Vault_Destroyed );
+
+	// Vehicles general
+	OnTrigger( "^2The ^3EBBELWOI EXPRESS ^2has been damaged", Map.Ebbelwoi_Express_Damaged );
+	OnTrigger( "^2The ^3EBBELWOI EXPRESS ^2has been repaired", Map.Ebbelwoi_Express_Built );
+	OnTrigger( "^2The TRUCK has been damaged", Map.Truck_Damaged );
+	OnTrigger( "^2The TRUCK has been repaired", Map.Truck_Built );
+	OnTrigger( "^2The ALLIES team is escaping with the ^3BEMBEL ^2and the ^3RECIPE", Map.Escape );
+
+	// Vehicle successfully passes a position
+	OnTrigger( "^2The ^3EBBELWOI EXPRESS^2 passes the OLD BRIDGE" , Map.Tank_Passes_Old_Bridge );
+	OnTrigger( "^2The ^3EBBELWOI EXPRESS ^2passes TANK BARRIER #1" , Map.Tank_Passes_Barrier1 );
+	OnTrigger( "^2The ^3EBBELWOI EXPRESS ^2passes TANK BARRIER #2" , Map.Tank_Passes_Barrier2 );
+	OnTrigger( "^2The ^3EBBELWOI EXPRESS ^2reached its FINAL POSITION" , Map.Tank_Final_Position );
+	OnTrigger( "^2The TRUCK passes TRUCK BARRIER #2" , Map.Truck_Passes_Barrier2 );
+
+	// Vehicle is stuck at a position
+	OnTrigger( "^2The ^3EBBELWOI EXPRESS ^2is stuck at the OLD BRIDGE" , Map.Tank_Stuck_Old_Bridge );
+	OnTrigger( "^2The ^3EBBELWOI EXPRESS ^2is stuck at TANK BARRIER #1" , Map.Tank_Stuck_Barrier1 );
+	OnTrigger( "^2The ^3EBBELWOI EXPRESS ^2is stuck at TANK BARRIER #2" , Map.Tank_Stuck_Barrier2 );
+	OnTrigger( "^2The TRUCK is stuck at TRUCK BARRIER #1" , Map.Truck_Stuck_Barrier1 );
+	OnTrigger( "^2The TRUCK is stuck at TRUCK BARRIER #2" , Map.Truck_Stuck_Barrier2 );
+	OnTrigger( "^2The TRUCK is stuck at TANK BARRIER #1" , Map.Truck_Stuck_Barrier3 );
+	OnTrigger( "^2The TRUCK is stuck at the OLD BRIDGE" , Map.Truck_Stuck_Old_Bridge );
+
+	// Collectible Objectives
+	OnTrigger( "^2The ^3BEMBEL ^2has been secured", Map.Bembel_Secured );
+	OnTrigger( "^2The ^3RECIPE ^2has been secured", Map.Recipe_Secured );
+
+	// Flagpoles
+	OnTrigger( "^2AXIS reclaim the BUNKER", Map.spawn_bunker_flag_Axis_Captured );
+	OnTrigger( "^2ALLIES capture the BUNKER", Map.spawn_bunker_flag_Allies_Captured );
+
+	// Elevator
+	OnTrigger( "lift_goto", Map.ElevatorMoving );
+	OnTrigger( "Elevator button pushed. Please wait.", Map.ElevatorCalled );
+
+	// set some preferred positions to start from for vehicle goals
+	ETUtil.SetStartIndex("ESCORT_truck", 0);
+	ETUtil.SetStartIndex("BUILD_Ebbelwoi_Express", 0);
+
+
+	// =======================================================================
+	// BOT LIMITS: limit number of Bots available for a specific target
+	// =======================================================================
+
+	// Both teams
+	Util.SetMaxUsers( 1, "ESCORT.*" );
+	Util.SetMaxUsers( 1, ".*Command_Post" );
+	Util.SetMaxUsers( 2, "SWITCH.*" );
+	Util.SetMaxUsers( 1, "CHECKPOINT.*" );
+
+	// Team ALLIES
+	Util.SetMaxUsers( 1, "BUILD_Old_Bridge" );
+
+	// Team AXIS
+	Util.SetMaxUsers( 1, "BUILD_Tank_Barrier.*" );
+	Util.SetMaxUsers( 1, "BUILD_Truck_Barrier.*" );
+	Util.SetMaxUsers( 1, "BUILD_Anti_Tank_Gun" );
+	Util.SetMaxUsers( 1, "MOUNTMG42.*" );
+
+
+
+	// =======================================================================
+	// GOAL PRIORITIES
+	// =======================================================================
+
+	// Allied goals
+	SetGoalPriority( "FLAG.*", 0.94);                     // Objective
+	SetGoalPriority( "PLANT_Vault", 0.94);
+	SetGoalPriority( "BUILD_Truck", 0.91 );               // Movers
+	SetGoalPriority( "BUILD_Ebbelwoi_Express", 0.91);
+	SetGoalPriority( "PLANT_Side_Door", 0.90);            // Dynamite targets
+	SetGoalPriority( "PLANT_Tank_Barrier_1", 0.90);
+	SetGoalPriority( "PLANT_Tank_Barrier_2", 0.90);
+	SetGoalPriority( "PLANT_Truck_Barrier_1", 0.90);
+	SetGoalPriority( "PLANT_Truck_Barrier_2", 0.90);
+	SetGoalPriority( "CHECKPOINT.*", 0.80);               // Flagpoles
+	SetGoalPriority( "EXPLODE.*", 0.66);                  // Anti-Tank-Gun
+
+	// Axis goals
+	SetGoalPriority( "BUILD_Tank_Barrier_1", 0.93 );      // Barriers
+	SetGoalPriority( "BUILD_Tank_Barrier_2", 0.92 );
+	SetGoalPriority( "BUILD_Truck_Barrier_1", 0.91 );
+	SetGoalPriority( "BUILD_Truck_Barrier_2", 0.90 );
+	SetGoalPriority( "PLANT_Old_Bridge", 0.80);           // Old Bridge
+
+	// Attack+Defend Goals
+	SetGoalPriority( "ATTACK.*", 0.7 );
+	SetGoalPriority( "DEFEND.*", 0.7 );
+
+	// Alter Camp Times
+	SetMapGoalProperties( "MOUNTMG42.*", {MinCampTime=45, MaxCampTime=90});
+	SetMapGoalProperties( "ATTACK.*", {MinCampTime=5, MaxCampTime=15});
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=5, MaxCampTime=15});
+
+	// No priority for specific goals by Class
+	SetGoalPriority( "MOUNTMG42.*", 0.0, 0, CLASS.MEDIC );             // Medics have more important things to do
+	SetGoalPriority( "MOUNTMG42.*", 0.0, 0, CLASS.ENGINEER );          // Engineers have more important things to do
+	SetGoalPriority( "PLANT_Command_Post", 0.0, 0, CLASS.ENGINEER );   // Covert Ops can destroy Command Posts faster
+
+
+
+
+	// =======================================================================
+	// GOALS: tell teams what initially to do
+	// =======================================================================
+
+	// disable all goals
+	Util.DisableGoal( ".*", true );
+
+	Util.EnableGoal({
+		"AMMOCAB.*",                            // Health and Ammo
+		"HEALTHCAB.*",
+		"BUILD_Command_Post",                   // Command Post
+		"PLANT_Command_Post",
+		"CHECKPOINT_spawn_bunker_flag",         // Enemy Targets
+	});
+
+	// enable specific allies goals
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"MOBILEMORTAR_[ABC]",                       // Mortar support
+
+		"BUILD_Ebbelwoi_Express",               // Tank
+		"MOUNT_tank",
+		"ESCORT_tank",
+
+		"BUILD_Old_Bridge",                     // Build objectives
+
+		"EXPLODE_Anti_Tank_Gun",
+	});
+
+	// enable specific axis goals
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"MOBILEMORTAR_[DE]",                       // Mortar support
+
+		"BUILD_Tank_Barrier.*",                 // Build Barriers
+		"BUILD_Truck_Barrier.*",
+
+		"PLANT_Old_Bridge",
+
+		"MOUNTMG42.*",                          // MG42 support
+		"REPAIRMG42.*",
+		"MOUNT_tank_axis",		                // Tank MG seat
+	});
+
+
+
+
+	// =======================================================================
+	// CLASS LIMITATIONS
+	// =======================================================================
+
+	// Test: only Covert Ops shall destroy the Command Post
+	Util.LimitToClass( "PLANT_Command_Post", TEAM.ALLIES, CLASS.COVERTOPS );
+	Util.LimitToClass( "PLANT_Command_Post", TEAM.AXIS, CLASS.COVERTOPS );
+
+};
+
+
+// =======================================================================
+// ROUTES: help bots to reach their target positions (makes bots smarter)
+// =======================================================================
+global InitializeRoutes = function()
+{
+	// force routing for the tank build
+	Util.ForceRouting( "BUILD_Old_Bridge", true );
+
+	MapRoutes =
+	{
+		// Use the roof MG42
+		MOUNTMG42_mg42_roof =
+		{
+			ROUTE_AXIS_SPAWN =
+			{
+				ROUTE_WESTGATE =
+				{
+					ROUTE_ROOFMG = {},
+				},
+			},
+		},
+
+		// Planting at the Roemer Side Entrance
+		PLANT_Side_Door =
+		{
+			ROUTE_ALLIES_SPAWN =
+			{
+				// Westgate route
+				ROUTE_EISERNERSTEG =
+				{
+					ROUTE_WESTGATE =
+					{
+						ROUTE_ROEMERBERG = {},
+					},
+				},
+
+				// Eastgate route
+				ROUTE_OLDBRIDGE_ALLIES=
+				{
+					ROUTE_EASTGATE =
+					{
+						ROUTE_ROEMERBERG = {},
+					},
+					ROUTE_EASTGATE_LEFT =
+					{
+						ROUTE_ROEMERBERG = {},
+					},
+					ROUTE_EASTGATE_RIGHT =
+					{
+						ROUTE_ROEMERBERG = {},
+					},
+				},
+
+				// Bunker Crossway Route
+				ROUTE_BUNKER_CROSSWAY =
+				{
+					ROUTE_ROEMERBERG = {},
+				},
+
+				ROUTE_OLDCITY =
+				{
+					ROUTE_ROEMERBERG = {},
+				},
+			},
+		},
+
+		// Planting at the Vault
+		PLANT_Vault =
+		{
+			ROUTE_ALLIES_SPAWN =
+			{
+				// Westgate route
+				ROUTE_EISERNERSTEG =
+				{
+					ROUTE_WESTGATE =
+					{
+						ROUTE_ROEMERBERG =
+						{
+							ROUTE_ROEMERHALL =
+							{
+								ROUTE_AXIS_SPAWN =
+								{
+									ROUTE_ROEMERLIFT =
+									{
+										ROUTE_DISCO =
+										{
+										},
+									},
+								},
+
+								ROUTE_STAIRCASE =
+								{
+									ROUTE_STAIRCASEBOTTOM =
+									{
+										ROUTE_DISCO =
+										{
+										},
+									},
+								},
+
+								ROUTE_ROEMERLIFT =
+								{
+								},
+							},
+
+							ROUTE_ROEMER_SIDE =
+							{
+								ROUTE_STAIRCASE =
+								{
+								},
+
+								ROUTE_ROEMERLIFT =
+								{
+								},
+							},
+						},
+					},
+				},
+
+				// Eastgate route
+				ROUTE_OLDBRIDGE_ALLIES =
+				{
+					Weight = 2,
+					ROUTE_EASTGATE =
+					{
+						ROUTE_ROEMERBERG =
+						{
+						},
+					},
+					ROUTE_EASTGATE_RIGHT =
+					{
+						Weight = 2,
+						ROUTE_ROEMERBERG =
+						{
+						},
+					},
+
+				},
+
+				// Bunker crossway route
+				ROUTE_BUNKER_CROSSWAY =
+				{
+					ROUTE_ROEMERBERG =
+					{
+					},
+				},
+			},
+		},
+
+		// getting the Recipe
+		FLAG_recipe =
+		{
+			ROUTE_ALLIES_SPAWN =
+			{
+				// Westgate route
+				ROUTE_EISERNERSTEG =
+				{
+					ROUTE_WESTGATE =
+					{
+						ROUTE_ROEMERBERG =
+						{
+							// enter the Roemer
+							ROUTE_ROEMERHALL =
+							{
+								// take the North Route (easy)
+								ROUTE_ROEMER_NORTH =
+								{
+								},
+
+								// take the South Axis Spawn Route (hard)
+								ROUTE_AXIS_SPAWN =
+								{
+									ROUTE_ROEMER_SOUTH =
+									{
+									},
+								},
+							},
+
+							// use the Side Entrance
+							ROUTE_ROEMER_SIDE =
+							{
+								// take the North Route (easy)
+								ROUTE_ROEMER_NORTH =
+								{
+								},
+							},
+
+							// North Entrance (Axis/Covert Ops only)
+							ROUTE_ROEMERDOOR =
+							{
+								// take the North Route (easy)
+								ROUTE_ROEMER_NORTH =
+								{
+								},
+							},
+
+							// South Entrance (Axis/Covert Ops only)
+							ROUTE_ROEMERAXISDOOR =
+							{
+								// take the South Route
+								ROUTE_ROEMER_SOUTH =
+								{
+								},
+							},
+						},
+					},
+				},
+
+				// Eastgate route
+				ROUTE_OLDBRIDGE_ALLIES =
+				{
+					ROUTE_EASTGATE =
+					{
+						ROUTE_ROEMERBERG =
+						{
+						},
+					},
+				},
+
+				// Bunker crossway route
+				ROUTE_BUNKER_CROSSWAY =
+				{
+					ROUTE_ROEMERBERG =
+					{
+					},
+				},
+			},
+		},
+
+		DEFEND_DISCO_1 =
+		{
+			ROUTE_AXIS_SPAWN =
+			{
+				ROUTE_STAIRCASE =
+				{
+					ROUTE_STAIRCASEBOTTOM =
+					{
+						ROUTE_DISCO =
+						{
+							ROUTE_VAULT = {},
+						},
+					},
+				},
+
+				ROUTE_ROEMERLIFT =
+				{
+					ROUTE_DISCO =
+					{
+					},
+				},
+			},
+		},
+
+		DEFEND_KAISERSAAL_1 =
+		{
+			ROUTE_AXIS_SPAWN =
+			{
+				ROUTE_ROEMER_NORTH =
+				{
+					ROUTE_RECIPE = {},
+				},
+
+				ROUTE_ROEMER_SOUTH =
+				{
+					ROUTE_RECIPE = {},
+				},
+			},
+		},
+
+		ATTACK_TRUCK_1 =
+		{
+			ROUTE_AXIS_SPAWN =
+			{
+				ROUTE_ROEMERHALL =
+				{
+					ROUTE_ROEMERBERG =
+					{
+						ROUTE_OLDCITY_CROSSWAY =
+						{
+							ROUTE_TRUCK = {},
+						},
+
+						ROUTE_MARKTPLATZ =
+						{
+							ROUTE_TRUCK = {},
+						},
+					},
+				},
+
+				ROUTE_ROEMER_SIDE =
+				{
+					ROUTE_ROEMERBERG =
+					{
+					},
+				},
+
+				ROUTE_ROEMERDOOR =
+				{
+					ROUTE_ROEMERBERG =
+					{
+					},
+				},
+
+				ROUTE_ROEMERAXISDOOR =
+				{
+					ROUTE_ROEMERBERG =
+					{
+					},
+				},
+			},
+		},
+
+		DEFEND_TRUCK_2 =
+		{
+			// from the Roemer
+			ROUTE_ROEMERBERG =
+			{
+				// direct route
+				ROUTE_TRUCK =
+				{
+				},
+
+				// old city > marktplatz detour
+				ROUTE_OLDCITY =
+				{
+					ROUTE_MARKTPLATZ =
+					{
+						ROUTE_TRUCK = {},
+					},
+				},
+
+				// marktplatz detour
+				ROUTE_MARKTPLATZ =
+				{
+				},
+			},
+
+			// from the river
+			ROUTE_ALLIES_SPAWN =
+			{
+				ROUTE_EISERNERSTEG =
+				{
+					// West Gate Route
+					ROUTE_WESTGATE =
+					{
+						// Roemerberg Route
+						ROUTE_ROEMERBERG =
+						{
+						},
+
+						// Old City detour
+						ROUTE_OLDCITY =
+						{
+						},
+					},
+				},
+
+				// East Gate Route
+				ROUTE_OLDBRIDGE_ALLIES =
+				{
+					ROUTE_EASTGATE =
+					{
+						ROUTE_MARKTPLATZ =
+						{
+						},
+
+						ROUTE_OLDCITY =
+						{
+						},
+					},
+				},
+			},
+		},
+
+		PLANT_Old_Bridge =
+		{
+			ROUTE_AXIS_SPAWN =
+			{
+				ROUTE_ROEMERBERG =
+				{
+					Weight = 2,
+					// Eastgate Route
+					ROUTE_OLDCITY =
+					{
+						ROUTE_EASTGATE =
+						{
+							ROUTE_OLDBRIDGE_AXIS = {},
+						},
+
+						ROUTE_EASTGATE_LEFT =
+						{
+							ROUTE_OLDBRIDGE_AXIS = {},
+						},
+
+						ROUTE_EASTGATE_RIGHT =
+						{
+							ROUTE_OLDBRIDGE_AXIS = {},
+						},
+					},
+
+					// Bunker Crossway Route
+					ROUTE_BUNKER_CROSSWAY =
+					{
+						Weight = 2,
+						ROUTE_OLDBRIDGE_AXIS = {},
+					},
+				},
+
+				ROUTE_ROEMERAXISDOOR =
+				{
+					// Westgate Route
+					ROUTE_WESTGATE =
+					{
+						ROUTE_OLDBRIDGE_AXIS = {},
+					},
+				},
+			},
+		},
+
+		BUILD_Old_Bridge =
+		{
+			// from the River
+			ROUTE_ALLIES_SPAWN =
+			{
+				ROUTE_OLDBRIDGE_ALLIES = {},
+			},
+
+			// from the Truck
+			ROUTE_TRUCK =
+			{
+				ROUTE_MARKTPLATZ =
+				{
+					ROUTE_EASTGATE =
+					{
+						ROUTE_ALLIES_SPAWN =
+						{
+						},
+					},
+					ROUTE_EASTGATE_LEFT =
+					{
+						ROUTE_ALLIES_SPAWN =
+						{
+						},
+					},
+					ROUTE_EASTGATE_RIGHT =
+					{
+						ROUTE_ALLIES_SPAWN =
+						{
+						},
+					},
+				},
+			},
+
+			// from the Old City
+			ROUTE_OLDCITY =
+			{
+				// Eastgate Route
+				ROUTE_EASTGATE =
+				{
+					Weight = 2,
+				},
+
+				// Eastgate Route Left
+				ROUTE_EASTGATE_LEFT =
+				{
+					Weight = 2,
+				},
+
+				// Eastgate Route Right
+				ROUTE_EASTGATE_LEFT =
+				{
+					Weight = 2,
+				},
+
+				// Bunker Crossway Route
+				ROUTE_BUNKER_CROSSWAY =
+				{
+					ROUTE_ALLIES_SPAWN =
+					{
+					},
+				},
+			},
+		},
+	};
+
+	// copy identical Routes
+	MapRoutes.FLAG_bembel = MapRoutes.PLANT_Vault;
+	MapRoutes["ATTACK_DISCO_.*"] = MapRoutes.PLANT_Vault;
+	MapRoutes["DEFEND_DISCO_.*"] = MapRoutes.DEFEND_DISCO_1;
+	MapRoutes["ATTACK_KAISERSAAL_.*"] = MapRoutes.FLAG_recipe;
+	MapRoutes["DEFEND_KAISERSAAL_.*"] = MapRoutes.DEFEND_KAISERSAAL_1;
+	MapRoutes["ATTACK_TRUCK_.*"] = MapRoutes.ATTACK_TRUCK_1;
+	MapRoutes["DEFEND_TRUCK_.*"] = MapRoutes.DEFEND_TRUCK_2;
+	MapRoutes["SWITCH_ROEMER.*"] = MapRoutes.ROUTE_ROEMERLIFT;
+	MapRoutes.REPAIRMG42_mg42_roof = MapRoutes.MOUNTMG42_mg42_roof;
+
+	Util.Routes(MapRoutes);
+
+	Util.MapDebugPrint( "Omnibot Script: Executed for map " + GetMapName() );
+	print("Omnibot Script for map " + GetMapName() + " loaded. Attaway, baby!");
+};
+
+
+
+// ===========================================================================
+// Initial settings for bots on joining the game
+// ===========================================================================
+global OnBotJoin = function( bot )
+{
+	// limit Bot viewing distance to limit Field Ops "battles" at the river
+	bot.MaxViewDistance = 1500;
+
+	// limit func_explosive action distance (only break if *really* close)
+	bot.TargetBreakableDist = 32;
+
+	Map.SetSpawn1(bot);
+};

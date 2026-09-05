@@ -1,0 +1,167 @@
+//==========================================================================================
+//
+//  superior.gm
+//
+// Who   	When		What
+//------------------------------------------------------------------------------------------
+// palota	19 July 2025	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	numCaptured = 0,
+	detonator = 0,
+
+	Generator_Built = function()
+	{
+		Util.MapDebugPrint("Generator_Built");
+	},
+
+	Generator_Destroyed = function()
+	{
+		Util.MapDebugPrint("Generator_Destroyed");
+	},
+
+	SetSwitch = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, Map.detonator && Map.numCaptured==4, "SWITCH_detonator");
+	},
+
+	Detonator_Built = function()
+	{
+		Map.detonator=1;
+		Map.SetSwitch();
+		Util.MapDebugPrint("Detonator_Built");
+	},
+
+	Detonator_Destroyed = function()
+	{
+		Map.detonator=0;
+		Map.SetSwitch();
+		Util.MapDebugPrint("Detonator_Destroyed");
+	},
+
+	Captured = function(x)
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "CAPPOINT_" + x);
+		SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_" + x + ".*");
+		if (++Map.numCaptured == 3)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_detonator.*");
+			SetGoalPriority("PLANT_Detonator", 0.91);
+		}
+		Util.MapDebugPrint("Captured_" + x);
+	},
+
+	All_Bombs = function()
+	{
+		Map.SetSwitch();
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"DEFEND_bomb.*",
+			"BUILD_Generator",
+			".*Command_Post",
+			".*MG42_.*",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_detonator.*");
+		SetGoalPriority("BUILD_Detonator", 0.91);
+		Util.MapDebugPrint("All_Bombs");
+	},
+
+	Ship_Lost = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "SWITCH_detonator");
+		Util.MapDebugPrint("Ship_Lost");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("^iAllied have constructed the Door Controls Generator!", Map.Generator_Built);
+	OnTrigger("^iAxis team has destroyed the Door Controls Generator!", Map.Generator_Destroyed);
+	OnTrigger("^iThe axis have build the Zuender!", Map.Detonator_Built);
+	OnTrigger("^iThe Allied have destroy the Zuender!", Map.Detonator_Destroyed);
+	OnTrigger("^iAxis have set the Bomb at the Tanks!", function(){ Map.Captured("tanks"); });
+	OnTrigger("^iAxis have set the Bomb at the Torpedos!", function(){ Map.Captured("torpedos"); });
+	OnTrigger("^iAxis have set the Bomb at the Shells!", function(){ Map.Captured("shells"); });
+	OnTrigger("^iAxis have set the Bomb at the Engine!", function(){ Map.Captured("engine"); });
+	OnTrigger("^iAxis have set all Bombs!", Map.All_Bombs);
+	OnTrigger("^iAxis have ignite the Bombs! The Ship is lost!!", Map.Ship_Lost);
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal({
+		"AMMO.*",
+		"HEALTH.*",
+		".*Command_Post",
+	});
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"BUILD_Detonator",
+		"PLANT_Generator",
+		"FLAG.*",
+		"CAPPOINT.*",
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"BUILD_Generator",
+		"PLANT_Detonator",
+		"DEFEND_bomb.*",
+		"DEFEND_tanks.*",
+		"DEFEND_torpedos.*",
+		"DEFEND_shells.*",
+		"DEFEND_engine.*",
+		".*MG42_65[34]",
+		"SNIPE_a.*",
+	});
+
+	SetGoalPriority("BUILD_Detonator", 0.5);
+	SetGoalPriority("MOUNTMG42.*", 0.5);
+	SetGoalPriority("DEFUSE_Command_Post.*", 0.81, 0, 0, true);
+
+	Util.AddUsePoint("BUILD_Generator", Vec3(803,4428,344));
+
+	SetMapGoalProperties({"DEFEND.*", "SNIPE.*", "MOUNTMG42.*"}, {MinCampTime=60, MaxCampTime=90});
+
+	Util.SetMaxUsers(1, {
+		"MOUNTMG42.*",
+		".*Command_Post",
+	});
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		BUILD_Command_Post =
+		{
+			ROUTE_axis_spawn =
+			{
+				ROUTE_0_door = {},
+				ROUTE_1r_C = {},
+				ROUTE_1r_S = {},
+			},
+		},
+		BUILD_Detonator =
+		{
+			ROUTE_axis_spawn =
+			{
+				ROUTE_2l_B = {},
+				ROUTE_2r_B = {},
+				ROUTE_1l_S = {},
+				ROUTE_1r_S = {},
+			},
+		},
+		DEFEND_bomb2 =
+		{
+			ROUTE_allied_spawn = {
+				ROUTE_1r_D = {},
+			}
+		},
+	};
+	MapRoutes.PLANT_Command_Post = MapRoutes.BUILD_Command_Post;
+	MapRoutes.PLANT_Generator = MapRoutes.BUILD_Command_Post;
+	MapRoutes["DEFEND_detonator.*"] = MapRoutes.BUILD_Detonator;
+	Util.Routes(MapRoutes);
+};

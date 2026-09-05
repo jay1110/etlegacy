@@ -1,0 +1,283 @@
+//==========================================================================================
+//
+//	bonencm_te.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	25 November 2017
+//	palota		21 January 2025
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	waterPump = 0,
+	assaultRamp = 0,
+	baseGate = 1,
+	baseFence = 0,
+	stairs = 0,
+	cage = 1,
+	stage2 = 0,
+	radarGate = 1,
+	radarFence = 0,
+
+	Navigation =
+	{
+		icebreak =
+		{
+			EvalFunc = function()
+			{
+				return !Map.iceBroken;
+			},
+			navigate = function()
+			{
+				this.AddWeaponRequest(WEAPON.KNIFE);
+				this.AddAimRequest(Priority.Medium, "facing", Vec3(-0.022, -0.324, 0.946));
+				this.Bot.HoldButton(BTN.ATTACK1, 6);
+				this.Bot.HoldButton(BTN.FORWARD, 6);
+				sleep(4);
+				if (this.Bot.GetPosition().z > -200) {
+					Map.iceBroken = 1;
+				}
+			},
+		},
+		ladder =
+		{
+			navigate = function()
+			{
+				this.AddAimRequest(Priority.High, "facing", Vec3(0.481, 0.005, 0.877));
+				sleep(3);
+			},
+		},
+	},
+
+	SetGoals = function(name)
+	{
+		Util.MapDebugPrint(name);
+		c = (Map.waterPump==2 || Map.assaultRamp && (!Map.baseGate || !Map.baseFence && Map.stairs)) && !Map.stage2;
+		SetAvailableMapGoals(TEAM.ALLIES, c, {
+			"PLANT_Axis_Cage",
+			"ATTACK_cage.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, Map.assaultRamp && !Map.stage2, {
+			"PLANT_Axis_Base_Gate",
+			"PLANT_Axis_Base_Fence",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, Map.assaultRamp && !Map.baseFence && !Map.stage2, "BUILD_Stairs");
+		SetAvailableMapGoals(TEAM.ALLIES, Map.assaultRamp && !Map.stage2, "ATTACK_base.*");
+		SetAvailableMapGoals(TEAM.ALLIES, c && !Map.cage, "FLAG_tankrocket");
+		SetAvailableMapGoals(TEAM.ALLIES, (!Map.radarFence || !Map.radarGate) && Map.stage2, "FLAG_radarpart");
+
+		if (Map.baseGate && Map.baseFence) { p = 0.75; } else { p = 0.81; }
+		SetGoalPriority("PLANT_Axis_Cage", p);
+	},
+
+	// STAGE 1
+
+	Water_Pump_Built = function(trigger)
+	{
+		Map.waterPump=1;
+		Util.MapDebugPrint("Water_Pump_Built");
+		sleep(33);
+		if (Map.waterPump==1)
+		{
+			Map.waterPump=2;
+			Map.SetGoals("Tunnel accessible");
+		}
+	},
+	Water_Pump_Destroyed = function(trigger)
+	{
+		Map.waterPump=0;
+		Map.SetGoals("Water_Pump_Destroyed");
+	},
+
+	Allied_Assault_Ramp_Built = function(trigger)
+	{
+		Wp.CheckBlockable();
+		Map.assaultRamp=1;
+		Map.SetGoals("Allied_Assault_Ramp_Built");
+	},
+	Allied_Assault_Ramp_Destroyed = function(trigger)
+	{
+		Map.assaultRamp=0;
+		Map.SetGoals("Allied_Assault_Ramp_Destroyed");
+	},
+
+	Stairs_Built = function( trigger )
+	{
+		Wp.CheckBlockable();
+		Map.stairs=1;
+		Map.SetGoals( "Stairs_Built" );
+	},
+	Stairs_Destroyed = function( trigger )
+	{
+		Map.stairs=0;
+		Map.SetGoals( "Stairs_Destroyed" );
+	},
+
+	Gate_Built = function(trigger)
+	{
+		Map.baseGate=1;
+		Map.SetGoals("Gate_Built");
+	},
+
+	Axis_Fence_1_Built = function(trigger)
+	{
+		Map.baseFence=1;
+		Map.SetGoals("Axis_Fence_1_Built");
+	},
+	Axis_Fence_1_Destroyed = function(trigger)
+	{
+		Wp.CheckBlockable();
+		Map.baseFence=0;
+		Map.SetGoals("Axis_Fence_1_Destroyed");
+	},
+
+	Axis_Cage_Built = function(trigger)
+	{
+		Map.cage=1;
+		Map.SetGoals("Axis_Cage_Built");
+	},
+	Axis_Cage_Destroyed = function(trigger)
+	{
+		Wp.CheckBlockable();
+		Map.cage=0;
+		Map.SetGoals("Axis_Cage_Destroyed");
+	},
+
+	tankrocket_Secured = function(trigger)
+	{
+		Wp.CheckBlockable();
+		Map.stage2=1;
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"PLANT_Water_Pump",
+			"PLANT_Allied_Assault_Ramp",
+			"BUILD_Axis_Base_Gate",
+			"BUILD_Axis_Cage",
+			"BUILD_Axis_Base_Fence",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"BUILD_Allied_Assault_Ramp",
+			"BUILD_Water_Pump",
+		});
+
+		Util.EnableGroup("Attack_Stage2", TEAM.ALLIES);
+		Util.EnableGroup("Defend_Stage2", TEAM.AXIS);
+		Util.DisableGroup("Attack_Stage1", TEAM.ALLIES);
+		Util.DisableGroup("Defend_Stage1", TEAM.AXIS);
+
+		Map.SetGoals("tankrocket_Secured");
+	},
+
+
+	// STAGE 2 - radar parts
+
+	Gate_Destroyed = function(trigger)
+	{
+		Wp.CheckBlockable();
+		if (GetEntityName(trigger.Entity) == "Gate")
+		{
+			Map.baseGate=0;
+			Map.SetGoals("Gate_Destroyed");
+		}
+		else
+		{
+			Map.radarGate=0;
+			SetAvailableMapGoals(TEAM.ALLIES, false, "PLANT_Radar_Base_Gate");
+			Map.SetGoals("Radar_Base_Gate_Destroyed");
+		}
+	},
+
+	Axis_Fence_Built = function(trigger)
+	{
+		Map.radarFence=1;
+		Map.SetGoals("Axis_Fence_Built");
+	},
+	Axis_Fence_Destroyed = function(trigger)
+	{
+		Wp.CheckBlockable();
+		Map.radarFence=0;
+		Map.SetGoals("Axis_Fence_Destroyed");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	//STAGE 1
+	OnTrigger("Allies has constructed Water Pump !", Map.Water_Pump_Built);
+	OnTrigger("Axis has destroyed Allies Water Pump !", Map.Water_Pump_Destroyed);
+
+	OnTrigger("Allies has constructed the Assault Ramp !", Map.Allied_Assault_Ramp_Built);
+	OnTrigger("Axis has destroyed Allies Assault Ramp !", Map.Allied_Assault_Ramp_Destroyed);
+
+	OnTrigger("Axis has constructed the Gate !", Map.Gate_Built);
+
+	OnTrigger("Axis has constructed the Defence !", Map.Axis_Fence_1_Built); //near the Gate
+	OnTrigger("Allies has destroyed Axis Defence !", Map.Axis_Fence_1_Destroyed);
+
+	OnTrigger( "Allies has constructed the Stairs !", Map.Stairs_Built );
+	OnTrigger( "Axis has destroyed the Stairs !", Map.Stairs_Destroyed );
+
+	OnTrigger("Axis have constructed the Cage !", Map.Axis_Cage_Built);
+	OnTrigger("Allies have destroyed Axis Cage !", Map.Axis_Cage_Destroyed);
+
+	OnTrigger("Allies has secured the Tank's Rocket!", Map.tankrocket_Secured);
+
+	//STAGE 2
+	OnTrigger("Allies has destroyed Axis Gate !", Map.Gate_Destroyed);
+
+	OnTrigger("Axis has constructed Radar Area Fence !", Map.Axis_Fence_Built); //near the radar parts
+	OnTrigger("Allies has destroyed the Axis Radar Area Fence !", Map.Axis_Fence_Destroyed);
+
+	OnTriggerRegion(AABB(28.767,267.022,-435.598,391.786,431.693,-169.389), RegionTrigger.DisableCombatMovement); //ladder into water
+	OnTriggerRegion(AABB(-389.269,550.977,-294.103,-247.474,813.995,-81.843), RegionTrigger.DisableCombatMovement);	//ramp
+	
+	Util.DisableGoal(".*", true);
+
+	Util.AddUsePoint("PLANT_Axis_Base_Gate", { Vec3(-1008,886,-183), Vec3(-1069,886,-183) });
+	Util.AddUsePoint("PLANT_Axis_Base_Fence", { Vec3(-1047,448,-183),Vec3(-1152,445,-173) });
+	Util.AddUsePoint("PLANT_Axis_Cage", Vec3(-1826, 1234, -220));
+
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"BUILD_Allied_.*",
+		"BUILD_Water_Pump",
+		".*G42_Allied_Third_Floor_MG_Nest",
+		"CAPPOINT_Rocket",
+		"AMMOCAB_house_ammocabinet",
+		"HEALTHCAB_house_healthcabinet",
+	});
+
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"DEFEND_.*",
+		"BUILD_Axis_.*",
+		"PLANT_Allied_.*",
+		"PLANT_Water_Pump",
+		"HEALTHCAB_base_healthcabinet",
+	});
+
+	Util.DisableGroup("Defend_Stage2", TEAM.AXIS);
+	Util.EnableGroup("Attack_Stage1", TEAM.ALLIES);
+	Util.EnableGroup("Defend_Stage1", TEAM.AXIS);
+	Map.SetGoals("OnMapLoad");
+
+	SetGoalPriority("PLANT_Allied_Command_Post", 0.6);
+	SetGoalPriority("PLANT_Allied_Third_Floor_MG_Nest", 0.6);
+
+	SetGoalPriority("PLANT_Axis_Base_Fence", 0.8, TEAM.ALLIES, CLASS.ENGINEER);
+	SetGoalPriority("BUILD_Stairs", 0.81);
+	SetGoalPriority("BUILD_Allied_Command_Post", 0.81);
+	SetGoalPriority("BUILD_Allied_Third_Floor_MG_Nest", 0.81);
+	SetGoalPriority("ATTACK_allies.*", 0.4);
+
+	Util.SetMaxUsersInProgress(1, "MOUNTMG42_.*");
+	Util.SetMaxUsersInProgress(1, "PLANT_Allied.*");
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.TargetBreakableDist = 90.0;
+};

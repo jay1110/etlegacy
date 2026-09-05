@@ -1,0 +1,252 @@
+//==========================================================================================
+//
+//	blood.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	25 October 2017	Initial Script
+//	palota       	08 June 2025
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	//Door status flags, 1 = intact
+	Door1 = 1,
+	Door2 = 1,
+	Tunnel_Gate = 1,
+	Tunnel_Wall = 1,
+
+	//Main Base features =========================================================
+	North_Tower_Built = function()
+	{
+		Util.MapDebugPrint( "North_Tower_Built" );
+	},
+	North_Tower_Destroyed = function()
+	{
+		Util.MapDebugPrint( "North_Tower_Destroyed" );
+	},
+
+	South_Tower_Built = function()
+	{
+		Util.MapDebugPrint( "South_Tower_Built" );
+	},
+	South_Tower_Destroyed = function()
+	{
+		Util.MapDebugPrint( "South_Tower_Destroyed" );
+	},
+
+	//Vehicles ===================================================================
+	vehicle_at_location = function()
+	{
+		switch(Map.VehicleLocation)
+		{
+			case 1:
+			{
+				Util.MapDebugPrint( "Tank_At_Door_1");
+			}
+			case 2:
+			{
+				Util.MapDebugPrint( "Tank_At_Door_2" );
+			}
+			case 3:
+			{
+				Util.MapDebugPrint( "Truck_Exits_Base" );
+			}
+			case 4:
+			{
+				Util.MapDebugPrint( "Truck_Past_Forward_Spawn" );
+			}
+			case 5:
+			{
+				Util.MapDebugPrint( "Truck_At_Escape" );
+			}
+		}
+		Util.MapDebugPrint("vehicle at location " + Map.VehicleLocation, true);
+	},
+
+	//Forward Spawn Base =========================================================
+	Door1_Destroyed = function()
+	{
+		Map.Door1 = 0;
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*MG42_182",
+			".*MG42_291",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"BUILD_North_Tower",
+			"BUILD_South_Tower",
+			"BUILD_tunnel_gate",
+			"BUILD_tunnel_wall",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"CHECKPOINT_.*",
+			"PLANT_tunnel_gate",
+			"PLANT_tunnel_wall"
+		});
+		Util.MapDebugPrint( "Door1_Destroyed" );
+	},
+
+	//Main Base ==================================================================
+	Door2_Destroyed = function()
+	{
+		Map.Door2 = 0;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, { "BUILD_Tank", "ESCORT_Tank" } );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"FLAG_Book",
+			"CAPPOINT_Book",
+			"BUILD_Truck",
+			"ESCORT_Truck",
+			"CAMP_Allies_Truck_.*",
+			"PLANT_North_Tower",
+			"PLANT_South_Tower",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, ".*MG42_13");
+
+		Util.MapDebugPrint( "Door2_Destroyed" );
+	},
+
+	//Underground ================================================================
+	tunnel_gate_Built = function()
+	{
+		Map.Tunnel_Gate = 1;
+		Util.MapDebugPrint( "tunnel_gate_Built" );
+	},
+	tunnel_gate_Destroyed = function()
+	{
+		Map.Tunnel_Gate = 0;
+		Util.MapDebugPrint( "tunnel_gate_Destroyed" );
+	},
+
+	tunnel_wall_Built = function()
+	{
+		Map.Tunnel_Wall = 1;
+		Util.MapDebugPrint( "tunnel_wall_Built" );
+	},
+	tunnel_wall_Destroyed = function()
+	{
+		Map.Tunnel_Wall = 0;
+		Util.MapDebugPrint( "tunnel_wall_Destroyed" );
+	},
+
+	//Objectives =================================================================
+	Book_Taken = function()
+	{
+		Util.MapDebugPrint( "Book_Taken" );
+	},
+	Book_Going = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*MG42_13",
+			"BUILD_tunnel_gate",
+			"BUILD_tunnel_wall",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"FLAG_Book",
+			"CAPPOINT_Book",
+			"PLANT_tunnel_gate",
+			"PLANT_tunnel_wall"
+		});
+		Util.MapDebugPrint( "Book_Going" );
+	},
+	Book_Returned = function()
+	{
+		Util.MapDebugPrint( "Book_Returned" );
+	},
+
+	//Spawns =====================================================================
+	forwardspawn1_flag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint( "forwardspawn1_flag_Axis_Captured" );
+	},
+	forwardspawn1_flag_Allies_Captured = function()
+	{
+		Util.MapDebugPrint( "forwardspawn1_flag_Allies_Captured" );
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "Allied team has destroyed the  Main Gate!", Map.Door1_Destroyed );
+	OnTrigger( "Allied team has destroyed the Second Main Gate!", Map.Door2_Destroyed );
+
+	OnTrigger( "The North Tower has been constructed!", Map.North_Tower_Built );
+	OnTrigger( "Allies have destroyed the North Tower!", Map.North_Tower_Destroyed );
+
+	OnTrigger( "The South Tower has been constructed!", Map.South_Tower_Built );
+	OnTrigger( "Allies have destroyed the South Tower!", Map.South_Tower_Destroyed );
+
+	OnTrigger( "Axis have built the Tunnel Gate!", Map.tunnel_gate_Built );
+	OnTrigger( "The Tunnel gate has been destroyed!", Map.tunnel_gate_Destroyed );
+
+	OnTrigger( "Axis have built the Tunnel Wall!", Map.tunnel_wall_Built );
+	OnTrigger( "The Tunnel wall has been destroyed!", Map.tunnel_wall_Destroyed );
+
+	OnTrigger( "Allies have stolen the Book!", Map.Book_Taken );
+	OnTrigger( "Allied team is escaping with the Book!", Map.Book_Going );
+	OnTrigger( "Axis have returned the Book!", Map.Book_Returned );
+
+	OnTrigger( "Allies capture the Forward Spawn!", Map.forwardspawn1_flag_Axis_Captured );
+	OnTrigger( "Axis capture the Forward Spawn!", Map.forwardspawn1_flag_Allies_Captured );
+
+	OnTrigger( "tank at location", Map.vehicle_at_location );
+	OnTrigger( "truck at location", Map.vehicle_at_location );
+
+	OnTriggerRegion(AABB(5409.249,1490.096,-382.875,5658.929,1660.420,-308.875), RegionTrigger.VehicleTrigger);
+	OnTriggerRegion(AABB(978.428,1659.374,-382.875,1283.954,2040.766,-308.875 ), RegionTrigger.VehicleTrigger);
+	OnTriggerRegion(AABB(864.916,876.604,-382.875,1069.756,1109.506,-308.875  ), RegionTrigger.VehicleTrigger);
+
+	Util.DisableGoal( ".*", true );
+	Util.EnableGoal({ "HEALTHCAB_.*", "AMMOCAB_.*" });
+
+	//Axis
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"CHECKPOINT_forwardspawn1_flag",
+		//"DEFEND_.*",
+		".*MG42_182",
+		".*MG42_291",
+	});
+
+	//Allies
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		//"ATTACK_.*",
+		"BUILD_Tank",
+		"ESCORT_Tank",
+		"MOUNT_Tank",
+	});
+
+	ETUtil.SetStartIndex("ESCORT_Tank", 1);
+	ETUtil.SetStartIndex("MOUNT_Tank", 1);
+
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+
+	Util.AddUsePoint("PLANT_South_Tower", Vec3( 574, 217, 0 ) );
+
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_forwardspawn1_flag =
+		{
+			ROUTE_Allied_Spawn =
+			{
+				ROUTE_Tank_At_FS = {},
+			},
+		},
+		BUILD_Tank =
+		{
+			ROUTE_Allied_Spawn = {},
+		},
+	};
+	Util.Routes(MapRoutes);
+};

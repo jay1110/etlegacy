@@ -1,0 +1,155 @@
+//==========================================================================================
+//
+//	greece6.gm
+//
+//	Who       When			What
+//------------------------------------------------------------------------------------------
+//	McQ		30 April 2013	Initial Script III
+// palota	22 September 2015	enabled PLANT_villa_door and PLANT_entrance_barricade, disabled MOUNTMG42_319
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	gate_Destroyed = function()
+	{
+		sleep(2);
+		SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_Entr.*" );
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"ATTACK_Villa.*",
+			"SMOKEBOMB_Axis_smoke1",
+			"PLANT_villa_door",
+			"PLANT_villa_barricade",
+			"PLANT_barricade_1",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"DEFEND_Entrance_.*",
+			"SNIPE_Entrance_.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"DEFEND_Villa_.*",
+			"SNIPE_Villa_.*",
+			"CALLARTILLERY_Villa_arty1",
+			"ARTILLERY_S_Villa_arty1",
+			"MOBILEMORTAR_Villa_1",
+			"MOUNTMG42_379",
+			"REPAIRMG42_379",
+		});
+
+		Util.MapDebugPrint( "gate_Destroyed" );
+	},
+
+	villa_barricade_Built = function() // Trigger ok
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_InnerBarricade" );
+
+		Util.MapDebugPrint( "villa_barricade_Built" );
+	},
+
+	entrance_barricade_Destroyed = function()
+	{
+		Util.MapDebugPrint( "entrance_barricade_Destroyed" );
+	},
+
+	villa_barricade_Destroyed = function() // Trigger NOT ok
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_InnerBarricade" );
+
+		Util.MapDebugPrint( "villa_barricade_Destroyed" );
+	},
+
+	villa_door_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "SMOKEBOMB_Axis_smoke1" );
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"PLANT_entrance_barricade",
+			"ATTACK_InnerVilla.*",
+			"MOBILEMORTAR_axis_1",
+			//"REPAIRMG42_319",
+			//"MOUNTMG42_319",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"SNIPE_Villa_1",
+			"CALLARTILLERY_Villa_arty1",
+			"MOBILEMORTAR_Villa_1",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"DEFEND_InnerVilla_.*",
+			"MOBILEMG42_MG.*",
+		});
+
+		Util.MapDebugPrint( "villa_door_Destroyed" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "The gate is destroyed!", Map.gate_Destroyed );
+	OnTrigger( "Allied team has built the door barricade", Map.villa_barricade_Built );
+	OnTrigger( "The entrance barricade is destroyed!", Map.entrance_barricade_Destroyed );
+	OnTrigger( "Axis team had destroyed the door barricade!", Map.villa_barricade_Destroyed );
+	OnTrigger( "The villa door is destroyed!", Map.villa_door_Destroyed );
+
+	Util.DisableGoal( ".*", true );
+	Util.EnableGoal( "AMMOCAB.*" );
+	Util.EnableGoal( "HEALTHCAB.*" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"ATTACK_Axis_Entr.*",
+		"PLANT_gate.*",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"DEFEND_Entrance_.*",
+		"SNIPE_Entrance_.*",
+		"BUILD_villa_barricade",
+		"DEFEND_InnerBarricade",
+	});
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+	SetMapGoalProperties( "MOBILEMG42_.*", {MinCampTime=10, MaxCampTime=60} );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_barricade_1 =
+		{
+			ROUTE_axis_spawn  =
+			{
+				ROUTE_barricade_1  =
+				{
+					ROUTE_barricade_2  =
+					{
+						ROUTE_barricade_4  =
+						{
+						},
+					},
+					ROUTE_barricade_3  =
+					{
+						ROUTE_barricade_4  =
+						{
+						},
+					},
+				},
+			},
+		},
+	};
+
+	Util.Routes(MapRoutes);
+};

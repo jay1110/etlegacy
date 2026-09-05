@@ -1,0 +1,2640 @@
+//==========================================================================================
+//	tankbuster.gm
+//
+//	Who      	When		What
+//------------------------------------------------------------------------------------------
+//	Qiki		26 June 2012	Initial Script
+//	Native12	13.11.2012	Ready to test
+//	Native12	15.11.2012	Added plantmine goals behind workshop door
+//	Native12	20.11.2012	Added routes, moved some goals.....
+//	Native12	24.11.2012	Added priority for grenade (thx Palota), change in goal MOBILEMG42_Axis_FrontDefend_1
+//					        Added navigate
+//	Native12	25.11.2012	Forgotten facing in "MOUNT_Rand"
+//	Native12	02.01.2013	fix logic errors
+//
+//	Native12 & Qiki 16.12.2022  Big update of script and way
+//	                            thx Palota (script for Steam_Region_Rails, Steam_Region_Tanks, Steam, Mines_Check)
+//  Qiki        19.12.2022      Stuckages
+//  Native12    19.12.2022      Released after update
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	DontDispenseAmmo = true,
+	DontDispenseHealth = true,
+
+	b_rails = {},
+	b_tanks = {},
+
+	WorkshopDoor_Built = false,
+	AssaultRamp_Built = false,
+	TruckNearBridge = false,
+	SignalTransmitted = false,
+	AxisCommandPostBuilt = false,
+	AlliedCommandPostBuilt = false,
+	AlliesWin = false,
+	the88mmdestroyed = false,
+	count_Allies_OnTheRoad = {},
+	count_Allies_InMinefield = {},
+	count_Allies_OnHilltop = {},
+	cannon_is_pointed_at_the_road = false,
+	cannon_is_pointed_at_the_hilltop = true,
+	cannon_is_pointed_at_the_minefield = false,
+	gun_rotates = false,
+	switch_is_up = true,
+	TruckIsOnTheRoad = false,
+	Fire_switch_enabled = true,
+	LorryWreckDestroyed = false,
+	BombTruckBuilt = false,
+	Truck_OnTheBridge = false,
+	BombTruckOverBridge = false,
+	BombTruckAtDepotGates = false,
+	count_allies_near_tanks = {},
+	StationFlagAllies = false,
+	KartoffelDestroyed = false,
+	KuhhirtDestroyed = false,
+	RandDestroyed = false,
+	AbgrundDestroyed = false,
+	KohlmannDestroyed = false,
+	SchnepferDestroyed = false,
+	KrummDestroyed = false,
+	FelsenDestroyed = false,
+	fbWindow_exploded = false,
+	Steam_Ready = true,
+
+	Movers =
+	{
+		"MOVER_fan_electrics",
+		"MOVER_tank6",
+	},
+
+	Navigation =
+	{
+		//  /bot waypoint_setproperty paththrough Navigation_PT:jump
+		jump =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+
+		//  /bot waypoint_setproperty paththrough Navigation_PT:jump_wait
+		jump_wait =
+		{
+			navigate = function(_this)
+			{
+				sleep(0.5);
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+
+		//      /bot waypoint_setproperty paththrough Navigation_PT:ammo
+		ammo =
+		{
+			navigate = function(_this)
+			{
+				wpTable = {};
+				Wp.GetWaypointByName("Ammo", wpTable);
+				if ( _this.Goto(wpTable.position) == EVENT.PATH_SUCCESS )
+				{
+					_this.AddAimRequest(Priority.VeryHigh, "facing", wpTable.facing);
+					sleep(1.9);
+					_this.Bot.HoldButton(BTN.FORWARD, 0.25);
+					sleep(0.25);
+				}
+			},
+		},
+
+		//      /bot waypoint_setproperty paththrough Navigation_PT:fbwindow
+		fbwindow =
+		{
+			EvalFunc = function()
+			{
+				return !Map.fbWindow_exploded;
+			},
+
+			navigate = function(_this)
+			{
+				if ( Map.fbWindow_exploded )
+				{
+					yield();
+					return;
+				}
+
+				_this.AddWeaponRequest(WEAPON.KNIFE);
+				_this.AddAimRequest(Priority.High, "facing", Vector3(-0.179001, -0.982332, 0.054621));
+
+				while( !Map.fbWindow_exploded ) {
+					_this.Bot.HoldButton(BTN.ATTACK1, 1);
+					yield();
+				}
+
+				_this.ReleaseAimRequest();
+				_this.ReleaseWeaponRequest();
+			},
+		},
+	},
+
+	Roles =
+	{
+		AXIS =
+		{
+			AllBots = true,
+			DEFENDER =  //DEFEND Minefield
+			{
+				numbots = 7,
+				crucialClass = CLASS.SOLDIER,
+			},
+			DEFENDER1 = //DEFEND Hilltop & switches
+			{
+				numbots = 6,
+				crucialClass = CLASS.FIELDOPS,
+			},
+			DEFENDER2 = //DEFEND Road
+			{
+				numbots = 7,
+				crucialClass = CLASS.ENGINEER,
+			},
+		},
+
+		ALLIES =
+		{
+			AllBots = true,
+			ATTACKER =
+			{
+				numbots = 7,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER1 =
+			{
+				numbots = 6,
+				crucialClass = CLASS.FIELDOPS,
+			},
+			ATTACKER2 =
+			{
+				numbots = 7,
+				crucialClass = CLASS.ENGINEER,
+			},
+		},
+	},
+
+	Allied_Command_Post_Built = function( trigger )
+	{
+		Map.AlliedCommandPostBuilt = true;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Allied_Command_Post" );
+
+        SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Allied_Command_Post" );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+	Allied_Command_Post_Planted = function( trigger )
+	{
+		if ( Map.SignalTransmitted )
+		{
+			Util.SetMaxUsers( 1, "DEFUSE_Allied_Command_Post_.*" );
+		}
+
+		Util.MapDebugPrint( "Allied_Command_Post_Planted" );
+	},
+
+	Allied_Command_Post_Destroyed = function( trigger )
+	{
+		Map.AlliedCommandPostBuilt = false;
+
+		foreach( goal in Util.GoalTable("DEFUSE_Allied_Command_Post_.*") )
+        {
+            goal.SetAvailable(TEAM.ALLIES, false);
+        }
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Allied_Command_Post" );
+
+        SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_Command_Post" );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+	Axis_Command_Post_Built = function( trigger )
+	{
+		Map.AxisCommandPostBuilt = true;
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Axis_Command_Post" );
+
+        SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Command_Post" );
+
+		if ( !Map.SignalTransmitted )
+		{
+			if ( !Map.the88mmdestroyed )
+			{
+				if ( Map.BombTruckAtDepotGates and !Map.AlliedCommandPostBuilt )
+				{
+					if ( !Map.cannon_is_pointed_at_the_minefield )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Axis_Fire" );
+
+						SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Minefield" );
+					}
+				}
+				else if ( Map.TruckIsOnTheRoad )
+				{
+					if ( !Map.cannon_is_pointed_at_the_road )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Axis_Fire" );
+
+						SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Road" );
+					}
+				}
+				else
+				{
+					if ( Map.cannon_is_pointed_at_the_road )
+					{
+						if ( tableCount(Map.count_Allies_OnHilltop) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Hilltop" );
+						}
+						if ( tableCount(Map.count_Allies_InMinefield) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Minefield" );
+						}
+					}
+
+					if ( Map.cannon_is_pointed_at_the_hilltop )
+					{
+						if ( tableCount(Map.count_Allies_InMinefield) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Minefield" );
+						}
+						if ( tableCount(Map.count_Allies_OnTheRoad) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Road" );
+						}
+					}
+
+					if ( Map.cannon_is_pointed_at_the_minefield )
+					{
+						if ( tableCount(Map.count_Allies_OnHilltop) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Hilltop" );
+						}
+						if ( tableCount(Map.count_Allies_OnTheRoad) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Road" );
+						}
+					}
+				}
+			}
+		}
+
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Planted = function( trigger )
+	{
+		if ( Map.SignalTransmitted )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "DEFUSE_Axis_Command_Post_.*" );
+		}
+
+		Util.MapDebugPrint( "Axis_Command_Post_Planted" );
+	},
+
+	Axis_Command_Post_Destroyed = function( trigger )
+	{
+		Map.AxisCommandPostBuilt = false;
+
+		foreach( goal in Util.GoalTable("DEFUSE_Axis_Command_Post_.*") )
+        {
+            goal.SetAvailable(TEAM.AXIS, false);
+        }
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_Command_Post" );
+
+		if ( !Map.SignalTransmitted )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Command_Post" );
+
+			if ( !Map.the88mmdestroyed )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, false, {
+					"SWITCH_Axis_Hilltop",
+					"SWITCH_Axis_Minefield",
+					"SWITCH_Axis_Road",
+				});
+			}
+		}
+
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+	Assault_Ramp_Built = function( trigger )
+	{
+		Map.AssaultRamp_Built = true;
+
+		Wp.SetWaypointFlag( "Assault_Ramp_1", "closed", false );
+
+		if ( !Map.SignalTransmitted )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Assault_Ramp" );
+
+			SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Assault_Ramp" );
+		}
+
+		if ( Map.Truck_OnTheBridge )
+		{
+			Util.EnableGoal( "ROUTE_Ramp_.*" );
+		}
+
+		Util.MapDebugPrint( "Assault_Ramp_Built" );
+	},
+
+	Assault_Ramp_Planted = function( trigger )
+	{
+		if ( Map.SignalTransmitted )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "DEFUSE_Assault_Ramp_.*" );
+		}
+
+		Util.MapDebugPrint( "Assault_Ramp_Planted" );
+	},
+
+	Assault_Ramp_Destroyed = function( trigger )
+	{
+		Map.AssaultRamp_Built = false;
+
+		Wp.SetWaypointFlag( "Assault_Ramp_1", "closed", true );
+
+		Util.DisableGoal( "ROUTE_Ramp_.*" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_Assault_Ramp_.*") )
+        {
+            goal.SetAvailable(TEAM.ALLIES, false);
+        }
+
+		if ( !Map.SignalTransmitted )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Assault_Ramp" );
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Assault_Ramp" );
+		}
+
+		Util.MapDebugPrint( "Assault_Ramp_Destroyed" );
+	},
+
+	Axis_Depot_MG42_Built = function( trigger )
+	{
+		if ( !Map.SignalTransmitted )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Axis_Depot_MG42" );
+
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"MOUNTMG42_Axis_Depot_MG42",
+				"REPAIRMG42_Axis_Depot_MG42",
+			});
+		}
+
+		Util.MapDebugPrint( "Axis_Depot_MG42_Built" );
+	},
+
+	Axis_Depot_MG42_Planted = function( trigger )
+	{
+		if ( Map.SignalTransmitted )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "DEFUSE_Axis_Depot_MG42_.*" );
+		}
+
+		Util.MapDebugPrint( "Axis_Depot_MG42_Planted" );
+	},
+
+	Axis_Depot_MG42_Destroyed = function( trigger )
+	{
+		foreach( goal in Util.GoalTable("DEFUSE_Axis_Depot_MG42_.*") )
+        {
+            goal.SetAvailable(TEAM.AXIS, false);
+        }
+
+		if ( !Map.SignalTransmitted )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"MOUNTMG42_Axis_Depot_MG42",
+				"REPAIRMG42_Axis_Depot_MG42",
+			});
+
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Depot_MG42" );
+		}
+
+		Util.MapDebugPrint( "Axis_Depot_MG42_Destroyed" );
+	},
+
+	Bomb_Truck_Built = function( trigger )
+	{
+		Map.BombTruckBuilt = true;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Bomb_Truck" );
+
+		if ( !Map.BombTruckAtDepotGates )
+		{
+			if ( !Map.BombTruckAtBarrier )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "ESCORT_Bomb_Truck" );
+			}
+			else
+			{
+				if ( Map.LorryWreckDestroyed )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, "ESCORT_Bomb_Truck" );
+				}
+				else
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, false, "ESCORT_Bomb_Truck" );
+				}
+			}
+		}
+
+		Util.MapDebugPrint( "Bomb_Truck_Built" );
+	},
+
+	Bomb_Truck_Destroyed = function( trigger )
+	{
+		Map.BombTruckBuilt = false;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ESCORT_Bomb_Truck" );
+
+		if ( !Map.BombTruckAtDepotGates )
+		{
+			if ( Map.BombTruckAtBarrier and !Map.LorryWreckDestroyed )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Bomb_Truck" );
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Bomb_Truck" );
+			}
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Bomb_Truck" );
+		}
+
+		Util.MapDebugPrint( "Bomb_Truck_Destroyed" );
+	},
+
+	Hut_MG42_Built = function( trigger )
+	{
+		if ( !Map.SignalTransmitted )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Hut_MG42" );
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"REPAIRMG42_Hut_MG42",
+				"MOUNTMG42_Hut_MG42",
+			});
+
+			SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Hut_MG42" );
+		}
+
+		Util.MapDebugPrint( "Hut_MG42_Built" );
+	},
+
+	Hut_MG42_Planted = function( trigger )
+	{
+		if ( Map.SignalTransmitted )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "DEFUSE_Hut_MG42_.*" );
+		}
+
+		Util.MapDebugPrint( "Hut_MG42_Planted" );
+	},
+
+	Hut_MG42_Destroyed = function( trigger )
+	{
+		foreach( goal in Util.GoalTable("DEFUSE_Hut_MG42_.*") )
+        {
+            goal.SetAvailable(TEAM.ALLIES, false);
+        }
+
+		if ( !Map.SignalTransmitted )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Hut_MG42" );
+
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"REPAIRMG42_Hut_MG42",
+				"MOUNTMG42_Hut_MG42",
+			});
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Hut_MG42" );
+		}
+
+		Util.MapDebugPrint( "Hut_MG42_Destroyed" );
+	},
+
+	Lorry_Wreck_Destroyed = function( trigger )
+	{
+		Map.LorryWreckDestroyed = true;
+
+		Wp.SetWaypointFlag( "Lorry_Wreck.*", "closed", true );
+
+		ClearGoalRole( "PLANT_Axis_Command_Post.*", ROLE.ATTACKER );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_Allies_Start_Truck_.*",
+			"PLANT_Lorry_Wreck",
+		});
+
+		foreach( goal in Util.GoalTable("DEFUSE_Lorry_Wreck_.*") )
+        {
+            goal.SetAvailable(TEAM.AXIS, false);
+        }
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, ".*_Allies_Road_.*" );
+
+		if ( Map.BombTruckAtBarrier )
+		{
+			if ( Map.BombTruckBuilt )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "ESCORT_Bomb_Truck" );
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Bomb_Truck" );
+			}
+		}
+
+		Util.MapDebugPrint( "Lorry_Wreck_Destroyed" );
+	},
+
+	Bomb_Truck_At_Barrier =
+	{
+		Name="Bomb_Truck_At_Barrier",
+		TriggerOnEntity = GetGoal("MOVER_truck").GetEntity(),
+		OnEnter = function(ent)
+		{
+			Map.BombTruckAtBarrier = true;
+
+			if ( !Map.LorryWreckDestroyed )
+			{
+				SetGoalPriority( "PLANT_Lorry_Wreck", 0.92, TEAM.ALLIES, CLASS.ENGINEER );
+
+				SetAvailableMapGoals( TEAM.ALLIES, false, "ESCORT_Bomb_Truck" );
+			}
+
+			Util.MapDebugPrint( "Bomb_Truck_At_Barrier" );
+		},
+		OnExit = function(ent)
+		{
+			SetGoalPriority( "AIRSTRIKE_Axis_Start_Hilltop_4", 0.79, TEAM.AXIS, CLASS.FIELDOPS );
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"MOUNTMG42_Allied_Spawn",
+				"REPAIRMG42_Allied_Spawn",
+			});
+
+			Util.MapDebugPrint( "Bomb_Truck_At_Barrier exit" );
+		},
+	},
+
+	Bomb_Truck_Past_Barrier =
+	{
+		Name="Bomb_Truck_Past_Barrier",
+		TriggerOnEntity = GetGoal("MOVER_truck").GetEntity(),
+		OnEnter = function(ent)
+		{
+			Map.BombTruckAtBarrier = false;
+
+			ETUtil.SetExcludeIndexes( "BUILD_Bomb_Truck", { 0, 1, 2, 3, 6 } );
+
+			Util.MapDebugPrint( "Bomb_Truck_Past_Barrier" );
+		},
+	},
+
+	the_88mm_destroyed = function( trigger )
+	{
+		Map.the88mmdestroyed = true;
+		Map.Fire_switch_enabled = false;
+
+		if ( !Map.SignalTransmitted )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Axis_.*" );
+
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_the_88mm_spares" );
+		}
+
+		Util.MapDebugPrint( "the_88mm_destroyed" );
+	},
+
+	the_88mm_repaired = function( trigger )
+	{
+		Map.the88mmdestroyed = false;
+		Map.Fire_switch_enabled = true;
+
+		if ( !Map.SignalTransmitted )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_the_88mm_spares" );
+
+			if ( Map.AxisCommandPostBuilt )
+			{
+				if ( Map.BombTruckAtDepotGates and !Map.AlliedCommandPostBuilt )
+				{
+					if ( !Map.cannon_is_pointed_at_the_minefield )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Minefield" );
+					}
+					else
+					{
+						if ( !Map.gun_rotates )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+						}
+					}
+				}
+				else if ( Map.TruckIsOnTheRoad )
+				{
+					if ( !Map.cannon_is_pointed_at_the_road )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Road" );
+					}
+					else
+					{
+						if ( !Map.gun_rotates )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+						}
+					}
+				}
+				else
+				{
+					if ( !Map.gun_rotates )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+					}
+
+					sleep(1);
+
+					if ( Map.cannon_is_pointed_at_the_road )
+					{
+						if ( tableCount(Map.count_Allies_OnHilltop) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Hilltop" );
+						}
+						if ( tableCount(Map.count_Allies_InMinefield) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Minefield" );
+						}
+					}
+
+					if ( Map.cannon_is_pointed_at_the_hilltop )
+					{
+						if ( tableCount(Map.count_Allies_InMinefield) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Minefield" );
+						}
+						if ( tableCount(Map.count_Allies_OnTheRoad) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Road" );
+						}
+					}
+
+					if ( Map.cannon_is_pointed_at_the_minefield )
+					{
+						if ( tableCount(Map.count_Allies_OnHilltop) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Hilltop" );
+						}
+						if ( tableCount(Map.count_Allies_OnTheRoad) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Road" );
+						}
+					}
+				}
+			}
+			else
+			{
+				if ( !Map.gun_rotates )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+				}
+			}
+		}
+
+		Util.MapDebugPrint( "the_88mm_repaired" );
+	},
+
+	Fire_switch = function( trigger )
+	{
+		if ( !Map.SignalTransmitted )
+		{
+			vel = ToVector(trigger.Action);
+
+			if ( vel[ 2 ] < 0 )
+			{
+				if ( !Map.SignalTransmitted )
+				{
+					Map.Fire_switch_enabled = false;
+					Map.switch_is_up = false;
+
+					SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Axis_Fire" );
+
+					Util.MapDebugPrint( "Fire_switch disabled" );
+
+					sleep(1);
+
+					if ( !Map.the88mmdestroyed and !Map.BombTruckAtDepotGates and Map.AxisCommandPostBuilt and !Map.TruckIsOnTheRoad )
+					{
+						if ( Map.cannon_is_pointed_at_the_road )
+                        {
+                            if ( tableCount(Map.count_Allies_OnHilltop) > 0 )
+                            {
+                                SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Hilltop" );
+                            }
+                            if ( tableCount(Map.count_Allies_InMinefield) > 0 )
+                            {
+                                SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Minefield" );
+                            }
+                        }
+
+                        if ( Map.cannon_is_pointed_at_the_hilltop )
+                        {
+                            if ( tableCount(Map.count_Allies_InMinefield) > 0 )
+                            {
+                                SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Minefield" );
+                            }
+                            if ( tableCount(Map.count_Allies_OnTheRoad) > 0 )
+                            {
+                                SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Road" );
+                            }
+                        }
+
+                        if ( Map.cannon_is_pointed_at_the_minefield )
+                        {
+                            if ( tableCount(Map.count_Allies_OnHilltop) > 0 )
+                            {
+                                SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Hilltop" );
+                            }
+                            if ( tableCount(Map.count_Allies_OnTheRoad) > 0 )
+                            {
+                                SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Road" );
+                            }
+                        }
+                    }
+				}
+			}
+			else if ( vel[ 2 ] > 0 )
+			{
+				if ( !Map.SignalTransmitted and !Map.the88mmdestroyed )
+				{
+					Map.switch_is_up = true;
+
+                    sleep(0.5);
+
+                    if ( !Map.gun_rotates )
+                    {
+                        if ( Map.BombTruckAtDepotGates and !Map.AlliedCommandPostBuilt )
+                        {
+                            if ( Map.cannon_is_pointed_at_the_minefield )
+                            {
+                                Map.Fire_switch_enabled = true;
+
+                                SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+
+                                Util.MapDebugPrint( "Fire_switch enabled" );
+                            }
+                            else
+                            {
+                                if ( Map.AxisCommandPostBuilt )
+                                {
+                                    SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Minefield" );
+                                }
+                                else
+                                {
+                                    Map.Fire_switch_enabled = true;
+
+                                    SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+
+                                    Util.MapDebugPrint( "Fire_switch enabled" );
+                                }
+                            }
+                        }
+                        else if ( Map.TruckIsOnTheRoad )
+                        {
+                            if ( Map.cannon_is_pointed_at_the_road )
+                            {
+                                Map.Fire_switch_enabled = true;
+
+                                SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+
+                                Util.MapDebugPrint( "Fire_switch enabled" );
+                            }
+                            else
+                            {
+                                if ( Map.AxisCommandPostBuilt )
+                                {
+                                    SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Road" );
+                                }
+                                else
+                                {
+                                    Map.Fire_switch_enabled = true;
+
+                                    SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+
+                                    Util.MapDebugPrint( "Fire_switch enabled" );
+                                }
+                            }
+                        }
+                        else
+                        {
+                            Map.Fire_switch_enabled = true;
+
+                            SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+
+                            Util.MapDebugPrint( "Fire_switch enabled" );
+                        }
+                    }
+				}
+			}
+		}
+	},
+
+	gun_moving_toward_the_road = function( trigger )
+	{
+		if ( !Map.SignalTransmitted )
+		{
+			vel = ToVector(trigger.Action);
+
+			if ( vel[ 2 ] == -16.00 )
+			{
+				Map.cannon_is_pointed_at_the_road = true;
+				Map.cannon_is_pointed_at_the_hilltop = false;
+				Map.cannon_is_pointed_at_the_minefield = false;
+
+				Map.gun_rotates = true;
+
+				SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_.*" );
+
+				Util.MapDebugPrint( "cannon rotates in the direction of the road" );
+
+				sleep(5);
+
+				Map.gun_rotates = false;
+
+				if ( !Map.Fire_switch_enabled and Map.switch_is_up )
+				{
+					Map.Fire_switch_enabled = true;
+
+					Util.MapDebugPrint( "Fire_switch enabled after rotation" );
+				}
+
+				if ( !Map.the88mmdestroyed )
+				{
+					if ( Map.BombTruckAtDepotGates and !Map.AlliedCommandPostBuilt )
+					{
+						if ( Map.AxisCommandPostBuilt )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Minefield" );
+						}
+						else
+						{
+							if ( Map.Fire_switch_enabled )
+							{
+								SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+							}
+						}
+					}
+					else if ( Map.TruckIsOnTheRoad )
+					{
+						if ( Map.Fire_switch_enabled )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+						}
+					}
+					else
+					{
+						if ( Map.Fire_switch_enabled )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+						}
+					}
+				}
+			}
+		}
+	},
+
+	gun_moving_toward_the_hill = function( trigger )
+	{
+		if ( !Map.SignalTransmitted )
+		{
+			vel = ToVector(trigger.Action);
+
+			if ( vel[ 2 ] == -16.00 )
+			{
+				Map.cannon_is_pointed_at_the_hilltop = true;
+				Map.cannon_is_pointed_at_the_road = false;
+				Map.cannon_is_pointed_at_the_minefield = false;
+
+				Map.gun_rotates = true;
+
+				SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_.*" );
+
+				Util.MapDebugPrint( "cannon rotates in the direction of top of the hill" );
+
+				sleep(5);
+
+				Map.gun_rotates = false;
+
+				if ( !Map.Fire_switch_enabled and Map.switch_is_up )
+				{
+					Map.Fire_switch_enabled = true;
+
+					Util.MapDebugPrint( "Fire_switch enabled after rotation" );
+				}
+
+				if ( !Map.the88mmdestroyed )
+				{
+					if ( Map.BombTruckAtDepotGates and !Map.AlliedCommandPostBuilt )
+					{
+						if ( Map.AxisCommandPostBuilt )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Minefield" );
+						}
+						else
+						{
+							if ( Map.Fire_switch_enabled )
+							{
+								SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+							}
+						}
+					}
+					else if ( Map.TruckIsOnTheRoad )
+					{
+						if ( Map.AxisCommandPostBuilt )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Road" );
+						}
+						else
+						{
+							if ( Map.Fire_switch_enabled )
+							{
+								SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+							}
+						}
+					}
+					else
+					{
+						if ( Map.Fire_switch_enabled )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+						}
+					}
+				}
+			}
+		}
+	},
+
+	gun_moving_toward_the_minefield = function( trigger )
+	{
+		if ( !Map.SignalTransmitted )
+		{
+			vel = ToVector(trigger.Action);
+
+			if ( vel[ 2 ] == -16.00 )
+			{
+				Map.cannon_is_pointed_at_the_minefield = true;
+				Map.cannon_is_pointed_at_the_hilltop = false;
+				Map.cannon_is_pointed_at_the_road = false;
+
+				Map.gun_rotates = true;
+
+				SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_.*" );
+
+				Util.MapDebugPrint( "cannon rotates in the direction of minefield" );
+
+				sleep(5);
+
+				Map.gun_rotates = false;
+
+				if ( !Map.Fire_switch_enabled and Map.switch_is_up )
+				{
+					Map.Fire_switch_enabled = true;
+
+					Util.MapDebugPrint( "Fire_switch enabled after rotation" );
+				}
+
+				if ( !Map.the88mmdestroyed )
+				{
+					if ( Map.BombTruckAtDepotGates and !Map.AlliedCommandPostBuilt )
+					{
+						if ( Map.Fire_switch_enabled )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+						}
+					}
+					else if ( Map.TruckIsOnTheRoad )
+					{
+						if ( Map.AxisCommandPostBuilt )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Road" );
+						}
+						else
+						{
+							if ( Map.Fire_switch_enabled )
+							{
+								SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+							}
+						}
+					}
+					else
+					{
+						if ( Map.Fire_switch_enabled )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+						}
+					}
+				}
+			}
+		}
+	},
+
+	AlliesOnTheRoad =
+	{
+		Name = "AlliesOnTheRoad",
+		TriggerOnClass = CLASS.ANYPLAYER,
+
+		OnEnter = function(ent)
+		{
+			if ( !Map.SignalTransmitted )
+			{
+				if( GetEntTeam(ent) == TEAM.ALLIES )
+				{
+					if (Map.count_Allies_OnTheRoad[ent])
+					{
+						Map.count_Allies_OnTheRoad[ent] += 1;
+					}
+					else
+					{
+						Map.count_Allies_OnTheRoad[ent] = 1;
+					}
+
+					if ( tableCount(Map.count_Allies_OnTheRoad) == 1 )
+					{
+						if ( !Map.BombTruckAtDepotGates and !Map.TruckIsOnTheRoad and !Map.the88mmdestroyed )
+						{
+							if ( Map.cannon_is_pointed_at_the_road )
+                            {
+                                if ( Map.Fire_switch_enabled )
+                                {
+                                    SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+                                }
+                            }
+                            else
+                            {
+                                if ( Map.AxisCommandPostBuilt )
+                                {
+                                    SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Road" );
+                                }
+                            }
+						}
+					}
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.count_Allies_OnTheRoad[ent])
+			{
+				if (Map.count_Allies_OnTheRoad[ent] > 1)
+				{
+					Map.count_Allies_OnTheRoad[ent] -= 1;
+				}
+				else
+				{
+					Map.count_Allies_OnTheRoad[ent] = null;
+				}
+
+				if ( tableCount(Map.count_Allies_OnTheRoad) < 1 )
+				{
+					if ( !Map.TruckIsOnTheRoad )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Axis_Road" );
+					}
+
+					Util.MapDebugPrint( "Allies left trigger AlliesOnTheRoad" );
+				}
+			}
+		},
+	},
+
+	AlliesInMinefield =
+	{
+		Name = "AlliesInMinefield",
+		TriggerOnClass = CLASS.ANYPLAYER,
+
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				if (Map.count_Allies_InMinefield[ent])
+				{
+					Map.count_Allies_InMinefield[ent] += 1;
+				}
+				else
+				{
+					Map.count_Allies_InMinefield[ent] = 1;
+				}
+
+				if ( !Map.SignalTransmitted )
+				{
+					if ( tableCount(Map.count_Allies_InMinefield) == 1 )
+					{
+						if ( !Map.BombTruckAtDepotGates and !Map.TruckIsOnTheRoad and !Map.the88mmdestroyed )
+						{
+							if ( Map.cannon_is_pointed_at_the_minefield )
+                            {
+                                if ( Map.Fire_switch_enabled )
+                                {
+                                    SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+                                }
+                            }
+                            else
+                            {
+                                if ( Map.AxisCommandPostBuilt )
+                                {
+                                    SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Minefield" );
+                                }
+                            }
+						}
+					}
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.count_Allies_InMinefield[ent])
+			{
+				if (Map.count_Allies_InMinefield[ent] > 1)
+				{
+					Map.count_Allies_InMinefield[ent] -= 1;
+				}
+				else
+				{
+					Map.count_Allies_InMinefield[ent] = null;
+				}
+
+				if ( tableCount(Map.count_Allies_InMinefield) < 1 )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Axis_Minefield" );
+
+					Util.MapDebugPrint( "Allies left trigger AlliesInMinefield" );
+				}
+			}
+		},
+	},
+
+	AlliesOnHilltop =
+	{
+		Name = "AlliesOnHilltop",
+		TriggerOnClass = CLASS.ANYPLAYER,
+
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				if (Map.count_Allies_OnHilltop[ent])
+				{
+					Map.count_Allies_OnHilltop[ent] += 1;
+				}
+				else
+				{
+					Map.count_Allies_OnHilltop[ent] = 1;
+				}
+
+				if ( !Map.SignalTransmitted )
+				{
+					if ( tableCount(Map.count_Allies_OnHilltop) == 1 )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Axis_Hilltop_.*" );
+
+						if ( !Map.BombTruckAtDepotGates and !Map.TruckIsOnTheRoad and !Map.the88mmdestroyed )
+						{
+							if ( Map.cannon_is_pointed_at_the_hilltop )
+                            {
+                                if ( Map.Fire_switch_enabled )
+                                {
+                                    SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+                                }
+                            }
+                            else
+                            {
+                                if ( Map.AxisCommandPostBuilt )
+                                {
+                                    SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Hilltop" );
+                                }
+                            }
+						}
+					}
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.count_Allies_OnHilltop[ent])
+			{
+				if (Map.count_Allies_OnHilltop[ent] > 1)
+				{
+					Map.count_Allies_OnHilltop[ent] -= 1;
+				}
+				else
+				{
+					Map.count_Allies_OnHilltop[ent] = null;
+				}
+
+				if ( tableCount(Map.count_Allies_OnHilltop) < 1 )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						"SWITCH_Axis_Hilltop",
+						"DEFEND_Axis_Hilltop_.*",
+					});
+
+					Util.MapDebugPrint( "Allies left trigger AlliesOnHilltop" );
+				}
+			}
+		},
+	},
+
+	TruckOnTheRoad =
+	{
+		Name="TruckOnTheRoad",
+		TriggerOnEntity = GetGoal("MOVER_truck").GetEntity(),
+		OnEnter = function(ent)
+		{
+			if ( !Map.SignalTransmitted )
+			{
+				Map.TruckIsOnTheRoad = true;
+
+				SetGoalPriority( "SWITCH_Axis_Road", 0.71, TEAM.AXIS, 0 );
+				SetGoalPriority( "MOBILEMG42_Axis_Start_Road_5", 0.75, TEAM.AXIS, CLASS.SOLDIER );
+
+				SetGoalPriority( "MOUNTMG42_Allied_Spawn", 0.49, TEAM.ALLIES, 0 );
+				SetGoalPriority( "REPAIRMG42_Allied_Spawn", 0.6, TEAM.ALLIES, CLASS.ENGINEER );
+
+				SetAvailableMapGoals( TEAM.AXIS, false, {
+					"SWITCH_Axis_Hilltop",
+					"SWITCH_Axis_Minefield",
+					"MOBILEMG42_Axis_Start_Road_5",
+				});
+
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					".*_Axis_Road_.*",
+					"CALLARTILLERY_Axis_Hilltop_.*",
+					"ARTILLERY_S_Axis_Hilltop_.*",
+				});
+
+				if ( !Map.the88mmdestroyed )
+				{
+					if ( Map.cannon_is_pointed_at_the_road )
+					{
+						if ( Map.Fire_switch_enabled )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Axis_Road" );
+
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+						}
+					}
+					else
+					{
+						if ( Map.AxisCommandPostBuilt )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Axis_Fire" );
+
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Road" );
+						}
+					}
+				}
+				sleep(0.5);
+				SetAvailableMapGoals( TEAM.AXIS, true, "MOBILEMG42_Axis_Start_Road_5" );
+			}
+
+			Util.MapDebugPrint( "TruckOnTheRoad" );
+		},
+		OnExit = function(ent)
+		{
+			if ( !Map.SignalTransmitted )
+			{
+				Map.TruckIsOnTheRoad = false;
+				Map.TruckNearBridge = true;
+
+				Util.EnableGoal( "ROUTE_RoadWay_.*" );
+
+				ClearGoalRole( "ESCORT_Bomb_Truck", ROLE.ATTACKER );
+
+				SetGoalPriority( "SWITCH_Axis_Road", 0.70, TEAM.AXIS, 0 );
+
+				SetAvailableMapGoals( TEAM.AXIS, false, "AIRSTRIKE_Axis_Start_Hilltop_.*" );
+
+				SetAvailableMapGoals( TEAM.AXIS, true, "AIRSTRIKE_Axis_TruckNearBridge_1" );
+
+				if ( !Map.the88mmdestroyed and Map.AxisCommandPostBuilt )
+				{
+					if ( Map.cannon_is_pointed_at_the_road )
+					{
+						if ( tableCount(Map.count_Allies_OnHilltop) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Hilltop" );
+						}
+						if ( tableCount(Map.count_Allies_InMinefield) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Minefield" );
+						}
+					}
+
+					if ( Map.cannon_is_pointed_at_the_hilltop )
+					{
+						if ( tableCount(Map.count_Allies_InMinefield) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Minefield" );
+						}
+						if ( tableCount(Map.count_Allies_OnTheRoad) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Road" );
+						}
+					}
+
+					if ( Map.cannon_is_pointed_at_the_minefield )
+					{
+						if ( tableCount(Map.count_Allies_OnHilltop) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Hilltop" );
+						}
+						if ( tableCount(Map.count_Allies_OnTheRoad) > 0 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Road" );
+						}
+					}
+				}
+			}
+			Util.MapDebugPrint( "Truck is near Bridge" );
+		},
+	},
+
+	TruckOnTheBridge =
+	{
+		Name="TruckOnTheBridge",
+		TriggerOnEntity = GetGoal("MOVER_truck").GetEntity(),
+		OnEnter = function(ent)
+		{
+			Map.Truck_OnTheBridge = true;
+
+			if ( Map.AssaultRamp_Built )
+			{
+				Util.EnableGoal( "ROUTE_Ramp_.*" );
+			}
+
+			Util.EnableGoal( "ROUTE_MField_.*" );
+
+			ETUtil.SetExcludeIndexes( "BUILD_Bomb_Truck", { 0, 1, 2, 3 } );
+
+			SetGoalPriority( "BUILD_Allied_Command_Post", 0.89, TEAM.ALLIES, 0 );
+
+			Util.MapDebugPrint( "TruckOnTheBridge" );
+		},
+	},
+
+	TruckOnTheBridgeExit =
+	{
+		Name="TruckOnTheBridgeExit",
+		TriggerOnEntity = GetGoal("MOVER_truck").GetEntity(),
+		OnEnter = function(ent)
+		{
+			Map.Truck_OnTheBridge = false;
+			Map.BombTruckOverBridge = true;
+
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				".*_Axis_Start_Road_.*",
+				"DEFEND_Axis_Road_.*",
+				".*_Axis_Start_Hilltop_.*",
+				"DEFEND_Axis_Minefield_5",
+				"DEFEND_Axis_Start_Minefield_12",
+			});
+
+			SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_TruckOverBridge_.*" );
+
+			Util.MapDebugPrint( "TruckOnTheBridge exit" );
+		},
+	},
+
+	Bomb_Truck_Over_Bridge = function( trigger )
+	{
+		ETUtil.SetExcludeIndexes( "BUILD_Bomb_Truck", {} );
+
+		SetGoalPriority( "BUILD_Allied_Command_Post", 0.9, TEAM.ALLIES, 0 );
+
+		SetGoalPriority( "PLANT_Allied_Command_Post", 0.85, TEAM.AXIS, CLASS.ENGINEER );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"SWITCH_Axis_Hilltop",
+			".*_Axis_Hilltop_.*",
+			".*_Axis_Start_Hilltop_.*",
+			"SWITCH_Axis_Road",
+			"CALLARTILLERY_Axis_Road_5",
+			"ARTILLERY_S_Axis_Road_6",
+			".*_Axis_Start_Road_.*",
+			"DEFEND_Axis_Road_.*",
+			"AIRSTRIKE_Axis_TruckNearBridge_1",
+			"SMOKEBOMB_Axis_Start_Minefield_1",
+			"MOBILEMG42_Axis_Minefield_1",
+		});
+
+		SetGoalPriority( "DEFEND_Axis_AtAxis_CP_.*", 0.61, TEAM.AXIS, 0 );
+		SetGoalPriority( "DEFEND_Axis_Minefield_4", 0.6, TEAM.AXIS, 0 );
+		SetGoalPriority( "DEFEND_Axis_Minefield_2", 0.59, TEAM.AXIS, 0 );
+		SetGoalPriority( "DEFEND_Axis_TruckOverBridge_5", 0.58, TEAM.AXIS, 0 );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"SMOKEBOMB_Axis_TruckAtDepotGates_1",
+			"MOBILEMG42_Axis_TruckAtDepotGates_2",
+			"DEFEND_Axis_AtAxis_CP_.*",
+		});
+
+		Util.MapDebugPrint( "Bomb_Truck_Over_Bridge" );
+	},
+
+	Bomb_Truck_At_Depot_Gates = function( trigger )
+	{
+		Map.BombTruckOverBridge = false;
+		Map.BombTruckAtDepotGates = true;
+
+        Util.SetMaxUsers( 6, "BUILD_Allied_Command_Post" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ESCORT_Bomb_Truck",
+			"BUILD_Bomb_Truck",
+		});
+
+		foreach ( id and bot in BotTable )
+		{
+			if ( bot.GetTeam() == TEAM.AXIS )
+			{
+				bot.IgnoreTarget( "MOVER_truck" );
+			}
+		}
+
+		if ( !Map.SignalTransmitted and !Map.AlliedCommandPostBuilt and !Map.the88mmdestroyed )
+		{
+			if ( Map.cannon_is_pointed_at_the_minefield )
+            {
+                if ( Map.Fire_switch_enabled )
+                {
+                    SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Fire" );
+                }
+            }
+            else
+            {
+                if ( Map.AxisCommandPostBuilt )
+                {
+                    SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Axis_Fire" );
+
+                    SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Axis_Minefield" );
+                }
+            }
+		}
+
+		Util.MapDebugPrint( "Bomb_Truck_At_Depot_Gates" );
+	},
+
+	Num_Bots = function()
+	{
+		Util.MapDebugPrint( "Thread Num_Bots" );
+		while(1)
+		{
+			if ( Server.Team[ TEAM.ALLIES ].NumBots > 0 )
+			{
+				if ( Server.Team[ TEAM.ALLIES ].NumBots > 0 and Server.Team[ TEAM.ALLIES ].NumBots < 4 )
+				{
+					Server.MinClassCount[TEAM.ALLIES][CLASS.ENGINEER] = 2;
+					Server.MinClassCount[TEAM.ALLIES][CLASS.MEDIC] = 0;
+
+					Util.MapDebugPrint( "NumBots < 4" );
+				}
+				else if ( Server.Team[ TEAM.ALLIES ].NumBots > 3 and Server.Team[ TEAM.ALLIES ].NumBots < 7 )
+				{
+					Server.MinClassCount[TEAM.ALLIES][CLASS.ENGINEER] = 2;
+					Server.MinClassCount[TEAM.ALLIES][CLASS.SOLDIER] = 2;
+
+					Util.MapDebugPrint( "NumBots > 3 and NumBots < 7" );
+				}
+				else if ( Server.Team[ TEAM.ALLIES ].NumBots > 6 and Server.Team[ TEAM.ALLIES ].NumBots < 10 )
+				{
+					Server.MinClassCount[TEAM.ALLIES][CLASS.ENGINEER] = 3;
+					Server.MinClassCount[TEAM.ALLIES][CLASS.SOLDIER] = 3;
+					Server.MinClassCount[TEAM.ALLIES][CLASS.COVERTOPS] = 1;
+
+					Util.MapDebugPrint( "NumBots > 6 and NumBots < 10" );
+				}
+				else if ( Server.Team[ TEAM.ALLIES ].NumBots > 9 and Server.Team[ TEAM.ALLIES ].NumBots < 15 )
+				{
+					Server.MinClassCount[TEAM.ALLIES][CLASS.ENGINEER] = 3;
+					Server.MinClassCount[TEAM.ALLIES][CLASS.SOLDIER] = 5;
+					Server.MinClassCount[TEAM.ALLIES][CLASS.COVERTOPS] = 2;
+
+					Util.MapDebugPrint( "NumBots > 9 and NumBots < 15" );
+				}
+				else
+				{
+					Server.MinClassCount[TEAM.ALLIES][CLASS.ENGINEER] = 3;
+					Server.MinClassCount[TEAM.ALLIES][CLASS.SOLDIER] = 8;
+					Server.MinClassCount[TEAM.ALLIES][CLASS.COVERTOPS] = 2;
+
+					Util.MapDebugPrint( "NumBots > 14" );
+				}
+			}
+			sleep(10);
+		}
+	},
+
+	Signal_Transmitted = function( trigger )
+	{
+		Util.MapDebugPrint( "Signal_Transmitted" );
+
+		ClearGoalRole( ".*", ROLE.DEFENDER );
+		ClearGoalRole( ".*", ROLE.DEFENDER1 );
+		ClearGoalRole( ".*", ROLE.DEFENDER2 );
+
+		ClearGoalRole( ".*", ROLE.ATTACKER );
+		ClearGoalRole( ".*", ROLE.ATTACKER1 );
+		ClearGoalRole( ".*", ROLE.ATTACKER2 );
+
+        SetGoalPriority( "PLANT_Axis_Command_Post", 0.82, TEAM.ALLIES, 0 );
+        SetGoalPriority( "PLANT_Axis_Command_Post", 0.79, TEAM.ALLIES, CLASS.ENGINEER );
+
+		SetGoalRole( "ATTACK_Allies_WS_Door_.*", ROLE.ATTACKER );
+        SetGoalRole( "PLANT_Allied_Command_Post", ROLE.INFILTRATOR );
+
+		Server.MinClassCount[TEAM.ALLIES][CLASS.FIELDOPS] = 0;
+
+		thread(Map.Num_Bots);
+
+		Util.ChangeCrucialClassForRole( TEAM.ALLIES, ROLE.ATTACKER1, CLASS.SOLDIER );
+		Util.SetMaxUsers( 2, "GRENADE_.*" );
+		Util.SetMaxUsers( 1, "GRENADE_Schnepfer_1" );
+		Util.SetMaxUsers( 1, "GRENADE_Schnepfer_5" );
+		Util.SetMaxUsers( 1, "GRENADE_Krumm_5" );
+		Util.SetMaxUsers( 1, "PLANT_Axis_Command_Post" );
+		Util.SetMaxUsers( 1, "PLANT_Allied_Command_Post" );
+		Util.SetMaxUsers( 1, "BUILD_Allied_Command_Post" );
+
+		WeaponTable.SetWeaponTeamAvailability ( TEAM.ALLIES, CLASS.SOLDIER, WEAPON.PANZERFAUST, true );
+		WeaponTable.SetWeaponTeamAvailability ( TEAM.ALLIES, CLASS.SOLDIER, WEAPON.BAZOOKA, true );
+
+		sleep(12);
+
+		Map.SignalTransmitted = true;
+
+		SetAvailableMapGoals( TEAM.AXIS, false, ".*" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, ".*" );
+
+		Util.EnableGoal( "ROUTE_.*" );
+
+        if ( Map.AxisCommandPostBuilt )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Command_Post" );
+		}
+
+        if ( Map.AlliedCommandPostBuilt )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Allied_Command_Post" );
+		}
+        else
+        {
+            SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_Command_Post" );
+        }
+
+		if ( ETUtil.CountClass( TEAM.AXIS, CLASS.SOLDIER ) < 3 )
+		{
+			WeaponTable.SetWeaponTeamAvailability ( TEAM.AXIS, CLASS.SOLDIER, WEAPON.PANZERFAUST, false );
+		}
+		else
+		{
+			WeaponTable.SetWeaponTeamAvailability ( TEAM.AXIS, CLASS.SOLDIER, WEAPON.PANZERFAUST, true );
+		}
+
+		ETUtil.SetAimModeForMount("MOUNT_Rand", { Vec3(8665.719, 9339.153, 93.845), Vec3(10063.875, 7112.133, 14.889), Vec3(8192.125, 10181.709, 54.310) });
+
+		Util.EnableGoal( {
+			"AMMOCAB_.*",
+			"HEALTHCAB_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*_Axis_Flag_.*",
+			"BUILD_Workshop_Door",
+			"PLANTMINE_Axis_WorkshopDoor_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"CHECKPOINT_station_flag",
+			"SWITCH_Allies_Steam",
+			"GRENADE_Abgrund_.*",
+			"GRENADE_Felsen_.*",
+			"GRENADE_Kartoffel_.*",
+			"GRENADE_Kohlmann_.*",
+			"GRENADE_Krumm_.*",
+			"GRENADE_Kuhhirt_.*",
+			"GRENADE_Rand_.*",
+			"GRENADE_Schnepfer_.*",
+			"GRENADE_RailsPower_.*",
+			"SMOKEBOMB_Allies_Tank_.*",
+			"ATTACK_Allies_Tanks_.*",
+		});
+
+        if ( !Map.Steam_Ready )
+        {
+            SetAvailableMapGoals( TEAM.ALLIES, true, "SMOKEBOMB_Allies_Tank_04" );
+        }
+        else
+        {
+            SetAvailableMapGoals( TEAM.ALLIES, false, "SMOKEBOMB_Allies_Tank_04" );
+        }
+	},
+
+	Window_exploded = function( trigger )
+	{
+		Map.fbWindow_exploded = true;
+
+		Util.MapDebugPrint( "Window_exploded" );
+	},
+
+	station_flag_Allies_Captured = function( trigger )
+	{
+		Map.StationFlagAllies = true;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_station_flag" );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_station_flag" );
+
+		if ( tableCount( Map.count_allies_near_tanks) > 0 )
+		{
+			SetGoalRole( "CHECKPOINT_station_flag", ROLE.INFILTRATOR );
+
+			SetAvailableMapGoals( TEAM.AXIS, false, ".*_Axis_Flag_.*" );
+		}
+
+		Util.MapDebugPrint( "station_flag_Allies_Captured" );
+	},
+
+	station_flag_Axis_Captured = function( trigger )
+	{
+		Map.StationFlagAllies = false;
+
+		ClearGoalRole( "CHECKPOINT_station_flag", ROLE.INFILTRATOR );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_station_flag" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_station_flag" );
+
+		if ( tableCount( Map.count_allies_near_tanks) < 1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_Flag_.*" );
+		}
+
+		Util.MapDebugPrint( "station_flag_Axis_Captured" );
+	},
+
+	Workshop_Door_Built = function( trigger )
+	{
+		Map.WorkshopDoor_Built = true;
+		Wp.SetWaypointFlag( "ws_door_.*", "axis", true );
+		Wp.SetWaypointFlag( "ws_door_.*", "door", true );
+		DynamicPathsUpdated( TEAM.ALLIES );
+
+		GetGoal("DEFEND_Axis_FrontDefend_5").AimVectors =
+		{ Vec3(-0.054, 0.974, -0.219), Vec3(0.892, 0.416, -0.179) };
+		GetGoal("DEFEND_Axis_FrontDefend_3").AimVectors =
+		{ Vec3(-0.994, -0.095, -0.059) };
+		GetGoal("DEFEND_Axis_FrontDefend_4").AimVectors =
+		{ Vec3(-0.999, -0.051, -0.015), Vec3(-0.406, -0.914, -0.023) };
+		GetGoal("DEFEND_Axis_FrontDefend_6").AimVectors =
+		{ Vec3(-0.973, -0.219, -0.075) };
+		GetGoal("DEFEND_Axis_FrontDefend_7").AimVectors =
+		{ Vec3(-0.927, -0.360, -0.103) };
+		GetGoal("DEFEND_Axis_FrontDefend_9").AimVectors =
+		{ Vec3(-0.993, -0.090, -0.077), Vec3(-0.667, -0.732, -0.142) };
+
+		ETUtil.SetAimModeForMount("MOUNT_Rand", { Vec3(8665.719, 9339.153, 93.845), Vec3(10063.875, 7112.133, 14.889) });
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Workshop_Door" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Workshop_Door",
+			"ATTACK_Allies_WS_Door_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ROUTE_Workshop_Door" );
+
+		Util.MapDebugPrint( "Workshop_Door_Built" );
+	},
+
+	Workshop_Door_Planted = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFUSE_Workshop_Door_.*" );
+
+		Util.MapDebugPrint( "Workshop_Door_Planted" );
+	},
+
+	Workshop_Door_Destroyed = function( trigger )
+	{
+		Map.WorkshopDoor_Built = false;
+		Wp.SetWaypointFlag( "ws_door_.*", "axis", false );
+		Wp.SetWaypointFlag( "ws_door_.*", "door", false );
+		DynamicPathsUpdated( TEAM.ALLIES );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_Workshop_Door" );
+
+		GetGoal("DEFEND_Axis_FrontDefend_5").AimVectors =
+		{ Vec3(-0.054, 0.974, -0.219), Vec3(0.892, 0.416, -0.179), Vec3(-0.010, 0.998, -0.057) };
+		GetGoal("DEFEND_Axis_FrontDefend_3").AimVectors =
+		{ Vec3(-0.994, -0.095, -0.059), Vec3(-0.791, 0.612, 0.008) };
+		GetGoal("DEFEND_Axis_FrontDefend_4").AimVectors =
+		{ Vec3(-0.999, -0.051, -0.015), Vec3(-0.406, -0.914, -0.023), Vec3(-0.819, 0.574, 0.010) };
+		GetGoal("DEFEND_Axis_FrontDefend_6").AimVectors =
+		{ Vec3(-0.973, -0.219, -0.075), Vec3(-0.920, 0.383, -0.086) };
+		GetGoal("DEFEND_Axis_FrontDefend_7").AimVectors =
+		{ Vec3(-0.927, -0.360, -0.103), Vec3(-0.955, 0.283, -0.088) };
+		GetGoal("DEFEND_Axis_FrontDefend_9").AimVectors =
+		{ Vec3(-0.993, -0.090, -0.077), Vec3(-0.667, -0.732, -0.142), Vec3(-0.824, 0.562, -0.070) };
+
+		foreach( goal in Util.GoalTable("DEFUSE_Workshop_Door_.*") )
+        {
+            goal.SetAvailable(TEAM.AXIS, false);
+        }
+
+		ETUtil.SetAimModeForMount("MOUNT_Rand", { Vec3(8665.719, 9339.153, 93.845), Vec3(10063.875, 7112.133, 14.889), Vec3(8192.125, 10181.709, 54.310) });
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"PLANT_Workshop_Door",
+			"ATTACK_Allies_WS_Door_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Workshop_Door" );
+
+		Util.MapDebugPrint( "Workshop_Door_Destroyed" );
+	},
+
+	Rails_Safe = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_RailsPower_.*" );
+
+		Wp.SetWaypointFlag( "Rails_.*", "closed", false );
+
+		Util.MapDebugPrint( "Rails_Safe" );
+	},
+
+	AlliesNearTanks =
+	{
+		Name = "AlliesNearTanks",
+		TriggerOnClass = CLASS.ANYPLAYER,
+
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				if (Map.count_allies_near_tanks[ent])
+				{
+					Map.count_allies_near_tanks[ent] += 1;
+				}
+				else
+				{
+					Map.count_allies_near_tanks[ent] = 1;
+				}
+
+				if ( tableCount( Map.count_allies_near_tanks) == 1 )
+				{
+					Util.BotChat( TEAM.AXIS, "sayteam", "^1Allies are near tanks! Defend tanks!", 2 );
+
+                    SetGoalRole( "CHECKPOINT_station_flag", ROLE.INFILTRATOR );
+
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						".*_Axis_Flag_.*",
+						"PLANTMINE_Axis_WorkshopDoor_.*",
+						"CHECKPOINT_station_flag",
+					});
+
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						"DEFEND_Axis_FrontDefend_.*",
+						".*_Axis_LeftDefend_.*",
+					});
+
+					if ( !Map.RandDestroyed )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, "MOUNT_Rand" );
+					}
+
+					sleep(0.5);
+
+					if ( tableCount( Map.count_allies_near_tanks) > 0 )
+					{
+						if ( ETUtil.CountClass( TEAM.AXIS, CLASS.SOLDIER ) > 1 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, {
+								"MOBILEMG42_Axis_FrontDefend_1",
+								"MOBILEMG42_Axis_FrontDefend_10",
+							});
+						}
+
+						if ( !Map.StationFlagAllies )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_Flag_.*" );
+						}
+						else
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_station_flag" );
+						}
+					}
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.count_allies_near_tanks[ent])
+			{
+				if (Map.count_allies_near_tanks[ent] > 1)
+				{
+					Map.count_allies_near_tanks[ent] -= 1;
+				}
+				else
+				{
+					Map.count_allies_near_tanks[ent] = null;
+
+					Util.MapDebugPrint("Tanks are safe");
+				}
+
+				if ( tableCount(Map.count_allies_near_tanks) < 1 )
+				{
+					Util.BotChat( TEAM.AXIS, "sayteam", "^2Tanks are safe!", 2 );
+
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						".*_Axis_FrontDefend_.*",
+						".*_Axis_LeftDefend_.*",
+					});
+
+					if ( !Map.RandDestroyed )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, false, "MOUNT_Rand" );
+					}
+
+					SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_Flag_.*" );
+
+					ClearGoalRole( "CHECKPOINT_station_flag", ROLE.INFILTRATOR );
+
+					SetAvailableMapGoals( TEAM.AXIS, true, "PLANTMINE_Axis_WorkshopDoor_.*" );
+
+					if ( ETUtil.CountClass( TEAM.AXIS, CLASS.SOLDIER ) < 2 )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, false, {
+							"MOBILEMG42_Axis_FrontDefend_1",
+							"MOBILEMG42_Axis_FrontDefend_10",
+						});
+					}
+				}
+			}
+		},
+	},
+
+	//Tanks
+	Felsen_Destroyed = function( trigger )
+	{
+		Map.FelsenDestroyed = true;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_Felsen_.*" );
+
+		Util.MapDebugPrint( "Felsen_Destroyed" );
+	},
+
+	Krumm_Destroyed = function( trigger )
+	{
+		Map.KrummDestroyed = true;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_Krumm_.*" );
+
+		Util.MapDebugPrint( "Krumm_Destroyed" );
+	},
+
+	Schnepfer_Destroyed = function( trigger )
+	{
+		Map.SchnepferDestroyed = true;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_Schnepfer_.*" );
+
+		Util.MapDebugPrint( "Schnepfer_Destroyed" );
+	},
+
+	Kohlmann_Destroyed = function( trigger )
+	{
+		Map.KohlmannDestroyed = true;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_Kohlmann_.*" );
+
+		Util.MapDebugPrint( "Kohlmann_Destroyed" );
+	},
+
+	Abgrund_Destroyed = function( trigger )
+	{
+		Map.AbgrundDestroyed = true;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_Abgrund_.*" );
+
+		Util.MapDebugPrint( "Abgrund_Destroyed" );
+	},
+
+	Rand_Destroyed = function( trigger )
+	{
+		Map.RandDestroyed = true;
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "MOUNT_Rand" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_Rand_.*" );
+
+		Util.MapDebugPrint( "Rand_Destroyed" );
+	},
+
+	Kuhhirt_Destroyed = function( trigger )
+	{
+		Map.KuhhirtDestroyed = true;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_Kuhhirt_.*" );
+
+		Util.MapDebugPrint( "Kuhhirt_Destroyed" );
+	},
+
+	Kartoffel_Destroyed = function( trigger )
+	{
+		Map.KartoffelDestroyed = true;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_Kartoffel_.*" );
+
+		Util.MapDebugPrint( "Kartoffel_Destroyed" );
+	},
+
+	Allies_win = function( trigger )
+	{
+		Map.AlliesWin = true;
+
+        Util.MapDebugPrint( "Allies_win" );
+
+		ETUtil.WinningChat( TEAM.ALLIES );
+
+        ETUtil.LosingChat( TEAM.AXIS );
+	},
+
+	Thirty_second = function( trigger )
+	{
+		Util.MapDebugPrint( "Thirty_second" );
+
+		sleep(30);
+
+		if ( !Map.AlliesWin )
+		{
+			Util.MapDebugPrint( "Axis_Win" );
+
+			ETUtil.WinningChat( TEAM.AXIS );
+
+			ETUtil.LosingChat( TEAM.ALLIES );
+		}
+	},
+
+	Mines_Check = function()
+    {
+        ent = {};
+        for (i=1; i<=25; i+=1)
+        {
+            e = GetEntityByName("mine" + i + "_trigger");
+            pos = GetEntPosition(e);
+            if (TraceLine( pos + Vec3(0,0,30), pos, null, TRACE.ALL, 0, false ).entity)
+            {
+                ent[i] = e;
+            }
+            else
+            {
+                Wp.SetWaypointFlag( "Mine_" + i, "closed", false );
+                Util.MapDebugPrint( "Mine " + i + " doesn't exist" );
+            }
+        }
+        for(;;)
+        {
+            for (i=1; i<=25; i+=1)
+            {
+                if (ent[i] && !EntityIsValid(ent[i]))
+                {
+                    ent[i] = null;
+                    Wp.SetWaypointFlag( "Mine_" + i, "closed", false );
+                    Util.MapDebugPrint( "Mine " + i + " exploded" );
+                }
+            }
+            sleep(0.5);
+        }
+    },
+
+	Steam_Region_Rails =
+	{
+		Name = "Steam_Region_Rails",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if (GetEntTeam(ent) == TEAM.ALLIES)
+			{
+				b = Util.IsBot(ent);
+				if (!b) { b = 1; }
+				Map.b_rails[ent] = b;
+
+				foreach ( ent2 and b2 in Map.b_tanks )
+				{
+					if (typeId(b) > 1) { b.IgnoreTarget(ent2, 99); }
+					if (typeId(b2) > 1) { b2.IgnoreTarget(ent, 99); }
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			b = Map.b_rails[ent];
+			if (b)
+			{
+				Map.b_rails[ent] = null;
+
+				foreach ( ent2 and b2 in Map.b_tanks )
+				{
+					if (typeId(b) > 1) { b.IgnoreTarget(ent2, 0.1); }
+					if (typeId(b2) > 1) { b2.IgnoreTarget(ent, 0.1); }
+				}
+			}
+		},
+	},
+
+	Steam_Region_Tanks =
+	{
+		Name = "Steam_Region_Tanks",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if (GetEntTeam(ent) == TEAM.AXIS)
+			{
+				b = Util.IsBot(ent);
+				if (!b) { b = 1; }
+				Map.b_tanks[ent] = b;
+
+				foreach ( ent2 and b2 in Map.b_rails )
+				{
+					if (typeId(b) > 1) { b.IgnoreTarget(ent2, 99); }
+					if (typeId(b2) > 1) { b2.IgnoreTarget(ent, 99); }
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			b = Map.b_tanks[ent];
+			if (b)
+			{
+				Map.b_tanks[ent] = null;
+				foreach ( ent2 and b2 in Map.b_rails )
+				{
+					if (typeId(b) > 1) { b.IgnoreTarget(ent2, 0.1); }
+					if (typeId(b2) > 1) { b2.IgnoreTarget(ent, 0.1); }
+				}
+			}
+		},
+	},
+
+	Steam = function()
+	{
+		start = Vector3(6891, 8964, 115);
+		end = Vector3(6891, 8954, 115);
+
+		while ( 1 )
+		{
+			q = TraceLine( start, end, null, TRACE.ALL, 0, false );
+
+			if ( q.entity )
+			{
+				if ( GetEntityName(q.entity) == "smoke_down_fiu" )
+                {
+                    if ( Map.Debug )
+                    {
+                        DrawDebugLine( start, end, COLOR.GREEN, 0.5 );
+                    }
+
+                    if ( !Map.Steam_Ready )
+                    {
+                        Map.Steam_Ready = true;
+
+                        SetAvailableMapGoals( TEAM.ALLIES, false, "SMOKEBOMB_Allies_Tank_04" );
+
+                        SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_Allies_Steam" );
+
+                        Util.MapDebugPrint( "Steam_Ready" );
+
+                        sleep(2);   //waiting for the steam to disappear
+
+                        if ( Map.Steam_Ready )
+                        {
+                            DeleteTriggerRegion("Steam_Region_Rails");
+                            DeleteTriggerRegion("Steam_Region_Tanks");
+                            foreach ( ent and b in Map.b_rails )
+                            {
+                                foreach ( ent2 and b2 in Map.b_tanks )
+                                {
+                                    if (typeId(b) > 1) { b.IgnoreTarget(ent2, 0.1); }
+                                    if (typeId(b2) > 1) { b2.IgnoreTarget(ent, 0.1); }
+                                }
+                            }
+                            Map.b_rails = {};
+                            Map.b_tanks = {};
+                        }
+                    }
+                }
+			}
+			else
+			{
+				if ( Map.Debug )
+				{
+					DrawDebugLine( start, end, COLOR.RED, 0.5 );
+				}
+
+                if ( Map.Steam_Ready )
+				{
+					Map.Steam_Ready = false;
+
+					SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Allies_Steam" );
+
+                    SetAvailableMapGoals( TEAM.ALLIES, true, "SMOKEBOMB_Allies_Tank_04" );
+
+                    Util.MapDebugPrint( "Steam_In_Use" );
+
+                    sleep(2);   //waiting for the steam to be spreaded
+
+                    if ( !Map.Steam_Ready )
+					{
+                        OnTriggerRegion(AABB(5780,8575.125,-62.875,8084.465,9408.875,195.332), Map.Steam_Region_Rails );
+                        OnTriggerRegion(AABB(8191.125,7807.125,-62.875,10688.874,10560.875,304.397), Map.Steam_Region_Tanks );
+					}
+				}
+			}
+			sleep(0.5);
+		}
+	},
+};
+
+global OnMapLoad = function()
+{
+	if ( Map.Debug )
+	{
+		Util.DebugColorString = "^3";
+	}
+
+	Wp.SetWaypointFlag( "Mine_.*", "closed", true );
+	Wp.SetWaypointFlag( "Lorry_Wreck.*", "closed", false );
+	Wp.SetWaypointFlag( "Assault_Ramp_1", "closed", true );
+	Wp.SetWaypointFlag( "WS_Door_.*", "axis", false );
+	Wp.SetWaypointFlag( "WS_Door_.*", "door", false );
+	Wp.SetWaypointFlag( "Rails_.*", "closed", true );
+
+	thread ( Map.Mines_Check );
+	thread ( Map.Steam );
+
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Allies have built the Assault Ramp!", Map.Assault_Ramp_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "Axis have built the Depot MG42!", Map.Axis_Depot_MG42_Built );
+	OnTrigger( "The Bomb Truck has been repaired!", Map.Bomb_Truck_Built );
+	OnTrigger( "Allies have built the Hut MG42!", Map.Hut_MG42_Built );
+	OnTrigger( "Axis have built the secure workshop door!!", Map.Workshop_Door_Built );
+	OnTrigger( "Planted at the Allied Command Post.", Map.Allied_Command_Post_Planted );
+	OnTrigger( "Planted at the Assault Ramp.", Map.Assault_Ramp_Planted );
+	OnTrigger( "Planted at the Axis Command Post.", Map.Axis_Command_Post_Planted );
+	OnTrigger( "Planted at the Axis Depot MG42.", Map.Axis_Depot_MG42_Planted );
+	OnTrigger( "Planted at the Hut MG42.", Map.Hut_MG42_Planted );
+	OnTrigger( "Planted at the Workshop Door.", Map.Workshop_Door_Planted );
+	OnTrigger( "Axis have destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Axis have destroyed the Assault Ramp!", Map.Assault_Ramp_Destroyed );
+	OnTrigger( "Allies have destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "Allies have destroyed the Depot MG42!", Map.Axis_Depot_MG42_Destroyed );
+	OnTrigger( "The Bomb Truck has been damaged!", Map.Bomb_Truck_Destroyed );
+	OnTrigger( "Axis have destroyed the Hut MG42!!", Map.Hut_MG42_Destroyed );
+	OnTrigger( "the Lorry Wreck Destroyed.", Map.Lorry_Wreck_Destroyed );
+	OnTrigger( "Allies have destroyed the secure workshop door!!", Map.Workshop_Door_Destroyed );
+	OnTrigger( "^3Axis have reclaimed the Station!", Map.station_flag_Axis_Captured );
+	OnTrigger( "^3Allies have captured the Station!", Map.station_flag_Allies_Captured );
+	OnTrigger( "^3Power to live rails interrupted - rails now safe!", Map.Rails_Safe );
+	OnTrigger( "^3The Bomb Truck is over the bridge!", Map.Bomb_Truck_Over_Bridge );
+	OnTrigger( "^3The Bomb Truck is at the depot gates!!", Map.Bomb_Truck_At_Depot_Gates );
+	OnTrigger( "^3Truck detonation signal transmitted - detonation in 10 seconds!", Map.Signal_Transmitted );
+	OnTrigger( "^3Allies have destroyed the 88mm!", Map.the_88mm_destroyed );
+	OnTrigger( "^3Axis have repaired the 88mm!", Map.the_88mm_repaired );
+	OnTrigger( "lever_fire_goto", Map.Fire_switch );
+	OnTrigger( "lever_aim1_goto", Map.gun_moving_toward_the_road );
+	OnTrigger( "lever_aim2_goto", Map.gun_moving_toward_the_hill );
+	OnTrigger( "lever_aim3_goto", Map.gun_moving_toward_the_minefield );
+	OnTrigger( "thirty second warning.", Map.Thirty_second );
+	OnTrigger( "GRENADE_window Exploded.", Map.Window_exploded );
+	//Tanks
+	OnTrigger( "^3Jagdpanther Felsen has been destroyed!", Map.Felsen_Destroyed );
+	OnTrigger( "^3Jagdpanther Krumm has been destroyed!", Map.Krumm_Destroyed );
+	OnTrigger( "^3Jagdpanther Schnepfer has been destroyed!", Map.Schnepfer_Destroyed );
+	OnTrigger( "^3Jagdpanther Kohlmann has been destroyed!", Map.Kohlmann_Destroyed );
+	OnTrigger( "^3Jagdpanther Abgrund has been destroyed!", Map.Abgrund_Destroyed );
+	OnTrigger( "^3Jagdpanther Rand has been destroyed!", Map.Rand_Destroyed );
+	OnTrigger( "^3Jagdpanther Kuhhirt has been destroyed!", Map.Kuhhirt_Destroyed );
+	OnTrigger( "^3Jagdpanther Kartoffel has been destroyed!", Map.Kartoffel_Destroyed );
+	OnTrigger( "The Allies have destroyed all the Axis armour!", Map.Allies_win );
+
+	Util.DisableGoal( ".*", true );
+	Util.DisableGoal( "ROUTE_Ramp_.*" );
+	Util.DisableGoal( "ROUTE_RoadWay_.*" );
+	Util.DisableGoal( "ROUTE_MField_.*" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"BUILD_Axis_Command_Post",
+		"BUILD_Axis_Depot_MG42",
+		".*_Axis_Start_Hilltop_.*",
+		".*_Axis_Start_Road_.*",
+		".*_Axis_Start_Minefield_.*",
+		"SWITCH_Axis_Fire",
+		".*_Axis_Minefield_.*",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_Allied_Command_Post",
+		"BUILD_Assault_Ramp",
+		"BUILD_Hut_MG42",
+		"PLANT_Lorry_Wreck",
+		"BUILD_Bomb_Truck",
+		"MOUNTMG42_Allied_Spawn",
+		"REPAIRMG42_Allied_Spawn",
+		".*_Allies_Minefield_.*",
+		".*_Allies_Start_Hilltop_.*",
+		"ATTACK_Allies_Start_Truck_.*",
+	});
+
+	SetGoalPriority( "BUILD_Axis_Command_Post", 0.91, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_Start_Hilltop_.*", 0.49, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_Start_Road_.*", 0.49, TEAM.AXIS, 0 );
+	SetGoalPriority( "MOBILEMG42_Axis_Start_Road_5", 0.89, TEAM.AXIS, 0 );
+	SetGoalPriority( "PLANT_.*", 0.72, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Allied_Command_Post", 0.78, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Allied_Command_Post", 0.85, TEAM.AXIS, CLASS.COVERTOPS );
+	SetGoalPriority( "PLANT_Hut_MG42", 0.52, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Hut_MG42", 0.8, TEAM.AXIS, CLASS.COVERTOPS );
+	SetGoalPriority( "SMOKEBOMB_Axis_Start_Minefield_1", 0.82, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_Flag_3", 0.51, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_Flag_5", 0.51, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_Flag_6", 0.52, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_Flag_10", 0.52, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_FrontDefend_.*", 0.55, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_FrontDefend_9", 0.57, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_FrontDefend_4", 0.57, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_LeftDefend_.*", 0.55, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_LeftDefend_2", 0.57, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_LeftDefend_3", 0.56, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_LeftDefend_5", 0.56, TEAM.AXIS, 0 );
+	SetGoalPriority( "MOBILEMG42_Axis_Flag_2", 0.9, TEAM.AXIS, 0 );
+	SetGoalPriority( "MOBILEMG42_Axis_Flag_1", 0.91, TEAM.AXIS, 0 );
+
+	SetGoalPriority( "MOBILEMG42_Axis_LeftDefend_1", 1.01, TEAM.AXIS, 0 );
+
+	SetGoalPriority( "MOUNTMG42_Hut_MG42", 0.51, TEAM.ALLIES, 0 );
+	SetGoalPriority( "REPAIRMG42_Hut_MG42", 0.6, TEAM.ALLIES, 0 );
+	SetGoalPriority( "PLANT_Axis_Command_Post", 0.69, TEAM.ALLIES, 0 ); //roles
+	SetGoalPriority( "SWITCH_Allies_Steam", 0.81, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_WS_Door_.*", 0.81, TEAM.ALLIES, 0 );
+	SetGoalPriority( "SMOKEBOMB_Allies_Tank_.*", 0.81, TEAM.ALLIES, 0 );
+	SetGoalPriority( "SMOKEBOMB_Allies_Tank_04", 0.82, TEAM.ALLIES, 0 );
+	SetGoalPriority( "CHECKPOINT_station_flag", 0.83, TEAM.ALLIES, 0 );
+	SetGoalPriority( "BUILD_Allied_Command_Post", 0.83, TEAM.ALLIES, 0 );
+	SetGoalPriority( "PLANT_Workshop_Door", 0.84, TEAM.ALLIES, 0 );
+	SetGoalPriority( "BUILD_Bomb_Truck", 0.9, TEAM.ALLIES, 0 );
+	SetGoalPriority( "PLANT_Lorry_Wreck", 0.92, TEAM.ALLIES, 0 );
+
+	Util.AddUseWp( "PLANT_Allied_Command_Post", "Plant_Allied_CP" );
+	Util.AddUseWp( "PLANT_Assault_Ramp", "Assault_Ramp_Plant_WP" );
+	Util.AddUseWp( "PLANT_Workshop_Door", "Workshop_Door_Plant_WP_1" );
+	Util.AddUseWp( "PLANT_Workshop_Door", "Workshop_Door_Plant_WP_2" );
+	Util.AddUseWp( "BUILD_Workshop_Door", "Build_WS_Door" );
+	Util.AddUseWp( "BUILD_Assault_Ramp", "Assault_Ramp_2" );
+	Util.AddUseWp( "PLANT_Hut_MG42", "Hut_MG42" );
+
+	Util.AddUseWp( "CHECKPOINT_station_flag", "Flag_1" );
+	Util.AddUseWp( "CHECKPOINT_station_flag", "Flag_2" );
+	Util.AddUseWp( "CHECKPOINT_station_flag", "Flag_3" );
+
+	Util.SetGoalPosition(3215.472656, 1225.874878, 123.125, "PLANT_Lorry_Wreck");
+
+    Util.SetGoalRange( "SWITCH_Allies_Steam", 900);
+
+	Util.LimitToClass("PLANT_Assault_Ramp", TEAM.AXIS, CLASS.COVERTOPS);
+	Util.LimitToClass("PLANT_Hut_MG42", TEAM.AXIS, CLASS.COVERTOPS);
+	Util.LimitToClass("PLANT_Axis_Depot_MG42", TEAM.ALLIES, CLASS.COVERTOPS);
+
+	SetGoalRole( ".*_Axis_Minefield_.*", ROLE.DEFENDER );
+	SetGoalRole( "SWITCH_.*", ROLE.DEFENDER1 );
+	SetGoalRole( "DEFEND_Axis_Start_Hilltop_.*", ROLE.DEFENDER1 );
+	SetGoalRole( ".*_Axis_Hilltop_.*", ROLE.DEFENDER1 );
+	SetGoalRole( "MOUNTMG42_Axis_Depot_MG42", ROLE.DEFENDER1 );
+	SetGoalRole( "MOUNTMG42_Axis_Depot_MG42", ROLE.DEFENDER2 );
+	SetGoalRole( ".*_Axis_Start_Road_.*", ROLE.DEFENDER2 );
+	SetGoalRole( "DEFEND_Axis_Road_.*", ROLE.DEFENDER2 );
+	SetGoalRole( "PLANT_Hut_MG42", ROLE.INFILTRATOR );
+
+	SetGoalRole( "ATTACK_Allies_Start_Truck_.*", ROLE.ATTACKER );
+	SetGoalRole( "ESCORT_Bomb_Truck", ROLE.ATTACKER );
+	SetGoalRole( "ATTACK_Allies_Road_.*", ROLE.ATTACKER );
+	SetGoalRole( "ATTACK_Allies_Start_Hilltop_.*", ROLE.ATTACKER1 );
+	SetGoalRole( "ATTACK_Allies_Minefield_.*", ROLE.ATTACKER2 );
+	SetGoalRole( "PLANT_Axis_Command_Post", { ROLE.ATTACKER, ROLE.ATTACKER2 } );
+
+	Util.SetMaxUsers( 1, "ATTACK_.*" );
+	Util.SetMaxUsers( 1, "DEFEND_.*" );
+	Util.SetMaxUsers( 1, "GRENADE_.*" );
+	Util.SetMaxUsers( 1, "SWITCH_.*" );
+	Util.SetMaxUsers( 1, "PLANT_Lorry_Wreck" );
+	Util.SetMaxUsers( 1, "MOUNT_.*" );
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+	Util.SetMaxUsers( 2, "PLANT_Axis_Command_Post" );
+	Util.SetMaxUsers( 2, "BUILD_Allied_Command_Post" );
+	Util.SetMaxUsers( 1, "PLANT_Workshop_Door" );
+
+	ETUtil.SetExcludeIndexes( "BUILD_Bomb_Truck", { 6 } );
+
+	RegionTrigger.Create(AABB(501.189,2233.307,1.125,1147.288,3121.302,191.383), "DisableBotPush", "Minefield");
+	RegionTrigger.Create(AABB(1846.353,3366.040,12.722,2578.127,3585.952,294.331), "DisableCombatMovement", "the edge of the water near the wooden boat");
+	RegionTrigger.Create(AABB(1779.452,3028.847,121.125,2677.524,3339.991,283.125), "DisableCombatMovement", "around bridge");
+	RegionTrigger.Create(AABB(1715.079,3420.623,449.125,2098.535,3587.998,567.389), "DisableBotPush", "around switches");
+	RegionTrigger.Create(AABB(2479.899,3781.696,641.125,2578.737,3924.875,738.131), "DisableBotPush", "around goal Defend_Axis_Road_4");
+	RegionTrigger.Create(AABB(1387.396,3749.426,641.125,1505.983,3924.875,759.727), "DisableBotPush", "around goal Defend_Axis_Minefield_5");
+	RegionTrigger.Create(AABB(1128.593,3036.706,118.294,1384.421,3392.154,311.642), "DisableBotPush", "around goals Defend_Axis_Minefield_2 & 3");
+	RegionTrigger.Create(AABB(1683.165,1988.133,597.036,2289.206,2576.321,905.910), "DisableBotPush", "Hilltop");
+	RegionTrigger.Create(AABB(2584.432,1789.840,448.583,2722.807,1898.433,584.233), "DisableBotPush", "around goal DEFEND_Axis_Start_Road_6");
+	RegionTrigger.Create(AABB(1383.774,3539.127,641.125,1494.507,3668.422,744.160), "DisableBotPush", "around goal DEFEND_Axis_Start_Minefield_12");
+	RegionTrigger.Create(AABB(1479.126,3353.254,441.125,2195.909,3422.868,563.125), "DisableBotPush", "platform near switches");
+	RegionTrigger.Create(AABB(9707.125,9091.587,145.125,9856.875,9344.874,268.257), "DisableBotPush", "platform & stairs near axis second spawn");
+	RegionTrigger.Create(AABB(10074.875,8928.448,9.125,10160.875,9111.145,136.337), "DisableBotPush", "around goal MOBILEMG42_Axis_FrontDefend_1");
+	RegionTrigger.Create(AABB(4250.535,7060.085,-59.686,4496.551,7501.099,165.437), "DisableBotPush", "around goal MOBILEMG42_Axis_Flag_2");
+	RegionTrigger.Create(AABB(9862.848,4904.650,-62.875,10064.875,5120.875,70.891), "DisableBotPush", "around goal Tunnel");
+	RegionTrigger.Create(AABB(9087.125,7899.808,193.125,9404.875,8012.875,267.125), "DisableBotPush", "around goal DEFEND_Axis_LeftDefend_8 & 7");
+
+	OnTriggerRegion(AABB(3078.460,1049.667,100.125,3116.460,1087.667,174.125), Map.Bomb_Truck_At_Barrier );
+	OnTriggerRegion(AABB(3207.531,1415.879,100.125,3247.031,1474.177,213.025), Map.Bomb_Truck_Past_Barrier );
+	OnTriggerRegion(AABB(2805.708,1572.979,79.552,3978.279,2475.011,579.317), Map.AlliesOnTheRoad );    //trigger: firing range of the cannon on the road
+	OnTriggerRegion(AABB(3035.564,1600.319,100.125,3409.018,2102.013,227.813), Map.TruckOnTheRoad );    //trigger: firing range of the cannon on the road
+	OnTriggerRegion(AABB(501.619,1993.297,1.125,1162.886,3267.377,172.531), Map.AlliesInMinefield );    //trigger around minefield
+	OnTriggerRegion(AABB(1683.165,1988.133,597.036,2289.206,2576.321,905.910), Map.AlliesOnHilltop );   //trigger around hilltop
+	OnTriggerRegion(AABB(2443.243,3087.125,137.125,2526.982,3248.875,253.505), Map.TruckOnTheBridge );  //trigger on the bridge
+	OnTriggerRegion(AABB(2082.043,3087.125,137.125,2133.290,3248.874,253.158), Map.TruckOnTheBridgeExit );  //trigger on the bridge
+	OnTriggerRegion(AABB(6780.891,5126.457,-62.870,10688.859,10529.378,502.555), Map.AlliesNearTanks ); //trigger around tanks
+
+	OnTriggerRegion(AABB(1898.385,3539.125,193.125,2255.823,3870.788,415.868), RegionTrigger.BreakableDistance);    //window in first axis spawn
+	OnTriggerRegion(AABB(2118.597,3309.232,6.808,2429.108,3520.311,211.329), RegionTrigger.BreakableDistance);  //wooden boat under first axis spawn
+	OnTriggerRegion(AABB(1742.437,2327.808,630.982,1952.902,2465.375,816.209), RegionTrigger.BreakableDistance);    //wooden barrier on top of the hill
+	OnTriggerRegion(AABB(2541.558,4922.791,1.125,2977.894,5278.417,210.734), RegionTrigger.BreakableDistance);  //window near Station spawn
+	OnTriggerRegion(AABB(3302.668,5175.125,1.125,3614.012,5666.239,183.702), RegionTrigger.BreakableDistance);  //window near Station spawn
+	OnTriggerRegion(AABB(9785.617,8880.192,161.125,10153.520,9364.504,272.862), RegionTrigger.BreakableDistance);   //window in second axis spawn
+	OnTriggerRegion(AABB(9723.771,8858.310,1.125,9959.734,9283.442,141.819), RegionTrigger.BreakableDistance);  //window under second axis spawn
+	OnTriggerRegion(AABB(5979.423,8852.324,-62.875,6278.829,9051.485,42.792), RegionTrigger.BreakableDistance); //railway warning sign
+	OnTriggerRegion(AABB(8763.679,8857.421,-62.875,9182.299,9055.431,59.352), RegionTrigger.BreakableDistance); //railway warning sign
+
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.MP40, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.THOMPSON, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.PANZERFAUST, false );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.FLAMETHROWER, false );
+
+	print( "^3Omni-bot map script by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12 ^3for Tankbuster executed." );
+
+	if(GetGameState() == "Playing")
+	{
+		sleep(5);
+		Util.BotChat( 0, "say", "^3Omni-bot map script by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12" , 1 );
+	}
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.IgnoreTarget( "MOVER_fan_electrics" );
+
+	wpn = bot.GetWeapon(WEAPON.ALLY_GRENADE);
+	if(wpn)
+	{
+		wpn.PrimaryFire.LowAmmoPriority = 0.82;
+	}
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_station_flag =
+		{
+			ROUTE_Depot =
+			{
+				ROUTE_Depot_Tunnel =
+				{
+					Weight = 3,
+				},
+				ROUTE_Depot_Tunnel =
+				{
+					ROUTE_Depot_Upper_Tunnel =
+					{
+
+					},
+				},
+			},
+
+			ROUTE_AxisSecondSpawn =
+			{
+				ROUTE_Storage =
+				{
+					Weight = 3,
+					ROUTE_Front_Tunnel =
+					{
+
+					},
+				},
+				ROUTE_Steam_Right =
+				{
+					ROUTE_Left_Tunnel =
+					{
+
+					},
+				},
+				ROUTE_Workshop_Door =
+				{
+					ROUTE_Left_Tunnel =
+					{
+
+					},
+				},
+			},
+		},
+
+		BUILD_Bomb_Truck =
+		{
+			ROUTE_Hut_Spawn =
+			{
+				ROUTE_RoadWay_1 =
+				{
+					ROUTE_RoadWay_2 = {},
+				},
+				ROUTE_MField_1 =
+				{
+					ROUTE_MField_2 = {},
+				},
+			},
+		},
+
+		GRENADE_Schnepfer_1 =
+		{
+			ROUTE_Station_Spawn =
+			{
+				ROUTE_Left_Tunnel =
+				{
+					ROUTE_Platform_1 = {},
+				},
+			},
+		},
+
+		GRENADE_Schnepfer_5 =
+		{
+			ROUTE_Station_Spawn =
+			{
+				ROUTE_Left_Tunnel = {},
+			},
+		},
+
+		SMOKEBOMB_Allies_Tank_01 =
+		{
+			ROUTE_Station_Spawn =
+			{
+				ROUTE_Front_Tunnel =
+				{
+					ROUTE_Storage =
+					{
+						ROUTE_Storage_Smoke_1 = {},
+					},
+				},
+			},
+		},
+
+		SMOKEBOMB_Allies_Tank_03 =
+		{
+			ROUTE_Station_Spawn =
+			{
+				ROUTE_Left_Tunnel =
+				{
+					ROUTE_LeftTunnel_Smoke_1 =
+					{
+						ROUTE_LeftTunnel_Smoke_2 =
+						{
+							ROUTE_LeftTunnel_Smoke_3 =
+							{
+								ROUTE_LeftTunnel_Smoke_4 = {},
+							},
+						},
+					},
+				},
+			},
+		},
+	};
+
+	MapRoutes["GRENADE_Abgrund_.*"] =
+	{
+		ROUTE_Station_Spawn =
+		{
+			ROUTE_Left_Tunnel =
+			{
+				ROUTE_Steam_Right =
+				{
+
+				},
+				ROUTE_Steam_Left =
+				{
+
+				},
+				ROUTE_Workshop_Door =
+				{
+
+				},
+			},
+			ROUTE_Front_Tunnel =
+			{
+				ROUTE_Storage =
+				{
+
+				},
+			},
+		},
+	};
+
+	MapRoutes[".*_Axis_Flag_.*"] =
+	{
+		ROUTE_AxisSecondSpawn =
+		{
+			ROUTE_Storage =
+			{
+				ROUTE_Front_Tunnel =
+				{
+
+				},
+			},
+			ROUTE_Steam_Right =
+			{
+				ROUTE_Left_Tunnel =
+				{
+
+				},
+			},
+			ROUTE_Workshop_Door =
+			{
+				ROUTE_Left_Tunnel =
+				{
+
+				},
+			},
+		},
+	};
+
+	MapRoutes["ATTACK_Allies_Road_.*"] =
+	{
+		ROUTE_Hut_Spawn =
+		{
+			ROUTE_Ramp_1 =
+			{
+				ROUTE_Ramp_2 =
+				{
+					ROUTE_Ramp_3 = {},
+				},
+			},
+			ROUTE_RoadWay_1 =
+			{
+				Weight = 2,
+				ROUTE_RoadWay_2 = {},
+			},
+			ROUTE_MField_1 =
+			{
+				ROUTE_MField_2 = {},
+			},
+		},
+	};
+
+	MapRoutes["ATTACK_Allies_Minefield_.*"] = MapRoutes["ATTACK_Allies_Road_.*"];
+	MapRoutes["GRENADE_Felsen_.*"] = MapRoutes["GRENADE_Abgrund_.*"];
+	MapRoutes["GRENADE_Kartoffel_.*"] = MapRoutes["GRENADE_Abgrund_.*"];
+	MapRoutes["GRENADE_Kohlmann_.*"] = MapRoutes["GRENADE_Abgrund_.*"];
+	MapRoutes["GRENADE_Krumm_.*"] = MapRoutes["GRENADE_Abgrund_.*"];
+	MapRoutes["GRENADE_Kuhhirt_.*"] = MapRoutes["GRENADE_Abgrund_.*"];
+	MapRoutes["GRENADE_Rand_.*"] = MapRoutes["GRENADE_Abgrund_.*"];
+	MapRoutes.GRENADE_Schnepfer_2 = MapRoutes["GRENADE_Abgrund_.*"];
+	MapRoutes.GRENADE_Schnepfer_3 = MapRoutes["GRENADE_Abgrund_.*"];
+	MapRoutes.GRENADE_Schnepfer_4 = MapRoutes["GRENADE_Abgrund_.*"];
+	MapRoutes.SMOKEBOMB_Allies_Tank_02 = MapRoutes.SMOKEBOMB_Allies_Tank_01;
+	MapRoutes.SMOKEBOMB_Allies_Tank_04 = MapRoutes.SMOKEBOMB_Allies_Tank_03;
+
+	Util.Routes(MapRoutes);
+};

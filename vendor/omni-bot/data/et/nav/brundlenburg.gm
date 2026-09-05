@@ -1,0 +1,159 @@
+//==========================================================================================
+//
+// brundlenburg.gm
+//
+// Who	       When		What
+//------------------------------------------------------------------------------------------
+// ^6BOTZ^3R^jUS	07 May 2021	Initial Script
+// cyber4wolf 05.08.2021
+//
+// 05.11.2021
+// Added Allied MOBILEMORTAR to all 3 stages of the map
+// This will help the Allied team reach the 3rd stage of the map faster because it is a short 20 minute map
+//
+// Winning the 3rd stage of map for the Allied team is very difficult.
+// This is because the final Axis spawn location "IS" at the 3rd stage of the map
+// DEFUSING the DYNAMITE is EASY for AXIS
+//
+// ^6BOTZ^3R^jUS 04.07.2022 Added and tweaked waypoints and flags
+// C4W 04.07.2022
+// palota 09 June 2025	converted waypoints to Omni-bot 0.9, created new gm script
+//==========================================================================================
+
+global Map =
+{
+	AntennaFence = false, //axis goal name is bridge_1 it is not built and it is a gate not a bridge
+	TankAtEnd = false, // after the front gate is destroyed by the tank
+
+	DispenseHealthTime = 10.0,
+	DispenseAmmoTime = 1.0,
+
+
+	Triggerzone1 = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, false, "MOBILEMORTAR_mapstart");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "MOBILEMORTAR_spawnhut2spawnhut");
+		Util.MapDebugPrint("Triggerzone_1");
+	},
+
+	Triggerzone2 = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_base.*");
+		Util.MapDebugPrint("Triggerzone_2");
+	},
+
+	Triggerzone3 = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, true, "BUILD_bridge");
+		Util.MapDebugPrint("Triggerzone_3");
+	},
+
+	Tank_END = function()
+	{
+		Map.TankAtEnd = true;
+		sleep(0.1);
+		Wp.CheckBlockable();
+		Util.DisableGoal("ESCORT_Tank");
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"BUILD_Tank",
+			"MOBILEMORTAR_spawnhut2spawnhut",
+			".*MG42_236",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"ATTACK_antenna_.*",
+			"PLANT_antenna",
+			".*_Command_Post",
+		});
+		if(GetCvar("g_friendlyfire") < 1)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, true, {
+				"MOBILEMORTAR_bridgeattack",
+				"CALLARTILLERY_frontofbase",
+				"CALLARTILLERY_b4frontofbase",
+				"ARTILLERY_S_frontofbase.*",
+			});
+		}
+		SetAvailableMapGoals(TEAM.ALLIES, Map.AntennaFence,  "PLANT_bridge_1");
+
+		WeaponTable.SetWeaponAvailability(CLASS.SOLDIER, WEAPON.FLAMETHROWER, true);
+		Util.MapDebugPrint("Tank_END");
+	},
+
+	bridge_Built = function()
+	{
+		Util.MapDebugPrint("bridge_Built");
+	},
+
+	bridge_Destroyed = function()
+	{
+		Util.MapDebugPrint("bridge_Destroyed");
+	},
+
+	bridge_1_Built = function()
+	{
+		Map.AntennaFence = true;
+		SetAvailableMapGoals(TEAM.ALLIES, Map.TankAtEnd, "PLANT_bridge_1");
+		Util.MapDebugPrint("bridge_1_Antenna defence Built");
+	},
+
+	bridge_1_Destroyed = function()
+	{
+		Map.AntennaFence = false;
+		SetAvailableMapGoals(TEAM.ALLIES, false, "PLANT_bridge_1");
+		Util.MapDebugPrint("bridge_1_Antenna defence_Destroyed");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("goldrush_axis_tank_barrier1", Map.Triggerzone1); //the tank passes the first Health & Ammo building
+	OnTrigger("goldrush_axis_tank_barrier2", Map.Triggerzone2); //the tank goes under bridge and passes Health & Ammo & CP location
+	OnTrigger("goldrush_axis_bank_courtyard", Map.Triggerzone3); //the tank is almost to the bridge
+	OnTrigger("Allied team has destroyed the Bank Doors!", Map.Tank_END);
+	OnTrigger("Bridge constructed!", Map.bridge_Built);
+	OnTrigger("Antenna defence constructed!", Map.bridge_1_Built);
+	OnTrigger("Bridge destroyed!", Map.bridge_Destroyed);
+	OnTrigger("Antenna defence destroyed!", Map.bridge_1_Destroyed);
+
+	OnTriggerRegion(Vec3(-1695, 2719, 1090), 500, RegionTrigger.DisableBotPush); //bridge
+
+	Util.DisableGoal(".*", true);
+
+	Util.EnableGoal({
+		"MOUNT_Tank",
+		"ESCORT_Tank",
+		"AMMOCAB.*",
+		"HEALTHCAB.*",
+	 });
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"PLANT_bridge",
+		"BUILD_bridge_1",
+		"PLANT_Command_Post",
+		"BUILD_Command_Post",
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"BUILD_Tank",
+		"MOBILEMORTAR_mapstart",
+		".*MG42_236",
+	});
+
+	SetGoalPriority("BUILD_Tank", 0.91);
+	SetGoalPriority("BUILD_bridge", 0.81);
+	SetGoalPriority("BUILD_Command_Post", 0.81);
+	SetGoalPriority("PLANT_Command_Post", 0.5, 0, CLASS.ENGINEER);
+	SetGoalPriority("PLANT_bridge", 0.5, 0, CLASS.ENGINEER);
+
+	Util.AddUsePoint("PLANT_antenna", { Vec3(-35,3359,1021), Vec3(-21, 3422, 1048), Vec3(37,3357,1025)});
+	Util.AddUsePoint("PLANT_bridge_1", Vec3(18, 3150, 1018));
+	Util.AddUsePoint("PLANT_bridge", { Vec3(-1444, 3121, 1019), Vec3(-1938, 2268, 1016)});
+	Util.AddUsePoint("BUILD_bridge", Vec3(-1897,1946,1008) );
+
+	Util.SetMaxUsers(1, "BUILD_.*");
+	Util.SetMaxUsers(1, "PLANT_bridge");
+	Util.SetMaxUsers(1, "PLANT_Command_Post");
+
+	WeaponTable.SetWeaponAvailability(CLASS.SOLDIER, WEAPON.FLAMETHROWER, false);
+
+	Util.MapDebugPrint("^1C ^04 ^1W ^2Custom ^3Omni-bot map script ^6Ver. ^52.85 ^3For the map: ^7" + GetMapName() + " executed.");
+};

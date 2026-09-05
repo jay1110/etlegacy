@@ -1,0 +1,259 @@
+//==========================================================================================
+//
+//	ea_base2.gm
+//
+//	Who	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com 03 October 2017	Initial Script
+// cyber4wolf 9/1/2019 version 3.1 Changed -  everything for allies, nothing done for axis.
+// cyber4wolf 9/3/2019 version 3.5 Changed -  added allied cappoint room defence using region trigger
+// cyber4wolf 9/7/2019 version 3.8 added new routes for defending allied cp building, moved some locations added waypoints
+// palota	11 June 2025
+//==========================================================================================
+//
+
+global Map =
+{
+	trigger1 =
+	{
+		Name = "trigger1",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.AXIS )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_capdefend.*");
+				Util.BotChat( TEAM.ALLIES, "sayteam", "^7THE AXIS ARE IN THE COMMAND POST BUILDING", 2 );
+				Util.MapDebugPrint( "^3AXIS ARE HERE " );
+			}
+		},
+		OnExit = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.AXIS )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_capdefend.*");
+				Util.BotChat( TEAM.ALLIES, "sayteam", "^7THE AXIS HAVE GONE AWAY", 2 );
+				Util.MapDebugPrint( "^3ENEMY HAS LEFT THE BUILDING " );
+			}
+		},
+	},
+
+	SetArty = function(b)
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, b, {
+			"ARTILLERY_S_gate_r_f",
+			"CALLARTILLERY_gate_r_f_c",
+			"ARTILLERY_S_rtower_f",
+			"CALLARTILLERY_rtower_f_c",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, !b, {
+			"CALLARTILLERY_whsedr_b_2_c",
+			"ARTILLERY_S_whsedr_b_2",
+			"CALLARTILLERY_whsedr_f_c",
+			"ARTILLERY_S_whsedr_f",
+			"CALLARTILLERY_whsedr_b_c",
+			"ARTILLERY_S_whsedr_b",
+		});
+	},
+
+	Warehouse_Gate_Planted = function()
+	{
+		Map.SetArty(0);
+		Util.MapDebugPrint( "Warehouse_Gate_Planted" );
+	},
+
+	Warehouse_Gate_Defused = function()
+	{
+		Map.SetArty(1);
+		Util.MapDebugPrint( "Warehouse_Gate_Defused" );
+	},
+
+	Warehouse_Gate_Destroyed = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals( TEAM.AXIS, 1, "CAMP_r2.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"FLAG_scr_AXIS_GOLD",
+			"CAPPOINT_Docs",
+		});
+		Map.SetArty(1);
+
+		OnTriggerRegion(AABB(-416.875,3415.125,617.125,264.875,4000.875,943.125), Map.trigger1); // enemy at cp building
+
+		Util.MapDebugPrint( "Warehouse_Gate_Destroyed" );
+	},
+
+	scr_AXIS_GOLD_Taken = function()
+	{
+		Util.MapDebugPrint( "scr_AXIS_GOLD_Taken" );
+	},
+
+	scr_AXIS_GOLD_Returned = function()
+	{
+		Util.MapDebugPrint( "scr_AXIS_GOLD_Returned" );
+	},
+
+	scr_AXIS_GOLD_Secured = function()
+	{
+		Util.MapDebugPrint( "scr_AXIS_GOLD_Secured" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "Planted at the Warehouse Gate.", Map.Warehouse_Gate_Planted );
+	OnTrigger( "Defused at the Warehouse Gate.", Map.Warehouse_Gate_Defused );
+	OnTrigger( "^3Allies have Destroyed the Warehouse Gate !", Map.Warehouse_Gate_Destroyed );
+
+	OnTrigger( "Allies have stolen the Secret Documents!", Map.scr_AXIS_GOLD_Taken );
+	OnTrigger( "Flag returned scr_AXIS_GOLD!", Map.scr_AXIS_GOLD_Returned );
+	OnTrigger( "Allies have Transmitted the Documents!", Map.scr_AXIS_GOLD_Secured );
+
+	Util.DisableGoal( ".*", 1 );
+
+	Util.LimitToClass("PLANT_Allied_Command_Post", 1, 5);
+	Util.LimitToClass("PLANT_Axis_Command_Post", 2, 5);
+
+	//Allies
+	SetAvailableMapGoals( TEAM.ALLIES, 1, {
+		//"CAMP_b1_.*",
+		"BUILD_Allied_Command_Post",
+		"PLANT_Axis_Command_Post",
+		"PLANT_Warehouse_Gate",
+		"ATTACK_wharehousedoor_.*",
+		"ARTILLERY_S_gate_r_f",
+		"CALLARTILLERY_gate_r_f_c",
+		"ARTILLERY_S_rtower_f",
+		"CALLARTILLERY_rtower_f_c",
+	});
+
+	SetGoalPriority( "PLANT_Warehouse_Gate", 0.9 );
+	SetGoalPriority( "ATTACK_capdefend.*", 0.8 );
+
+	//Axis
+	SetAvailableMapGoals( TEAM.AXIS, 1, {
+		"CAMP_r1_.*",
+		"BUILD_Axis_Command_Post",
+		"PLANT_Allied_Command_Post",
+	});
+
+	Util.SetMaxUsers( 1, "CAMP_.*" );
+	Util.SetMaxUsers( 1, ".*_Command_Post" );
+
+	SetMapGoalProperties( "CAMP_.*", {MinCampTime=60, MaxCampTime=300} );
+
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.FLAMETHROWER, false );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		ATTACK_wharehousedoor_1 =
+		{
+			ROUTE_Alli_Spawn =
+			{
+				ROUTE_Infiltrator_2 =
+				{
+					ROUTE_right =
+					{
+						ROUTE_rightside = {},
+					},
+				},
+			},
+		},
+		PLANT_Warehouse_Gate =
+		{
+			ROUTE_Alli_Spawn =
+			{
+				ROUTE_Infiltrator_1 =
+				{
+					ROUTE_leftside =
+					{
+						ROUTE_leftsidehop =
+						{
+							ROUTE_WH_Gate = {},
+						},
+					},
+					ROUTE_leftsidehop =
+					{
+						ROUTE_WH_Gate = {},
+					},
+				},
+				ROUTE_Infiltrator_2 =
+				{
+					Weight = 2,
+					ROUTE_right =
+					{
+						ROUTE_rightside =
+						{
+							ROUTE_WH_Gate = {},
+						},
+					},
+				},
+			},
+		},
+		FLAG_scr_AXIS_GOLD =
+		{
+			ROUTE_Alli_Spawn =
+			{
+				ROUTE_Infiltrator_1 =
+				{
+					ROUTE_leftside =
+					{
+						ROUTE_leftsidehop =
+						{
+						},
+					},
+					ROUTE_leftsidehop =
+					{
+						ROUTE_WH_Gate =
+						{
+							ROUTE_Docs_X = {},
+						},
+					},
+				},
+				ROUTE_Infiltrator_2 =
+				{
+					Weight = 3,
+					ROUTE_right =
+					{
+						ROUTE_rightside =
+						{
+							ROUTE_WH_Gate =
+							{
+							},
+						},
+					},
+				},
+			},
+		},
+	};
+	MapRoutes["ATTACK_capdefend_.*"] =
+	{
+		ROUTE_Alli_Spawn =
+		{
+			ROUTE_Infiltrator_2 =
+			{
+				ROUTE_defendcpavoidarty =
+				{
+					ROUTE_2defendcpblding =
+					{
+						ROUTE_2defendcpbldingbak =
+						{
+							ROUTE_defendcpavoidarty_back = {},
+						},
+						ROUTE_Axis_CP = {},
+					},
+				},
+			},
+		},
+	};
+	MapRoutes["ATTACK_wharehousedoor_.*"] = MapRoutes.ATTACK_wharehousedoor_1;
+
+	Util.Routes(MapRoutes);
+};

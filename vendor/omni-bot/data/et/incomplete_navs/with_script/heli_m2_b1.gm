@@ -1,0 +1,385 @@
+//==========================================================================================
+//
+//	heli_m2_b1.gm
+//
+//	Who  	When		What
+//------------------------------------------------------------------------------------------
+//	^4Tardis	25 June 2014	Initial Script
+//    Just cleaned up the goals file and a few waypoints from the downloaded zip (Wolffiles)
+//    WARNING use fixed Game script -
+//    you can download at - www.dbjonescomputers.co.uk/et/mapscripts/heli_m2_b1.script
+//	or the pk3 fix www.dbjonescomputers.co.uk/et/z_heli_m2_b1_fix.pk3
+//    Lots of Work TO DO but playable ~ 26 June 2014
+//==========================================================================================
+//
+
+global Map =
+{
+	Allied_CP_Dyno = 0,
+	constructible_control_Dyno = 0,
+	controlul_portilor_Dyno = 0,
+	door = false, //door is down at start
+	no_control = false, //
+
+	Movers =
+	{
+		"MOVER_tank",
+		"MOVER_master_mover",
+		"MOVER_mover_shell",
+	},
+
+	Allied_CP_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true , "PLANT_Allied_CP" );
+		Util.MapDebugPrint( "Command Post constructed/Spawn changed^1!!!" );
+	},
+
+	Door_Controls_Built = function()
+	{
+		//once built can not destroy - DisableGoal
+		//SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Door_Controls" );
+		//Enable Switch for Door Controls
+		SetAvailableMapGoals( TEAM.AXIS, true , "SWITCH_apasa" );
+		SetAvailableMapGoals( TEAM.ALLIES, true , "SWITCH_apasa" );
+		Util.MapDebugPrint( "Door_Controls_Built" );
+	},
+
+	Tank_Built = function()
+	{
+		//Disable Ride , Switch for Heli & Gun
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"RIDE_heli",
+			"SWITCH_butono",
+			"SWITCH_bh",
+		});
+		//Gun Switch still active for Axis
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_butak" );
+
+		Util.MapDebugPrint( "^5The tank has been repaired" );
+	},
+
+	Tank_Damaged = function()
+	{
+		//if sate needed due to Game script call function  wm_announce "The tank has been damaged^1!!!"
+		if ( Map.no_control == true ) //Main tank door is open - thanks to Gun
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"BUILD_Tank",
+				"ESCORT_esc1",
+			});
+			SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_butak" );
+		}
+		else if ( Map.no_control == false ) //Main tank door is closed - no thanks to Gun
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"BUILD_Tank",
+				"ESCORT_esc1",
+			});
+			SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_butak" );
+		}
+
+		Util.MapDebugPrint( "The tank has been damaged^1!!!" );
+	},
+
+	constructible_control_Built = function()
+	{
+
+		// Enable Switch for Gun
+		SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_butono" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_butak" );
+		// Disable the Gun as you can not plant after its built
+		SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_constructible_control" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_constructible_control" );
+
+		Util.MapDebugPrint( "constructible_control_Built" );
+	},
+
+	Allied_CP_Planted = function()
+	{
+		Map.Allied_CP_Dyno += 1;
+		Util.MapDebugPrint( "Allied_CP_Planted" );
+	},
+
+	constructible_control_Planted = function()
+	{
+		Map.constructible_control_Dyno += 1;
+		Util.MapDebugPrint( "constructible_control_Planted" );
+	},
+
+	controlul_portilor_Planted = function()
+	{
+		Map.controlul_portilor_Dyno += 1;
+		Util.MapDebugPrint( "controlul_portilor_Planted" );
+	},
+
+	Allied_CP_Defused = function()
+	{
+		Map.Allied_CP_Dyno -= 1;
+		Util.MapDebugPrint( "Allied_CP_Defused" );
+	},
+
+	constructible_control_Defused = function()
+	{
+		Map.constructible_control_Dyno -= 1;
+		Util.MapDebugPrint( "constructible_control_Defused" );
+	},
+
+	controlul_portilor_Defused = function()
+	{
+		Map.controlul_portilor_Dyno -= 1;
+		Util.MapDebugPrint( "controlul_portilor_Defused" );
+	},
+
+	Allied_CP_Destroyed = function()
+	{
+		Map.Allied_CP_Dyno = 0;
+
+		Util.MapDebugPrint( "Command Post destroyed^1!!!" );
+	},
+
+
+	constructible_control_Destroyed = function()
+	{
+		Map.constructible_control_Dyno = 0;
+
+
+		Util.MapDebugPrint( "constructible_control_Destroyed" );
+	},
+
+	controlul_portilor_Destroyed = function()
+	{
+		Map.controlul_portilor_Dyno = 0;
+		//Enable CP , Door_Controls & FLAG (Objective)
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Allied_CP",
+			"BUILD_Door_Controls",
+			"FLAG_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"FLAG_.*",
+			"DEFEND_apa",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_apdyno");
+
+		Util.MapDebugPrint( "Door control is destroyed^1!!!" );
+	},
+
+	allied_gold_Taken = function()
+	{
+		//make sure bots press the Switch on Door_Controls - should be covered on door_up & door_down
+		if ( Map.door == 1 ) //door is open
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_apasa" );
+			SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_apasa" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"CAPPOINT_a1",
+				"CAPPOINT_a2",
+			});
+		}
+		else if ( Map.door == 0 ) //door is closed
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_apasa" );
+			SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_apasa" );
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"CAPPOINT_a1",
+				"CAPPOINT_a2",
+			});
+		}
+
+		Util.MapDebugPrint( "Allies stolen the First Gold^1!!" );
+	},
+
+	allied_goldtwo_Taken = function()
+	{
+		//make sure bots press the Switch on Door_Controls - should be covered on door_up & door_down
+		if ( Map.door == 1 ) //door is open
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_apasa" );
+			SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_apasa" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"CAPPOINT_a1",
+				"CAPPOINT_a2",
+			});
+		}
+		else if ( Map.door == 0 ) //door is closed
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_apasa" );
+			SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_apasa" );
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"CAPPOINT_a1",
+				"CAPPOINT_a2",
+			});
+		}
+		Util.MapDebugPrint( "Allied captured the Second Gold^1!!" );
+	},
+
+	allied_gold_Returned = function()
+	{
+
+		Util.MapDebugPrint( "Axis have retrieved the gold" );
+	},
+
+	allied_goldtwo_Returned = function()
+	{
+		Util.MapDebugPrint( "Axis returned the gold^1!!" );
+	},
+
+	allied_gold_Secured = function()
+	{
+		Util.MapDebugPrint( "Allied secured the First Gold^1!!" );
+	},
+
+	allied_goldtwo_Secured = function()
+	{
+		Util.MapDebugPrint( "Allied captured the Second Gold^1!!" );
+	},
+
+	no_control = function()
+	{
+		Map.no_control = 1;
+		//once the gun for the tank is has fired once you can no longer destroy the gun control
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_constructible_control.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Tank",
+			"ESCORT_esc1",
+		});
+		Util.MapDebugPrint( "no_control" );
+	},
+
+	no_tank = function()
+	{
+		//once the tank has fired all Objectives
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"BUILD_Tank",
+			"BUILD_constructible_control",
+			"SWITCH_butono",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_butak" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_controlul_portilor" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ESCORT_esc1" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_apdyno");
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_apar");
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_107",
+			"ATTACK_108",
+			"ATTACK_109",
+			"ATTACK_374",
+			"ATTACK_719",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, "SNIPE_.*");
+		SetAvailableMapGoals( TEAM.ALLIES, false, "SNIPE_.*");
+
+		Util.MapDebugPrint( "no_tank" );
+	},
+
+	door_up = function()
+	{
+		Map.door = 1;
+		//once the tank has fired all Objectives
+		SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_apasa" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_apasa" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"CAPPOINT_a1",
+			"CAPPOINT_a2",
+		});
+		Util.MapDebugPrint( "door_up" );
+	},
+
+	door_down = function()
+	{
+		Map.door = 0;
+		//once the tank has fired all Objectives
+		SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_apasa" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_apasa" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CAPPOINT_a1",
+			"CAPPOINT_a2",
+		});
+		Util.MapDebugPrint( "door_down" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "Command Post constructed/Spawn changed^1!!!", Map.Allied_CP_Built );
+	OnTrigger( "Gate Controls have been constructed.", Map.Door_Controls_Built );
+	OnTrigger( "^5The tank has been repaired", Map.Tank_Built );
+	OnTrigger( "The tank has been damaged^1!!!", Map.Tank_Damaged );
+	OnTrigger( "Gun control constructed^1!!!", Map.constructible_control_Built );
+	OnTrigger( "Planted at the Allied_CP.", Map.Allied_CP_Planted );
+	OnTrigger( "Planted at the constructible_control.", Map.constructible_control_Planted );
+	OnTrigger( "Planted at the controlul_portilor.", Map.controlul_portilor_Planted );
+	OnTrigger( "Defused at the Allied_CP.", Map.Allied_CP_Defused );
+	OnTrigger( "Defused at the constructible_control.", Map.constructible_control_Defused );
+	OnTrigger( "Defused at the controlul_portilor.", Map.controlul_portilor_Defused );
+	OnTrigger( "Command Post destroyed^1!!!", Map.Allied_CP_Destroyed );
+	OnTrigger( "The Allied gun control has been destroyed^1!!", Map.constructible_control_Destroyed );
+	OnTrigger( "Door control is destroyed^1!!!", Map.controlul_portilor_Destroyed );
+	OnTrigger( "Allies stolen the First Gold^1!!", Map.allied_gold_Taken );
+	OnTrigger( "Allies stolen the Second Gold^1!!", Map.allied_goldtwo_Taken );
+	OnTrigger( "Axis have retrieved the gold", Map.allied_gold_Returned );
+	OnTrigger( "Axis returned the gold^1!!", Map.allied_goldtwo_Returned );
+	OnTrigger( "Allied secured the First Gold^1!!", Map.allied_gold_Secured );
+	OnTrigger( "Allied captured the Second Gold^1!!", Map.allied_goldtwo_Secured );
+	OnTrigger( "Get The Tank^1!!!!", Map.no_control ); //WARNING use fixed Game script
+	OnTrigger( "Third entrance destroyed^1!!!", Map.no_tank );
+	OnTrigger( "The Loading Doors are Opening!", Map.door_up );
+	OnTrigger( "The Loading Doors are Closing!", Map.door_down );
+	Util.DisableGoal( ".*", true ); // all but routes
+	Util.DisableGoal( "PLANT_Door_Controls.*", true ); //Not used
+	//~SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_.*" );
+	//~SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_.*" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"RIDE_heli",
+		"SWITCH_bh",
+		"BUILD_constructible_control",
+	});
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_constructible_control" );
+	//Defend
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"SNIPE_.*",
+		"DEFEND_107",
+		"DEFEND_109",
+		"DEFEND_374",
+		"DEFEND_apar",
+	});
+	//Attack
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"SNIPE_.*",
+		"ATTACK_107",
+		"ATTACK_108",
+		"ATTACK_109",
+		"ATTACK_374",
+		"ATTACK_719",
+	});
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "DEFEND_.*" );
+	Util.SetMaxUsers( 1, "ATTACK_.*" );
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+	SetMapGoalProperties( "MOBILEMG42_.*", {MinCampTime=10, MaxCampTime=60} );
+	// Dyno and Build old way
+	Util.AddUseWp("PLANT_constructible_control", "plcon");
+	Util.AddUseWp("BUILD_constructible_control", "plcon");
+	Util.AddUseWp("BUILD_Door_Controls", "doorcon");
+	//Util.SetGoalOffset Dyno and Build new way
+	Util.SetGoalOffset( 50, 0, -70, "PLANT_constructible_control" );
+	Util.SetGoalOffset( 80, 0, -50, "BUILD_constructible_control" );
+	Util.SetGoalOffset( -50, 0, -50, "BUILD_Door_Controls" );
+
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." + "WARNING use fixed Game script");
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+	bot.MaxViewDistance = 2400;
+};
+

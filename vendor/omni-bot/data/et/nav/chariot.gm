@@ -1,0 +1,4156 @@
+//==========================================================================================
+//
+//	chariot.gm
+//
+//	Who                    	    When		        What
+//------------------------------------------------------------------------------------------
+//	^1>^7|^4S^7|^1<G^03^1N*^0X	18 April 2012		Initial Script
+//	palota						15 May 2012			fixed syntax errors, fixed triggers, added PLANT use points,
+//													disabled PLANT goals at start, limited CHECKPOINT max users
+//	Qiki						24 February 2024	Navigations, cranes stuff, new waypoints, new initial script,
+//													adjusted PLANT positions, added coverspots and detonatespots
+//	Native12					09.05.2024			Script
+//	Native12					08.06.2024			Update of script, testing
+//	Qiki						09.06.2024			Stuckages
+//	Native12					09.06.2024			Release
+//==========================================================================================
+//	Really BIG thanks to Palota for help with some navigations and triggers
+//	Keep your omni-bot scripts up to date!
+//	Bugs and suggestions: PM on https://fearless-assassins.com/
+
+global Map =
+{
+	First_Pumphouse_Door = true,
+	Second_Pumphouse_Door = true,
+	Fuel_Dump_Primed = false,
+	Fuel_Dump = true,
+	Fuel_Dump_Gate = true,
+	North_Gate_Primed = false,
+	North_Gate = true,
+	North_Winding_Gear_Primed = false,
+	North_Winding_Gear = true,
+	Old_Lock_Primed = false,
+	Old_Lock = true,
+	Pump_Primed = false,
+	Pump = true,
+	South_Winding_Gear_Primed = false,
+	South_Winding_Gear = true,
+	Dockside_Allied = false,
+	Lift_1_Up = true,
+	Lift_1_Down = false,
+	Lift_2_Up = true,
+	Lift_2_Down = false,
+	Lift_1_Up_botId_1 = -1,
+	Lift_1_Up_botId_1 = -1,
+	Lift_1_Up_botId_2 = -1,
+	Lift_1_Up_botId_3 = -1,
+	Lift_2_Up_botId_1 = -1,
+	Lift_2_Up_botId_2 = -1,
+	Lift_2_Up_botId_3 = -1,
+	Lift_1_Down_botId_1 = -1,
+	Lift_1_Down_botId_2 = -1,
+	Lift_1_Down_botId_3 = -1,
+	Lift_2_Down_botId_1 = -1,
+	Lift_2_Down_botId_2 = -1,
+	Lift_2_Down_botId_3 = -1,
+	Ladder_1_In_Use = 0,
+	Ladder_2_In_Use = 0,
+	Allies_At_Ladder_1 = 0,
+	Allies_At_Ladder_2 = 0,
+	Wait_Ladder_1_5_Empty = true,
+	Wait_Ladder_1_4_Empty = true,
+	Wait_Ladder_1_3_Empty = true,
+	Wait_Ladder_1_2_Empty = true,
+	Wait_Ladder_1_1_Empty = true,
+	Wait_Ladder_2_1_Empty = true,
+	Wait_Ladder_2_2_Empty = true,
+	Wait_Ladder_2_3_Empty = true,
+	Wait_Ladder_2_4_Empty = true,
+	Wait_Ladder_2_5_Empty = true,
+	Crane_1_Facing = "West",
+	Crane_2_Facing = "West",
+	Crane_1_Moving_Right = false,
+	Crane_2_Moving_Right = false,
+	count_dyno = 0,
+	cappoint_count = 0,
+	primed_count = 0,
+	destroyed_count = 0,
+	g = null,
+	h = null,
+	owner_CFD = false,
+	owner_CNG = false,
+	owner_CNWG = false,
+	owner_COL = false,
+	owner_CP = false,
+	owner_CSWG = false,
+
+	pht_ally = {},
+	pht_ally_CG = {},
+	sht_ally = {},
+	sht_ally_CG = {},
+	nht_ally = {},
+	nht_ally_CG = {},
+	ngt_ally = {},
+	ngt_ally_CG = {},
+	fdt_ally = {},
+	fdt_ally_CG = {},
+	olt_ally = {},
+	olt_ally_CG = {},
+
+	forceDefend = {},
+	DefendFuelDumpPos = {
+		Vec3(3821.875, 79.957, 192.125),
+		Vec3(3821.875, -425.875, 192.125),
+		Vec3(2322.125, -424.875, 192.125),
+		Vec3(2322.125, -116.078, 192.125),
+	},
+	DefendFuelDumpAim = {
+		{ Vec3(-0.321, -0.900, 0.296), Vec3(-0.922, -0.368, 0.124) },
+		{ Vec3(-0.574, 0.819, 0.010), Vec3(-0.632, -0.072, 0.772) },
+		{ Vec3(0.930, 0.361, 0.072), Vec3(0.529, -0.024, 0.848) },
+		{ Vec3(0.671, -0.688, 0.277), Vec3(1.000, -0.028, 0.013) },
+	},
+
+	DontDispenseAmmo = true,
+
+	Roles =
+	{
+		ALLIES =
+		{
+			AllBots = true, // each bot is considered for a role
+			ATTACKER =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER1 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER2 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER3 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+		},
+
+		AXIS =
+		{
+			AllBots = true, // each bot is considered for a role
+			DEFENDER =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER1 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER2 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER3 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+		},
+	},
+
+	Navigation =
+	{
+		//	/bot waypoint_setproperty paththrough Navigation_PT:jump
+		jump =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:jump_wait
+		jump_wait =
+		{
+			navigate = function(_this)
+			{
+				sleep(0.25);
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:wait_ship_ladder_1_1
+		wait_ship_ladder_1_1 =
+		{
+			OnExit = function(_this)
+			{
+				Map.Wait_Ladder_1_1_Empty = true;
+			},
+			navigate = function(_this)
+			{
+				_this.Goto(_this.Bot.GetPosition());
+
+				while ( !Map.Wait_Ladder_1_1_Empty )
+				{
+					yield();
+				}
+
+				Map.Wait_Ladder_1_1_Empty = false;
+				while ( Map.Ladder_1_In_Use != 0 )
+				{
+					yield();
+				}
+				for (timer = 0; timer < 30 and !_this.Bot.MoveTowards(Vec3(2765.194, 1873.165, 976.305), 10); timer += 1)
+				{
+					_this.Bot.PressButton(BTN.WALK);
+					sleep(0.1);
+				}
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:wait_ship_ladder_1_2
+		wait_ship_ladder_1_2 =
+		{
+			OnExit = function(_this)
+			{
+				Map.Wait_Ladder_1_2_Empty = true;
+			},
+			navigate = function(_this)
+			{
+				Map.ShipLadderInstructions(_this, Vec3(2748.708, 1926.054, 976.125), "Wait_Ladder_1_2_Empty", "Wait_Ladder_1_1_Empty");
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:wait_ship_ladder_1_3
+		wait_ship_ladder_1_3 =
+		{
+			OnExit = function(_this)
+			{
+				Map.Wait_Ladder_1_3_Empty = true;
+			},
+			navigate = function(_this)
+			{
+				Map.ShipLadderInstructions(_this, Vec3(2751.623, 1978.890, 976.125), "Wait_Ladder_1_3_Empty", "Wait_Ladder_1_2_Empty");
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:wait_ship_ladder_1_4
+		wait_ship_ladder_1_4 =
+		{
+			OnExit = function(_this)
+			{
+				Map.Wait_Ladder_1_4_Empty = true;
+			},
+			navigate = function(_this)
+			{
+				Map.ShipLadderInstructions(_this, Vec3(2751.623, 1978.890, 976.125), "Wait_Ladder_1_4_Empty", "Wait_Ladder_1_3_Empty");
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:wait_ship_ladder_1_5
+		wait_ship_ladder_1_5 =
+		{
+			OnExit = function(_this)
+			{
+				Map.Wait_Ladder_1_5_Empty = true;
+			},
+			navigate = function(_this)
+			{
+				Map.ShipLadderInstructions(_this, Vec3(2632.240, 1977.120, 976.125), "Wait_Ladder_1_5_Empty", "Wait_Ladder_1_4_Empty");
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:wait_ship_ladder_1_6
+		wait_ship_ladder_1_6 =
+		{
+			OnExit = function(_this)
+			{
+				Wp.SetWaypointFlag( "Ladder_1", "closed", false );
+				DynamicPathsUpdated( TEAM.ALLIES );
+			},
+			navigate = function(_this)
+			{
+				Wp.SetWaypointFlag( "Ladder_1", "closed", true );
+				DynamicPathsUpdated( TEAM.ALLIES );
+				_this.Goto(_this.Bot.GetPosition());
+
+				while ( Map.Allies_At_Ladder_1 != 0 )
+				{
+					yield();
+				}
+
+				for ( timer = 0; timer <= 30 and !_this.Bot.MoveTowards(Vec3(2795.021, 1871.084, 1112.125), 5); timer += 1 )
+				{
+					_this.Bot.PressButton(BTN.WALK);
+					sleep(0.1);
+				}
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:wait_ship_ladder_2_1
+		wait_ship_ladder_2_1 =
+		{
+			OnExit = function(_this)
+			{
+				Map.Wait_Ladder_2_1_Empty = true;
+			},
+			navigate = function(_this)
+			{
+				Map.ShipLadderInstructions(_this, Vec3(1481.037, 1957.779, 976.125), "Wait_Ladder_2_1_Empty", "Wait_Ladder_2_2_Empty");
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:wait_ship_ladder_2_2
+		wait_ship_ladder_2_2 =
+		{
+			OnExit = function(_this)
+			{
+				Map.Wait_Ladder_2_2_Empty = true;
+			},
+			navigate = function(_this)
+			{
+				Map.ShipLadderInstructions(_this, Vec3(1385.428, 1957.038, 976.125), "Wait_Ladder_2_2_Empty", "Wait_Ladder_2_3_Empty");
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:wait_ship_ladder_2_3
+		wait_ship_ladder_2_3 =
+		{
+			OnExit = function(_this)
+			{
+				Map.Wait_Ladder_2_3_Empty = true;
+			},
+			navigate = function(_this)
+			{
+				Map.ShipLadderInstructions(_this, Vec3(1398.560, 1854.861, 976.125), "Wait_Ladder_2_3_Empty", "Wait_Ladder_2_4_Empty");
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:wait_ship_ladder_2_4
+		wait_ship_ladder_2_4 =
+		{
+			OnExit = function(_this)
+			{
+				Map.Wait_Ladder_2_4_Empty = true;
+			},
+			navigate = function(_this)
+			{
+				Map.ShipLadderInstructions(_this, Vec3(1480.297, 1854.772, 976.125), "Wait_Ladder_2_4_Empty", "Wait_Ladder_2_5_Empty");
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:wait_ship_ladder_2_5
+		wait_ship_ladder_2_5 =
+		{
+			OnExit = function(_this)
+			{
+				Map.Wait_Ladder_2_5_Empty = true;
+			},
+			navigate = function(_this)
+			{
+				_this.Goto(_this.Bot.GetPosition());
+
+				for ( timer = 0; timer <= 100 and !Map.Wait_Ladder_2_5_Empty; timer += 1 )
+				{
+					sleep(0.1);
+					if ( _this.timer == 100 )
+					{
+						_this.Bot.ExecCommand( "kill" );
+					}
+				}
+
+				Map.Wait_Ladder_2_5_Empty = false;
+
+				for ( timer = 0; timer <= 60 and Map.Ladder_2_In_Use != 0; timer += 1 )
+				{
+					sleep(0.1);
+					if ( _this.timer == 60 )
+					{
+						_this.Bot.ExecCommand( "kill" );
+					}
+				}
+
+				for (timer = 0; timer < 30 and !_this.Bot.MoveTowards(Vec3(1513.474, 1855.490, 976.125), 10); timer += 1)
+				{
+					_this.Bot.PressButton(BTN.WALK);
+					sleep(0.1);
+				}
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:wait_ship_ladder_2_6
+		wait_ship_ladder_2_6 =
+		{
+			OnExit = function(_this)
+			{
+				Wp.SetWaypointFlag( "Ladder_2", "closed", false );
+				DynamicPathsUpdated( TEAM.ALLIES );
+			},
+			navigate = function(_this)
+			{
+				Wp.SetWaypointFlag( "Ladder_2", "closed", true );
+				DynamicPathsUpdated( TEAM.ALLIES );
+				_this.Goto(_this.Bot.GetPosition());
+
+				while ( Map.Allies_At_Ladder_2 != 0 )
+				{
+					yield();
+				}
+
+				for ( timer = 0; timer <= 30 and !_this.Bot.MoveTowards(Vec3(1483.806, 1834.144, 1112.125), 5); timer += 1 )
+				{
+					_this.Bot.PressButton(BTN.WALK);
+					sleep(0.1);
+
+					if ( timer == 30 )
+					{
+						return;
+					}
+				}
+				sleep(0.5);
+
+				for ( timer = 0; timer <= 30 and !_this.Bot.MoveTowards(Vec3(1482.369, 1869.875, 976.125), 5); timer += 1 )
+				{
+					_this.Bot.PressButton(BTN.CROUCH);
+					sleep(0.1);
+
+					if ( timer == 30 )
+					{
+						return;
+					}
+				}
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:lift_1_up
+		//	/bot waypoint_setproperty paththrough Navigation_PT:lift_2_up	=> for: Map.Navigation.lift_2_up
+		//	/bot waypoint_setproperty paththrough Navigation_PT:lift_1_down	=> for: Map.Navigation.lift_1_down
+		//	/bot waypoint_setproperty paththrough Navigation_PT:lift_2_down	=> for: Map.Navigation.lift_2_down
+		lift_1_up =
+		{
+			OnExit = function(_this)
+			{
+				botIds = Map.Lifts[_this.CurrentNavigation].botIds;
+				foreach (i and bot in botIds)
+				{
+					if (bot == _this.Bot.GetGameId())
+					{
+						botIds[i] = -1;
+						break;
+					}
+				}
+			},
+			navigate = function(_this)
+			{
+				_this.Goto(_this.Bot.GetPosition());
+				name = _this.CurrentNavigation;
+				lift = Map.Lifts[name];
+				count = tableCount(lift.botIds);
+
+				for (i=0; lift.botIds[i] != -1; i+=1)
+				{
+					if (i >= count)
+					{
+						sleep(1);
+						return;
+					}
+				}
+				lift.botIds[i] = _this.Bot.GetGameId();
+
+				if ( !Map[lift.StartPos] )
+				{
+					while ( !_this.Bot.MoveTowards(lift.WaitPositions[i], 10) )
+					{
+						_this.Bot.PressButton(BTN.WALK);
+						yield();
+					}
+				}
+				while ( !Map[lift.StartPos] )
+				{
+					yield();
+				}
+				if (name.Right(2) == "up")
+				{
+					while ( !_this.Bot.MoveTowards(lift.RidePositions[i], 10) )
+					{
+						_this.Bot.PressButton(BTN.WALK);
+						yield();
+
+						if ( _this.Bot.GetPosition().z < lift.z_pos and Map[lift.EndPos] )
+						{
+							break;
+						}
+					}
+					while ( !Map[lift.EndPos] )
+					{
+						_this.Bot.MoveTowards(_this.Bot.GetPosition());
+						yield();
+					}
+					while ( !_this.Bot.MoveTowards(lift.ExitPosition, 35) )
+					{
+						yield();
+					}
+				}
+				else
+				{
+					while ( !_this.Bot.MoveTowards(lift.RidePositions[i], 10) )
+					{
+						_this.Bot.PressButton(BTN.WALK);
+						yield();
+					}
+					while ( !Map[lift.EndPos] )
+					{
+						_this.Bot.MoveTowards(_this.Bot.GetPosition());
+						yield();
+					}
+					if ( _this.Bot.GetPosition().z < lift.z_pos )
+					{
+						return;
+					}
+					else
+					{
+						while ( !_this.Bot.MoveTowards(lift.ExitPosition, 35) )
+						{
+							yield();
+						}
+					}
+				}
+			},
+		},
+	},
+
+	Lifts =
+	{
+		lift_1_up = {
+			WaitPositions = {
+				Vec3(2450.624, -838.845, 1048.125),
+				Vec3(2452.850, -721.114, 1048.125),
+				Vec3(2446.500, -768.817, 1048.125),
+			},
+			RidePositions = {
+				Vec3(2350.883, -795.961, 1046.167),
+				Vec3(2352.426, -737.099, 1046.125),
+				Vec3(2399.572, -767.797, 1046.125),
+			},
+			ExitPosition = Vec3(2369.504, -649.156, 408.125),
+			botIds = { -1, -1, -1 },
+			StartPos = "Lift_1_Up",
+			EndPos = "Lift_1_Down",
+			z_pos = 430,
+		},
+		lift_2_up = {
+			WaitPositions = {
+				Vec3(3693.009, -710.502, 1048.125),
+				Vec3(3694.381, -843.561, 1048.125),
+				Vec3(3688.483, -767.374, 1048.125),
+			},
+			RidePositions = {
+				Vec3(3787.822, -739.215, 1046.232),
+				Vec3(3784.768, -801.680, 1046.125),
+				Vec3(3749.715, -768.172, 1046.220),
+			},
+			ExitPosition = Vec3(3773.795, -639.370, 408.126),
+			botIds = { -1, -1, -1 },
+			StartPos = "Lift_2_Up",
+			EndPos = "Lift_2_Down",
+			z_pos = 430,
+		},
+		lift_1_down = {
+			WaitPositions = {
+				Vec3(2450.624, -838.845, 414.125),
+				Vec3(2452.850, -721.114, 414.125),
+				Vec3(2446.500, -768.817, 414.125),
+			},
+			RidePositions = {
+				Vec3(2350.883, -795.961, 414.125),
+				Vec3(2352.426, -737.099, 414.125),
+				Vec3(2399.572, -767.797, 414.125),
+			},
+			ExitPosition = Vec3(2366.069, -894.903, 1048.285),
+			botIds = { -1, -1, -1 },
+			StartPos = "Lift_1_Down",
+			EndPos = "Lift_1_Up",
+			z_pos = 435,
+		},
+		lift_2_down = {
+			WaitPositions = {
+				Vec3(3693.009, -710.502, 414.125),
+				Vec3(3694.381, -843.561, 414.125),
+				Vec3(3688.483, -767.374, 414.125),
+			},
+			RidePositions = {
+				Vec3(3787.822, -739.215, 414.125),
+				Vec3(3784.768, -801.680, 414.125),
+				Vec3(3749.715, -768.172, 414.125),
+			},
+			ExitPosition = Vec3(3775.710, -888.062, 1048.125),
+			botIds = { -1, -1, -1 },
+			StartPos = "Lift_2_Down",
+			EndPos = "Lift_2_Up",
+			z_pos = 435,
+		},
+	},
+
+	ShipLadderInstructions = function(_this, pos, empty1, empty2)
+	{
+		_this.Goto(_this.Bot.GetPosition());
+
+		while (!Map[empty1])
+		{
+			yield();
+		}
+
+		Map[empty1] = false;
+		while (!Map[empty2])
+		{
+			yield();
+		}
+		for (timer = 0; timer <= 60 and !_this.Bot.MoveTowards(pos, 10); timer += 1)
+		{
+			_this.Bot.PressButton(BTN.WALK);
+			sleep(0.1);
+		}
+		if ( !_this.Bot.MoveTowards(pos, 10) )
+		{
+			_this.Bot.ExecCommand( "kill" );
+		}
+	},
+
+	First_Pumphouse_Door_Built = function( trigger )
+	{
+		Map.First_Pumphouse_Door = true;
+
+		Wp.SetWaypointFlag( "1st_Pumphouse_Door_1", "door", true );
+		Wp.SetWaypointFlag( "1st_Pumphouse_Door_4", "closed", false );
+		Wp.SetWaypointFlag( "1st_Pumphouse_Door_2", { "door", "axis", "infiltrator" }, true );
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		if ( Map.Second_Pumphouse_Door )
+		{
+			if (!Map.Pump_Primed)
+			{
+				SetGoalRole( "CAPPOINT_Pump", ROLE.ROAMER );
+			}
+			SetGoalRole( "PLANT_Pump", ROLE.ROAMER );
+			SetGoalRole( "ATTACK_Allies_PumpHouse_.*", ROLE.ROAMER );
+		}
+
+		Util.MapDebugPrint( "First_Pumphouse_Door_Built" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_1st_Pumphouse_Door" );
+
+		if ( Map.Pump )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_1st_Pumphouse_Door" );
+		}
+	},
+
+	First_Pumphouse_Door_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "First_Pumphouse_Door_Planted" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_1st_Pumphouse_Door_.*") )
+		{
+			goal.SetRange(1100);
+			goal.MaxUsers_InProgress( 2 );
+			goal.SetGoalPriority( TEAM.AXIS, 0 , 0.8 );
+			goal.SetRoles(ROLE.DEFENDER, ROLE.DEFENDER1);
+
+			if ((!Map.North_Gate or !Map.North_Gate_Primed) and (!Map.North_Winding_Gear or !Map.North_Winding_Gear_Primed))
+			{
+				goal.SetRoles(ROLE.DEFENDER2);
+			}
+			if ( !Map.Fuel_Dump or (!Map.Fuel_Dump_Primed and tableCount(Map.fdt_ally) < 1 and Map.g != "FuelDump" and Map.h != "FuelDump" ))
+			{
+				goal.SetRoles(ROLE.DEFENDER3);
+			}
+		}
+	},
+
+	First_Pumphouse_Door_Destroyed = function( trigger )
+	{
+		Map.First_Pumphouse_Door = false;
+
+		Wp.SetWaypointFlag( "1st_Pumphouse_Door_1", "door", false );
+		Wp.SetWaypointFlag( "1st_Pumphouse_Door_4", "closed", true );
+		Wp.SetWaypointFlag( "1st_Pumphouse_Door_2", { "door", "axis", "infiltrator" }, false );
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		if (!Map.Pump_Primed)
+		{
+			ClearGoalRole( "CAPPOINT_Pump", ROLE.ROAMER );
+		}
+		ClearGoalRole( "PLANT_Pump", ROLE.ROAMER );
+		ClearGoalRole( "ATTACK_Allies_PumpHouse_.*", ROLE.ROAMER );
+
+		Util.MapDebugPrint( "First_Pumphouse_Door_Destroyed" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_1st_Pumphouse_Door" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_1st_Pumphouse_Door_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		if ( Map.Pump )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_1st_Pumphouse_Door" );
+		}
+	},
+
+	Second_Pumphouse_Door_Built = function( trigger )
+	{
+		Map.Second_Pumphouse_Door = true;
+
+		Wp.SetWaypointFlag( "2nd_Pumphouse_Door_1", "door", true );
+		Wp.SetWaypointFlag( "2nd_Pumphouse_Door_4", "closed", false );
+		Wp.SetWaypointFlag( "2nd_Pumphouse_Door_2", { "door", "axis", "infiltrator" }, true );
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		if ( Map.First_Pumphouse_Door )
+		{
+			if (!Map.Pump_Primed)
+			{
+				SetGoalRole( "CAPPOINT_Pump", ROLE.ROAMER );
+			}
+			SetGoalRole( "PLANT_Pump", ROLE.ROAMER );
+			SetGoalRole( "ATTACK_Allies_PumpHouse_.*", ROLE.ROAMER );
+		}
+
+		Util.MapDebugPrint( "Second_Pumphouse_Door_Built" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_2nd_Pumphouse_Door" );
+
+		if ( Map.Pump )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_2nd_Pumphouse_Door" );
+		}
+	},
+
+	Second_Pumphouse_Door_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Second_Pumphouse_Door_Planted" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_2nd_Pumphouse_Door_.*") )
+		{
+			goal.SetRange(1100);
+			goal.MaxUsers_InProgress( 2 );
+			goal.SetGoalPriority( TEAM.AXIS, 0 , 0.8 );
+			goal.SetRoles(ROLE.DEFENDER, ROLE.DEFENDER1);
+
+			if ((!Map.North_Gate or !Map.North_Gate_Primed) and (!Map.North_Winding_Gear or !Map.North_Winding_Gear_Primed))
+			{
+				goal.SetRoles(ROLE.DEFENDER2);
+			}
+			if ( !Map.Fuel_Dump or (!Map.Fuel_Dump_Primed and tableCount(Map.fdt_ally) < 1 and Map.g != "FuelDump" and Map.h != "FuelDump" ))
+			{
+				goal.SetRoles(ROLE.DEFENDER3);
+			}
+		}
+	},
+
+	Second_Pumphouse_Door_Destroyed = function( trigger )
+	{
+		Map.Second_Pumphouse_Door = false;
+
+		Wp.SetWaypointFlag( "2nd_Pumphouse_Door_1", "door", false );
+		Wp.SetWaypointFlag( "2nd_Pumphouse_Door_4", "closed", true );
+		Wp.SetWaypointFlag( "2nd_Pumphouse_Door_2", { "door", "axis", "infiltrator" }, false );
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		if (!Map.Pump_Primed)
+		{
+			ClearGoalRole( "CAPPOINT_Pump", ROLE.ROAMER );
+		}
+		ClearGoalRole( "PLANT_Pump", ROLE.ROAMER );
+		ClearGoalRole( "ATTACK_Allies_PumpHouse_.*", ROLE.ROAMER );
+
+		Util.MapDebugPrint( "Second_Pumphouse_Door_Destroyed" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_2nd_Pumphouse_Door" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_2nd_Pumphouse_Door_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		if ( Map.Pump )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_2nd_Pumphouse_Door" );
+		}
+	},
+
+	Disable_Goals_after_Capture = function ()
+	{
+		if ( Map.count_dyno < 1 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "CAPPOINT_.*" );
+		}
+
+		Util.DisableGoal( ".*Start_.*" );
+		Util.DisableGoal( ".*Out_.*" );
+		Util.DisableGoal(".*MG42_Garage");
+	},
+
+	Enable_Goals_after_Capture = function ()
+	{
+		if ( Map.Old_Lock )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, ".*Axis_OldLockStart_.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, ".*Allies_OldLockStart_.*" );
+		}
+		if ( Map.South_Winding_Gear )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, ".*Axis_SWHOut_.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, ".*Allies_SWHOut_.*" );
+		}
+		if ( Map.Pump )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, ".*Axis_PumpHouseOut_.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, ".*Allies_PumpHouseOut_.*" );
+		}
+		if ( Map.North_Gate )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, ".*Axis_NorthGateStart_.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, ".*Allies_NorthGateStart_.*" );
+		}
+		if ( Map.North_Winding_Gear )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, ".*Axis_NWHOut_.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, ".*Allies_NWHOut_.*" );
+		}
+		if ( Map.Fuel_Dump )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				".*Axis_FuelDumpOut_.*",
+				".*MG42_Garage",
+			});
+			SetAvailableMapGoals( TEAM.ALLIES, true, ".*Allies_FuelDumpOut_.*" );
+		}
+	},
+
+	Manage_Defends_Attacks = function (goal_axis, goal_allied)
+	{
+		amount_ax = Server.Team[TEAM.AXIS].NumPlayers;
+		if ( amount_ax > 0 )
+		{
+			if ( Map.destroyed_count == 5 ) //the last defend is available => all bots
+			{
+				for( i = 1; i <= amount_ax and i <= 20; i += 1 )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, goal_axis + i );
+				}
+			}
+			else    //two differend defend spots are available
+			{
+				if ( Map.primed_count == 2 )    //both dyna placed
+				{
+					for( j = 20; j > Round(amount_ax/2); j -= 1 )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, false, goal_axis + j );
+					}
+					for( i = 1; i <= Round(amount_ax/2) and i <= 10; i += 1 )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, goal_axis + i );
+					}
+				}
+				else
+				{
+					if ( Map.count_dyno == 1 )  //one dyno is taken
+					{
+						for( j = 20; j > Round(amount_ax/2); j -= 1 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, false, goal_axis + j );
+						}
+						for( i = 1; i <= Round(amount_ax/2) and i <= 10; i += 1 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, goal_axis + i );
+						}
+					}
+					else
+					{
+						for( i = 1; i <= amount_ax and i <= 20; i += 1 )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, goal_axis + i );
+						}
+					}
+				}
+			}
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, goal_axis + ".*" );
+		}
+
+		amount_al = Server.Team[TEAM.ALLIES].NumPlayers;
+		if ( amount_al > 0 )
+		{
+			if ( Map.destroyed_count == 5 ) //the last attack is available => all bots
+			{
+				for( k = 1; k <= amount_al and k <= 20; k += 1 )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, goal_allied + k );
+				}
+			}
+			else    //two differend attack spots are available
+			{
+				if ( Map.primed_count == 2 )    //both dyna placed
+				{
+					for( m = 20; m > Round(amount_ax/2); m -= 1 )
+					{
+						SetAvailableMapGoals( TEAM.ALLIES, false, goal_allied + m );
+					}
+					for( k = 1; k <= Round(amount_al/2) and k <= 10; k += 1 )
+					{
+						SetAvailableMapGoals( TEAM.ALLIES, true, goal_allied + k );
+					}
+				}
+				else
+				{
+					if ( Map.count_dyno == 1 )  //one dyno is taken
+					{
+						for( m = 20; m > Round(amount_ax/2); m -= 1 )
+						{
+							SetAvailableMapGoals( TEAM.ALLIES, false, goal_allied + m );
+						}
+						for( k = 1; k <= Round(amount_al/2) and k <= 10; k += 1 )
+						{
+							SetAvailableMapGoals( TEAM.ALLIES, true, goal_allied + k );
+						}
+					}
+					else
+					{
+						for( k = 1; k <= amount_al and k <= 20; k += 1 )
+						{
+							SetAvailableMapGoals( TEAM.ALLIES, true, goal_allied + k );
+						}
+					}
+				}
+			}
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, goal_allied + ".*" );
+		}
+	},
+
+	PumpHouseTrigger =
+	{
+		Name = "PumpHouseTrigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				bot = Util.IsBot(ent);
+				if(bot)
+				{
+					bot.SetRoles(ROLE.ROAMER);
+					goal = bot.GetMapGoalName();
+				}
+
+				if (Map.pht_ally[ent])
+				{
+					Map.pht_ally[ent] += 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.pht_ally_CG[ent] += 1;
+						}
+						else
+						{
+							if (goal == "CAPPOINT_Pump" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.pht_ally_CG[ent] += 1;
+							}
+						}
+					}
+				}
+				else
+				{
+					Map.pht_ally[ent] = 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.pht_ally_CG[ent] = 1;
+						}
+						else
+						{
+							if (goal == "CAPPOINT_Pump" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.pht_ally_CG[ent] = 1;
+							}
+						}
+					}
+				}
+
+				if ( !Map.Pump_Primed and GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+				{
+					thread(Map.Disable_Goals_after_Capture);
+					if ( !bot )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Axis_PumpHouse_[123]");
+					}
+					else
+					{
+						if (goal == "CAPPOINT_Pump" and bot.Name and bot.IsCarryingFlag())
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Axis_PumpHouse_[123]");
+						}
+					}
+					yield();
+					thread(Map.Enable_Goals_after_Capture);
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.pht_ally[ent])
+			{
+				bot = Util.IsBot(ent);
+				if(bot)
+				{
+					bot.ClearRoles(ROLE.ROAMER);
+					goal = bot.GetMapGoalName();
+				}
+
+				if (Map.pht_ally[ent] > 1)
+				{
+					Map.pht_ally[ent] -= 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.pht_ally_CG[ent] -= 1;
+						}
+						else
+						{
+							if (goal != "CAPPOINT_Pump" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.pht_ally_CG[ent] -= 1;
+							}
+						}
+					}
+				}
+				else
+				{
+					Map.pht_ally[ent] = null;
+					Map.pht_ally_CG[ent] = null;
+				}
+
+				if (( tableCount(Map.pht_ally) < 1 or tableCount(Map.pht_ally_CG) < 1) and Map.g != "PumpHouse" and Map.h != "PumpHouse" )
+				{
+					if ( !Map.Pump_Primed or !Map.Pump )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Axis_PumpHouse_[123]");
+						SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Allies_PumpHouse_[123]");
+					}
+				}
+			}
+		},
+	},
+
+	Pump_Captured = function ( trigger )
+	{
+		Map.Pump_Primed = true;
+		Map.count_dyno -= 1;
+		Map.primed_count += 1;
+		Map.cappoint_count += 1;
+		Map.pht_ally[ent] = null;
+		Map.pht_ally_CG[ent] = null;
+
+		Util.MapDebugPrint( "Pump_Captured" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Pump" );
+
+		if ( !Map.owner_CP )
+		{
+			thread( Map.explosives_TakenOrDropped );
+		}
+
+		Util.RemoveGoal( "CAPPOINT_Pump" );
+
+		while ( Map.Pump )
+		{
+			goal_axis = "DEFEND_Axis_PumpHouse_";
+			goal_allied = "ATTACK_Allies_PumpHouse_";
+			Map.Manage_Defends_Attacks(goal_axis, goal_allied);
+
+			sleep(1);
+		}
+
+		Util.DisableGoal(".*_PumpHouse.*");
+	},
+
+	Pump_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Pump_Planted" );
+
+		count = ETUtil.CountClass( TEAM.AXIS, CLASS.ENGINEER);
+
+		foreach( goal in Util.GoalTable("DEFUSE_Pump_.*") )
+		{
+			goal.SetRange(2500);
+			if ( Map.primed_count == 2 and count > 1 )
+			{
+				amount = Round(count/2);
+				goal.MaxUsers_InProgress( ToInt(amount) );
+			}
+			goal.SetGoalPriority( TEAM.AXIS, 0 , 1.1 );
+		}
+	},
+
+	Pump_Destroyed = function( trigger )
+	{
+		Map.Pump = false;
+		Map.primed_count -= 1;
+		Map.destroyed_count += 1;
+		DeleteTriggerRegion("PumpHouseTrigger");	//not earlier because of role Roamer
+
+		Util.MapDebugPrint( "Pump_Destroyed" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_Pump_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		if ( Map.First_Pumphouse_Door or Map.Second_Pumphouse_Door )
+		{
+			Util.DisableGoal( ".*_Pumphouse_Door.*" );
+		}
+
+		Map.SetSpawn();
+	},
+
+	Fuel_Dump_Gate_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Fuel_Dump_Gate_Planted" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_Fuel_Dump_Gate_.*") )
+		{
+			goal.SetRange(2500);
+			goal.MaxUsers_InProgress( 2 );
+			goal.SetGoalPriority( TEAM.AXIS, 0 , 0.9 );
+		}
+	},
+
+	Fuel_Dump_Gate_Destroyed = function( trigger )
+	{
+		Map.Fuel_Dump_Gate = false;
+
+		Util.MapDebugPrint( "Fuel_Dump_Gate_Destroyed" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_Fuel_Dump_Gate_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		Util.EnableGoal( "ROUTE_Lift1Route" );
+		Util.EnableGoal( "ROUTE_Lift2Route" );
+	},
+
+	FuelDumpTrigger =
+	{
+		Name = "FuelDumpTrigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				bot = Util.IsBot(ent);
+				if(bot){goal = bot.GetMapGoalName();}
+				if (Map.fdt_ally[ent])
+				{
+					Map.fdt_ally[ent] += 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.fdt_ally_CG[ent] += 1;
+						}
+						else
+						{
+							if (goal == "CAPPOINT_Fuel_Dump" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.fdt_ally_CG[ent] += 1;
+							}
+						}
+					}
+				}
+				else
+				{
+					Map.fdt_ally[ent] = 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.fdt_ally_CG[ent] = 1;
+						}
+						else
+						{
+							if (goal == "CAPPOINT_Fuel_Dump" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.fdt_ally_CG[ent] = 1;
+							}
+						}
+					}
+				}
+
+				if ( !Map.Fuel_Dump_Primed and GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+				{
+					thread(Map.Disable_Goals_after_Capture);
+					if ( !bot )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Axis_FuelDump_[123]");
+					}
+					else
+					{
+						if (goal == "CAPPOINT_Fuel_Dump" and bot.Name and bot.IsCarryingFlag())
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Axis_FuelDump_[123]");
+						}
+					}
+					yield();
+					thread(Map.Enable_Goals_after_Capture);
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.fdt_ally[ent])
+			{
+				bot = Util.IsBot(ent);
+				if(bot){goal = bot.GetMapGoalName();}
+				if (Map.fdt_ally[ent] > 1)
+				{
+					Map.fdt_ally[ent] -= 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.fdt_ally_CG[ent] -= 1;
+						}
+						else
+						{
+							if (goal != "CAPPOINT_Fuel_Dump" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.fdt_ally_CG[ent] -= 1;
+							}
+						}
+					}
+				}
+				else
+				{
+					Map.fdt_ally[ent] = null;
+					Map.fdt_ally_CG[ent] = null;
+				}
+
+				if (( tableCount(Map.fdt_ally) < 1 or tableCount(Map.fdt_ally_CG) < 1) and Map.g != "FuelDump" and Map.h != "FuelDump" )
+				{
+					if ( !Map.Fuel_Dump_Primed or !Map.Fuel_Dump )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Axis_FuelDump_[123]");
+						SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Allies_FuelDump_[123]");
+					}
+				}
+			}
+		},
+	},
+
+	Fuel_Dump_Captured = function ( trigger )
+	{
+		Map.Fuel_Dump_Primed = true;
+		Map.count_dyno -= 1;
+		Map.primed_count += 1;
+		Map.cappoint_count += 1;
+		DeleteTriggerRegion("FuelDumpTrigger");
+		Map.fdt_ally[ent] = null;
+		Map.fdt_ally_CG[ent] = null;
+
+		Util.MapDebugPrint( "Fuel_Dump_Captured" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Fuel_Dump" );
+
+		if ( !Map.owner_CFD )
+		{
+			thread( Map.explosives_TakenOrDropped );
+		}
+
+		Util.RemoveGoal( "CAPPOINT_Fuel_Dump" );
+
+		while ( Map.Fuel_Dump )
+		{
+			goal_axis = "DEFEND_Axis_FuelDump_";
+			goal_allied = "ATTACK_Allies_FuelDump_";
+			Map.Manage_Defends_Attacks(goal_axis, goal_allied);
+
+			sleep(1);
+		}
+		Util.DisableGoal(".*_FuelDump.*");
+		Util.DisableGoal(".*MG42_Garage");
+	},
+
+	Fuel_Dump_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Fuel_Dump_Planted" );
+
+		goals = Util.GoalTable("DEFUSE_Fuel_Dump_.*");
+		goal = goals[tableCount(goals) - 1];
+		goal.SetRange(3000);
+		count = ETUtil.CountClass( TEAM.AXIS, CLASS.ENGINEER);
+		if ( Map.primed_count == 2 and count > 1 )
+		{
+			goal.MaxUsers_InProgress( ToInt(Round(count/2)) );
+		}
+		goal.SetGoalPriority( TEAM.AXIS, 0, 1.1 );
+
+		for (i=1; i<=4; i+=1)
+		{
+			if (!Map.forceDefend[i] or !GetGoal(Map.forceDefend[i]))
+			{
+				Map.forceDefend[i] = goal.GetName();
+				defend = GetGoal("DEFEND_Axis_FuelDump_" + i);
+				defend.SetPosition(goal.GetPosition());
+				defend.AimVectors = { Vec3(0.805, -0.585, 0.095), Vec3(-0.982, -0.191, -0.010) };
+				break;
+			}
+		}
+
+		Util.MapDebugPrint( "^5goal: "+Map.forceDefend[i] );
+	},
+
+	Fuel_Dump_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Fuel_Dump_Defused" );
+
+		if ( tableCount(Util.GoalTable("DEFUSE_Fuel_Dump_.*")) == 1 )
+		{
+			Map.Fuel_Dump_Random_Plant_Position();
+		}
+
+		yield();
+
+		for (i=1; i<=4; i+=1)
+		{
+			if (Map.forceDefend[i] and !GetGoal(Map.forceDefend[i]))
+			{
+				Map.forceDefend[i] = null;
+				defend = GetGoal("DEFEND_Axis_FuelDump_" + i);
+				defend.SetPosition(Map.DefendFuelDumpPos[i-1]);
+				defend.AimVectors = Map.DefendFuelDumpAim[i-1];
+			}
+		}
+	},
+
+	Fuel_Dump_Destroyed = function( trigger )
+	{
+		Map.Fuel_Dump = false;
+		Map.primed_count -= 1;
+		Map.destroyed_count += 1;
+
+		Wp.SetWaypointFlag( "Fuel_Dump_[12345]", "closed", false );
+		Wp.SetWaypointFlag( "Fuel_Dump_[67]", "closed", true );
+
+		Util.MapDebugPrint( "Fuel_Dump_Destroyed" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_Fuel_Dump_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		Map.forceDefend = {};
+
+		if ( Map.Fuel_Dump_Gate )
+		{
+			Util.DisableGoal( ".*Fuel_Dump_Gate.*" );
+		}
+
+		SetGoalRole( "BUILD_.*_Pumphouse_Door", ROLE.DEFENDER3 );
+	},
+
+	NorthGateTrigger =
+	{
+		Name = "NorthGateTrigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				bot = Util.IsBot(ent);
+				if(bot){goal = bot.GetMapGoalName();}
+				if (Map.ngt_ally[ent])
+				{
+					Map.ngt_ally[ent] += 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.ngt_ally_CG[ent] += 1;
+						}
+						else
+						{
+							if (goal == "CAPPOINT_North_Gate" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.ngt_ally_CG[ent] += 1;
+							}
+						}
+					}
+				}
+				else
+				{
+					Map.ngt_ally[ent] = 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.ngt_ally_CG[ent] = 1;
+						}
+						else
+						{
+							if (goal == "CAPPOINT_North_Gate" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.ngt_ally_CG[ent] = 1;
+							}
+						}
+					}
+				}
+
+				if ( !Map.North_Gate_Primed and GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+				{
+					thread(Map.Disable_Goals_after_Capture);
+					if ( !bot )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Axis_NorthGate_[123]");
+					}
+					else
+					{
+						if (goal == "CAPPOINT_North_Gate" and bot.Name and bot.IsCarryingFlag())
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Axis_NorthGate_[123]");
+						}
+					}
+					yield();
+					thread(Map.Enable_Goals_after_Capture);
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.ngt_ally[ent])
+			{
+				bot = Util.IsBot(ent);
+				if(bot){goal = bot.GetMapGoalName();}
+				if (Map.ngt_ally[ent] > 1)
+				{
+					Map.ngt_ally[ent] -= 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.ngt_ally_CG[ent] -= 1;
+						}
+						else
+						{
+							if (goal != "CAPPOINT_North_Gate" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.ngt_ally_CG[ent] -= 1;
+							}
+						}
+					}
+				}
+				else
+				{
+					Map.ngt_ally[ent] = null;
+					Map.ngt_ally_CG[ent] = null;
+				}
+
+				if (( tableCount(Map.ngt_ally) < 1 or tableCount(Map.ngt_ally_CG) < 1) and Map.g != "NorthGate" and Map.h != "NorthGate" )
+				{
+					if ( !Map.North_Gate_Primed or !Map.North_Gate )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Axis_NorthGate_[123]");
+						SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Allies_NorthGate_[123]");
+					}
+				}
+			}
+		},
+	},
+
+	North_Gate_Captured = function ( trigger )
+	{
+		Map.North_Gate_Primed = true;
+		Map.count_dyno -= 1;
+		Map.primed_count += 1;
+		Map.cappoint_count += 1;
+		DeleteTriggerRegion("NorthGateTrigger");
+		Map.ngt_ally[ent] = null;
+		Map.ngt_ally_CG[ent] = null;
+
+		Util.MapDebugPrint( "North_Gate_Captured" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_North_Gate" );
+
+		if ( !Map.owner_CNG )
+		{
+			thread( Map.explosives_TakenOrDropped );
+		}
+
+		Util.RemoveGoal( "CAPPOINT_North_Gate" );
+
+		ClearGoalRole( "BUILD_.*_Pumphouse_Door", ROLE.DEFENDER2 );
+
+		while ( Map.North_Gate )
+		{
+			goal_axis = "DEFEND_Axis_NorthGate_";
+			goal_allied = "ATTACK_Allies_NorthGate_";
+			Map.Manage_Defends_Attacks(goal_axis, goal_allied);
+
+			sleep(1);
+		}
+
+		Util.DisableGoal(".*_NorthGate.*");
+	},
+
+	North_Gate_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "North_Gate_Planted" );
+
+		count = ETUtil.CountClass( TEAM.AXIS, CLASS.ENGINEER);
+
+		foreach( goal in Util.GoalTable("DEFUSE_North_Gate_.*") )
+		{
+			goal.SetRange(3500);
+			if ( Map.primed_count == 2 and count > 1 )
+			{
+				amount = Round(count/2);
+				goal.MaxUsers_InProgress( ToInt(amount) );
+			}
+			goal.SetGoalPriority( TEAM.AXIS, 0 , 1.1 );
+		}
+	},
+
+	North_Gate_Destroyed = function( trigger )
+	{
+		Map.North_Gate = false;
+		Map.primed_count -= 1;
+		Map.destroyed_count += 1;
+
+		Wp.SetWaypointFlag( "North_Gate_[0123456]", "closed", true);
+		Wp.SetWaypointFlag( "North_Gate_[78]", "closed", false);
+
+		Util.MapDebugPrint( "North_Gate_Destroyed" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_North_Gate_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		if (!Map.North_Winding_Gear or !Map.North_Winding_Gear_Primed)
+		{
+			SetGoalRole( "BUILD_.*_Pumphouse_Door", ROLE.DEFENDER2 );
+		}
+
+		Map.SetSpawn();
+	},
+
+	NorthHutTrigger =
+	{
+		Name = "NorthHutTrigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				bot = Util.IsBot(ent);
+				if(bot){goal = bot.GetMapGoalName();}
+				if (Map.nht_ally[ent])
+				{
+					Map.nht_ally[ent] += 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.nht_ally_CG[ent] += 1;
+						}
+						else
+						{
+							if (goal == "CAPPOINT_North_Winding_Gear" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.nht_ally_CG[ent] += 1;
+							}
+						}
+					}
+				}
+				else
+				{
+					Map.nht_ally[ent] = 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.nht_ally_CG[ent] = 1;
+						}
+						else
+						{
+							if (goal == "CAPPOINT_North_Winding_Gear" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.nht_ally_CG[ent] = 1;
+							}
+						}
+					}
+				}
+
+				if ( !Map.North_Winding_Gear_Primed and GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+				{
+					thread(Map.Disable_Goals_after_Capture);
+					if ( !bot )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Axis_NWH_[123]");
+					}
+					else
+					{
+						if (goal == "CAPPOINT_North_Winding_Gear" and bot.Name and bot.IsCarryingFlag())
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Axis_NWH_[123]");
+						}
+					}
+					yield();
+					thread(Map.Enable_Goals_after_Capture);
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.nht_ally[ent])
+			{
+				bot = Util.IsBot(ent);
+				if(bot){goal = bot.GetMapGoalName();}
+				if (Map.nht_ally[ent] > 1)
+				{
+					Map.nht_ally[ent] -= 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.nht_ally_CG[ent] -= 1;
+						}
+						else
+						{
+							if (goal != "CAPPOINT_North_Winding_Gear" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.nht_ally_CG[ent] -= 1;
+							}
+						}
+					}
+				}
+				else
+				{
+					Map.nht_ally[ent] = null;
+					Map.nht_ally_CG[ent] = null;
+				}
+
+				if (( tableCount(Map.nht_ally) < 1 or tableCount(Map.nht_ally_CG) < 1) and Map.g != "NWH" and Map.h != "NWH" )
+				{
+					if ( !Map.North_Winding_Gear_Primed or !Map.North_Winding_Gear )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Axis_NWH_[123]");
+						SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Allies_NWH_[123]");
+					}
+				}
+			}
+		},
+	},
+
+	North_Winding_Gear_Captured = function ( trigger )
+	{
+		Map.North_Winding_Gear_Primed = true;
+		Map.count_dyno -= 1;
+		Map.primed_count += 1;
+		Map.cappoint_count += 1;
+		DeleteTriggerRegion("NorthHutTrigger");
+		Map.nht_ally[ent] = null;
+		Map.nht_ally_CG[ent] = null;
+
+		Util.MapDebugPrint( "North_Winding_Gear_Captured" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_North_Winding_Gear" );
+
+		if ( !Map.owner_CNWG )
+		{
+			thread( Map.explosives_TakenOrDropped );
+		}
+
+		Util.RemoveGoal( "CAPPOINT_North_Winding_Gear" );
+
+		ClearGoalRole( "BUILD_.*_Pumphouse_Door", ROLE.DEFENDER2 );
+
+		while ( Map.North_Winding_Gear )
+		{
+			goal_axis = "DEFEND_Axis_NWH_";
+			goal_allied = "ATTACK_Allies_NWH_";
+			Map.Manage_Defends_Attacks(goal_axis, goal_allied);
+
+			sleep(1);
+		}
+
+		Util.DisableGoal(".*_NWH.*");
+	},
+
+	North_Winding_Gear_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "North_Winding_Gear_Planted" );
+
+		count = ETUtil.CountClass( TEAM.AXIS, CLASS.ENGINEER);
+
+		foreach( goal in Util.GoalTable("DEFUSE_North_Winding_Gear_.*") )
+		{
+			goal.SetRange(3500);
+			if ( Map.primed_count == 2 and count > 1 )
+			{
+				amount = Round(count/2);
+				goal.MaxUsers_InProgress( ToInt(amount) );
+			}
+			goal.SetGoalPriority( TEAM.AXIS, 0 , 1.1 );
+		}
+	},
+
+	North_Winding_Gear_Destroyed = function( trigger )
+	{
+		Map.North_Winding_Gear = false;
+		Map.primed_count -= 1;
+		Map.destroyed_count += 1;
+
+		for ( o = 0; o <= 45; o += 1 )
+		{
+			Wp.SetWaypointFlag( "NWG_" + o, "closed", true );
+		}
+
+		for ( d = 46; d <= 63; d += 1 )
+		{
+			Wp.SetWaypointFlag( "NWG_" + d, "closed", false );
+		}
+
+		Util.MapDebugPrint( "North_Winding_Gear_Destroyed" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_North_Winding_Gear_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		if (!Map.North_Gate or !Map.North_Gate_Primed)
+		{
+			SetGoalRole( "BUILD_.*_Pumphouse_Door", ROLE.DEFENDER2 );
+		}
+
+		Map.SetSpawn();
+	},
+
+	OldLockTrigger =
+	{
+		Name = "OldLockTrigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				bot = Util.IsBot(ent);
+				if(bot){goal = bot.GetMapGoalName();}
+				if (Map.olt_ally[ent])
+				{
+					Map.olt_ally[ent] += 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.olt_ally_CG[ent] += 1;
+						}
+						else
+						{
+							if (goal == "CAPPOINT_Old_Lock" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.olt_ally_CG[ent] += 1;
+							}
+						}
+					}
+				}
+				else
+				{
+					Map.olt_ally[ent] = 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.olt_ally_CG[ent] = 1;
+						}
+						else
+						{
+							if (goal == "CAPPOINT_Old_Lock" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.olt_ally_CG[ent] = 1;
+							}
+						}
+					}
+				}
+
+				if ( !Map.Old_Lock_Primed and GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+				{
+					thread(Map.Disable_Goals_after_Capture);
+					if ( !bot )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Axis_OldLock_[123]");
+					}
+					else
+					{
+						if (goal == "CAPPOINT_Old_Lock" and bot.Name and bot.IsCarryingFlag())
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Axis_OldLock_[123]");
+						}
+					}
+					yield();
+					thread(Map.Enable_Goals_after_Capture);
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.olt_ally[ent])
+			{
+				bot = Util.IsBot(ent);
+				if(bot){goal = bot.GetMapGoalName();}
+				if (Map.olt_ally[ent] > 1)
+				{
+					Map.olt_ally[ent] -= 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.olt_ally_CG[ent] -= 1;
+						}
+						else
+						{
+							if (goal != "CAPPOINT_Old_Lock" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.olt_ally_CG[ent] -= 1;
+							}
+						}
+					}
+				}
+				else
+				{
+					Map.olt_ally[ent] = null;
+					Map.olt_ally_CG[ent] = null;
+				}
+
+				if (( tableCount(Map.olt_ally) < 1 or tableCount(Map.olt_ally_CG) < 1) and Map.g != "OldLock" and Map.h != "OldLock" )
+				{
+					if ( !Map.Old_Lock_Primed or !Map.Old_Lock )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Axis_OldLock_[123]");
+						SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Allies_OldLock_[123]");
+					}
+				}
+			}
+		},
+	},
+
+	Old_Lock_Captured = function ( trigger )
+	{
+		Map.Old_Lock_Primed = true;
+		Map.count_dyno -= 1;
+		Map.primed_count += 1;
+		Map.cappoint_count += 1;
+		DeleteTriggerRegion("OldLockTrigger");
+		Map.olt_ally[ent] = null;
+		Map.olt_ally_CG[ent] = null;
+
+		Util.MapDebugPrint( "Old_Lock_Captured" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Old_Lock" );
+
+		if ( !Map.owner_COL )
+		{
+			thread( Map.explosives_TakenOrDropped );
+		}
+
+		Util.RemoveGoal( "CAPPOINT_Old_Lock" );
+
+		while ( Map.Old_Lock )
+		{
+			goal_axis = "DEFEND_Axis_OldLock_";
+			goal_allied = "ATTACK_Allies_OldLock_";
+			Map.Manage_Defends_Attacks(goal_axis, goal_allied);
+
+			sleep(1);
+		}
+
+		Util.DisableGoal(".*_OldLock.*");
+	},
+
+	Old_Lock_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Old_Lock_Planted" );
+
+		count = ETUtil.CountClass( TEAM.AXIS, CLASS.ENGINEER);
+
+		foreach( goal in Util.GoalTable("DEFUSE_Old_Lock_.*") )
+		{
+			goal.SetRange(5000);
+			if ( Map.primed_count == 2 and count > 1 )
+			{
+				amount = Round(count/2);
+				goal.MaxUsers_InProgress( ToInt(amount) );
+			}
+			goal.SetGoalPriority( TEAM.AXIS, 0 , 1.1 );
+		}
+	},
+
+	Old_Lock_Destroyed = function( trigger )
+	{
+		Map.Old_Lock = false;
+		Map.primed_count -= 1;
+		Map.destroyed_count += 1;
+
+		Wp.SetWaypointFlag( "Old_Lock_.*", "closed", false );
+
+		RegionTrigger.Create(AABB(1184.222,6135.320,1025.125,1774.457,6297.852,1099.152), "DisableBotPush", "Old_Lock");
+
+		Util.MapDebugPrint( "Old_Lock_Destroyed" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_Old_Lock_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		Map.SetSpawn();
+	},
+
+	SouthHutTrigger =
+	{
+		Name = "SouthHutTrigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				bot = Util.IsBot(ent);
+				if(bot){goal = bot.GetMapGoalName();}
+				if (Map.sht_ally[ent])
+				{
+					Map.sht_ally[ent] += 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.sht_ally_CG[ent] += 1;
+						}
+						else
+						{
+							if (goal == "CAPPOINT_South_Winding_Gear" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.sht_ally_CG[ent] += 1;
+							}
+						}
+					}
+				}
+				else
+				{
+					Map.sht_ally[ent] = 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.sht_ally_CG[ent] = 1;
+						}
+						else
+						{
+							if (goal == "CAPPOINT_South_Winding_Gear" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.sht_ally_CG[ent] = 1;
+							}
+						}
+					}
+				}
+
+				if ( !Map.South_Winding_Gear_Primed and GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+				{
+					thread(Map.Disable_Goals_after_Capture);
+					if ( !bot )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Axis_SWH_[123]");
+					}
+					else
+					{
+						if (goal == "CAPPOINT_South_Winding_Gear" and bot.Name and bot.IsCarryingFlag())
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Axis_SWH_[123]");
+						}
+					}
+					yield();
+					thread(Map.Enable_Goals_after_Capture);
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.sht_ally[ent])
+			{
+				bot = Util.IsBot(ent);
+				if(bot){goal = bot.GetMapGoalName();}
+				if (Map.sht_ally[ent] > 1)
+				{
+					Map.sht_ally[ent] -= 1;
+					if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+					{
+						if(!bot)
+						{
+							Map.sht_ally_CG[ent] -= 1;
+						}
+						else
+						{
+							if (goal != "CAPPOINT_South_Winding_Gear" and bot.Name and bot.IsCarryingFlag())
+							{
+								Map.sht_ally_CG[ent] -= 1;
+							}
+						}
+					}
+				}
+				else
+				{
+					Map.sht_ally[ent] = null;
+					Map.sht_ally_CG[ent] = null;
+				}
+
+				if (( tableCount(Map.sht_ally) < 1 or tableCount(Map.sht_ally_CG) < 1) and Map.g != "SWH" and Map.h != "SWH" )
+				{
+					if ( !Map.South_Winding_Gear_Primed or !Map.South_Winding_Gear )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Axis_SWH_[123]");
+						SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Allies_SWH_[123]");
+					}
+				}
+			}
+		},
+	},
+
+	South_Winding_Gear_Captured = function ( trigger )
+	{
+		Map.South_Winding_Gear_Primed = true;
+		Map.count_dyno -= 1;
+		Map.primed_count += 1;
+		Map.cappoint_count += 1;
+		DeleteTriggerRegion("SouthHutTrigger");
+		Map.sht_ally[ent] = null;
+		Map.sht_ally_CG[ent] = null;
+
+		Util.MapDebugPrint( "South_Winding_Gear_Captured" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_South_Winding_Gear" );
+
+		if ( !Map.owner_CSWG )
+		{
+			thread( Map.explosives_TakenOrDropped );
+		}
+
+		Util.RemoveGoal( "CAPPOINT_South_Winding_Gear" );
+
+		while ( Map.South_Winding_Gear )
+		{
+			goal_axis = "DEFEND_Axis_SWH_";
+			goal_allied = "ATTACK_Allies_SWH_";
+			Map.Manage_Defends_Attacks(goal_axis, goal_allied);
+
+			sleep(1);
+		}
+
+		Util.DisableGoal(".*_SWH.*");
+	},
+
+	South_Winding_Gear_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "South_Winding_Gear_Planted" );
+
+		count = ETUtil.CountClass( TEAM.AXIS, CLASS.ENGINEER);
+
+		foreach( goal in Util.GoalTable("DEFUSE_South_Winding_Gear_.*") )
+		{
+			goal.SetRange(2500);
+			if ( Map.primed_count == 2 and count > 1 )
+			{
+				amount = Round(count/2);
+				goal.MaxUsers_InProgress( ToInt(amount) );
+			}
+			goal.SetGoalPriority( TEAM.AXIS, 0 , 1.1 );
+		}
+	},
+
+	South_Winding_Gear_Destroyed = function( trigger )
+	{
+		Map.South_Winding_Gear = false;
+		Map.primed_count -= 1;
+		Map.destroyed_count += 1;
+
+		for ( s = 0; s <= 45; s += 1 )
+		{
+			Wp.SetWaypointFlag( "SWG_" + s, "closed", true );
+		}
+
+
+		for ( k = 46; k <= 63; k += 1 )
+		{
+			Wp.SetWaypointFlag( "SWG_" + k, "closed", false );
+		}
+
+		Util.MapDebugPrint( "South_Winding_Gear_Destroyed" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_South_Winding_Gear_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		Map.SetSpawn();
+	},
+
+	explosives_TakenOrDropped = function( trigger )
+	{
+		Util.MapDebugPrint( "explosives_TakenOrDropped" );
+
+		Map.g = null;
+		Map.h = null;
+		foreach ( bot in BotTable )
+		{
+			if ( bot.IsCarryingFlag() )
+			{
+				switch (bot.GetMapGoalName())
+				{
+					case "CAPPOINT_Fuel_Dump":
+					{
+						if (!Map.g)
+						{
+							Map.g = "FuelDump";
+							Util.MapDebugPrint("first goal: " + Map.g);
+						}
+						else
+						{
+							Map.h = "FuelDump";
+							Util.MapDebugPrint("second goal: " + Map.h);
+						}
+						if (!Map.owner_CFD)
+						{
+							Map.owner_CFD = true;
+							thread(Map.CFD_check, bot);
+						}
+					}
+					case "CAPPOINT_North_Gate":
+					{
+						if (!Map.g)
+						{
+							Map.g = "NorthGate";
+							Util.MapDebugPrint("first goal: " + Map.g);
+						}
+						else
+						{
+							Map.h = "NorthGate";
+							Util.MapDebugPrint("second goal: " + Map.h);
+						}
+						if (!Map.owner_CNG)
+						{
+							Map.owner_CNG = true;
+							thread(Map.CNG_check, bot);
+						}
+					}
+					case "CAPPOINT_North_Winding_Gear":
+					{
+						if (!Map.g)
+						{
+							Map.g = "NWH";
+							Util.MapDebugPrint("first goal: " + Map.g);
+						}
+						else
+						{
+							Map.h = "NWH";
+							Util.MapDebugPrint("second goal: " + Map.h);
+						}
+						if (!Map.owner_CNWG)
+						{
+							Map.owner_CNWG = true;
+							thread(Map.CNWG_check, bot);
+						}
+					}
+					case "CAPPOINT_Old_Lock":
+					{
+						if (!Map.g)
+						{
+							Map.g = "OldLock";
+							Util.MapDebugPrint("first goal: " + Map.g);
+						}
+						else
+						{
+							Map.h = "OldLock";
+							Util.MapDebugPrint("second goal: " + Map.h);
+						}
+						if (!Map.owner_COL)
+						{
+							Map.owner_COL = true;
+							thread(Map.COL_check, bot);
+						}
+					}
+					case "CAPPOINT_Pump":
+					{
+						if (!Map.g)
+						{
+							Map.g = "PumpHouse";
+							Util.MapDebugPrint("first goal: " + Map.g);
+						}
+						else
+						{
+							Map.h = "PumpHouse";
+							Util.MapDebugPrint("second goal: " + Map.h);
+						}
+						if (!Map.owner_CP)
+						{
+							Map.owner_CP = true;
+							thread(Map.CP_check, bot);
+						}
+					}
+					case "CAPPOINT_South_Winding_Gear":
+					{
+						if (!Map.g)
+						{
+							Map.g = "SWH";
+							Util.MapDebugPrint("first goal: " + Map.g);
+						}
+						else
+						{
+							Map.h = "SWH";
+							Util.MapDebugPrint("second goal: " + Map.h);
+						}
+						if (!Map.owner_CSWG)
+						{
+							Map.owner_CSWG = true;
+							thread(Map.CSWG_check, bot);
+						}
+					}
+					default:
+					{
+						Map.OtherGoal_check(bot);
+					}
+				}
+			}
+		}
+
+		if(Map.g)
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"ATTACK_Allies_" + Map.g + "_1",
+				"ATTACK_Allies_" + Map.g + "_2",
+				"ATTACK_Allies_" + Map.g + "_3",
+			});
+
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"DEFEND_Axis_" + Map.g + "_1",
+				"DEFEND_Axis_" + Map.g + "_2",
+				"DEFEND_Axis_" + Map.g + "_3",
+			});
+		}
+		if(Map.h)
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"ATTACK_Allies_" + Map.h + "_1",
+				"ATTACK_Allies_" + Map.h + "_2",
+				"ATTACK_Allies_" + Map.h + "_3",
+			});
+
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"DEFEND_Axis_" + Map.h + "_1",
+				"DEFEND_Axis_" + Map.h + "_2",
+				"DEFEND_Axis_" + Map.h + "_3",
+			});
+		}
+
+		DeleteTriggerRegion("PumpHouseTrigger");
+		Map.pht_ally[ent] = null;
+		Map.pht_ally_CG[ent] = null;
+		DeleteTriggerRegion("FuelDumpTrigger");
+		Map.fdt_ally[ent] = null;
+		Map.fdt_ally_CG[ent] = null;
+		DeleteTriggerRegion("NorthGateTrigger");
+		Map.ngt_ally[ent] = null;
+		Map.ngt_ally_CG[ent] = null;
+		DeleteTriggerRegion("NorthHutTrigger");
+		Map.nht_ally[ent] = null;
+		Map.nht_ally_CG[ent] = null;
+		DeleteTriggerRegion("OldLockTrigger");
+		Map.olt_ally[ent] = null;
+		Map.olt_ally_CG[ent] = null;
+		DeleteTriggerRegion("SouthHutTrigger");
+		Map.sht_ally[ent] = null;
+		Map.sht_ally_CG[ent] = null;
+
+		yield();
+
+		if ( Map.Pump )
+		{
+			OnTriggerRegion(AABB(4986.527,2871.125,1025.254,5168.875,3448.875,1199.406), Map.PumpHouseTrigger );    //right enrance room
+			OnTriggerRegion(AABB(4103.125,2871.294,641.125,4330.208,3448.875,1195.921), Map.PumpHouseTrigger );    //left enrance room
+			OnTriggerRegion(AABB(4271.125,2871.125,641.125,5000.875,3448.875,1345.157), Map.PumpHouseTrigger );    //hut
+		}
+		if ( !Map.Fuel_Dump_Primed )
+		{
+			OnTriggerRegion(AABB(4671.525,-512.609,241.264,5056.875,32.875,1181.357), Map.FuelDumpTrigger ); //stairs
+			OnTriggerRegion(AABB(2303.125,-1088.875,639.735,3840.875,-271.125,1388.934), Map.FuelDumpTrigger ); //entrance room
+			OnTriggerRegion(AABB(2312.480,-1024.875,193.125,4787.898,768.875,706.317), Map.FuelDumpTrigger ); //dynamite room
+		}
+		if ( !Map.North_Gate_Primed )
+		{
+			OnTriggerRegion(AABB(8108.015,544.724,1025.125,9712.874,2944.692,1261.779), Map.NorthGateTrigger );
+		}
+		if ( !Map.North_Winding_Gear_Primed )
+		{
+			OnTriggerRegion(AABB(8639.125,3599.125,337.125,9312.875,4336.875,1285.789), Map.NorthHutTrigger );  //hut
+			OnTriggerRegion(AABB(8751.125,2575.125,337.125,9200.875,3741.869,638.086), Map.NorthHutTrigger );   //water
+			OnTriggerRegion(AABB(9256.242,3783.125,1025.125,9448.875,4152.875,1131.125), Map.NorthHutTrigger );   //entrance room
+		}
+		if ( !Map.Old_Lock_Primed )
+		{
+			OnTriggerRegion(AABB(701.531,4597.645,641.125,2938.875,6650.875,1216.062), Map.OldLockTrigger );
+		}
+		if ( !Map.South_Winding_Gear_Primed )
+		{
+			OnTriggerRegion(AABB(2831.125,3599.125,337.125,3503.787,4336.875,1285.789), Map.SouthHutTrigger );  //hut
+			OnTriggerRegion(AABB(2943.125,2575.125,337.125,3392.875,3741.869,638.086), Map.SouthHutTrigger );   //water
+			OnTriggerRegion(AABB(3458.231,3783.125,1025.125,3640.875,4152.725,1144.064), Map.SouthHutTrigger ); //entrance room
+		}
+
+		thread(Map.Disable_Goals_after_Capture);
+
+		if ( !Map.Pump_Primed and tableCount(Map.pht_ally_CG) < 1 and Map.g != "PumpHouse" and Map.h != "PumpHouse" )
+		{
+			Util.DisableGoal(".*s_PumpHouse_.*");
+		}
+		if ( !Map.Fuel_Dump_Primed and tableCount(Map.fdt_ally_CG) < 1 and Map.g != "FuelDump" and Map.h != "FuelDump" )
+		{
+			Util.DisableGoal(".*s_FuelDump_.*");
+		}
+		if ( !Map.North_Gate_Primed and tableCount(Map.ngt_ally_CG) < 1 and Map.g != "NorthGate" and Map.h != "NorthGate" )
+		{
+			Util.DisableGoal(".*s_NorthGate_.*");
+		}
+		if ( !Map.North_Winding_Gear_Primed and tableCount(Map.nht_ally_CG) < 1 and Map.g != "NWH" and Map.h != "NWH" )
+		{
+			Util.DisableGoal(".*s_NWH_.*");
+		}
+		if ( !Map.Old_Lock_Primed and tableCount(Map.olt_ally_CG) < 1 and Map.g != "OldLock" and Map.h != "OldLock" )
+		{
+			Util.DisableGoal(".*s_OldLock_.*");
+		}
+		if ( !Map.South_Winding_Gear_Primed and tableCount(Map.sht_ally_CG) < 1 and Map.g != "SWH" and Map.h != "SWH" )
+		{
+			Util.DisableGoal(".*s_SWH_.*");
+		}
+
+		thread(Map.Enable_Goals_after_Capture);
+	},
+
+	OtherGoal_check = function (bot)
+	{
+		goal = bot.GetMapGoalName();
+		if(!goal)
+		{
+			goal=bot.GetHighLevelGoalName();
+		}
+		if ( goal and goal.Left(8) != "CAPPOINT" )
+		{
+			while ( bot.Name and goal and goal.Left(8) != "CAPPOINT" )
+			{
+				sleep(0.5);
+				if (bot.Name)
+				{
+					goal = bot.GetMapGoalName();
+					if(!goal)
+					{
+						goal=bot.GetHighLevelGoalName();
+					}
+				}
+				else
+				{
+					Util.MapDebugPrint( "END of other goal => return" );
+					return;
+				}
+			}
+			Util.MapDebugPrint( "END of other goal" );
+			thread( Map.explosives_TakenOrDropped );
+		}
+	},
+
+	CFD_check = function (bot)
+	{
+		goal = bot.GetMapGoalName();
+		while (goal == "CAPPOINT_Fuel_Dump" and bot.Name and bot.IsCarryingFlag())
+		{
+			yield();
+			if (bot.Name)
+			{
+				goal = bot.GetMapGoalName();
+			}
+		}
+		Util.MapDebugPrint( "CFD_check end" );
+		if (!Map.Fuel_Dump_Primed)
+		{
+			SetGoalPriority( "CAPPOINT_Fuel_Dump", 1.02, TEAM.ALLIES, 0 );
+		}
+		Map.owner_CFD = false;
+		Map.explosives_TakenOrDropped();
+	},
+
+	CNG_check = function (bot)
+	{
+		goal = bot.GetMapGoalName();
+		while (goal == "CAPPOINT_North_Gate" and bot.Name and bot.IsCarryingFlag())
+		{
+			yield();
+			if (bot.Name)
+			{
+				goal = bot.GetMapGoalName();
+			}
+		}
+		Util.MapDebugPrint( "CNG_check end" );
+		if (!Map.North_Gate_Primed)
+		{
+			SetGoalPriority( "CAPPOINT_North_Gate", 1.02, TEAM.ALLIES, 0 );
+		}
+		Map.owner_CNG = false;
+		Map.explosives_TakenOrDropped();
+	},
+
+	CNWG_check = function (bot)
+	{
+		goal = bot.GetMapGoalName();
+		while (goal == "CAPPOINT_North_Winding_Gear" and bot.Name and bot.IsCarryingFlag())
+		{
+			yield();
+			if (bot.Name)
+			{
+				goal = bot.GetMapGoalName();
+			}
+		}
+		Util.MapDebugPrint( "CNWG_check end" );
+		if (!Map.North_Winding_Gear_Primed)
+		{
+			SetGoalPriority( "CAPPOINT_North_Winding_Gear", 1.02, TEAM.ALLIES, 0 );
+		}
+		Map.owner_CNWG = false;
+		Map.explosives_TakenOrDropped();
+	},
+
+	COL_check = function (bot)
+	{
+		goal = bot.GetMapGoalName();
+		while (goal == "CAPPOINT_Old_Lock" and bot.Name and bot.IsCarryingFlag())
+		{
+			yield();
+			if (bot.Name)
+			{
+				goal = bot.GetMapGoalName();
+			}
+		}
+		Util.MapDebugPrint( "COL_check end" );
+		if (!Map.Old_Lock_Primed)
+		{
+			SetGoalPriority( "CAPPOINT_Old_Lock", 1.02, TEAM.ALLIES, 0 );
+		}
+		Map.owner_COL = false;
+		Map.explosives_TakenOrDropped();
+	},
+
+	CP_check = function (bot)
+	{
+		goal = bot.GetMapGoalName();
+		while (goal == "CAPPOINT_Pump" and bot.Name and bot.IsCarryingFlag())
+		{
+			yield();
+			if (bot.Name)
+			{
+				goal = bot.GetMapGoalName();
+			}
+		}
+		Util.MapDebugPrint( "CP_check end" );
+		if (!Map.Pump_Primed)
+		{
+			SetGoalPriority( "CAPPOINT_Pump", 1.02, TEAM.ALLIES, 0 );
+		}
+		Map.owner_CP = false;
+		Map.explosives_TakenOrDropped();
+	},
+
+	CSWG_check = function (bot)
+	{
+		goal = bot.GetMapGoalName();
+		while (goal == "CAPPOINT_South_Winding_Gear" and bot.Name and bot.IsCarryingFlag())
+		{
+			yield();
+			if (bot.Name)
+			{
+				goal = bot.GetMapGoalName();
+			}
+		}
+		Util.MapDebugPrint( "CSWG_check end" );
+		if (!Map.South_Winding_Gear_Primed)
+		{
+			SetGoalPriority( "CAPPOINT_South_Winding_Gear", 1.02, TEAM.ALLIES, 0 );
+		}
+		Map.owner_CSWG = false;
+		Map.explosives_TakenOrDropped();
+	},
+
+	Explosives_Taken = function( trigger )
+	{
+		Util.MapDebugPrint( "Explosives_Taken" );
+
+		Map.count_dyno += 1;
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "CAPPOINT_.*" );
+
+		foreach ( bot in BotTable )
+		{
+			if ( bot.IsCarryingFlag())
+			{
+				goal = bot.GetMapGoalName();
+				if (!goal or goal.Left(8) != "CAPPOINT")
+				{
+					pos = bot.GetPosition();
+					foreach ( goal in Util.GoalTable("CAPPOINT_.*") )
+					{
+						name = goal.GetName();
+						goalpos = goal.GetPosition();
+						if ( DistanceBetween(pos, goalpos) < 1600 )
+						{
+							if ( name == "CAPPOINT_Pump" )
+							{
+								if ( !Map.First_Pumphouse_Door or !Map.Second_Pumphouse_Door or tableCount(Map.pht_ally_CG) > 0 )
+								{
+									goal.SetGoalPriority( TEAM.ALLIES, 0 , 1.1 );
+									Util.MapDebugPrint("^5change of priority: " + name );
+								}
+							}
+							else
+							{
+								goal.SetGoalPriority( TEAM.ALLIES, 0 , 1.1 );
+								Util.MapDebugPrint("^5change of priority: " + name );
+							}
+						}
+					}
+				}
+			}
+		}
+	},
+
+	Explosives_Dropped = function( trigger )
+	{
+		Util.MapDebugPrint( "Explosives_Dropped" );
+
+		Map.count_dyno -= 1;
+
+		if ( Map.count_dyno < 1 )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, "CAPPOINT_.*" );
+			SetGoalPriority( "CAPPOINT_.*", 1.02, TEAM.ALLIES, 0 );
+		}
+		foreach( goal in Util.GoalTable(".*_dropped") )
+		{
+			goal.MaxUsers_InProgress( 2 );
+			goal.SetRange(2500);
+		}
+		Map.explosives_TakenOrDropped();
+	},
+
+	Dockside_Axis_Captured = function( trigger )
+	{
+		Map.Dockside_Allied = false;
+		Map.SetSpawn();
+
+		Util.MapDebugPrint( "Dockside_Axis_Captured" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_dockside_flag" );
+
+		ClearGoalRole( "CHECKPOINT_dockside_flag", ROLE.INFILTRATOR );
+		SetGoalPriority( "CHECKPOINT_dockside_flag", 0.74, TEAM.ALLIES, 0 );
+		SetGoalPriority( "CHECKPOINT_dockside_flag", 0.70, TEAM.ALLIES, CLASS.ENGINEER );
+
+		if ( Map.Old_Lock or Map.South_Winding_Gear or Map.Pump or Map.North_Gate or Map.North_Winding_Gear )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_dockside_flag" );
+		}
+	},
+
+	Dockside_Allies_Captured = function( trigger )
+	{
+		Map.Dockside_Allied = true;
+		Map.SetSpawn();
+
+		Util.MapDebugPrint( "Dockside_Allies_Captured" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_dockside_flag" );
+
+		SetGoalRole( "CHECKPOINT_dockside_flag", ROLE.INFILTRATOR );
+		SetGoalPriority( "CHECKPOINT_dockside_flag", 0.64, TEAM.AXIS, 0 );
+
+		if ( Map.Old_Lock or Map.South_Winding_Gear or Map.Pump or Map.North_Gate or Map.North_Winding_Gear )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_dockside_flag" );
+		}
+	},
+
+	Door_2_and_3_Opening = function( trigger )
+	{
+		Util.MapDebugPrint( "Door_2_and_3_Opening" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_explosives_[12]" );
+
+		sleep(5);
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "FLAG_explosives_[34]" );
+	},
+
+	Door_4_and_5_Opening = function( trigger )
+	{
+		Util.MapDebugPrint( "Door_4_and_5_Opening" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_explosives_[34]" );
+
+		sleep(5);
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "FLAG_explosives_[56]" );
+	},
+
+	Lift_1 = function( trigger )
+	{
+		vel = ToVector( trigger.Action );
+		ent1 = GetEntityByName("lift1");
+		Map.Lift_1_Up = false;
+		Map.Lift_1_Down = false;
+
+		if ( vel[ 2 ] > 0 )
+		{
+			Util.MapDebugPrint( "Lift_1_Going_Up" );
+
+			while ( 1 )
+			{
+				yield();
+				z = GetEntPosition(ent1).z;
+
+				if ( z == 1031 )
+				{
+					break;
+				}
+			}
+
+			Map.Lift_1_Up = true;
+
+			Util.MapDebugPrint( "Lift_1_Is_Up" );
+		}
+		else
+		{
+			Util.MapDebugPrint( "Lift_1_Going_Down" );
+
+			while ( 1 )
+			{
+				yield();
+				z = GetEntPosition(ent1).z;
+
+				if ( z < 400 )
+				{
+					break;
+				}
+			}
+
+			Map.Lift_1_Down = true;
+
+			Util.MapDebugPrint( "Lift_1_Is_Down" );
+		}
+	},
+
+	Lift_2 = function( trigger )
+	{
+		vel = ToVector( trigger.Action );
+		ent2 = GetEntityByName("lift2");
+		Map.Lift_2_Up = false;
+		Map.Lift_2_Down = false;
+
+		if ( vel[ 2 ] > 0 )
+		{
+			Util.MapDebugPrint( "Lift_2_Going_Up" );
+			while ( 1 )
+			{
+				yield();
+				z = GetEntPosition(ent2).z;
+
+				if ( z > 1030 )
+				{
+					break;
+				}
+			}
+
+			Map.Lift_2_Up = true;
+
+			Util.MapDebugPrint( "Lift_2_Is_Up" );
+		}
+		else
+		{
+			Util.MapDebugPrint( "Lift_2_Going_Down" );
+
+			while ( 1 )
+			{
+				yield();
+				z = GetEntPosition(ent2).z;
+				if ( z < 400 )
+				{
+					break;
+				}
+			}
+
+			Map.Lift_2_Down = true;
+
+			Util.MapDebugPrint( "Lift_2_Is_Down" );
+		}
+	},
+
+	Crane_1_Moving = function( trigger )
+	{
+		vel = ToVector( trigger.Action );
+
+		Wp.SetWaypointFlag( "Crane_1_.*", "closed", true );
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		if ( vel[ 1 ] > 0 )
+		{
+			Util.MapDebugPrint( "Crane_1_Moving_Left" );
+		}
+		else
+		{
+			Map.Crane_1_Moving_Right = true;
+
+			Util.MapDebugPrint( "Crane_1_Moving_Right" );
+		}
+	},
+
+	Crane_1_Stop = function( trigger )
+	{
+		if ( Map.Crane_1_Moving_Right )
+		{
+			if ( Map.Crane_1_Facing == "West" )
+			{
+				Map.Crane_1_Facing = "North";
+
+				Wp.SetWaypointFlag( "Crane_1_North_.*", "closed", false );
+			}
+			else if ( Map.Crane_1_Facing == "North" )
+			{
+				Map.Crane_1_Facing = "East";
+
+				Wp.SetWaypointFlag( "Crane_1_East_.*", "closed", false );
+			}
+			else if ( Map.Crane_1_Facing == "East" )
+			{
+				Map.Crane_1_Facing = "South";
+
+				Wp.SetWaypointFlag( "Crane_1_South_.*", "closed", false );
+			}
+			else
+			{
+				Map.Crane_1_Facing = "West";
+
+				Wp.SetWaypointFlag( "Crane_1_West_.*", "closed", false );
+			}
+
+			Map.Crane_1_Moving_Right = false;
+		}
+		else
+		{
+			if ( Map.Crane_1_Facing == "West" )
+			{
+				Map.Crane_1_Facing = "South";
+
+				Wp.SetWaypointFlag( "Crane_1_South_.*", "closed", false );
+			}
+			else if ( Map.Crane_1_Facing == "South" )
+			{
+				Map.Crane_1_Facing = "East";
+
+				Wp.SetWaypointFlag( "Crane_1_East_.*", "closed", false );
+			}
+			else if ( Map.Crane_1_Facing == "East" )
+			{
+				Map.Crane_1_Facing = "North";
+
+				Wp.SetWaypointFlag( "Crane_1_North_.*", "closed", false );
+			}
+			else
+			{
+				Map.Crane_1_Facing = "West";
+
+				Wp.SetWaypointFlag( "Crane_1_West_.*", "closed", false );
+			}
+		}
+
+		Util.MapDebugPrint( "Crane_1_Facing_" + Map.Crane_1_Facing );
+
+		Map.Crane_1_Path_Adjustment();
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+	},
+
+	Crane_2_Moving = function( trigger )
+	{
+		vel = ToVector( trigger.Action );
+
+		Wp.SetWaypointFlag( "Crane_2_.*", "closed", true );
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		if ( vel[ 1 ] > 0 )
+		{
+			Util.MapDebugPrint( "Crane_2_Moving_Left" );
+		}
+		else
+		{
+			Map.Crane_2_Moving_Right = true;
+
+			Util.MapDebugPrint( "Crane_2_Moving_Right" );
+		}
+	},
+
+	Crane_2_Stop = function( trigger )
+	{
+		if ( Map.Crane_2_Moving_Right )
+		{
+			if ( Map.Crane_2_Facing == "West" )
+			{
+				Map.Crane_2_Facing = "North";
+
+				Wp.SetWaypointFlag( "Crane_2_North_.*", "closed", false );
+			}
+			else if ( Map.Crane_2_Facing == "North" )
+			{
+				Map.Crane_2_Facing = "East";
+
+				Wp.SetWaypointFlag( "Crane_2_East_.*", "closed", false );
+			}
+			else if ( Map.Crane_2_Facing == "East" )
+			{
+				Map.Crane_2_Facing = "South";
+
+				Wp.SetWaypointFlag( "Crane_2_South_.*", "closed", false );
+			}
+			else
+			{
+				Map.Crane_2_Facing = "West";
+
+				Wp.SetWaypointFlag( "Crane_2_West_.*", "closed", false );
+			}
+
+			Map.Crane_2_Moving_Right = false;
+		}
+		else
+		{
+			if ( Map.Crane_2_Facing == "West" )
+			{
+				Map.Crane_2_Facing = "South";
+
+				Wp.SetWaypointFlag( "Crane_2_South_.*", "closed", false );
+			}
+			else if ( Map.Crane_2_Facing == "South" )
+			{
+				Map.Crane_2_Facing = "East";
+
+				Wp.SetWaypointFlag( "Crane_2_East_.*", "closed", false );
+			}
+			else if ( Map.Crane_2_Facing == "East" )
+			{
+				Map.Crane_2_Facing = "North";
+
+				Wp.SetWaypointFlag( "Crane_2_North_.*", "closed", false );
+			}
+			else
+			{
+				Map.Crane_2_Facing = "West";
+
+				Wp.SetWaypointFlag( "Crane_2_West_.*", "closed", false );
+			}
+		}
+
+		Util.MapDebugPrint( "Crane_2_Facing_" + Map.Crane_2_Facing );
+
+		Map.Crane_2_Path_Adjustment();
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+	},
+
+	Ship_Ladder_1 =
+	{
+		Name = "Ship_Ladder_1",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			Map.Ladder_1_In_Use += 1;
+		},
+		OnExit = function(ent)
+		{
+			Map.Ladder_1_In_Use -= 1;
+		},
+	},
+
+	Ship_Ladder_2 =
+	{
+		Name = "Ship_Ladder_2",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			Map.Ladder_2_In_Use += 1;
+		},
+		OnExit = function(ent)
+		{
+			Map.Ladder_2_In_Use -= 1;
+		},
+	},
+
+	AlliesAtLadder1 =
+	{
+		Name = "AlliesAtLadder1",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			Map.Allies_At_Ladder_1 += 1;
+		},
+		OnExit = function(ent)
+		{
+			Map.Allies_At_Ladder_1 -= 1;
+		},
+	},
+
+	AlliesAtLadder2 =
+	{
+		Name = "AlliesAtLadder2",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			Map.Allies_At_Ladder_2 += 1;
+		},
+		OnExit = function(ent)
+		{
+			Map.Allies_At_Ladder_2 -= 1;
+		},
+	},
+
+	Ignore_Target =
+	{
+		Name = "Ignore_Target",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			b = Util.IsBot(ent);
+			if ( b )
+			{
+				for ( q = 0; q < 64; q += 1 )
+				{
+					if ( EntityIsValid(q) )
+					{
+						b.IgnoreTarget(q, 999);
+					}
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			b = Util.IsBot(ent);
+			if ( b )
+			{
+				for ( q = 0; q < 64; q += 1 )
+				{
+					if ( EntityIsValid(q) )
+					{
+						b.IgnoreTarget(q, 0.1);
+					}
+				}
+			}
+		},
+	},
+
+	SetSpawn = function()
+	{
+		foreach ( id and bot in BotTable )
+		{
+			Map.SetSpawn1(bot);
+		}
+	},
+
+	SetSpawn1 = function(bot)
+	{
+		if ( bot.GetTeam() == TEAM.ALLIES )
+		{
+			if ( Map.Dockside_Allied and !bot.HasRole(ROLE.DEFENDER3) and ( Map.Old_Lock or Map.South_Winding_Gear or Map.Pump or Map.North_Gate or Map.North_Winding_Gear ) )
+			{
+				if ( RandInt(0,1) > 0 )
+				{
+					bot.ChangeSpawnPoint(2);
+				}
+				else
+				{
+					bot.ChangeSpawnPoint(3);
+				}
+			}
+			else
+			{
+				bot.ChangeSpawnPoint(2);
+			}
+		}
+	},
+
+	Crane_1_Path_Adjustment = function()
+	{
+		if ( Map.Crane_1_Facing == "West" )
+		{
+			Wp.Disconnect(2046, 2010);
+			Wp.Disconnect(2010, 2046);
+			Wp.Disconnect(2046, 2045);
+			Wp.Disconnect(2045, 2046);
+			Wp.Disconnect(2010, 2045);
+			Wp.Disconnect(2045, 2010);
+			Wp.Disconnect(2046, 2044);
+			Wp.Disconnect(2044, 2046);
+			Wp.Disconnect(2044, 2045);
+			Wp.Disconnect(2045, 2044);
+			Wp.Disconnect(2046, 2050);
+			Wp.Disconnect(2050, 2046);
+			Wp.Disconnect(2046, 2060);
+			Wp.Disconnect(2060, 2046);
+			Wp.Disconnect(2046, 2054);
+			Wp.Disconnect(2054, 2046);
+			Wp.Disconnect(2048, 2010);
+			Wp.Disconnect(2010, 2048);
+			Wp.Disconnect(2047, 2010);
+			Wp.Disconnect(2010, 2047);
+			Wp.Disconnect(2044, 2010);
+			Wp.Disconnect(2010, 2044);
+			Wp.Disconnect(2044, 2054);
+			Wp.Disconnect(2054, 2044);
+			Wp.Disconnect(2045, 2054);
+			Wp.Disconnect(2054, 2045);
+			Wp.Disconnect(2046, 2052);
+			Wp.Disconnect(2052, 2046);
+
+			Wp.Connect(2044, 2050);
+			Wp.Connect(2050, 2044);
+			Wp.Connect(2060, 2045);
+			Wp.Connect(2045, 2060);
+			Wp.Connect(2044, 2052);
+			Wp.Connect(2052, 2044);
+			Wp.Connect(2050, 2052);
+			Wp.Connect(2052, 2050);
+			Wp.Connect(2010, 2052);
+			Wp.Connect(2052, 2010);
+			Wp.Connect(2050, 2010);
+			Wp.Connect(2010, 2050);
+			Wp.Connect(2050, 2060);
+			Wp.Connect(2060, 2050);
+			Wp.Connect(2050, 2054);
+			Wp.Connect(2054, 2050);
+			Wp.Connect(2060, 2054);
+			Wp.Connect(2054, 2060);
+			Wp.Connect(2054, 2010);
+			Wp.Connect(2010, 2054);
+			Wp.Connect(2060, 2061);
+			Wp.Connect(2061, 2060);
+			Wp.Connect(2061, 2045);
+			Wp.Connect(2045, 2061);
+			Wp.Connect(2060, 2010);
+			Wp.Connect(2010, 2060);
+			Wp.Connect(2061, 2010);
+			Wp.Connect(2010, 2061);
+		}
+		else if ( Map.Crane_1_Facing == "South" )
+		{
+			Wp.Disconnect(2061, 2010);
+			Wp.Disconnect(2010, 2061);
+			Wp.Disconnect(2060, 2010);
+			Wp.Disconnect(2010, 2060);
+			Wp.Disconnect(2045, 2060);
+			Wp.Disconnect(2060, 2045);
+			Wp.Disconnect(2050, 2060);
+			Wp.Disconnect(2060, 2050);
+			Wp.Disconnect(2045, 2010);
+			Wp.Disconnect(2010, 2045);
+			Wp.Disconnect(2045, 2044);
+			Wp.Disconnect(2044, 2045);
+			Wp.Disconnect(2045, 2046);
+			Wp.Disconnect(2046, 2045);
+
+			Wp.Connect(2044, 2010);
+			Wp.Connect(2010, 2044);
+			Wp.Connect(2046, 2010);
+			Wp.Connect(2010, 2046);
+			Wp.Connect(2050, 2044);
+			Wp.Connect(2044, 2050);
+			Wp.Connect(2046, 2044);
+			Wp.Connect(2044, 2046);
+			Wp.Connect(2054, 2010);
+			Wp.Connect(2010, 2054);
+			Wp.Connect(2054, 2050);
+			Wp.Connect(2050, 2054);
+			Wp.Connect(2010, 2050);
+			Wp.Connect(2050, 2010);
+			Wp.Connect(2046, 2050);
+			Wp.Connect(2050, 2046);
+			Wp.Connect(2054, 2044);
+			Wp.Connect(2044, 2054);
+		}
+		else if ( Map.Crane_1_Facing == "East" )
+		{
+			Wp.Disconnect(2010, 2054);
+			Wp.Disconnect(2054, 2010);
+			Wp.Disconnect(2060, 2054);
+			Wp.Disconnect(2054, 2060);
+			Wp.Disconnect(2050, 2054);
+			Wp.Disconnect(2054, 2050);
+			Wp.Disconnect(2050, 2010);
+			Wp.Disconnect(2010, 2050);
+			Wp.Disconnect(2050, 2044);
+			Wp.Disconnect(2044, 2050);
+			Wp.Disconnect(2060, 2010);
+			Wp.Disconnect(2010, 2060);
+			Wp.Disconnect(2054, 2045);
+			Wp.Disconnect(2045, 2054);
+			Wp.Disconnect(2054, 2044);
+			Wp.Disconnect(2044, 2054);
+
+			Wp.Connect(2046, 2045);
+			Wp.Connect(2045, 2046);
+			Wp.Connect(2061, 2010);
+			Wp.Connect(2010, 2061);
+			Wp.Connect(2044, 2045);
+			Wp.Connect(2045, 2044);
+			Wp.Connect(2060, 2045);
+			Wp.Connect(2045, 2060);
+			Wp.Connect(2010, 2045);
+			Wp.Connect(2045, 2010);
+			Wp.Connect(2010, 2052);
+			Wp.Connect(2052, 2010);
+			Wp.Connect(2046, 2052);
+			Wp.Connect(2052, 2046);
+			Wp.Connect(2044, 2010);
+			Wp.Connect(2010, 2044);
+			Wp.Connect(2044, 2050);
+			Wp.Connect(2050, 2044);
+		}
+		else
+		{
+			Wp.Disconnect(2010, 2052);
+			Wp.Disconnect(2052, 2010);
+			Wp.Disconnect(2010, 2044);
+			Wp.Disconnect(2044, 2010);
+			Wp.Disconnect(2045, 2044);
+			Wp.Disconnect(2044, 2045);
+			Wp.Disconnect(2044, 2050);
+			Wp.Disconnect(2050, 2044);
+			Wp.Disconnect(2010, 2050);
+			Wp.Disconnect(2050, 2010);
+			Wp.Disconnect(2060, 2050);
+			Wp.Disconnect(2050, 2060);
+			Wp.Disconnect(2060, 2050);
+			Wp.Disconnect(2050, 2060);
+			Wp.Disconnect(2046, 2052);
+			Wp.Disconnect(2052, 2046);
+			Wp.Disconnect(2046, 2050);
+			Wp.Disconnect(2050, 2046);
+
+			Wp.Connect(2054, 2010);
+			Wp.Connect(2010, 2054);
+			Wp.Connect(2054, 2050);
+			Wp.Connect(2050, 2054);
+			Wp.Connect(2054, 2060);
+			Wp.Connect(2060, 2054);
+			Wp.Connect(2010, 2060);
+			Wp.Connect(2060, 2010);
+			Wp.Connect(2045, 2060);
+			Wp.Connect(2060, 2045);
+			Wp.Connect(2010, 2061);
+			Wp.Connect(2061, 2010);
+			Wp.Connect(2044, 2046);
+			Wp.Connect(2046, 2044);
+			Wp.Connect(2010, 2046);
+			Wp.Connect(2046, 2010);
+			Wp.Connect(2045, 2046);
+			Wp.Connect(2046, 2045);
+			Wp.Connect(2045, 2010);
+			Wp.Connect(2010, 2045);
+			Wp.Connect(2045, 2054);
+			Wp.Connect(2054, 2045);
+		}
+
+		Util.MapDebugPrint( "Path_Adjusted_For_Crane_1" );
+	},
+
+	Crane_2_Path_Adjustment = function()
+	{
+		if ( Map.Crane_2_Facing == "West" )
+		{
+			Wp.Disconnect(2099, 2062);
+			Wp.Disconnect(2062, 2099);
+			Wp.Disconnect(2100, 2110);
+			Wp.Disconnect(2110, 2100);
+			Wp.Disconnect(2099, 2107);
+			Wp.Disconnect(2107, 2099);
+			Wp.Disconnect(2099, 2108);
+			Wp.Disconnect(2108, 2099);
+			Wp.Disconnect(2099, 2109);
+			Wp.Disconnect(2109, 2099);
+			Wp.Disconnect(2099, 2110);
+			Wp.Disconnect(2110, 2099);
+			Wp.Disconnect(2101, 2062);
+			Wp.Disconnect(2062, 2101);
+			Wp.Disconnect(2101, 2106);
+			Wp.Disconnect(2106, 2101);
+			Wp.Disconnect(2110, 2062);
+			Wp.Disconnect(2062, 2110);
+			Wp.Disconnect(2099, 2105);
+			Wp.Disconnect(2105, 2099);
+			Wp.Disconnect(2099, 2104);
+			Wp.Disconnect(2104, 2099);
+			Wp.Disconnect(2099, 2103);
+			Wp.Disconnect(2103, 2099);
+			Wp.Disconnect(2099, 2102);
+			Wp.Disconnect(2102, 2099);
+			Wp.Disconnect(2100, 2062);
+			Wp.Disconnect(2062, 2100);
+			Wp.Disconnect(2101, 2102);
+			Wp.Disconnect(2102, 2101);
+			Wp.Disconnect(2062, 2102);
+			Wp.Disconnect(2102, 2062);
+			Wp.Disconnect(2106, 2100);
+			Wp.Disconnect(2100, 2106);
+			Wp.Disconnect(2109, 2100);
+			Wp.Disconnect(2100, 2109);
+
+			Wp.Connect(2109, 2062);
+			Wp.Connect(2062, 2109);
+			Wp.Connect(2103, 2062);
+			Wp.Connect(2062, 2103);
+			Wp.Connect(2103, 2108);
+			Wp.Connect(2108, 2103);
+			Wp.Connect(2104, 2109);
+			Wp.Connect(2109, 2104);
+			Wp.Connect(2104, 2062);
+			Wp.Connect(2062, 2104);
+			Wp.Connect(2109, 2105);
+			Wp.Connect(2105, 2109);
+			Wp.Connect(2109, 2106);
+			Wp.Connect(2106, 2109);
+			Wp.Connect(2109, 2107);
+			Wp.Connect(2107, 2109);
+			Wp.Connect(2109, 2101);
+			Wp.Connect(2101, 2109);
+			Wp.Connect(2108, 2062);
+			Wp.Connect(2062, 2108);
+			Wp.Connect(2108, 2104);
+			Wp.Connect(2104, 2108);
+			Wp.Connect(2108, 2105);
+			Wp.Connect(2105, 2108);
+			Wp.Connect(2108, 2106);
+			Wp.Connect(2106, 2108);
+			Wp.Connect(2107, 2101);
+			Wp.Connect(2101, 2107);
+			Wp.Connect(2107, 2062);
+			Wp.Connect(2062, 2107);
+			Wp.Connect(2107, 2103);
+			Wp.Connect(2103, 2107);
+			Wp.Connect(2104, 2107);
+			Wp.Connect(2107, 2104);
+			Wp.Connect(2106, 2062);
+			Wp.Connect(2062, 2106);
+			Wp.Connect(2106, 2102);
+			Wp.Connect(2102, 2106);
+			Wp.Connect(2106, 2103);
+			Wp.Connect(2103, 2106);
+			Wp.Connect(2106, 2104);
+			Wp.Connect(2104, 2106);
+			Wp.Connect(2105, 2062);
+			Wp.Connect(2062, 2105);
+			Wp.Connect(2105, 2100);
+			Wp.Connect(2100, 2105);
+			Wp.Connect(2105, 2103);
+			Wp.Connect(2103, 2105);
+			Wp.Connect(2100, 2103);
+			Wp.Connect(2103, 2100);
+			Wp.Connect(2110, 2106);
+			Wp.Connect(2106, 2110);
+		}
+		else if ( Map.Crane_2_Facing == "South" )
+		{
+			Wp.Disconnect(2101, 2107);
+			Wp.Disconnect(2107, 2101);
+			Wp.Disconnect(2101, 2109);
+			Wp.Disconnect(2109, 2101);
+			Wp.Disconnect(2108, 2105);
+			Wp.Disconnect(2105, 2108);
+			Wp.Disconnect(2106, 2110);
+			Wp.Disconnect(2110, 2106);
+			Wp.Disconnect(2109, 2062);
+			Wp.Disconnect(2062, 2109);
+			Wp.Disconnect(2109, 2105);
+			Wp.Disconnect(2105, 2109);
+			Wp.Disconnect(2109, 2106);
+			Wp.Disconnect(2106, 2109);
+			Wp.Disconnect(2109, 2107);
+			Wp.Disconnect(2107, 2109);
+			Wp.Disconnect(2108, 2062);
+			Wp.Disconnect(2062, 2108);
+			Wp.Disconnect(2108, 2104);
+			Wp.Disconnect(2104, 2108);
+			Wp.Disconnect(2107, 2062);
+			Wp.Disconnect(2062, 2107);
+			Wp.Disconnect(2109, 2104);
+			Wp.Disconnect(2104, 2109);
+			Wp.Disconnect(2108, 2103);
+			Wp.Disconnect(2103, 2108);
+			Wp.Disconnect(2110, 2062);
+			Wp.Disconnect(2062, 2110);
+			Wp.Disconnect(2110, 2103);
+			Wp.Disconnect(2103, 2110);
+			Wp.Disconnect(2110, 2102);
+			Wp.Disconnect(2102, 2110);
+			Wp.Disconnect(2110, 2100);
+			Wp.Disconnect(2100, 2110);
+			Wp.Disconnect(2109, 2099);
+			Wp.Disconnect(2099, 2109);
+			Wp.Disconnect(2109, 2100);
+			Wp.Disconnect(2100, 2109);
+			Wp.Disconnect(2108, 2099);
+			Wp.Disconnect(2099, 2108);
+			Wp.Disconnect(2101, 2062);
+			Wp.Disconnect(2062, 2101);
+			Wp.Disconnect(2101, 2103);
+			Wp.Disconnect(2103, 2101);
+			Wp.Disconnect(2109, 2102);
+			Wp.Disconnect(2102, 2109);
+
+			Wp.Connect(2062, 2104);
+			Wp.Connect(2104, 2062);
+			Wp.Connect(2062, 2106);
+			Wp.Connect(2106, 2062);
+			Wp.Connect(2100, 2106);
+			Wp.Connect(2106, 2100);
+			Wp.Connect(2102, 2106);
+			Wp.Connect(2106, 2102);
+			Wp.Connect(2103, 2106);
+			Wp.Connect(2106, 2103);
+			Wp.Connect(2104, 2106);
+			Wp.Connect(2106, 2104);
+			Wp.Connect(2105, 2062);
+			Wp.Connect(2062, 2105);
+			Wp.Connect(2104, 2107);
+			Wp.Connect(2107, 2104);
+			Wp.Connect(2099, 2105);
+			Wp.Connect(2105, 2099);
+			Wp.Connect(2106, 2105);
+			Wp.Connect(2105, 2106);
+			Wp.Connect(2099, 2104);
+			Wp.Connect(2104, 2099);
+			Wp.Connect(2099, 2103);
+			Wp.Connect(2103, 2099);
+			Wp.Connect(2062, 2103);
+			Wp.Connect(2103, 2062);
+			Wp.Connect(2062, 2102);
+			Wp.Connect(2102, 2062);
+			Wp.Connect(2101, 2102);
+			Wp.Connect(2102, 2101);
+			Wp.Connect(2099, 2102);
+			Wp.Connect(2102, 2099);
+			Wp.Connect(2100, 2062);
+			Wp.Connect(2062, 2100);
+			Wp.Connect(2099, 2062);
+			Wp.Connect(2062, 2099);
+		}
+		else if ( Map.Crane_2_Facing == "East" )
+		{
+			Wp.Disconnect(2108, 2105);
+			Wp.Disconnect(2105, 2108);
+			Wp.Disconnect(2108, 2106);
+			Wp.Disconnect(2106, 2108);
+			Wp.Disconnect(2107, 2103);
+			Wp.Disconnect(2103, 2107);
+			Wp.Disconnect(2107, 2104);
+			Wp.Disconnect(2104, 2107);
+			Wp.Disconnect(2106, 2062);
+			Wp.Disconnect(2062, 2106);
+			Wp.Disconnect(2106, 2102);
+			Wp.Disconnect(2102, 2106);
+			Wp.Disconnect(2106, 2103);
+			Wp.Disconnect(2103, 2106);
+			Wp.Disconnect(2106, 2104);
+			Wp.Disconnect(2104, 2106);
+			Wp.Disconnect(2105, 2062);
+			Wp.Disconnect(2062, 2105);
+			Wp.Disconnect(2104, 2062);
+			Wp.Disconnect(2062, 2104);
+			Wp.Disconnect(2106, 2100);
+			Wp.Disconnect(2100, 2106);
+			Wp.Disconnect(2105, 2099);
+			Wp.Disconnect(2099, 2105);
+			Wp.Disconnect(2105, 2109);
+			Wp.Disconnect(2109, 2105);
+			Wp.Disconnect(2106, 2101);
+			Wp.Disconnect(2101, 2106);
+			Wp.Disconnect(2106, 2110);
+			Wp.Disconnect(2110, 2106);
+			Wp.Disconnect(2106, 2109);
+			Wp.Disconnect(2109, 2106);
+			Wp.Disconnect(2107, 2062);
+			Wp.Disconnect(2062, 2107);
+			Wp.Disconnect(2107, 2099);
+			Wp.Disconnect(2099, 2107);
+			Wp.Disconnect(2107, 2101);
+			Wp.Disconnect(2101, 2107);
+			Wp.Disconnect(2108, 2062);
+			Wp.Disconnect(2062, 2108);
+
+			Wp.Connect(2103, 2110);
+			Wp.Connect(2110, 2103);
+			Wp.Connect(2103, 2062);
+			Wp.Connect(2062, 2103);
+			Wp.Connect(2103, 2099);
+			Wp.Connect(2099, 2103);
+			Wp.Connect(2103, 2100);
+			Wp.Connect(2100, 2103);
+			Wp.Connect(2102, 2062);
+			Wp.Connect(2062, 2102);
+			Wp.Connect(2102, 2109);
+			Wp.Connect(2109, 2102);
+			Wp.Connect(2102, 2101);
+			Wp.Connect(2101, 2102);
+			Wp.Connect(2102, 2099);
+			Wp.Connect(2099, 2102);
+			Wp.Connect(2100, 2062);
+			Wp.Connect(2062, 2100);
+			Wp.Connect(2103, 2101);
+			Wp.Connect(2101, 2103);
+			Wp.Connect(2100, 2109);
+			Wp.Connect(2109, 2100);
+			Wp.Connect(2100, 2110);
+			Wp.Connect(2110, 2100);
+			Wp.Connect(2109, 2099);
+			Wp.Connect(2099, 2109);
+			Wp.Connect(2108, 2099);
+			Wp.Connect(2099, 2108);
+			Wp.Connect(2110, 2099);
+			Wp.Connect(2099, 2110);
+			Wp.Connect(2101, 2062);
+			Wp.Connect(2062, 2101);
+			Wp.Connect(2101, 2107);
+			Wp.Connect(2107, 2101);
+			Wp.Connect(2101, 2109);
+			Wp.Connect(2109, 2101);
+			Wp.Connect(2110, 2102);
+			Wp.Connect(2102, 2110);
+			Wp.Connect(2110, 2062);
+			Wp.Connect(2062, 2110);
+			Wp.Connect(2109, 2062);
+			Wp.Connect(2062, 2109);
+			Wp.Connect(2109, 2107);
+			Wp.Connect(2107, 2109);
+		}
+		else
+		{
+			Wp.Disconnect(2105, 2100);
+			Wp.Disconnect(2100, 2105);
+			Wp.Disconnect(2105, 2103);
+			Wp.Disconnect(2103, 2105);
+			Wp.Disconnect(2104, 2099);
+			Wp.Disconnect(2099, 2104);
+			Wp.Disconnect(2103, 2062);
+			Wp.Disconnect(2062, 2103);
+			Wp.Disconnect(2103, 2101);
+			Wp.Disconnect(2101, 2103);
+			Wp.Disconnect(2103, 2099);
+			Wp.Disconnect(2099, 2103);
+			Wp.Disconnect(2103, 2100);
+			Wp.Disconnect(2100, 2103);
+			Wp.Disconnect(2102, 2062);
+			Wp.Disconnect(2062, 2102);
+			Wp.Disconnect(2102, 2110);
+			Wp.Disconnect(2110, 2102);
+			Wp.Disconnect(2100, 2062);
+			Wp.Disconnect(2062, 2100);
+			Wp.Disconnect(2102, 2101);
+			Wp.Disconnect(2101, 2102);
+			Wp.Disconnect(2102, 2106);
+			Wp.Disconnect(2106, 2102);
+			Wp.Disconnect(2103, 2107);
+			Wp.Disconnect(2107, 2103);
+			Wp.Disconnect(2103, 2106);
+			Wp.Disconnect(2106, 2103);
+			Wp.Disconnect(2104, 2108);
+			Wp.Disconnect(2108, 2104);
+			Wp.Disconnect(2105, 2062);
+			Wp.Disconnect(2062, 2105);
+			Wp.Disconnect(2104, 2062);
+			Wp.Disconnect(2062, 2104);
+			Wp.Disconnect(2104, 2109);
+			Wp.Disconnect(2109, 2104);
+			Wp.Disconnect(2103, 2108);
+			Wp.Disconnect(2108, 2103);
+			Wp.Disconnect(2104, 2107);
+			Wp.Disconnect(2107, 2104);
+			Wp.Disconnect(2103, 2110);
+			Wp.Disconnect(2110, 2103);
+			Wp.Disconnect(2102, 2109);
+			Wp.Disconnect(2109, 2102);
+
+			Wp.Connect(2106, 2062);
+			Wp.Connect(2062, 2106);
+			Wp.Connect(2106, 2110);
+			Wp.Connect(2110, 2106);
+			Wp.Connect(2106, 2109);
+			Wp.Connect(2109, 2106);
+			Wp.Connect(2106, 2108);
+			Wp.Connect(2108, 2106);
+			Wp.Connect(2106, 2101);
+			Wp.Connect(2101, 2106);
+			Wp.Connect(2105, 2108);
+			Wp.Connect(2108, 2105);
+			Wp.Connect(2109, 2107);
+			Wp.Connect(2107, 2109);
+			Wp.Connect(2108, 2062);
+			Wp.Connect(2062, 2108);
+			Wp.Connect(2107, 2062);
+			Wp.Connect(2062, 2107);
+			Wp.Connect(2099, 2107);
+			Wp.Connect(2107, 2099);
+			Wp.Connect(2099, 2062);
+			Wp.Connect(2062, 2099);
+			Wp.Connect(2099, 2108);
+			Wp.Connect(2108, 2099);
+			Wp.Connect(2099, 2109);
+			Wp.Connect(2109, 2099);
+			Wp.Connect(2099, 2110);
+			Wp.Connect(2110, 2099);
+			Wp.Connect(2101, 2062);
+			Wp.Connect(2062, 2101);
+			Wp.Connect(2110, 2100);
+			Wp.Connect(2100, 2110);
+			Wp.Connect(2110, 2062);
+			Wp.Connect(2062, 2110);
+		}
+
+		Util.MapDebugPrint( "Path_Adjusted_For_Crane_2" );
+	},
+
+	Fuel_Dump_Random_Plant_Position = function()
+	{
+		position = RandInt(1,8);
+		goal = GetGoal("PLANT_Fuel_Dump");
+		cover0=goal.CoverSpots[0];
+		cover1=goal.CoverSpots[1];
+
+		switch (position)
+		{
+			case 1:
+			{
+				goal.SetPosition( Vector3( 2453.118, 557.785, 216.125 ) );
+				cover0.position = Vec3(2322.125, 749.875, 216.125);
+				cover0.AimVectors = { Vec3(0.085, -0.995, 0.056), Vec3(0.893, -0.339, 0.296) };
+				cover0.stance= "crouch";
+				cover1.position = Vec3(2475.523, 748.546, 216.125);
+				cover1.AimVectors = { Vec3(-0.337, -0.936, 0.101), Vec3(0.235, -0.600, 0.765) };
+				cover1.stance= "crouch";
+			}
+			case 2:
+			{
+				goal.SetPosition( Vector3( 2737.136, 436.007, 216.125 ) );
+				cover0.position = Vec3(2579.758, 749.875, 216.125);
+				cover0.AimVectors = { Vec3(-0.111, -0.726, 0.679), Vec3(0.993, -0.116, 0.034) };
+				cover0.stance= "crouch";
+				cover1.position = Vec3(2758.040, 748.302, 216.184);
+				cover1.AimVectors = { Vec3(-0.859, -0.395, 0.326), Vec3(0.987, -0.136, 0.089) };
+				cover1.stance= "crouch";
+			}
+			case 3:
+			{
+				goal.SetPosition( Vector3( 2683.583, 185.938, 216.125 ) );
+				cover0.position = Vec3(2579.911, 157.251, 216.127);
+				cover0.AimVectors = { Vec3(0.794, 0.607, 0.006), Vec3(0.673, -0.503, 0.542) };
+				cover0.stance= "stand";
+				cover1.position = Vec3(2869.407, 359.134, 216.125);
+				cover1.AimVectors = { Vec3(-0.776, -0.630, 0.004), Vec3(-0.799, 0.600, 0.041), Vec3(0.989, -0.146, 0.011) };
+				cover1.stance= "crouch";
+			}
+			case 4:
+			{
+				goal.SetPosition( Vector3( 3081.698, 501.953, 216.125 ) );
+				cover0.position = Vec3(3091.204, 749.875, 216.125);
+				cover0.AimVectors = { Vec3(-0.033, -0.999, -0.002), Vec3(0.986, -0.168, 0.008), Vec3(-0.977, -0.174, 0.124) };
+				cover0.stance= "stand";
+				cover1.position = Vec3(3002.841, 329.928, 232.125);
+				cover1.AimVectors = { Vec3(0.363, 0.931, -0.043), Vec3(0.950, -0.314, -0.006), Vec3(-0.975, 0.221, 0.030) };
+				cover1.stance= "stand";
+			}
+			case 5:
+			{
+				goal.SetPosition( Vector3( 3414.959, 511.988, 216.239 ) );
+				cover0.position = Vec3(3480.905, 671.287, 216.239);
+				cover0.AimVectors = { Vec3(-0.334, -0.942, 0.033), Vec3(0.991, 0.124, 0.054), Vec3(-0.999, 0.018, 0.045) };
+				cover0.stance= "stand";
+				cover1.position = Vec3(3334.487, 749.875, 216.239);
+				cover1.AimVectors = { Vec3(0.309, -0.951, -0.001), Vec3(0.967, -0.252, 0.045), Vec3(-0.984, -0.157, 0.079) };
+				cover1.stance= "stand";
+			}
+			case 6:
+			{
+				goal.SetPosition( Vector3( 3775.916, 523.470, 216.125 ) );
+				cover0.position = Vec3(3821.875, 749.875, 216.125);
+				cover0.AimVectors = { Vec3(-0.184, -0.980, 0.076), Vec3(-0.996, -0.056, 0.076) };
+				cover0.stance= "crouch";
+				cover1.position = Vec3(3696.638, 649.911, 216.125);
+				cover1.AimVectors = { Vec3(0.380, -0.924, 0.044), Vec3(-0.997, 0.043, 0.058) };
+				cover1.stance= "stand";
+			}
+			case 7:
+			{
+				goal.SetPosition( Vector3( 3330.938, 158.855, 216.125 ) );
+				cover0.position = Vec3(3402.734, -950.483, 216.125);
+				cover0.AimVectors = { Vec3(-0.073, 0.997, 0.030) };
+				cover0.stance= "prone";
+				cover1.position = Vec3(3279.798, -948.938, 216.125);
+				cover1.AimVectors = { Vec3(0.066, 0.997, 0.038) };
+				cover1.stance= "prone";
+			}
+			case 8:
+			{
+				goal.SetPosition( Vector3( 3779.750, -19.607, 216.207 ) );
+				cover0.position = Vec3(5037.875, -237.875, 264.125);
+				cover0.AimVectors = { Vec3(-0.989, 0.147, -0.023) };
+				cover0.stance= "stand";
+				cover1.position = Vec3(3254.433, -619.840, 216.125);
+				cover1.AimVectors = { Vec3(0.535, 0.844, 0.033) };
+				cover1.stance= "crouch";
+			}
+		}
+
+		Util.MapDebugPrint( "Fuel_Dump_Plant_Position: " + position );
+	},
+};
+
+global OnMapLoad = function()
+{
+	if ( Map.Debug )
+	{
+		Util.DebugColorString = "^3";
+	}
+
+	//Navigate for lifts
+	Map.Navigation.lift_2_up = Map.Navigation.lift_1_up;
+	Map.Navigation.lift_1_down = Map.Navigation.lift_1_up;
+	Map.Navigation.lift_2_down = Map.Navigation.lift_1_up;
+
+	OnTrigger( "^3*** ^7Axis have repaired the 1st Pumphouse door! ^3***", Map.First_Pumphouse_Door_Built );
+	OnTrigger( "Planted at the 1st Pumphouse Door.", Map.First_Pumphouse_Door_Planted );
+	OnTrigger( "^3*** ^7Allies have destroyed the 1st Pumphouse door! ^3***", Map.First_Pumphouse_Door_Destroyed );
+
+	OnTrigger( "^3*** ^7Axis have repaired the 2nd Pumphouse door! ^3***", Map.Second_Pumphouse_Door_Built );
+	OnTrigger( "Planted at the 2nd Pumphouse Door.", Map.Second_Pumphouse_Door_Planted );
+	OnTrigger( "^3*** ^7Allies have destroyed the 2nd Pumphouse door! ^3***", Map.Second_Pumphouse_Door_Destroyed );
+
+	OnTrigger( "Planted at the Fuel Dump.", Map.Fuel_Dump_Planted );
+	OnTrigger( "Defused at the Fuel Dump.", Map.Fuel_Dump_Defused );
+	OnTrigger( "^3*** ^7Fuel Dump destroyed! ^3***", Map.Fuel_Dump_Destroyed );
+
+	OnTrigger( "Planted at the Fuel Dump Gate.", Map.Fuel_Dump_Gate_Planted );
+	OnTrigger( "^3*** ^7The Allies have destroyed the Fuel Dump Gate! ^3***", Map.Fuel_Dump_Gate_Destroyed );
+
+	OnTrigger( "Planted at the North Gate.", Map.North_Gate_Planted );
+	OnTrigger( "^3*** ^7North Gate destroyed! ^3***", Map.North_Gate_Destroyed );
+
+	OnTrigger( "Planted at the North Winding Gear.", Map.North_Winding_Gear_Planted );
+	OnTrigger( "^3*** ^7North Winding Gear destroyed! ^3***", Map.North_Winding_Gear_Destroyed );
+
+	OnTrigger( "Planted at the Old Lock.", Map.Old_Lock_Planted );
+	OnTrigger( "^3*** ^7Old Lock destroyed! ^3***", Map.Old_Lock_Destroyed );
+
+	OnTrigger( "Planted at the Pump.", Map.Pump_Planted );
+	OnTrigger( "^3*** ^7Pump destroyed! ^3***", Map.Pump_Destroyed );
+
+	OnTrigger( "Planted at the South Winding Gear.", Map.South_Winding_Gear_Planted );
+	OnTrigger( "^3*** ^7South Winding Gear destroyed! ^3***", Map.South_Winding_Gear_Destroyed );
+
+	OnTrigger( "Allies have stolen some Demolition Charges!", Map.Explosives_Taken );
+	OnTrigger( "USA have stolen some Demolition Charges!", Map.Explosives_Taken );	//ETNam
+	OnTrigger( "axis_objective_lost", Map.Explosives_Dropped );
+	OnTrigger( "Allies have stolen some Demolition Charges!", Map.explosives_TakenOrDropped );
+	OnTrigger( "USA have stolen some Demolition Charges!", Map.explosives_TakenOrDropped );	//ETNam
+
+	OnTrigger( "^3*** ^7Demolition Charges primed at the North Gate! ^3***", Map.North_Gate_Captured );
+	OnTrigger( "^3*** ^7Demolition Charges primed at the Fuel Dump! ^3***", Map.Fuel_Dump_Captured );
+	OnTrigger( "^3*** ^7Demolition Charges primed at the Old Lock! ^3***", Map.Old_Lock_Captured );
+	OnTrigger( "^3*** ^7Demolition Charges primed at the Pump! ^3***", Map.Pump_Captured );
+	OnTrigger( "^3*** ^7Demolition Charges primed at the North Winding Gear! ^3***", Map.North_Winding_Gear_Captured );
+	OnTrigger( "^3*** ^7Demolition Charges primed at the South Winding Gear! ^3***", Map.South_Winding_Gear_Captured );
+	OnTrigger( "^3*** ^7Axis have retaken the Dockside! ^3***", Map.Dockside_Axis_Captured );
+	OnTrigger( "^3*** ^7Allies have captured the Dockside! ^3***", Map.Dockside_Allies_Captured );
+
+	OnTrigger( "lift1_goto", Map.Lift_1 );
+	OnTrigger( "lift2_goto", Map.Lift_2 );
+	OnTrigger( "security2_goto", Map.Door_2_and_3_Opening );
+	OnTrigger( "security4_goto", Map.Door_4_and_5_Opening );
+	OnTrigger( "crane_start", Map.Crane_1_Moving );
+	OnTrigger( "crane2_start", Map.Crane_2_Moving );
+	OnTrigger( "crane_stop", Map.Crane_1_Stop );
+	OnTrigger( "crane2_stop", Map.Crane_2_Stop );
+
+	OnTriggerRegion(AABB(2715.125,1850,953.125,2753.125,1875,1221.127), Map.Ship_Ladder_1 );
+	OnTriggerRegion(AABB(1510.875,1850.944,953.125,1555.360,1860.946,1164.135), Map.Ship_Ladder_2 );
+	OnTriggerRegion(AABB(2539.938,1835.766,953.125,2765.875,2008.875,1184.325), Map.AlliesAtLadder1 );
+	OnTriggerRegion(AABB(1351.125,1814.710,953.125,1599.505,2008.875,1078.858), Map.AlliesAtLadder2 );
+
+	OnTriggerRegion(AABB(4986.527,2871.125,1025.254,5168.875,3448.875,1199.406), Map.PumpHouseTrigger );    //right enrance room
+	OnTriggerRegion(AABB(4103.125,2871.294,641.125,4330.208,3448.875,1195.921), Map.PumpHouseTrigger );    //left enrance room
+	OnTriggerRegion(AABB(4271.125,2871.125,641.125,5000.875,3448.875,1345.157), Map.PumpHouseTrigger );    //hut
+
+	OnTriggerRegion(AABB(2831.125,3599.125,337.125,3503.787,4336.875,1285.789), Map.SouthHutTrigger );  //hut
+	OnTriggerRegion(AABB(2943.125,2575.125,337.125,3392.875,3741.869,638.086), Map.SouthHutTrigger );   //water
+	OnTriggerRegion(AABB(3458.231,3783.125,1025.125,3640.875,4152.725,1144.064), Map.SouthHutTrigger ); //entrance room
+
+	OnTriggerRegion(AABB(8639.125,3599.125,337.125,9312.875,4336.875,1285.789), Map.NorthHutTrigger );  //hut
+	OnTriggerRegion(AABB(8751.125,2575.125,337.125,9200.875,3741.869,638.086), Map.NorthHutTrigger );   //water
+	OnTriggerRegion(AABB(9256.242,3783.125,1025.125,9448.875,4152.875,1131.125), Map.NorthHutTrigger );   //entrance room
+
+	OnTriggerRegion(AABB(4671.525,-512.609,241.264,5056.875,32.875,1181.357), Map.FuelDumpTrigger ); //stairs
+	OnTriggerRegion(AABB(2303.125,-1088.875,639.735,3840.875,-271.125,1388.934), Map.FuelDumpTrigger ); //entrance room
+	OnTriggerRegion(AABB(2312.480,-1024.875,193.125,4787.898,768.875,706.317), Map.FuelDumpTrigger ); //dynamite room
+
+	OnTriggerRegion(AABB(8108.015,544.724,1025.125,9712.874,2944.692,1261.779), Map.NorthGateTrigger );
+	OnTriggerRegion(AABB(701.531,4597.645,641.125,2938.875,6650.875,1216.062), Map.OldLockTrigger );
+
+	RegionTrigger.Create(AABB(2650.922,1948.782,1185.125,2771.875,2039.875,1259.129), "DisableCombatMovement", "Allied_Ship");
+	RegionTrigger.Create(AABB(2653.018,1672.125,1185.125,2771.875,1758.372,1259.127), "DisableCombatMovement", "Allied_Ship");
+	RegionTrigger.Create(AABB(2985.634,1174.159,993.125,3318.095,2495.165,1163.125), "DisableCombatMovement", "Allied_Ship");
+	RegionTrigger.Create(AABB(8814.735,1187.709,993.125,9159.769,2560.452,1111.320), "DisableCombatMovement", "North_Gate");
+	RegionTrigger.Create(AABB(2303.125,-265.793,193.125,3840.875,768.875,390), "DisableCombatMovement", "Fuel_Dump");
+	RegionTrigger.Create(AABB(2831.125,4257.813,1025.125,3504.875,4336.875,1099.125), "DisableCombatMovement", "South_Hut");
+	RegionTrigger.Create(AABB(8639.125,4243.532,1025.125,9312.875,4336.875,1144.905), "DisableCombatMovement", "North_Hut");
+
+	RegionTrigger.Create(AABB(2307.071,-827.938,391.125,2428.130,-707.300,1097.125), "DisableBotPush", "Lift_1");
+	RegionTrigger.Create(AABB(3716.547,-828.122,391.174,3840.875,-712.902,1108.703), "DisableBotPush", "Lift_2");
+
+	RegionTrigger.Create(AABB(2600.664,1837.663,953.125,2784.875,2008.124,1082.873), "DisableBotPush", "Ship_Ladder_1");
+	RegionTrigger.Create(AABB(2783.554,1831.268,1089.125,2879.467,1906.013,1163.125), "DisableBotPush", "Ship_Ladder_1");
+	RegionTrigger.Create(AABB(1351.125,1822.990,953.125,1570.951,1987.900,1047.186), "DisableBotPush", "Ship_Ladder_2");
+
+	OnTriggerRegion(AABB(2795.125,1998.009,1089.125,2800.125,2036.009,1180.929), Map.Ignore_Target );
+
+	Util.DisableGoal( ".*", true ); // all but routes
+	Util.DisableGoal( "ROUTE_Lift1Route" );
+	Util.DisableGoal( "ROUTE_Lift2Route" );
+
+
+	Util.EnableGoal( "AMMOCAB_.*" );
+	Util.EnableGoal( "HEALTHCAB_.*" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"DEFEND_Axis_OldLockStart_.*",
+		"DEFEND_Axis_SWHOut_.*",
+		"ARTILLERY_S_Axis_Ship_.*",
+		"CALLARTILLERY_Axis_Ship_.*",
+		"DEFEND_Axis_PumpHouseOut_.*",
+		"DEFEND_Axis_NWHOut_.*",
+		"DEFEND_Axis_NorthGateStart_.*",
+		"DEFEND_Axis_FuelDumpOut_.*",
+		".*MG42_Garage",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"FLAG_explosives_1",
+		"ATTACK_Allies_OldLockStart_.*",
+		"ATTACK_Allies_SWHOut_.*",
+		"ATTACK_Allies_PumpHouseOut_.*",
+		"ATTACK_Allies_NWHOut_.*",
+		"ATTACK_Allies_NorthGateStart_.*",
+		"ATTACK_Allies_FuelDumpOut_.*",
+		".*MG42_Allied_Ship_.*",
+		"PLANT_1st_Pumphouse_Door",
+		"PLANT_2nd_Pumphouse_Door",
+		"CHECKPOINT_dockside_flag",
+		"PLANT_Fuel_Dump_Gate",
+	});
+
+	SetGoalRole( "DEFEND_Axis_OldLockStart_0[012]", ROLE.DEFENDER );
+	SetGoalRole( "DEFEND_Axis_SWHOut_0[012]", ROLE.DEFENDER );
+	SetGoalRole( "DEFEND_Axis_PumpHouseOut_0[01234]", ROLE.DEFENDER1 );
+	SetGoalRole( "DEFEND_Axis_NWHOut_0[012]", ROLE.DEFENDER2 );
+	SetGoalRole( "DEFEND_Axis_NorthGateStart_0[012]", ROLE.DEFENDER2 );
+	SetGoalRole( "DEFEND_Axis_FuelDumpOut_0[01234]", ROLE.DEFENDER3 );
+	SetGoalRole( ".*MG42_Garage", ROLE.DEFENDER3 );
+	SetGoalRole( "BUILD_.*_Pumphouse_Door", {ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2} );
+
+	SetGoalRole( "ATTACK_Allies_OldLockStart_0[012]", ROLE.ATTACKER );
+	SetGoalRole( "ATTACK_Allies_SWHOut_0[012]", ROLE.ATTACKER );
+	SetGoalRole( "ATTACK_Allies_PumpHouseOut_0[01234]", ROLE.ATTACKER1 );
+	SetGoalRole( "ATTACK_Allies_NWHOut_0[012]", ROLE.ATTACKER2 );
+	SetGoalRole( "ATTACK_Allies_NorthGateStart_0[012]", ROLE.ATTACKER2 );
+	SetGoalRole( "ATTACK_Allies_FuelDumpOut_0[01234]", ROLE.ATTACKER3 );
+
+	SetGoalRole( "CAPPOINT_Pump", ROLE.ROAMER );
+	SetGoalRole( "PLANT_Pump", ROLE.ROAMER );
+	SetGoalRole( "ATTACK_Allies_PumpHouse_.*", ROLE.ROAMER );
+
+	SetGoalPriority( "CHECKPOINT_dockside_flag", 0.74, 0, 0 );
+	SetGoalPriority( "CHECKPOINT_dockside_flag", 0.70, 0, CLASS.ENGINEER );
+
+	SetGoalPriority( "DEFEND_Axis_NorthGateStart_1.*", 0.49, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_NorthGateStart_2.*", 0.49, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_NWHOut_1.*", 0.49, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_NWHOut_2.*", 0.49, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_PumpHouseOut_1.*", 0.49, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_PumpHouseOut_2.*", 0.49, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_OldLockStart_1.*", 0.49, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_OldLockStart_2.*", 0.49, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_SWHOut_1.*", 0.49, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_SWHOut_2.*", 0.49, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_FuelDumpOut_1.*", 0.49, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_FuelDumpOut_2.*", 0.49, TEAM.AXIS, 0 );
+	SetGoalPriority( "MOUNTMG42_.*", 0.50, TEAM.AXIS, 0 );
+	SetGoalPriority( "REPAIRMG42_.*", 0.60, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_OldLockStart_01", 0.51, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_OldLockStart_00", 0.52, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_SWHOut_01", 0.51, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_SWHOut_00", 0.52, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_PumpHouseOut_01", 0.51, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_PumpHouseOut_00", 0.52, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_NWHOut_01", 0.51, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_NWHOut_00", 0.52, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_NorthGateStart_01", 0.51, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_NorthGateStart_00", 0.52, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_FuelDumpOut_02", 0.51, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_FuelDumpOut_00", 0.52, TEAM.AXIS, 0 );
+	SetGoalPriority( "CALLARTILLERY_Axis_.*", 0.70, TEAM.AXIS, 0 );
+	SetGoalPriority( "BUILD_.*_Pumphouse_Door", 0.79, TEAM.AXIS, 0 );
+
+	SetGoalPriority( "ATTACK_Allies_NorthGateStart_1.*", 0.49, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_NorthGateStart_2.*", 0.49, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_NWHOut_1.*", 0.49, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_NWHOut_2.*", 0.49, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_PumpHouseOut_1.*", 0.49, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_PumpHouseOut_2.*", 0.49, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_OldLockStart_1.*", 0.49, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_OldLockStart_2.*", 0.49, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_SWHOut_1.*", 0.49, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_SWHOut_2.*", 0.49, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_FuelDumpOut_1.*", 0.49, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_FuelDumpOut_2.*", 0.49, TEAM.ALLIES, 0 );
+	SetGoalPriority( "MOUNTMG42_.*", 0.60, TEAM.ALLIES, 0 );
+	SetGoalPriority( "REPAIRMG42_.*", 0.81, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_OldLockStart_01", 0.51, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_OldLockStart_00", 0.52, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_SWHOut_01", 0.51, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_SWHOut_00", 0.52, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_PumpHouseOut_01", 0.51, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_PumpHouseOut_00", 0.52, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_NWHOut_01", 0.51, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_NWHOut_00", 0.52, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_NorthGateStart_01", 0.51, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_NorthGateStart_00", 0.52, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_FuelDumpOut_02", 0.51, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_FuelDumpOut_00", 0.52, TEAM.ALLIES, 0 );
+	SetGoalPriority( "PLANT_.*_Pumphouse_Door", 0.80, TEAM.ALLIES, CLASS.ENGINEER );
+	SetGoalPriority( "CAPPOINT_.*", 1.02, TEAM.ALLIES, 0 );
+
+	j = 0.53;
+	for( i = 20; i > 0; i -= 1 )
+	{
+		SetGoalPriority( "DEFEND_Axis_PumpHouse_" + i, j, TEAM.AXIS, 0 );
+		SetGoalPriority( "DEFEND_Axis_FuelDump_" + i, j, TEAM.AXIS, 0 );
+		SetGoalPriority( "DEFEND_Axis_NorthGate_" + i, j, TEAM.AXIS, 0 );
+		SetGoalPriority( "DEFEND_Axis_NWH_" + i, j, TEAM.AXIS, 0 );
+		SetGoalPriority( "DEFEND_Axis_OldLock_" + i, j, TEAM.AXIS, 0 );
+		SetGoalPriority( "DEFEND_Axis_SWH_" + i, j, TEAM.AXIS, 0 );
+		SetGoalPriority( "ATTACK_Allies_PumpHouse_" + i, j, TEAM.ALLIES, 0 );
+		SetGoalPriority( "ATTACK_Allies_FuelDump_" + i, j, TEAM.ALLIES, 0 );
+		SetGoalPriority( "ATTACK_Allies_NorthGate_" + i, j, TEAM.ALLIES, 0 );
+		SetGoalPriority( "ATTACK_Allies_NWH_" + i, j, TEAM.ALLIES, 0 );
+		SetGoalPriority( "ATTACK_Allies_OldLock_" + i, j, TEAM.ALLIES, 0 );
+		SetGoalPriority( "ATTACK_Allies_SWH_" + i, j, TEAM.ALLIES, 0 );
+		j = j + 0.01;
+	}
+
+	foreach( goal in Util.GoalTable("CALLARTILLERY_Axis_Ship_.*") )
+	{
+		goal.SetRange(700);
+	}
+
+	Util.SetMaxUsers( 1, "CHECKPOINT_.*" );
+	Util.SetMaxUsers( 1, "ATTACK_.*" );
+	Util.SetMaxUsers( 1, "DEFEND_.*" );
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+	Util.SetMaxUsers( 1, "CAPPOINT_.*" );
+	Util.SetMaxUsers( 3, "FLAG_.*" );
+	Util.SetMaxUsers( 2, ".*_Pumphouse_Door" );
+	Util.SetMaxUsers( 2, "PLANT_Fuel_Dump_Gate" );
+
+	Util.SetGoalPosition(4330.993, 3123.803, 664.125, "PLANT_Pump");
+	Util.SetGoalPosition(3048.166, 719.957, 216.125, "PLANT_Fuel_Dump");
+	Util.SetGoalPosition(8991.391, 4112.152, 924.278, "PLANT_North_Winding_Gear");
+	Util.SetGoalPosition(3182.605, 4107.220, 924.220, "PLANT_South_Winding_Gear");
+	Util.SetGoalPosition(1529.076, 6240.480, 1048.125, "PLANT_Old_Lock");
+	Util.SetGoalPosition(8982.896, 1804.826, 1016.125, "PLANT_North_Gate");
+
+	Util.AddUseWp( "CHECKPOINT_dockside_flag", { "Flag_1", "Flag_2", "Flag_3", "Flag_4" } );
+	Util.AddUseWp( "PLANT_Fuel_Dump_Gate", { "Fuel_Dump_Gate_1", "Fuel_Dump_Gate_2" } );
+	Util.AddUseWp( "PLANT_2nd_Pumphouse_Door", { "2nd_Pumphouse_Door_1", "2nd_Pumphouse_Door_3" } );
+	Util.AddUseWp( "PLANT_1st_Pumphouse_Door", { "1st_Pumphouse_Door_1", "1st_Pumphouse_Door_3" } );
+	Util.AddUseWp( "BUILD_1st_Pumphouse_Door", "1st_Pumphouse_Door_5" );
+	Util.AddUseWp( "BUILD_2nd_Pumphouse_Door", "2nd_Pumphouse_Door_5" );
+
+	Wp.SetWaypointFlag( "2nd_Pumphouse_Door_1", "door", true );
+	Wp.SetWaypointFlag( "2nd_Pumphouse_Door_4", "closed", false );
+	Wp.SetWaypointFlag( "2nd_Pumphouse_Door_2", { "door", "axis", "infiltrator" }, true );
+
+	Wp.SetWaypointFlag( "1st_Pumphouse_Door_1", "door", true );
+	Wp.SetWaypointFlag( "1st_Pumphouse_Door_4", "closed", false );
+	Wp.SetWaypointFlag( "1st_Pumphouse_Door_2", { "door", "axis", "infiltrator" }, true );
+
+	Wp.SetWaypointFlag( "Ladder_[12]", "closed", false );
+
+	Wp.SetWaypointFlag( "Old_Lock_.*", "closed", true );
+
+	Wp.SetWaypointFlag( "North_Gate_[0123456]", "closed", false );
+	Wp.SetWaypointFlag( "North_Gate_[78]", "closed", true);
+
+	Wp.SetWaypointFlag( "Crane_1_West_.*", "closed", false );
+	Wp.SetWaypointFlag( "Crane_1_South_.*", "closed", true );
+	Wp.SetWaypointFlag( "Crane_1_East_.*", "closed", true );
+	Wp.SetWaypointFlag( "Crane_1_North_.*", "closed", true );
+
+	Wp.SetWaypointFlag( "Crane_2_West_.*", "closed", false );
+	Wp.SetWaypointFlag( "Crane_2_South_.*", "closed", true );
+	Wp.SetWaypointFlag( "Crane_2_East_.*", "closed", true );
+	Wp.SetWaypointFlag( "Crane_2_North_.*", "closed", true );
+
+	Wp.SetWaypointFlag( "Fuel_Dump_[12345]", "closed", true);
+	Wp.SetWaypointFlag( "Fuel_Dump_[67]", "closed", false );
+
+	for ( s = 0; s <= 45; s += 1 )
+	{
+		Wp.SetWaypointFlag( "SWG_" + s, "closed", false );
+	}
+
+	for ( k = 46; k <= 63; k += 1 )
+	{
+		Wp.SetWaypointFlag( "SWG_" + k, "closed", true );
+	}
+
+	for ( o = 0; o <= 45; o += 1 )
+	{
+		Wp.SetWaypointFlag( "NWG_" + o, "closed", false );
+	}
+
+	for ( d = 46; d <= 63; d += 1 )
+	{
+		Wp.SetWaypointFlag( "NWG_" + d, "closed", true );
+	}
+
+	Map.Crane_1_Path_Adjustment();
+	Map.Crane_2_Path_Adjustment();
+	Map.Fuel_Dump_Random_Plant_Position();
+
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.MP40, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.THOMPSON, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.PANZERFAUST, false );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.FLAMETHROWER, false );
+
+	sleep(8);
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "FLAG_explosives_2" );
+
+	if ( GetGameState() == "Playing" )
+	{
+		EchoToScreen(0,"^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12 ^3");
+		Util.BotChat( 0, "say", "^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12^7" , 1 );
+	}
+};
+
+global OnBotJoin = function( bot )
+{
+	Map.SetSpawn1(bot);
+	bot.TargetBreakableDist = 100;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		DEFEND_Axis_FuelDumpOut_00 =
+		{
+			ROUTE_AxisInitialSpawnLeft =
+			{
+				ROUTE_LeftWay_01 =
+				{
+					ROUTE_LeftWay_02 = {},
+				},
+			},
+		},
+	};
+	MapRoutes[".*_Axis_FuelDumpOut_.*"] =
+	{
+		ROUTE_SouthBarracks_Spawn =
+		{
+			ROUTE_Teleport_01 =
+			{
+				ROUTE_Teleport_02 = {},
+			},
+		},
+	};
+	MapRoutes[".*MG42_Garage"] =
+	{
+		ROUTE_SouthBarracks_Spawn =
+		{
+			ROUTE_Teleport_01 =
+			{
+				ROUTE_Teleport_02 =
+				{
+					ROUTE_Hangar_01 = {},
+				},
+			},
+		},
+		ROUTE_AxisInitialSpawnLeft =
+		{
+			ROUTE_Hangar_01 = {},
+		},
+	};
+	MapRoutes[".*_Axis_FuelDump_.*"] =
+	{
+		ROUTE_SouthBarracks_Spawn =
+		{
+			ROUTE_Teleport_01 =
+			{
+				ROUTE_Teleport_02 =
+				{
+					ROUTE_Hangar_01 =
+					{
+						Weight = 2,
+						ROUTE_Hangar_02 =
+						{
+							ROUTE_Hangar_03 = {},
+						},
+					},
+					ROUTE_AxisInitialSpawnLeft =
+					{
+						ROUTE_LeftWay_01 =
+						{
+							ROUTE_LeftWay_02 = {},
+						},
+					},
+				},
+			},
+		},
+	};
+	MapRoutes[".*_Allies_FuelDump_.*"] =
+	{
+		ROUTE_Allied_Ship_Spawn =
+		{
+			ROUTE_Lift1Route = {Weight = 2,},
+			ROUTE_Lift2Route = {Weight = 2,},
+			ROUTE_AxisInitialSpawnLeft =
+			{
+				ROUTE_Hangar_01 =
+				{
+					ROUTE_Hangar_02 =
+					{
+						ROUTE_Hangar_03 = {},
+					},
+				},
+			},
+		},
+	};
+	MapRoutes[".*_Allies_OldLock.*"] =
+	{
+		ROUTE_DockSideSpawn =
+		{
+			ROUTE_MiddleWayDSS_01 =
+			{
+				ROUTE_MiddleWayDSS_02 = {},
+			},
+			ROUTE_LeftWayDSS_01 =
+			{
+				ROUTE_LeftWayDSS_02 = {},
+			},
+		},
+	};
+	MapRoutes[".*_Allies_NWH.*"] =
+	{
+		ROUTE_Allied_Ship_Spawn =
+		{
+			ROUTE_NWHR_01 =
+			{
+				ROUTE_NWHR_02 =
+				{
+					ROUTE_NWHR_03 = {},
+				},
+			},
+			ROUTE_NWHL_01 =
+			{
+				ROUTE_NWHL_02 =
+				{
+					ROUTE_NWHL_03 =
+					{
+						ROUTE_NWHL_04 = {},
+					},
+				},
+			},
+		},
+		ROUTE_DockSideSpawn =
+		{
+			ROUTE_NWHL_01 =
+			{
+				ROUTE_NWHL_02 =
+				{
+					ROUTE_NWHL_03 =
+					{
+						ROUTE_NWHL_04 = {},
+					},
+				},
+				ROUTE_NWHM_01 =
+				{
+					ROUTE_NWHM_02 =
+					{
+						ROUTE_NWHM_03 =
+						{
+							ROUTE_NWHR_03 = {},
+							ROUTE_NWHL_04 = {},
+						},
+					},
+				},
+			},
+		},
+	};
+
+	MapRoutes.DEFEND_Axis_FuelDumpOut_01 = MapRoutes.DEFEND_Axis_FuelDumpOut_00;
+	MapRoutes.PLANT_Fuel_Dump = MapRoutes[".*_Allies_FuelDump_.*"];
+	MapRoutes.CAPPOINT_Fuel_Dump = MapRoutes[".*_Allies_FuelDump_.*"];
+	MapRoutes.CAPPOINT_North_Winding_Gear = MapRoutes[".*_Allies_NWH.*"];
+
+	Util.Routes(MapRoutes);
+};

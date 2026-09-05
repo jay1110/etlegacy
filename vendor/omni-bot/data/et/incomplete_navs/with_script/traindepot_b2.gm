@@ -1,0 +1,147 @@
+//==========================================================================================
+//
+//	traindepot_b2.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	24 August 2018	Initial Script
+//	palota	3 August 2025
+//==========================================================================================
+//
+
+global Map =
+{
+	depot_Destroyed = function()
+	{
+		if(Map.depot) { return; }
+		Map.depot=1;
+		Wp.CheckBlockable();
+		Util.EnableGoal("CHECKPOINT.*");
+		if(!Map.radio) { SetAvailableMapGoals(TEAM.AXIS, 1, "DEFEND_radio.*"); }
+		if(!Map.tunnel) { SetAvailableMapGoals(TEAM.AXIS, 1, "DEFEND_tunnel.*"); }
+		SetAvailableMapGoals(TEAM.ALLIES, 1, {
+			"PLANT_tunnel_gate",
+			"PLANT_transmission_radio",
+		});
+	},
+	
+	maingate_Destroyed = function()
+	{
+		Map.depot_Destroyed();
+		Util.MapDebugPrint("maingate_Destroyed");
+	},
+
+	depot_side_entrance_Destroyed = function()
+	{
+		Map.depot_Destroyed();
+		Util.MapDebugPrint("depot_side_entrance_Destroyed");
+	},
+
+	fan_Destroyed = function()
+	{
+		Util.MapDebugPrint("fan_Destroyed");
+	},
+
+	transmission_radio_Destroyed = function()
+	{
+		Map.radio=1;
+		SetAvailableMapGoals(TEAM.AXIS, 0, {
+			"DEFEND_radio.*",
+			"DEFEND_depot.*",
+		});
+		Util.MapDebugPrint("transmission_radio_Destroyed");
+	},
+
+	tunnel_gate_Destroyed = function()
+	{
+		Map.tunnel=1;
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.AXIS, 0, "DEFEND_tunnel.*");
+		SetAvailableMapGoals(TEAM.AXIS, 1, {
+			"DEFEND_generator.*",
+			"PLANT_fan",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, 1, "PLANT_axis_power_generator");
+		Util.MapDebugPrint("tunnel_gate_Destroyed");
+	},
+
+	axis_power_generator_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, 0, {
+			"DEFEND_generator.*",
+			"DEFEND_depot.*",
+		});
+		Util.MapDebugPrint("axis_power_generator_Destroyed");
+	},
+
+	oldcityflag_Axis_Captured = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, 1, "DEFEND_depot.*");
+		Util.MapDebugPrint("oldcityflag_Axis_Captured");
+	},
+
+	oldcityflag_Allies_Captured = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, 0, "DEFEND_depot.*");
+		Util.MapDebugPrint("oldcityflag_Allies_Captured");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("^1Allies have destroyed the power generator", Map.axis_power_generator_Destroyed);
+	//"allies have secured the forward spawn"
+
+	//"basement MG gun  constructed"
+	//"Axis basement MG gun #1 disabled"
+
+	//"train MG42 guns constructed"
+	//"train MG42 guns disabled"
+
+	OnTrigger("^3allies have destroyed the side entrance!", Map.depot_side_entrance_Destroyed);
+
+	OnTrigger("^3fan destroyed", Map.fan_Destroyed);
+
+	OnTrigger("^3Allies have blown the depot main gate!", Map.maingate_Destroyed);
+
+	OnTrigger("^1Axis have destroyed the radio", Map.transmission_radio_Destroyed);
+
+	OnTrigger("^3Allies have breached the tunnel gate!", Map.tunnel_gate_Destroyed);
+
+	OnTrigger("Axis reclaim the forward spawn area!", Map.oldcityflag_Axis_Captured);
+	OnTrigger("Allies capture the forward spawn!", Map.oldcityflag_Allies_Captured);
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal({
+		"AMMOCAB.*",
+		"HEALTHCAB.*",
+	});
+
+	Util.AddUsePoint("PLANT_axis_power_generator", {Vec3(-984,-5083,-663), Vec3(-773,-4973,-656)});
+
+	SetAvailableMapGoals(TEAM.ALLIES, 1, {
+		"PLANT_maingate",
+		"PLANT_depot_side_entrance",
+	});
+
+	SetAvailableMapGoals(TEAM.AXIS, 1, {
+		"DEFEND_depot.*",
+		"DEFEND_radio[56]",
+		"BUILD_main_bunker_MG42_gun",
+		".*MG42_main_bunker_MG42_gun",
+	});
+
+	SetGoalPriority("CHECKPOINT.*", 0.5);
+
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=30, MaxCampTime=90});
+	
+	Util.SetGoalRange("PLANT_fan", AABB(-201.546,-4155.870,-417.424,830.514,-2551.924,464.399));
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.TargetBreakableDist = 90;
+};

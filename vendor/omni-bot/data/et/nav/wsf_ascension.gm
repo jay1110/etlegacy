@@ -1,0 +1,233 @@
+//==========================================================================================
+//
+//	wsf_ascension.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	^1C ^04 ^1W	05 May 2024
+//	palota 08 August 2025	new script, routes, GRENADE, SMOKEBOMB, more ATTACK and DEFEND
+//==========================================================================================
+//
+
+global Map =
+{
+	Archives_Door_destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.AXIS, false, "PLANT_archives_door");
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"FLAG_docs",
+			"CAPPOINT_truckdocuments",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_truck_.*");
+		SetGoalPriority("DEFEND_shortcutdoor.*", 0.5);
+		Util.MapDebugPrint("Archives_Door_destroyed");
+	},
+
+	shortcut_door_destroyed = function()
+	{
+		Util.EnableGoal("ROUTE_shortcut");
+		SetAvailableMapGoals(TEAM.AXIS, false, "PLANT_shortcut_door");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_shortcutdoor.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "TRIPMINE_part1_5");
+		Util.MapDebugPrint("shortcut_door_destroyed");
+	},
+
+	docs_Taken = function()
+	{
+		Util.MapDebugPrint("docs_Taken");
+	},
+
+	docs_Returned = function()
+	{
+		Util.MapDebugPrint("docs_Returned");
+	},
+
+	docs_Secured = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"CAPPOINT_truckdocuments",
+			"PLANT_shortcut_door",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"DEFEND.*",
+			"TRIPMINE.*",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"ATTACK_GATE3.*",
+			"PLANT_Gate_03",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_GATE3.*");
+		Util.MapDebugPrint("docs_Secured");
+	},
+
+	gate3destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		Util.DisableGoal(".*", true);
+		Util.EnableGoal({
+			"TRIPMINE_flagroomdoorway",
+			"TRIPMINE_commandpostdoorway",
+			 ".*_Command_Post",
+			 "CHECKPOINT_gate5_flag",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"ATTACK_transmitter.*",
+			"PLANT_axisconstructiondoor",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"AMMOCAB.*",
+			"HEALTHCAB.*",
+			"DEFEND_transmitterdoor_.*",
+			".*MG42_cor_mg42_al2_right",
+		});
+		ETUtil.KillTeam(TEAM.ALLIES);
+		Util.MapDebugPrint("gate3destroyed");
+	},
+
+	gate5_flag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint("gate5_flag_Axis_Captured");
+	},
+
+	gate5_flag_Allies_Captured = function()
+	{
+		Util.MapDebugPrint("gate5_flag_Allies_Captured");
+	},
+
+	Transmitter_Door_destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		Util.DisableGoal("TRIPMINE_flagroomdoorway");
+		SetAvailableMapGoals(TEAM.AXIS, false, "PLANT_axisconstructiondoor");
+		SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Axis_Construction");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "TRIPMINE_transmitterdoorway");
+		Util.MapDebugPrint("Transmitter_Door_destroyed");
+	},
+
+	Axis_Construction_Built = function()
+	{
+		sleep(10);
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"FLAG_explosive_box",
+			"CAPPOINT_explosivebox",
+			"ATTACK_endgame.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_endgame.*");
+		Util.MapDebugPrint("Axis_Construction_Built");
+	},
+
+	explosive_box_Taken = function()
+	{
+		Util.MapDebugPrint("explosive_box_Taken");
+	},
+
+	explosive_box_Returned = function()
+	{
+		Util.MapDebugPrint("explosive_box_Returned");
+	},
+
+	set_explosives = function()
+	{
+		Util.DisableGoal("TRIPMINE.*");
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"FLAG_explosive_box",
+			"CAPPOINT_explosivebox",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_transmitterdoor_.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "PLANT_endgame");
+		Util.MapDebugPrint("set_explosives");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("axisconstruct_n_track", Map.Axis_Construction_Built);
+	OnTrigger("Flag returned explosive_box!", Map.explosive_box_Returned);
+	OnTrigger("Axis captured explosive_box_dest", Map.set_explosives);
+	OnTrigger("Axis have stolen the Explosives!", Map.explosive_box_Taken);
+	OnTrigger("Flag returned docs!", Map.docs_Returned);
+	OnTrigger("Axis have stolen the Documents!", Map.docs_Taken);
+	OnTrigger("Axis captured docs_dest", Map.docs_Secured);
+	OnTrigger("Gate 03 Destroyed.", Map.gate3destroyed);
+	OnTrigger("the Archives Door Destroyed.", Map.Archives_Door_destroyed);
+	OnTrigger("the Shortcut Door Destroyed.", Map.shortcut_door_destroyed);
+	OnTrigger("the Transmitter Door Destroyed.", Map.Transmitter_Door_destroyed);
+	OnTrigger("CHECKPOINT_gate5_flag to team 1", Map.gate5_flag_Axis_Captured);
+	OnTrigger("CHECKPOINT_gate5_flag to team 2", Map.gate5_flag_Allies_Captured);
+
+	OnTriggerRegion(Vec3(1051,11,193), 200, RegionTrigger.DisableCombatMovement); //end window
+
+	Util.DisableGoal(".*", true);
+	Util.DisableGoal("ROUTE_shortcut");
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"PLANT_archives_door",
+		"PLANT_shortcut_door",
+		"ATTACK_archive.*",
+		"GRENADE_mg1",
+		"SMOKEBOMB_mg1",
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"AMMOCAB.*",
+		"HEALTHCAB.*",
+		"DEFEND_archivedoor.*",
+		"DEFEND_shortcutdoor.*",
+		"TRIPMINE_part1_.*",
+		".*MG42_83",
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, false, "TRIPMINE_part1_5"); //shortcut door
+
+	SetGoalPriority("DEFEND_shortcutdoor.*", 0.6);
+	SetGoalPriority("DEFEND_endgame.*", 0.6);
+	SetGoalPriority("ATTACK_endgame.*", 0.6);
+	SetGoalPriority("CHECKPOINT.*", 0.5, TEAM.ALLIES);
+	
+	Util.AddUsePoint("PLANT_Gate_03", Vec3(-183, -1630, 88));
+	Util.AddUsePoint("PLANT_endgame", Vec3(1186, 364, 245));
+
+	Util.ExcludeClass("PLANT_Axis_Construction", TEAM.ALLIES, CLASS.ENGINEER);
+	Util.ExcludeClass("PLANT_Neutral_Command_Post", 0, CLASS.ENGINEER);
+
+	Util.SetMaxUsers(2, "CHECKPOINT.*");
+	Util.SetMaxUsers(1, "BUILD_Neutral_Command_Post");
+	
+	SetMapGoalProperties("MOUNTMG42.*", {MinCampTime=15, MaxCampTime=70});
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=30, MaxCampTime=120});
+	SetMapGoalProperties("ATTACK.*", {MinCampTime=20, MaxCampTime=80});
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CAPPOINT_truckdocuments =
+		{
+			ROUTE_docs = {
+				ROUTE_truck ={},
+				ROUTE_shortcut ={},
+			}
+		},
+		CAPPOINT_explosivebox =
+		{
+			ROUTE_explosive = {
+				ROUTE_window ={},
+				ROUTE_stairs ={},
+			}
+		},
+		PLANT_endgame =
+		{
+			ROUTE_gate5_spawn = {
+				ROUTE_window ={},
+				ROUTE_cp ={Weight=2},
+			}
+		}
+	};
+	MapRoutes["ATTACK_endgame.*"] = MapRoutes.PLANT_endgame;
+	Util.Routes(MapRoutes);
+};

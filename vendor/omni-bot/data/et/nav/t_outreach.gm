@@ -1,0 +1,777 @@
+//==========================================================================================
+//
+//	t_outreach.gm
+//
+//	Who      	When		What
+//------------------------------------------------------------------------------------------
+//	Qiki		02.10.2023	Initial Script & Waypoints
+//	Native12	05.03.2025	Script
+//	Qiki		06.03.2025	Stuckages
+//	Native12	05.03.2025	Release
+//==========================================================================================
+//	Big thanks to Palota: Manage_bots, Check_Roles_Axis, Check_Roles_Allies
+//	Keep your omni-bot scripts up to date!
+//	Bugs and suggestions: PM on https://fearless-assassins.com/
+
+global Map =
+{
+	Allied_CP = false,
+	Axis_CP = false,
+	CP_Fixed = false,
+	Steam_Engine_Room = 0,
+	Launch_Pad = 0,
+	Abbey = 0,
+	Prison_Building = 0,
+	Headquarters_Building = 0,
+	Water_Tunnel_Cover = true,
+	Wooden_Plank_1 = true,
+	Wooden_Plank_2 = true,
+	Wooden_Plank_3 = true,
+	Wooden_Plank_4 = true,
+	Wooden_Plank_5 = true,
+	Wooden_Barrier = true,
+	
+	Attackers = {ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2, ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN},
+	Defenders = {ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2, ROLE.DEFENDER3, ROLE.DEFENSECAPTAIN},
+	
+	Navigation =
+	{
+		//	/bot waypoint_setproperty paththrough Navigation_PT:jump_wait
+		jump_wait =
+		{
+			navigate = function(_this)
+			{
+				sleep(0.25);
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+		
+		//	/bot waypoint_setproperty paththrough Navigation_PT:water_tunnel_cover
+		water_tunnel_cover =
+		{
+			EvalFunc = function(_this)
+			{
+				return Map.Water_Tunnel_Cover;
+			},
+			navigate = function(_this)
+			{
+				weaps =
+				{
+					WEAPON.LUGER,
+					WEAPON.LUGER_AKIMBO,
+					WEAPON.LUGER_SILENCED,
+					WEAPON.LUGER_AKIMBO_SILENCED,
+					WEAPON.COLT,
+					WEAPON.COLT_AKIMBO,
+					WEAPON.COLT_SILENCED,
+					WEAPON.COLT_AKIMBO_SILENCED
+				};
+				_this.Goto(_this.Bot.GetPosition());
+				_this.AddAimRequest(Priority.High, "position", Vector3(-2854.011, 5.688, 97.619));
+				
+				foreach ( w in weaps )
+				{
+					if ( _this.Bot.HasWeapon(w) )
+					{
+						_this.AddWeaponRequest(w);
+						break;
+					}
+				}
+				sleep(0.5);
+				
+				while ( Map.Water_Tunnel_Cover )
+				{
+					_this.Bot.HoldButton(BTN.ATTACK1, 0.2);
+					sleep(0.2);
+				}
+			},
+		},
+		
+		//	/bot waypoint_setproperty paththrough Navigation_PT:wooden_barrier
+		wooden_barrier =
+		{
+			EvalFunc = function(_this)
+			{
+				return Map.Wooden_Barrier;
+			},
+			navigate = function(_this)
+			{
+				_this.Goto(_this.Bot.GetPosition());
+				_this.AddAimRequest(Priority.High, "position", Vector3(-1771.125, -1123.423, 147.482));
+				_this.AddWeaponRequest(Priority.VeryHigh, WEAPON.KNIFE );
+				_this.timer = 0;
+				sleep(0.5);
+				
+				while ( Map.Wooden_Barrier )
+				{
+					_this.Bot.HoldButton(BTN.ATTACK1, 0.1);
+					sleep(0.1);
+					_this.timer += 1;
+					
+					if ( _this.timer == 150 )
+					{
+						_this.ReleaseWeaponRequest();
+						_this.ReleaseAimRequest();
+						
+						while ( !_this.Bot.MoveTowards(Vec3(-2149.317, -1189.462, 43.445), 35) )
+						{
+							yield();
+						}
+					}
+				}
+			},
+		},
+	},
+	
+	Allied_CP_Built = function()
+	{
+		Map.Allied_CP = true;
+		
+		Util.MapDebugPrint( "Allied_CP_Built" );
+	},
+
+	Allied_CP_Destroyed = function()
+	{
+		Map.Allied_CP = false;
+		
+		Util.MapDebugPrint( "Allied_CP_Destroyed" );
+		
+		foreach( goal in Util.GoalTable("DEFUSE_Command_Post_.*") )
+		{
+			goal.SetAvailable(TEAM.ALLIES, false);
+		}
+	},
+
+	Axis_CP_Built = function()
+	{
+		Map.Axis_CP = true;
+		
+		Util.MapDebugPrint( "Axis_CP_Built" );
+	},
+
+	Axis_CP_Destroyed = function()
+	{
+		Map.Axis_CP = false;
+		
+		Util.MapDebugPrint( "Axis_CP_Destroyed" );
+		
+		foreach( goal in Util.GoalTable("DEFUSE_Command_Post_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+	},
+
+	CP_Planted = function()
+	{
+		foreach( goal in Util.GoalTable("DEFUSE_Command_Post_.*") )
+		{
+			name = goal.GetName();
+			Util.SetGoalRange( name, 1400);
+			goal.MaxUsers_InProgress( 1 );
+		}
+	},
+
+	Command_Post_Fixed = function()
+	{
+		Map.CP_Fixed = true;
+		
+		Util.EnableGoal( "BUILD_Command_Post" );
+		
+		Util.MapDebugPrint( "Command_Post_Fixed" );
+	},
+
+	Steam_Engine_Room_Axis_Captured = function()
+	{
+		Map.Steam_Engine_Room = TEAM.AXIS;
+		
+		Util.MapDebugPrint( "Steam_Engine_Room_Axis_Captured" );
+	},
+
+	Steam_Engine_Room_Allies_Captured = function()
+	{
+		Map.Steam_Engine_Room = TEAM.ALLIES;
+		
+		Util.MapDebugPrint( "Steam_Engine_Room_Allies_Captured" );
+	},
+
+	Launch_Pad_Axis_Captured = function()
+	{
+		Map.Launch_Pad = TEAM.AXIS;
+		
+		ClearGoalRole( ".*MG42_Tower" , ROLE.DEFENDER1 );
+		
+		Util.MapDebugPrint( "Launch_Pad_Axis_Captured" );
+	},
+
+	Launch_Pad_Allies_Captured = function()
+	{
+		Map.Launch_Pad = TEAM.ALLIES;
+		
+		if ( Server.Team[TEAM.ALLIES].NumBots > 6 )
+		{
+			SetGoalRole( ".*MG42_Tower" , ROLE.DEFENDER1 );
+		}
+		
+		Util.MapDebugPrint( "Launch_Pad_Allies_Captured" );
+	},
+
+	Abbey_Axis_Captured = function()
+	{
+		Map.Abbey = TEAM.AXIS;
+		
+		ClearGoalRole( ".*MG42_Abbey" , ROLE.DEFENDER2 );
+		
+		Util.MapDebugPrint( "Abbey_Axis_Captured" );
+	},
+
+	Abbey_Allies_Captured = function()
+	{
+		Map.Abbey = TEAM.ALLIES;
+		
+		if ( Server.Team[TEAM.ALLIES].NumBots > 7 )
+		{
+			SetGoalRole( ".*MG42_Abbey" , ROLE.DEFENDER2 );
+		}
+		
+		Util.MapDebugPrint( "Abbey_Allies_Captured" );
+	},
+
+	Prison_Building_Axis_Captured = function()
+	{
+		Map.Prison_Building = TEAM.AXIS;
+		
+		Util.MapDebugPrint( "Prison_Building_Axis_Captured" );
+	},
+
+	Prison_Building_Allies_Captured = function()
+	{
+		Map.Prison_Building = TEAM.ALLIES;
+		
+		Util.MapDebugPrint( "Prison_Building_Allies_Captured" );
+	},
+
+	Headquarters_Building_Axis_Captured = function()
+	{
+		Map.Headquarters_Building = TEAM.AXIS;
+		
+		Util.MapDebugPrint( "Headquarters_Building_Axis_Captured" );
+	},
+
+	Headquarters_Building_Allies_Captured = function()
+	{
+		Map.Headquarters_Building = TEAM.ALLIES;
+		
+		Util.MapDebugPrint( "Headquarters_Building_Allies_Captured" );
+	},
+	
+	Sidewalk_Exploded = function()
+	{
+		Wp.SetWaypointFlag( "Sidewalk_1", "closed", true );
+		Wp.SetWaypointFlag( "Sidewalk_[23]", "closed", false );
+		Wp.SetWaypointFlag( "Sidewalk_4", "crouch", false );
+		Wp.SetWaypointFlag( "Sidewalk_4", { "inwater", "underwater" }, true );
+		
+		Util.MapDebugPrint( "Sidewalk_Exploded" );
+	},
+	
+	Water_Tunnel_Cover_Exploded = function()
+	{
+		Map.Water_Tunnel_Cover = false;
+		
+		Util.MapDebugPrint( "Water_Tunnel_Cover_Exploded" );
+	},
+	
+	Wooden_Plank_1_Exploded = function()
+	{
+		Map.Wooden_Plank_1 = false;
+		Util.MapDebugPrint( "Wooden_Plank_1_Exploded" );
+		sleep(1);
+		
+		if ( !Map.Wooden_Plank_2 and !Map.Wooden_Plank_3 and !Map.Wooden_Plank_4 and !Map.Wooden_Plank_5 )
+		{
+			Wp.SetWaypointFlag( "Planks_.*", "closed", false );
+			
+			Util.EnableGoal( "ROUTE_Planks_.*" );
+			Util.EnableGoal( "ROUTE_Flag2Way_.*" );
+			
+			Util.DisableGoal( "GRENADE_Wooden_Planks_.*" );
+		}
+	},
+	
+	Wooden_Plank_2_Exploded = function()
+	{
+		Map.Wooden_Plank_2 = false;
+		Util.MapDebugPrint( "Wooden_Plank_2_Exploded" );
+		sleep(1);
+		
+		if ( !Map.Wooden_Plank_1 and !Map.Wooden_Plank_3 and !Map.Wooden_Plank_4 and !Map.Wooden_Plank_5 )
+		{
+			Wp.SetWaypointFlag( "Planks_.*", "closed", false );
+			
+			Util.EnableGoal( "ROUTE_Planks_.*" );
+			Util.EnableGoal( "ROUTE_Flag2Way_.*" );
+			
+			Util.DisableGoal( "GRENADE_Wooden_Planks_.*" );
+		}
+	},
+	
+	Wooden_Plank_3_Exploded = function()
+	{
+		Map.Wooden_Plank_3 = false;
+		Util.MapDebugPrint( "Wooden_Plank_3_Exploded" );
+		sleep(1);
+		
+		if ( !Map.Wooden_Plank_1 and !Map.Wooden_Plank_2 and !Map.Wooden_Plank_4 and !Map.Wooden_Plank_5 )
+		{
+			Wp.SetWaypointFlag( "Planks_.*", "closed", false );
+			
+			Util.EnableGoal( "ROUTE_Planks_.*" );
+			Util.EnableGoal( "ROUTE_Flag2Way_.*" );
+			
+			Util.DisableGoal( "GRENADE_Wooden_Planks_.*" );
+		}
+	},
+	
+	Wooden_Plank_4_Exploded = function()
+	{
+		Map.Wooden_Plank_4 = false;
+		Util.MapDebugPrint( "Wooden_Plank_4_Exploded" );
+		sleep(1);
+		
+		if ( !Map.Wooden_Plank_1 and !Map.Wooden_Plank_2 and !Map.Wooden_Plank_3 and !Map.Wooden_Plank_5 )
+		{
+			Wp.SetWaypointFlag( "Planks_.*", "closed", false );
+			
+			Util.EnableGoal( "ROUTE_Planks_.*" );
+			Util.EnableGoal( "ROUTE_Flag2Way_.*" );
+			
+			Util.DisableGoal( "GRENADE_Wooden_Planks_.*" );
+		}
+	},
+	
+	Wooden_Plank_5_Exploded = function()
+	{
+		Map.Wooden_Plank_5 = false;
+		Util.MapDebugPrint( "Wooden_Plank_5_Exploded" );
+		sleep(1);
+		
+		if ( !Map.Wooden_Plank_1 and !Map.Wooden_Plank_2 and !Map.Wooden_Plank_3 and !Map.Wooden_Plank_4 )
+		{
+			Wp.SetWaypointFlag( "Planks_.*", "closed", false );
+			
+			Util.EnableGoal( "ROUTE_Planks_.*" );
+			Util.EnableGoal( "ROUTE_Flag2Way_.*" );
+			
+			Util.DisableGoal( "GRENADE_Wooden_Planks_.*" );
+		}
+	},
+	
+	Wooden_Barrier_Exploded = function()
+	{
+		Map.Wooden_Barrier = false;
+		Util.MapDebugPrint( "Wooden_Barrier_Exploded" );
+	},
+	
+	Manage_bots = function()
+	{
+		ra = 0;
+		rb = 0;
+		foreach ( bot in BotTable )
+		{
+			if ( bot.GetTeam() == TEAM.AXIS )
+			{
+				bot.ClearRoles(ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2, ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN);
+				bot.SetRoles(Map.Attackers[ra]);
+				ra = (ra+1)%5;
+			}
+			else
+			{
+				bot.ClearRoles(ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2, ROLE.DEFENDER3, ROLE.DEFENSECAPTAIN);
+				bot.SetRoles(Map.Defenders[rb]);
+				rb = (rb+1)%5;
+			}
+		}
+	},
+	
+	Check_Roles_Axis = function()
+	{
+		for (;;)
+		{
+			ClearGoalRole( ".*", Map.Attackers );
+			n = Server.Team[TEAM.AXIS].NumBots;
+			if ( n > 4 )
+			{
+				SetGoalRole(".*Flag1.*", ROLE.ATTACKER );
+				SetGoalRole(".*Flag2.*", ROLE.ATTACKER1 );
+				SetGoalRole(".*Flag3.*", ROLE.ATTACKER2 );
+				SetGoalRole(".*Flag4.*", ROLE.ATTACKER3 );
+				SetGoalRole(".*Flag5.*", ROLE.OFFENSECAPTAIN );
+			}
+			else if ( n == 4 )
+			{
+				SetGoalRole({".*Flag1.*", ".*Flag5.*"}, ROLE.ATTACKER );
+				SetGoalRole( ".*Flag2.*", ROLE.ATTACKER1 );
+				SetGoalRole( ".*Flag3.*", ROLE.ATTACKER2 );
+				SetGoalRole( ".*Flag4.*", ROLE.ATTACKER3 );
+			}
+			else if ( n == 3 )
+			{
+				SetGoalRole({".*Flag1.*", ".*Flag5.*"}, ROLE.ATTACKER );
+				SetGoalRole({".*Flag2.*", ".*Flag4.*"}, ROLE.ATTACKER1 );
+				SetGoalRole( ".*Flag3.*", ROLE.ATTACKER2 );
+			}
+			else if ( n == 2 )
+			{
+				SetGoalRole({".*Flag1.*", ".*Flag2.*", ".*Flag5.*"}, ROLE.ATTACKER );
+				SetGoalRole({".*Flag3.*", ".*Flag4.*"}, ROLE.ATTACKER1 );
+			}
+			else
+			{
+				SetGoalRole(".*Flag.*", ROLE.ATTACKER );
+			}
+
+			sleep(1);
+			ETUtil.WaitForSpawn(TEAM.AXIS);
+		}
+	},
+	
+	Check_Roles_Allies = function()
+	{
+		for (;;)
+		{
+			ClearGoalRole( ".*", Map.Defenders );
+			n = Server.Team[TEAM.ALLIES].NumBots;
+			if ( n > 4 )
+			{
+				SetGoalRole(".*Flag1.*", ROLE.DEFENDER );
+				SetGoalRole(".*Flag2.*", ROLE.DEFENDER1 );
+				SetGoalRole(".*Flag3.*", ROLE.DEFENDER2 );
+				SetGoalRole(".*Flag4.*", ROLE.DEFENDER3 );
+				SetGoalRole(".*Flag5.*", ROLE.DEFENSECAPTAIN );
+			}
+			else if ( n == 4 )
+			{
+				SetGoalRole({".*Flag1.*", ".*Flag5.*"}, ROLE.DEFENDER );
+				SetGoalRole( ".*Flag2.*", ROLE.DEFENDER1 );
+				SetGoalRole( ".*Flag3.*", ROLE.DEFENDER2 );
+				SetGoalRole( ".*Flag4.*", ROLE.DEFENDER3 );
+			}
+			else if ( n == 3 )
+			{
+				SetGoalRole({".*Flag1.*", ".*Flag5.*"}, ROLE.DEFENDER );
+				SetGoalRole({".*Flag2.*", ".*Flag4.*", ".*_Command_Post"}, ROLE.DEFENDER1 );
+				SetGoalRole( ".*Flag3.*", ROLE.DEFENDER2 );
+			}
+			else if ( n == 2 )
+			{
+				SetGoalRole({".*Flag1.*", ".*Flag2.*", ".*Flag5.*"}, ROLE.DEFENDER );
+				SetGoalRole({".*Flag3.*", ".*Flag4.*"}, ROLE.DEFENDER1 );
+			}
+			else
+			{
+				SetGoalRole(".*Flag.*", ROLE.DEFENDER );
+			}
+
+			sleep(1);
+			ETUtil.WaitForSpawn(TEAM.ALLIES);
+		}
+	},
+	
+	Ignore_Target =
+	{
+		Name = "Ignore_Target",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			b = Util.IsBot(ent);
+			if ( b )
+			{
+				for ( q = 0; q < 64; q += 1 )
+				{
+					if ( EntityIsValid(q) and q != b.GetGameId() )
+					{
+						b.IgnoreTarget(q, 999);
+					}
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			b = Util.IsBot(ent);
+			if ( b )
+			{
+				for ( q = 0; q < 64; q += 1 )
+				{
+					if ( EntityIsValid(q) and q != b.GetGameId() )
+					{
+						b.IgnoreTarget(q, 0.1);
+					}
+				}
+			}
+		},
+	},
+	
+	Ignore_Breakable =
+	{
+		Name = "Ignore_Breakable",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			b = Util.IsBot(ent);
+			if ( b )
+			{
+				b.TargetBreakableDist = 0;
+			}
+		},
+		OnExit = function(ent)
+		{
+			b = Util.IsBot(ent);
+			if ( b )
+			{
+				b.TargetBreakableDist = 80;
+			}
+		},
+	},
+};
+
+global OnMapLoad = function()
+{
+	if ( Map.Debug )
+	{
+		Util.DebugColorString = "^3";
+	}
+	
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_CP_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_CP_Destroyed );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_CP_Built );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_CP_Destroyed );
+	OnTrigger( "Planted at the Command Post.", Map.CP_Planted );
+	OnTrigger( "^1Command Post Fixed!!!", Map.Command_Post_Fixed );
+	
+	OnTrigger( "^1Axis ^6secured the Steam Engine Room", Map.Steam_Engine_Room_Axis_Captured );
+	OnTrigger( "^4Allies ^6capture the Steam Engine Room", Map.Steam_Engine_Room_Allies_Captured );
+	
+	OnTrigger( "^1Axis ^6secured the Reihenwerfer Launch pad", Map.Launch_Pad_Axis_Captured );
+	OnTrigger( "^4Allies ^6capture the Reihenwerfer Launch Pad", Map.Launch_Pad_Allies_Captured );
+	
+	OnTrigger( "^1Axis ^6secured the Abbey", Map.Abbey_Axis_Captured );
+	OnTrigger( "^4Allies ^6capture the Abbey", Map.Abbey_Allies_Captured );
+	
+	OnTrigger( "^1Axis ^6secured the Enemy POW", Map.Prison_Building_Axis_Captured );
+	OnTrigger( "^4Allies ^6rescued the POW and secured the building", Map.Prison_Building_Allies_Captured );
+	
+	OnTrigger( "^1Axis ^6secured the Headquarters Building", Map.Headquarters_Building_Axis_Captured );
+	OnTrigger( "^4Allies ^6capture the Headquarters Building", Map.Headquarters_Building_Allies_Captured );
+	
+	OnTrigger( "GRENADE_Sidewalk Exploded.", Map.Sidewalk_Exploded );
+	OnTrigger( "GRENADE_Water_Tunnel_Cover Exploded.", Map.Water_Tunnel_Cover_Exploded );
+	OnTrigger( "GRENADE_Wooden_Plank_1 Exploded.", Map.Wooden_Plank_1_Exploded );
+	OnTrigger( "GRENADE_Wooden_Plank_2 Exploded.", Map.Wooden_Plank_2_Exploded );
+	OnTrigger( "GRENADE_Wooden_Plank_3 Exploded.", Map.Wooden_Plank_3_Exploded );
+	OnTrigger( "GRENADE_Wooden_Plank_4 Exploded.", Map.Wooden_Plank_4_Exploded );
+	OnTrigger( "GRENADE_Wooden_Plank_5 Exploded.", Map.Wooden_Plank_5_Exploded );
+	OnTrigger( "GRENADE_Wooden_Barrier Exploded.", Map.Wooden_Barrier_Exploded );
+	
+	RegionTrigger.Create(AABB(-2325.630,-45.807,78.125,-1925.845,104.875,200.253), "DisableCombatMovement", "Sidewalk");
+	RegionTrigger.Create(AABB(-2933.902,-138.785,110.444,-2640.851,209.396,337.698), "DisableCombatMovement", "Allied_Spawn_Exit");
+	RegionTrigger.Create(AABB(-994.945,655.961,175.934,-701.488,833.874,344.687), "DisableCombatMovement", "Fence");
+	
+	OnTriggerRegion(AABB(-1527.875,1501.875,321.125,-1446.125,1511.875,433.202), Map.Ignore_Target );
+	OnTriggerRegion(AABB(-1181.875,123.125,78.125,-1100.125,133.125,182.489), Map.Ignore_Target );
+	OnTriggerRegion(AABB(773.872,1599.125,234.125,783.875,1664.177,333.788), Map.Ignore_Target );
+	
+	OnTriggerRegion(AABB(-3222.875,301.224,234.125,-3147.125,372.875,309.214), Map.Ignore_Breakable );
+
+	Util.DisableGoal( ".*", true );
+	Util.DisableGoal( "ROUTE_Planks_.*" );
+	Util.DisableGoal( "ROUTE_Flag2Way_.*" );
+	
+	Util.EnableGoal( {
+		"AMMOCAB_.*",
+		"HEALTHCAB_.*",
+		"CHECKPOINT_flag.*",
+		"DEFEND_Flag.*",
+		".*_Command_Post",
+		"GRENADE_Wooden_Planks_1",
+		"GRENADE_Wooden_Planks_2",
+		".*MG42_Abbey",
+		".*MG42_Bunker",
+		".*MG42_Tower",
+		".*MG42_Vehicle"
+	});
+	
+	Util.SetGoalRange( "GRENADE_Wooden_Planks_.*", 200);
+	Util.SetGoalRange( ".*_Command_Post", 1400);
+	
+	SetGoalPriority("MOUNTMG42.*", 0.40 );
+	SetGoalPriority("REPAIRMG42.*", 0.51 );
+	SetGoalPriority( "DEFEND_.*", 0.62, 0 );
+	SetGoalPriority( "PLANT_.*", 0.66, 0 );
+	SetGoalPriority( "PLANT_.*", 0.65, 0, CLASS.ENGINEER );
+	SetGoalPriority( "BUILD_.*", 0.69, 0 );
+	SetGoalPriority( "HEALTHCAB_.*", 0.70, 0 );
+	SetGoalPriority( "CHECKPOINT_.*", 0.71, 0 );
+	SetGoalPriority( "GRENADE_.*", 0.82, 0 );
+	
+	
+	Util.SetMaxUsers( 1, ".*MG42_.*" );
+	Util.SetMaxUsers( 1, ".*_Command_Post" );
+	Util.SetMaxUsers( 1, "GRENADE_.*" );
+	
+	Util.AddUseWp( "CHECKPOINT_flag1", { "Flag_1", "Flag_2", "Flag_3", "Flag_4" } );
+	Util.AddUseWp( "CHECKPOINT_flag2", { "Flag_5", "Flag_6", "Flag_7" } );
+	Util.AddUseWp( "CHECKPOINT_flag3", { "Flag_11", "Flag_12", "Flag_13", "Flag_14" } );
+	Util.AddUseWp( "CHECKPOINT_flag5", { "Flag_8", "Flag_9", "Flag_10" } );
+	
+	Wp.SetWaypointFlag( "Sidewalk_1", "closed", false );
+	Wp.SetWaypointFlag( "Sidewalk_[23]", "closed", true );
+	Wp.SetWaypointFlag( "Sidewalk_4", "crouch", true );
+	Wp.SetWaypointFlag( "Planks_.*", "closed", true );
+	Wp.SetWaypointFlag( "Sidewalk_4", { "inwater", "underwater" }, false );
+	
+	thread ( Map.Check_Roles_Axis );
+	thread ( Map.Check_Roles_Allies );
+	
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.MP40, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.THOMPSON, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.PANZERFAUST, false );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.FLAMETHROWER, false );
+	
+	if ( GetGameState() == "Playing" )
+	{
+		sleep(5);
+		EchoToScreen(0,"^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12 ^3");
+		Util.BotChat( 0, "say", "^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12^7" , 1 );
+	}
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 80;
+	sleep(0.1);
+	Map.Manage_bots ();
+};
+
+global OnBotLeave = function( bot )
+{
+	sleep(0.1);
+	Map.Manage_bots ();
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_flag1 =
+		{
+			ROUTE_Allied_Spawn =
+			{
+				ROUTE_Cabinets2 = {},
+				ROUTE_Planks_1 =
+				{
+					ROUTE_Planks_2 = {},
+				},
+			},
+		},
+		CHECKPOINT_flag2 =
+		{
+			ROUTE_Allied_Spawn =
+			{
+				ROUTE_Flag2Way_1 =
+				{
+					ROUTE_Flag2Way_2 =
+					{
+						ROUTE_Flag2Way_3 = {},
+					},
+				},
+			},
+		},
+		CHECKPOINT_flag3 =
+		{
+			ROUTE_Allied_Spawn =
+			{
+				ROUTE_Back_Way_Left_1 =
+				{
+					ROUTE_Around_Prison =
+					{
+						ROUTE_Trees =
+						{
+							ROUTE_Door = {},
+						},
+					},
+					ROUTE_Back_Way_Left_2 =
+					{
+						Weight = 2,
+						ROUTE_Back_Way_Left_3 =
+						{
+							ROUTE_Door = {},
+						},
+					},
+				},
+			},
+		},
+		CHECKPOINT_flag4 =
+		{
+			ROUTE_Allied_Spawn =
+			{
+				ROUTE_Back_Way_Left_1 =
+				{
+					ROUTE_Back_Way_Left_2 =
+					{
+						Weight = 2,
+						ROUTE_Prison_BackDoor = {},
+					},
+					ROUTE_Prison_FrontDoor = {},
+				},
+			},
+			ROUTE_Axis_Spawn =
+			{
+				ROUTE_Vehicle_MG42 =
+				{
+					ROUTE_Prison_FrontDoor = {},
+				},
+				ROUTE_TunnelWay_1 =
+				{
+					ROUTE_TunnelWay_2 = {},
+				},
+			},
+		},
+		CHECKPOINT_flag5 =
+		{
+			ROUTE_Allied_Spawn =
+			{
+				ROUTE_Cabinets2 =
+				{
+					ROUTE_Cabinets0 = {},
+				},
+				ROUTE_SideWalk_1 =
+				{
+					ROUTE_SideWalk_2 = {},
+				},
+			},
+		},
+		BUILD_Command_Post =
+		{
+			ROUTE_Allied_Spawn =
+			{
+				ROUTE_Back_Way_Left_1 =
+				{
+					ROUTE_Back_Way_Left_2 =
+					{
+						ROUTE_Back_Way_Left_3 = {},
+					},
+				},
+			},
+		},
+	};
+	
+	MapRoutes.PLANT_Command_Post = MapRoutes.BUILD_Command_Post;
+	MapRoutes["DEFEND_Flag1_.*"] = MapRoutes.CHECKPOINT_flag1;
+	MapRoutes["DEFEND_Flag2_.*"] = MapRoutes.CHECKPOINT_flag2;
+	MapRoutes["DEFEND_Flag3_.*"] = MapRoutes.CHECKPOINT_flag3;
+	MapRoutes["DEFEND_Flag4_.*"] = MapRoutes.CHECKPOINT_flag4;
+	MapRoutes["DEFEND_Flag5_.*"] = MapRoutes.CHECKPOINT_flag5;
+	
+	Util.Routes(MapRoutes);
+};

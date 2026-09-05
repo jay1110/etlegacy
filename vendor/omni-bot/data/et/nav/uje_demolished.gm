@@ -1,0 +1,475 @@
+//==========================================================================================
+//
+//	uje_demolished.gm
+//	uje demolished B2
+//	    Who       	            When		               What
+//------------------------------------------------------------------------------------------
+//	^1[UJE]^3Niek	        05 October 2020	           Initial Script
+//	^1[UJE]^3Captain	    14 October 2020	           Add Attack/Defence/Routes And more...
+//
+//==========================================================================================
+//
+
+global Map =
+{
+   	//set status' for conditionals,
+    ChurchDoorDestroyed = false,
+    TankBuild = false,
+    TankNearWall = false,
+    BridgeBuilt = false,
+    AlliedCPBuild = false,
+    WallTankDestroyed = false,
+    AxisInsideChurch = 0,
+
+    Axis_Command_Post_Built = function()
+	{
+    SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Axis_Command_Post" );
+
+  	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Command_Post" );
+
+	Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+    Axis_Command_Post_Destroyed = function()
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Command_Post" );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+    Map.AlliedCPBuild = true;
+    SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Allied_Command_Post" );
+    if ( Map.WallTankDestroyed )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Allied_Command_Post" );
+	}
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+    Map.AlliedCPBuild = false;
+    SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_Command_Post" );
+
+    SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Allied_Command_Post" );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+    Tank_Near_Wall =
+    {
+ 	    Name="Tank_Near_Wall",
+ 	    TriggerOnClass = { CLASS.VEHICLE_HVY },
+ 	    OnEnter = function(ent)
+ 	    {
+        if ( !Map.WallTankDestroyed )
+	    {
+        Map.TankNearWall = true;
+        SetAvailableMapGoals( TEAM.AXIS, false, "ESCORT_tank" );
+        Util.MapDebugPrint ( "Tank_Near_Wall" );
+	    }
+
+    },
+ 	OnExit = function(ent)
+ 	    {
+		Map.TankNearWall = false;
+
+ 		Util.MapDebugPrint ( "Between_In_Wall" );
+ 	    },
+    },
+
+    Tank_In_Wall =
+    {
+ 	    Name="Tank_In_Wall",
+ 	    TriggerOnClass = { CLASS.VEHICLE_HVY },
+ 	    OnEnter = function(ent)
+ 	    {
+        ETUtil.SetExcludeIndexes( "BUILD_Tank", { 0, 1, 2 } );
+		ETUtil.SetExcludeIndexes( "ESCORT_tank", { 1, 2 } );
+
+ 		Util.MapDebugPrint ( "Tank_In_Wall" );
+ 	   },
+ 	OnExit = function(ent)
+ 	    {
+        ETUtil.SetExcludeIndexes( "BUILD_Tank", {} );
+		ETUtil.SetExcludeIndexes( "ESCORT_tank", {} );
+
+ 		Util.MapDebugPrint ( "Tank_Passed_Wall" );
+ 	    },
+    },
+
+    Tank_Near_Car =
+    {
+ 	    Name="Tank_Near_Car",
+ 	    TriggerOnClass = { CLASS.VEHICLE_HVY },
+ 	    OnEnter = function(ent)
+ 	    {
+        ETUtil.SetExcludeIndexes( "BUILD_Tank", { 0, 1, 2 } );
+		ETUtil.SetExcludeIndexes( "ESCORT_tank", { 1, 2 } );
+
+ 		Util.MapDebugPrint ( "Tank_Near_Car" );
+ 	   },
+ 	OnExit = function(ent)
+ 	    {
+        ETUtil.SetExcludeIndexes( "BUILD_Tank", {} );
+		ETUtil.SetExcludeIndexes( "ESCORT_tank", {} );
+
+ 		Util.MapDebugPrint ( "Tank_Passed_Car" );
+ 	    },
+    },
+
+    Tank_Near_Bank =
+    {
+ 	    Name="Tank_Near_Bank",
+ 	    TriggerOnClass = { CLASS.VEHICLE_HVY },
+ 	    OnEnter = function(ent)
+ 	    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Church.*" );
+        SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_CP.*" );
+
+        SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Church.*" );
+        SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_CP.*" );
+
+ 		Util.MapDebugPrint ( "Tank_Near_Bank" );
+ 	    },
+ 	OnExit = function(ent)
+ 	    {
+            if ( Map.AlliedCPBuild )
+	        {
+            SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Allied_Command_Post" );
+            }
+            if ( !Map.BridgeBuilt  )
+	        {
+            SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Bridge" );
+            }
+ 		Util.MapDebugPrint ( "Tank_Near_Church" );
+        sleep(3);
+        Wp.SetWaypointFlag( "Window1", "closed", false );
+        Wp.SetWaypointFlag( "Window2", "closed", false );
+ 	    },
+    },
+
+	Axis_Inside_Church =
+	{
+		Name = "Axis_Inside_Church",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.AXIS )
+			{
+				Map.AxisInsideChurch += 1;
+
+                SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Radio.*" );
+                SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Church.*" );
+
+                SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Radio.*" );
+                SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Church.*" );
+
+                Util.MapDebugPrint( "Trigger region - Axis Inside Curch" );
+			}
+	    },
+      OnExit = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.AXIS )
+			{
+				Map.AxisInsideChurch -= 1;
+                if ( Map.AxisInsideChurch == 0 )
+				{
+                SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Church.*" );
+                SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Radio.*" );
+
+                SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Church.*" );
+                SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Radio.*" );
+
+                Util.MapDebugPrint( "Trigger region - Radio Is Safe" );
+                }
+			}
+	    }
+	},
+
+    Tank_Built = function()
+	{
+    Map.TankBuild = true;
+        if ( !Map.ChurchDoorDestroyed && !Map.TankNearWall )
+	    {
+         SetAvailableMapGoals( TEAM.AXIS, true, "ESCORT_tank" );
+        }
+    SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Tank" );
+
+		Util.MapDebugPrint( "Tank_Built" );
+	},
+
+    Tank_Damaged = function()
+	{
+    Map.TankBuild = false;
+        if ( !Map.ChurchDoorDestroyed )
+	    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Tank" );
+        }
+    SetAvailableMapGoals( TEAM.AXIS, false, "ESCORT_tank" );
+
+		Util.MapDebugPrint( "Tank_Damaged" );
+	},
+
+	Tank_Obstruction_Destroyed = function()
+	{
+    Map.WallTankDestroyed = true;
+    Map.TankNearWall = false;
+        if ( Map.TankBuild && !Map.TankNearWall )
+	    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "ESCORT_tank" );
+	    }
+		Util.MapDebugPrint( "Tank_Obstruction_Destroyed" );
+	},
+
+    Allied_Spawn_Courtyard = function()
+	{
+    SetAvailableMapGoals( TEAM.AXIS, true, {
+    "ATTACK_CP.*",
+    ".*CAB_south.*",
+    "BUILD_Axis_Command_Post"
+    } );
+    SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Wall.*" );
+
+    SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_CP.*" );
+    SetAvailableMapGoals( TEAM.ALLIES, false, {
+    "DEFEND_Wall.*",
+    ".*CAB_south.*",
+    ".*MG42.*"
+    } );
+
+		Util.MapDebugPrint( "Allied_Spawn_Courtyard" );
+	},
+
+    Church_Door_Destroyed = function()
+	{
+    Map.ChurchDoorDestroyed = true;
+
+    SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Allied_Radio" );
+    SetAvailableMapGoals( TEAM.AXIS, false, "ESCORT_tank" );
+
+		Util.MapDebugPrint( "Church_Door_Destroyed" );
+	},
+
+	Bridge_Built = function()
+	{
+    Map.BridgeBuilt = true;
+    SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Bridge" );
+
+    SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Bridge" );
+
+		Util.MapDebugPrint( "Bridge_Built" );
+	},
+
+	Bridge_Destroyed = function()
+	{
+    Map.BridgeBuilt = false;
+        if ( Map.ChurchDoorDestroyed  )
+	    {
+           SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Bridge" );
+        }
+    SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Bridge" );
+
+		Util.MapDebugPrint( "Bridge_Destroyed" );
+	},
+
+    Allied_Radio_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Allied_Radio_Destroyed" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+    OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+    OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+    OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+    OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+    OnTrigger( "^8The Tank has been repaired!", Map.Tank_Built );
+    OnTrigger( "^8The Tank has been damaged!", Map.Tank_Damaged );
+    OnTrigger( "^8The Axis destroyed the Wall!", Map.Tank_Obstruction_Destroyed );
+    OnTrigger( "^4Allies ^7spawn back to the Courtyard!", Map.Allied_Spawn_Courtyard );
+    OnTrigger( "^8The Tank has destroyed the Church Door!", Map.Church_Door_Destroyed );
+    OnTrigger( "^1The Bridge has been build.", Map.Bridge_Built );
+    OnTrigger( "^3The Bridge has been destroyed.", Map.Bridge_Destroyed );
+
+	OnTrigger( "Axis have destroyed the Radio!", Map.Allied_Radio_Destroyed );
+
+    // TriggerRegion
+    Tank_Near_Wall = OnTriggerRegion(AABB(-3709.030,-502.941,-305.076,-3398.959,-338.139,-204.744), Map.Tank_Near_Wall);
+    Tank_In_Wall = OnTriggerRegion(AABB(-3483.396,61.449,-329.886,-3161.973,513.690,-173.444), Map.Tank_In_Wall);
+    Tank_Near_Car = OnTriggerRegion(AABB(-2758.852,1299.115,-316.875,-2235.808,1709.204,-214.725), Map.Tank_Near_Car);
+    Tank_Near_Bank = OnTriggerRegion(AABB(-61.540,1300.276,-316.875,817.789,1695.323,-186.875), Map.Tank_Near_Bank);
+    Axis_Inside_Church = OnTriggerRegion(AABB(2840.932,-918.239,-340.458,4417.149,864.535,282.728), Map.Axis_Inside_Church);
+    Ruins = OnTriggerRegion(AABB(3115.066,1371.309,-126.871,3232.999,1565.142,3.899), RegionTrigger.DisableCombatMovement);
+    Bank = OnTriggerRegion(AABB(2014.386,387.017,-30.875,2133.007,1105.217,43.134), RegionTrigger.DisableCombatMovement);
+    Inside_Church = OnTriggerRegion(AABB(2840.932,-918.239,-340.458,4417.149,864.535,282.728), RegionTrigger.DisableCombatMovement);
+    Balcony1 = OnTriggerRegion(AABB(-1148.770,1007.652,-62.874,-985.033,1228.996,100.378), RegionTrigger.DisableCombatMovement);
+    Balcony2 = OnTriggerRegion(AABB(-14.380,1759.572,-30.875,140.669,1974.231,127.556), RegionTrigger.DisableCombatMovement);
+    Window_Ruins = OnTriggerRegion(AABB(2204.130,1887.141,-106.426,2378.703,2037.813,-20.872), RegionTrigger.DisableCombatMovement);
+
+	Util.DisableGoal( ".*", true ); // all but routes
+
+	// activation ALLIES
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"BUILD_Allied_Command_Post",
+	"DEFEND_Wall.*",
+    ".*MG42.*",
+	".*CAB_south.*"
+
+	} );
+
+	// activation AXIS
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+	"ATTACK_Wall.*",
+    "BUILD_Tank.*",
+	"PLANT_Tank_Obstruction"
+	} );
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "ATTACK.*" );
+	Util.SetMaxUsers( 1, "DEFEND.*" );
+	Util.SetMaxUsers( 1, "PLANT.*" );
+    Util.SetMaxUsers( 1, "BUILD.*" );
+    Util.SetMaxUsers( 1, "ESCORT.*" );
+
+    //SetPriority
+    SetGoalPriority( "BUILD_Tank", 0.98 );
+    SetGoalPriority( "ESCORT_tank", 0.98, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Tank_Obstruction", 0.95 );
+	SetGoalPriority( "PLANT_Allied_Radio", 0.98 );
+	SetGoalPriority( "BUILD_Allied_Command_Post", 0.98 );
+	SetGoalPriority( "BUILD_Axis_Command_Post", 0.98 );
+    SetGoalPriority( "PLANT_Allied_Command_Post", 1.0, TEAM.AXIS, CLASS.COVERTOPS );
+    SetGoalPriority( "PLANT_Axis_Command_Post", 1.0, TEAM.ALLIES, CLASS.COVERTOPS );
+
+    // Camp times
+	SetMapGoalProperties( "MOUNTMG42.*", {MinCampTime=15, MaxCampTime=90} );
+    SetMapGoalProperties( "ATTACK.*", {MinCampTime=30, MaxCampTime=45});
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=30, MaxCampTime=45});
+
+    Wp.SetWaypointFlag( "Window1", "closed", true );
+    Wp.SetWaypointFlag( "Window2", "closed", true );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		BUILD_Tank =
+		{
+			ROUTE_First_Axis_S  =
+			{
+				ROUTE_News  =
+				{
+					ROUTE_First_Corneer  =
+					{
+					},
+				},
+			},
+		},
+		PLANT_Tank_Obstruction =
+		{
+			ROUTE_First_Axis_S  =
+			{
+				ROUTE_News  =
+				{
+					ROUTE_First_Corneer  =
+					{
+					},
+				},
+			},
+		},
+		PLANT_Allied_Radio =
+		{
+			ROUTE_Wall_Spawn  =
+			{
+				ROUTE_Axis_CP  =
+				{
+					ROUTE_Roof_Allied_CP  =
+					{
+						ROUTE_Bridge  =
+						{
+						},
+					},
+				},
+				ROUTE_Corneer_Axis_CP  =
+				{
+					ROUTE_Street_Bank  =
+					{
+					},
+					ROUTE_Cab  =
+					{
+						ROUTE_Bank  =
+						{
+						},
+					},
+				},
+			},
+		},
+		BUILD_Allied_Command_Post ={},
+		PLANT_Allied_Command_Post =
+		{
+			ROUTE_Wall_Spawn  =
+			{
+				ROUTE_Axis_CP  =
+				{
+					ROUTE_Roof_Allied_CP  =
+					{
+					},
+				},
+				ROUTE_Corneer_Axis_CP  =
+				{
+					ROUTE_Cab  =
+					{
+						ROUTE_Bank  =
+						{
+						},
+					},
+				},
+			},
+		},
+		BUILD_Axis_Command_Post ={},
+		PLANT_Axis_Command_Post ={},
+		BUILD_Bridge ={},
+		PLANT_Bridge ={},
+        ATTACK_Church_08 =
+		{
+			ROUTE_Wall_Spawn  =
+			{
+				ROUTE_Car  =
+				{
+					ROUTE_Face_Cab  =
+					{
+						ROUTE_Ruins_Bank  =
+						{
+						},
+					},
+				},
+			},
+		},
+	};
+    MapRoutes.ATTACK_Wall_01 = MapRoutes.PLANT_Tank_Obstruction;
+    MapRoutes.ATTACK_Wall_07 = MapRoutes.PLANT_Tank_Obstruction;
+    MapRoutes.ATTACK_Wall_06 = MapRoutes.PLANT_Tank_Obstruction;
+    MapRoutes.ATTACK_Church_01 = MapRoutes.PLANT_Allied_Radio;
+    MapRoutes.ATTACK_Church_02 = MapRoutes.PLANT_Allied_Radio;
+    MapRoutes.ATTACK_Church_03 = MapRoutes.PLANT_Allied_Radio;
+    MapRoutes.ATTACK_Church_04 = MapRoutes.PLANT_Allied_Radio;
+    MapRoutes.ATTACK_Church_05 = MapRoutes.PLANT_Allied_Radio;
+    MapRoutes.ATTACK_Church_06 = MapRoutes.PLANT_Allied_Radio;
+	Util.Routes(MapRoutes);
+};

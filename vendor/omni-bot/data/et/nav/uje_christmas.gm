@@ -1,0 +1,338 @@
+//==========================================================================================
+//
+//	uje_christmas_tank.gm
+//
+//	Who  	                     When		        What
+//------------------------------------------------------------------------------------------
+//	^4Tardis	           15 December 2014	   Update Script
+//	^1[UJE]^3Captain	   22 November 2016	   Attack/Defense/Improvements/Clean
+//	palota	               27 January 2025	   BUILD_Tank offsets, routes, more DEFEND goals, PLANTMINE, REPAIRMG42, more bots escort and repair tank, paththrough navigation
+//==========================================================================================
+//
+
+global Map =
+{
+	r1Pos = 0,
+
+	r1 =
+	{
+		Name = "r1",
+		TriggerOnEntity = GetGoal("MOVER_achtbaan").GetEntity(),
+		OnEnter = function(ent)
+		{
+			Map.r1Pos = 1;
+			Map.Switches.ride1.Enabled = false;
+			Wp.SetWaypointFlag( "car", "closed", true );
+			if ( Map.Debug )
+				{ Util.MapDebugPrint( "^3r1 ready" ); }
+		},
+		OnExit = function(ent) { Map.r1Pos = -1; },
+	},
+
+	r2 =
+	{
+		Name = "r2",
+		TriggerOnEntity = GetGoal("MOVER_achtbaan").GetEntity(),
+		OnEnter = function(ent)
+		{
+			Map.r1Pos = 1;
+			Map.Switches.ride1.Enabled = true;
+			Wp.SetWaypointFlag( "car", "closed", false );
+			if ( Map.Debug )
+				{ Util.MapDebugPrint( "^8car open" ); }
+		},
+		OnExit = function(ent) { Map.r1Pos = -1; },
+	},
+
+	mg1 =
+	{
+		Name = "mg1",
+		TriggerOnEntity = GetGoal("MOVER_tank").GetEntity(),
+		OnEnter = function(ent)
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "MOBILEMG42_.*" );
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"MOUNTMG42_Axis_MG42",
+				"REPAIRMG42_Axis_MG42",
+			});
+			Util.MapDebugPrint( "tank at mg spot" );
+		},
+	},
+
+	Switches =
+	{
+		ride1 =
+		{
+			WaypointName = "ride1",
+			Enabled = true,
+			AimPosition = Vec3(-9727.8, 5697.5, 314.3),
+			LimitBots = 1,
+			LimitTeam = (1<<TEAM.ALLIES),
+			LimitClass = (1<<CLASS.COVERTOPS) | (1<<CLASS.ENGINEER),
+			/*ExitConditions =
+			{
+			 someFunc = function(bot)
+			 {
+				return true; //as soon as they hit switch, return true
+			 },
+			},*/
+		},
+	},
+
+	Navigation =
+	{
+		elevator1 =
+		{
+			EvalFunc = function()
+			{
+				return GetEntPosition(Map.elevator1Ent).z > 20;
+			},
+			navigate = function()
+			{
+				this.Goto(this.Bot.GetPosition());
+				for(i=0; i<40 && GetEntPosition(Map.elevator1Ent).z > 20; i+=1) {
+					sleep(0.2);
+				}
+			}
+		},
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Allied_Capture_House = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_house_.*");
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_cp_.*");
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_b.*",
+			"DEFEND_house_.*",
+			"BUILD_Axis_MG42",
+			"PLANTMINE_t.*"
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_a.*",
+			"DEFEND_cp_.*",
+			"PLANTMINE_h.*"
+		});
+
+		Util.MapDebugPrint( "Allied_Capture_House" );
+	},
+
+	Axis_MG42_Built = function()
+	{
+		Util.MapDebugPrint( "Axis_MG42_Built" );
+	},
+
+	Tank_Built = function()
+	{
+		Util.MapDebugPrint( "Tank_Built" );
+	},
+
+	Tank_Damaged = function()
+	{
+		Util.MapDebugPrint( "Tank_Damaged" );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+	Axis_MG42_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Axis_MG42_Destroyed" );
+	},
+
+	Axis_Presents_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Axis_Presents_Destroyed" );
+	},
+
+	wall_blown = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_tunnel_.*");
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_presents_.*");
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_tunnel_.*");
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_presents_.*");
+
+		Util.MapDebugPrint( "wall blown" );
+	},
+
+	wall2_blown = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Axis_Command_Post",
+			"PLANT_Axis_Presents",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ESCORT_tank",
+			"BUILD_Tank",
+		});
+		Util.MapDebugPrint( "wall2 blown" );
+	},
+
+	tank_at_tunnel = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_tunnel_.*");
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_house_.*");
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_tunnel_.*");
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_house_.*",
+			"PLANTMINE_t.*"
+		});
+
+		Util.MapDebugPrint( "tank_at_tunnel" );
+	},
+
+	tank_exit_tunnel = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_b.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_MG42" );
+
+		Wp.SetWaypointFlag( "rider", "closed", false );
+		Util.MapDebugPrint( "tank_exit_tunnel" );
+	},
+
+	tank_at_location = function()
+	{
+		switch(Map.VehicleLocation)
+		{
+			case 1:
+			{
+				Map.tank_at_tunnel();
+			}
+			case 2:
+			{
+				Map.tank_exit_tunnel();
+			}
+		}
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "Axis Team have built the MG42!!", Map.Axis_MG42_Built );
+	OnTrigger( "The Tank has been repaired!", Map.Tank_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "Allies have destroyed the MG42!!", Map.Axis_MG42_Destroyed );
+	OnTrigger( "Allies have destroyed the Axis Radio", Map.Axis_Presents_Destroyed );
+	OnTrigger( "The Tank has been damaged!", Map.Tank_Damaged );
+	OnTrigger( "Allied team has broken into the building!", Map.wall_blown );
+	OnTrigger( "Allied team has blown thru the Wall!", Map.wall2_blown );
+	OnTrigger( "Allied team has captured the Hause!", Map.Allied_Capture_House );
+	OnTrigger( "Allied team has captured the House!", Map.Allied_Capture_House );
+	OnTrigger( "tank at location", Map.tank_at_location );
+
+	Util.DisableGoal( ".*", true );
+	Util.EnableGoal({
+		"AMMO.*",
+		"HEALTH.*",
+		"MOUNT_tank",
+	});
+
+	//activation Allies
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_Allied_Command_Post",
+		"BUILD_Tank",
+		"ESCORT_tank",
+		"ATTACK_cp_.*",
+	});
+
+
+	//activation Axis
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"BUILD_Axis_Command_Post",
+		"PLANT_Allied_Command_Post",
+		"DEFEND_cp_.*",
+		"DEFEND_a.*",
+		"PLANTMINE_h.*",
+	});
+
+	// Max users per goal
+	Util.SetMaxUsersInProgress( 1, "DEFEND_.*" );
+	Util.SetMaxUsersInProgress( 1, "ATTACK_.*" );
+	Util.SetMaxUsersInProgress( 1, "MOUNTMG42_.*" );
+	Util.SetMaxUsersInProgress( 1, "MOUNT_tank" );
+	Util.SetMaxUsersInProgress( 1, ".*Command_Post" );
+
+	Wp.SetWaypointFlag( "rider", "closed", true );
+
+	OnTriggerRegion(AABB(-9699.497,5837.3,319.125, -9471.125, 5877, 393.125), Map.r1);
+	OnTriggerRegion(AABB(-9467.407,5150.3,303.125, -9346.425, 5418.4, 377.125), Map.r2);
+	OnTriggerRegion(AABB(-9600.9,8821.6,-0.875, -9160, 8918.6, 73.125), Map.mg1);
+	OnTriggerRegion(AABB(-8669.334,7329.634,1.128,-8625.789,7607.746,85.193),RegionTrigger.VehicleTrigger); //Tankattunnel
+	OnTriggerRegion(AABB(-9600.875,9531.591,1.125,-9182.531,9648.110,75.125),RegionTrigger.VehicleTrigger); //Tankexittunnel
+
+	Util.UpdateSwitchData();
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42_.*", { MinCampTime=25, MaxCampTime=90} );
+	SetMapGoalProperties( "MOBILEMG42_.*", { MinCampTime=25, MaxCampTime=90} );
+	SetMapGoalProperties( "DEFEND_.*", { MinCampTime=45, MaxCampTime=90} );
+	SetMapGoalProperties( "MOUNT_.*", { MinCampTime=30, MaxCampTime=90} );
+	SetMapGoalProperties( "ATTACK_.*", { MinCampTime=45, MaxCampTime=90} );
+
+	SetGoalPriority("BUILD_Allied_Command_Post", 0.81);
+
+	Map.elevator1Ent = TraceLine(Vec3(-2374, 2529, 52), Vector3(-2374, 2529, 0), null, TRACE.SOLID, 0, false).entity;
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 400;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		BUILD_Allied_Command_Post = {
+			ROUTE_allied_spawn = {
+				ROUTE_allies1 = {},
+				ROUTE_allies2 = {},
+				ROUTE_allies3 = {Weight=0.5},
+			}
+		},
+		PLANT_Axis_Presents = {
+			ROUTE_house = {
+				ROUTE_tunnel1 = {},
+				ROUTE_tunnel2 = {},
+				ROUTE_tunnel3 = {},
+				ROUTE_tunnel4 = {},
+				ROUTE_north1 = {Weight=2},
+				ROUTE_north2 = {},
+			}
+		},
+	};
+	MapRoutes["ATTACK_cp_0.*"] = MapRoutes.BUILD_Allied_Command_Post;
+	MapRoutes["ATTACK_presents.*"] = MapRoutes.PLANT_Axis_Presents;
+	MapRoutes["MOBILEMG42_.*"] = MapRoutes.PLANT_Axis_Presents;
+	MapRoutes.PLANT_Axis_Command_Post = MapRoutes.PLANT_Axis_Presents;
+	Util.Routes(MapRoutes);
+};

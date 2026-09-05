@@ -1,0 +1,3078 @@
+//==========================================================================================
+//
+//	ambition2.gm
+//
+//------------------------------------------------------------------------------------------
+///	Loffy	(Loffyswe@gmail.com) January 2014	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	Allied_Fence_Dyno = 0,
+	Axis_Pump_Dyno = 0,
+	Axis_Sniper_Stairs_Dyno = 0,
+	Centre_Ramp_Dyno = 0,
+	Command_Post_Dyno = 0,
+	East_Ramp_Dyno = 0,
+	Wall_Dyno = 0,
+
+	// Home made //conditional variable
+     EastRampStatus = 0, // Not built
+
+	// Home made
+	Security_gate_in = function()
+	{
+		Wp.SetWaypointFlag( "the_gate_shortcut_01", "closed", false );  // Enable waypoint. Bots can take the shortcut (gate is in).
+		Util.MapDebugPrint( "Security_gate_in" );
+	},
+
+	Security_gate_out = function()
+	{
+		Util.MapDebugPrint( "Security_gate_out" );
+	},
+
+	// Other
+	Allied_Fence_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Allied_Fence" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Allied_Fence" );
+		Wp.SetWaypointFlag( "wp_wall_left_01", "closed", true );   // Disable waypoint. bots can not move through fence.
+		Wp.SetWaypointFlag( "wp_wall_left_01b", "closed", true );  // Disable waypoint. bots can not move through fence.
+		Wp.SetWaypointFlag( "wp_wall_right_01", "closed", true );  // Disable waypoint. bots can not move through fence.
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANTMINE_fencebox_01" );
+		SetGoalPriority( "PLANT_Allied_Fence", 0.93, TEAM.AXIS, CLASS.ENGINEER );
+		SetGoalPriority( "PLANTMINE_fencebox_01", 0.79, TEAM.AXIS, CLASS.ENGINEER );
+		Util.MapDebugPrint( "Allied_Fence_Built" );
+	},
+
+	Axis_Pump_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Axis_Pump" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Centre_Ramp" );
+		SetGoalPriority( "BUILD_Centre_Ramp", 0.93, TEAM.AXIS, CLASS.ENGINEER );
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"ATTACK_ax_docroom_att_1",
+			"ATTACK_att_randi_01",
+			"FLAG_docs_scriptname",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_ax_forward_def_07" ); // Axis-only, disabled at match start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_ax_docroom_window_01" ); // Axis-only goal. Disabled at start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_ax_sneaky_def_01" ); // Axis-only defence position. Disabled at start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_ax_sneaky_def_02" ); // Axis-only defence position. Disabled at start.
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_ax_forward_def_02b" ); // Axis-only, disabled at match start.
+		SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_ax_forward_def_03b" ); // Axis-only, disabled at match start.
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_ax_def_near_mg_01" ); // Axis-only, Enabled at match start.
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_ax_def_near_mg_centre01" ); // Axis-only, Enabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_wall_01" ); // Allied-only defence position.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_near_fencebox_01" ); // Allied-only defence position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_near_fencebox_02" ); // Allied-only defence position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_under_pump_01" ); // Allied-only defence position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_under_pump_02" ); // Allied-only defence position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_under_pump_03" ); // Allied-only defence position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_def_upper_right_01" ); // Allied-only defence position. Enabled at start.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_def_upper_right_02" ); // Allied-only defence position. Disabled at start.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_unorthodox_near_comp_01" ); // Allied-only defence position. Enabled at start.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_pumpboxes_01" ); // Allied-only defence position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_def_upper_left_01" ); // Allied-only defence position.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_def_upper_left_02" ); // Allied-only defence position.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_unorthodox_position_01" ); // Allied-only defence position.
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"DEFEND_def_docroom_1",
+			"DEFEND_def_docroom_2",
+			"DEFEND_def_docroom_3",
+			"DEFEND_def_docroom_4",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, "SNIPE_alli_pump_01" ); // This is an Allied-only snipe position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_landmines_commpost" );  // Turn off forward mine position for the Allies.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "CAMP_alli_upper_right_01" ); // This is an Allied-only position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_window_upper_left_01" ); // Allied-only defence position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Pump" );
+		Util.EnableGoal("ROUTE_ax_water_right"); // Axis-only route. Only enabled when pump is working.
+		Wp.SetWaypointFlag( "in_swim_pool_01", "closed", false );  // Enable waypoint. Bot shortcut through swimming pool.
+Wp.SetWaypointFlag( "right_pumpgate_01", "closed", false );  // Enable waypoint. Bots can move through the gate near Axis pump.
+Wp.SetWaypointFlag( "left_pumpgate_01", "closed", false );  // Enable waypoint. Bots can move through the gate near the swimming pool.
+		SetGoalPriority( "BUILD_Axis_Pump", 0.90, TEAM.AXIS, CLASS.ENGINEER );
+		SetGoalPriority( "DEFEND_ax_sneaky_def_02", 0.90 );
+		Util.MapDebugPrint( "Axis_Pump_Built" );
+	},
+
+	Axis_Sniper_Stairs_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_ax_def_sniperstair_house_01" ); // Axis-only defence position.
+		SetAvailableMapGoals( TEAM.AXIS, true, "SNIPE_ax_snipe_sniperstairs_01" ); // This is an Axis-only snipe position.
+		SetAvailableMapGoals( TEAM.AXIS, true, "SNIPE_ax_snipe_sniperstairs_02" ); // This is an Axis-only snipe position.
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+		SetGoalPriority( "BUILD_Axis_Sniper_Stairs", 0.90, TEAM.AXIS, CLASS.ENGINEER );
+		SetGoalPriority( "BUILD_Command_Post", 0.93, TEAM.AXIS, CLASS.ENGINEER );
+		Util.MapDebugPrint( "Axis_Sniper_Stairs_Built" );
+	},
+
+	Centre_Ramp_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_East_Ramp" );
+		Wp.SetWaypointFlag( "centre_ramp_on", "closed", false );  //Enable waypoint. Bots can use ramp.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_landmines_centerramp_box" );  // Turn off mine position near construction box.
+		SetGoalPriority( "BUILD_Centre_Ramp", 0.90, TEAM.AXIS, CLASS.ENGINEER );
+		Util.MapDebugPrint( "Centre_Ramp_Built" );
+	},
+
+	Command_Post_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Wall" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "SNIPE_alli_snipe_01" ); // This is an Allied-only snipe position.
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Command_Post" );
+		SetGoalPriority( "BUILD_Command_Post", 0.90, TEAM.AXIS, CLASS.ENGINEER );
+
+
+		Util.MapDebugPrint( "Command_Post_Built" );
+	},
+
+	East_Ramp_Built = function()
+	{
+		Map.EastRampStatus = 1; // Built.
+
+		Wp.SetWaypointFlag( "wp_at_east_ramp_01", "closed", false );  //enable waypoint. bots can now run up on east ramp.
+		Wp.SetWaypointFlag( "after_east_ramp_is_built", "closed", false );  //enable waypoint. bots can move away from the ramp construction box.
+
+		Util.MapDebugPrint( "East_Ramp_Built" );
+	},
+
+	Allied_Fence_Planted = function()
+	{
+		Map.Allied_Fence_Dyno += 1;
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Allied_Fence" );
+		SetGoalPriority( "PLANTMINE_fencebox_01", 0.90, TEAM.AXIS, CLASS.ENGINEER );
+		Util.MapDebugPrint( "Allied_Fence_Planted" );
+	},
+
+	Axis_Pump_Planted = function()
+	{
+		Map.Axis_Pump_Dyno += 1;
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_Pump" );
+		Util.MapDebugPrint( "Axis_Pump_Planted" );
+	},
+
+	Axis_Sniper_Stairs_Planted = function()
+	{
+		Map.Axis_Sniper_Stairs_Dyno += 1;
+		Util.MapDebugPrint( "Axis_Sniper_Stairs_Planted" );
+	},
+
+	Centre_Ramp_Planted = function()
+	{
+		Map.Centre_Ramp_Dyno += 1;
+		Util.MapDebugPrint( "Centre_Ramp_Planted" );
+	},
+
+	Command_Post_Planted = function()
+	{
+		Map.Command_Post_Dyno += 1;
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+		Util.MapDebugPrint( "Command_Post_Planted" );
+	},
+
+	East_Ramp_Planted = function()
+	{
+		Map.East_Ramp_Dyno += 1;
+		Util.MapDebugPrint( "East_Ramp_Planted" );
+	},
+
+	Wall_Planted = function()
+	{
+		Map.Wall_Dyno += 1;
+		SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_alli_upper_right_01" ); // This is an Allied-only position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_walldef01",
+			"DEFEND_walldef02",
+			"DEFEND_walldef03",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, "SNIPE_ax_snipe_that_mg_01" ); // Axis-only snipe position, disabled at start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "SNIPE_ax_snipe_that_mg_02" ); // Axis-only snipe position, disabled at start.
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_alli_under_pump_01" ); // Allied-only defence position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_alli_under_pump_02" ); // Allied-only defence position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_alli_under_pump_03" ); // Allied-only defence position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_alli_pumpboxes_01" ); // Allied-only defence position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_alli_near_fencebox_01" ); // Allied-only defence position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_alli_near_fencebox_02" ); // Allied-only defence position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_alli_def_upper_right_02" ); // Allied-only defence position. Disabled at start.
+		SetAvailableMapGoals( TEAM.ALLIES, true, "SNIPE_alli_pump_01" ); // This is an Allied-only snipe position. Disabled at match start.
+		Wp.SetWaypointFlag( "ax_nearwall_left01", "closed", true );  //disable waypoint. bots can not move infront of wall plant.
+		Wp.SetWaypointFlag( "ax_nearwall_right01", "closed", true );  //disable waypoint. bots can not move infront of wall plant.
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Wall" );
+		SetGoalPriority( "PLANTMINE_fencebox_01", 0.90, TEAM.AXIS, CLASS.ENGINEER );
+		Util.MapDebugPrint( "Wall_Planted" );
+	},
+
+	Allied_Fence_Defused = function()
+	{
+		Map.Allied_Fence_Dyno -= 1;
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Allied_Fence" );
+		Util.MapDebugPrint( "Allied_Fence_Defused" );
+	},
+
+	Axis_Pump_Defused = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Pump" );
+		Map.Axis_Pump_Dyno -= 1;
+		Util.MapDebugPrint( "Axis_Pump_Defused" );
+	},
+
+	Axis_Sniper_Stairs_Defused = function()
+	{
+		Map.Axis_Sniper_Stairs_Dyno -= 1;
+		Util.MapDebugPrint( "Axis_Sniper_Stairs_Defused" );
+	},
+
+	Centre_Ramp_Defused = function()
+	{
+		Map.Centre_Ramp_Dyno -= 1;
+		Util.MapDebugPrint( "Centre_Ramp_Defused" );
+	},
+
+	Command_Post_Defused = function()
+	{
+		Map.Command_Post_Dyno -= 1;
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Command_Post" );
+		Util.MapDebugPrint( "Command_Post_Defused" );
+	},
+
+	East_Ramp_Defused = function()
+	{
+		Map.East_Ramp_Dyno -= 1;
+		Util.MapDebugPrint( "East_Ramp_Defused" );
+	},
+
+	Wall_Defused = function()
+	{
+		Map.Wall_Dyno -= 1;
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_pumpboxes_01" ); // Allied-only defence position. Disabled at match start.
+		Wp.SetWaypointFlag( "ax_nearwall_left01", "closed", false );  //enable waypoint. bots can move infront of wall plant.
+		Wp.SetWaypointFlag( "ax_nearwall_right01", "closed", false );  //enable waypoint. bots can move infront of wall plant.
+		SetGoalPriority( "PLANTMINE_fencebox_01", 0.90, TEAM.AXIS, CLASS.ENGINEER );
+		Util.MapDebugPrint( "Wall_Defused" );
+	},
+
+	Allied_Fence_Destroyed = function()
+	{
+		Map.Allied_Fence_Dyno = 0;
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_Fence" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Allied_Fence" );
+		Wp.SetWaypointFlag( "wp_wall_left_01", "closed", false );   // Enable waypoint. bots can move through fence.
+		Wp.SetWaypointFlag( "wp_wall_left_01b", "closed", false );  // Enable waypoint. bots can move through fence.
+		Wp.SetWaypointFlag( "wp_wall_right_01", "closed", false );  // Enable waypoint. bots can move through fence.
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANTMINE_fencebox_01" );
+		SetGoalPriority( "PLANT_Allied_Fence", 0.90, TEAM.AXIS, CLASS.ENGINEER );
+		SetGoalPriority( "PLANTMINE_fencebox_01", 0.90, TEAM.AXIS, CLASS.ENGINEER );
+		Util.MapDebugPrint( "Allied_Fence_Destroyed" );
+	},
+
+	Axis_Pump_Destroyed = function()
+	{
+		Util.DisableGoal("ROUTE_ax_water_right");  // Axis-only route. Disabled whenever pump is not working.
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANTMINE_landmines_commpost" );  // Turn on forward mine position for the Allies.
+Wp.SetWaypointFlag( "right_pumpgate_01", "closed", true );  // Disable waypoint. Bots can not move through the gate near Axis pump.
+Wp.SetWaypointFlag( "left_pumpgate_01", "closed", true );  // Disable waypoint. Bots can not move through the gate near the swimming pool.
+		Wp.SetWaypointFlag( "in_swim_pool_01", "closed", true );  //Disable waypoint. Bot shortcut through swimming pool.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_Pump" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Pump" );
+		SetGoalPriority( "BUILD_Axis_Pump", 0.93, TEAM.AXIS, CLASS.ENGINEER );
+		SetGoalPriority( "DEFEND_ax_sneaky_def_02", 0.50 );
+		Util.MapDebugPrint( "Axis_Pump_Destroyed" );
+	},
+
+	Axis_Sniper_Stairs_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_ax_def_sniperstair_house_01" ); // Axis-only defence position.
+		SetAvailableMapGoals( TEAM.AXIS, false, "SNIPE_ax_snipe_sniperstairs_01" ); // This is an Axis-only snipe position.
+		SetAvailableMapGoals( TEAM.AXIS, false, "SNIPE_ax_snipe_sniperstairs_02" ); // This is an Axis-only snipe position.
+		SetGoalPriority( "BUILD_Axis_Sniper_Stairs", 0.93, TEAM.AXIS, CLASS.ENGINEER );
+		Util.MapDebugPrint( "Axis_Sniper_Stairs_Destroyed" );
+	},
+
+	Centre_Ramp_Destroyed = function()
+	{
+		Wp.SetWaypointFlag( "centre_ramp_on", "closed", true );  //Disable waypoint. Bots can not use the ramp.
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANTMINE_landmines_centerramp_box" );  // Turn on mine position near construction box.
+		SetGoalPriority( "BUILD_Centre_Ramp", 0.93, TEAM.AXIS, CLASS.ENGINEER );
+		Util.MapDebugPrint( "Centre_Ramp_Destroyed" );
+	},
+
+	Command_Post_Destroyed = function()
+	{
+		Map.Command_Post_Dyno = 0;
+		SetAvailableMapGoals( TEAM.ALLIES, true, "SNIPE_alli_snipe_01" ); // This is an Allied-only snipe position.
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+		SetGoalPriority( "BUILD_Command_Post", 0.93, TEAM.AXIS, CLASS.ENGINEER );
+		Util.MapDebugPrint( "Command_Post_Destroyed" );
+	},
+
+	East_Ramp_Destroyed = function()
+	{
+		Map.EastRampStatus = 0; // Not built.
+		Wp.SetWaypointFlag( "wp_at_east_ramp_01", "closed", true );  //disable waypoint. bots can not run up on east ramp.
+		Util.MapDebugPrint( "East_Ramp_Destroyed" );
+	},
+
+	Wall_Destroyed = function()
+	{
+		Map.Wall_Dyno = 0;
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Pump" );
+		SetGoalPriority( "BUILD_Axis_Pump", 0.93, TEAM.AXIS, CLASS.ENGINEER );
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_ax_forward_def_centre_01" ); // Axis-only, disabled at match start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_ax_forward_def_02b" ); // Axis-only, disabled at match start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_ax_forward_def_03b" ); // Axis-only, disabled at match start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_ax_forward_def_04" ); // Axis-only, disabled at match start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_ax_forward_def_05" ); // Axis-only, disabled at match start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_ax_forward_def_06" ); // Axis-only, disabled at match start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_ax_forward_def_09" ); // Axis-only, disabled at match start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_ax_forward_def_10" ); // Axis-only, disabled at match start.
+		SetAvailableMapGoals( TEAM.AXIS, false, "SNIPE_ax_snipe_sniperstairs_01" ); // This is an Axis-only snipe position.
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_ax_def_at_alli_wall_door_03",
+			"DEFEND_ax_def_at_alli_wall_door_05",
+			"DEFEND_walldef01",
+			"DEFEND_walldef02",
+			"DEFEND_walldef03",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_ax_def_sniperstair_house_01" ); // Axis-only defence position.
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_ax_def_at_alli_wall_door_04" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_ax_door_def_right_01" ); // Axis-only, disabled at match start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANTMINE_fencebox_01" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_def_window_01" ); // Allied-only defence position. Enabled at start.
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"AMMOCAB_supplycabinetaxis_2",
+			"HEALTHCAB_healthcabinetaxis_2",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_alli_panzer_01" ); // Allied-only defence position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_alli_panzer_02" ); // Allied-only defence position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_alli_window_upper_left_01" ); // Allied-only defence position. Disabled at match start.
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_Fence" );
+		SetGoalPriority( "PLANTMINE_fencebox_01", 0.79, TEAM.AXIS, CLASS.ENGINEER );
+		Wp.SetWaypointFlag( "ax_nearwall_left01", "closed", false );  //enable waypoint. bots can move infront of wall plant.
+		Wp.SetWaypointFlag( "ax_nearwall_right01", "closed", false );  //enable waypoint. bots can move infront of wall plant.
+		Wp.SetWaypointFlag( "wp_wall_left_01", "closed", false );  //ensable waypoint. bots can move through wall.
+		Wp.SetWaypointFlag( "wp_wall_left_01b", "closed", false );  //ensable waypoint. bots can move through wall.
+		Wp.SetWaypointFlag( "wp_wall_right_01", "closed", false );  //ensable waypoint. bots can move through wall.
+		Util.MapDebugPrint( "Wall_Destroyed" );
+	},
+
+	docs_scriptname_Taken = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "CAPPOINT_Dropoff" );
+		Wp.SetWaypointFlag( "the_gate_shortcut_01", "closed", true );  // Disable waypoint. Bots can not take the shortcut (gate).
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_def_docroom_1" ); // Stop guarding the doc room.
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"DEFEND_def_docroom_2",
+			"DEFEND_def_docroom_3",
+			"DEFEND_def_docroom_4",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_att_randi_01" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_ax_sneaky_def_01" ); // Axis-only defence position. Disabled at start.
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_ax_sneaky_def_02" ); // Axis-only defence position. Disabled at start.
+		SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_ax_docroom_att_1" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_ax_docroom_window_01" ); // Axis-only goal. Disabled at start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_ax_def_near_mg_01" ); // Axis-only, Enabled at match start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_ax_def_near_mg_centre01" ); // Axis-only, Enabled at match start.
+		Util.MapDebugPrint( "docs_scriptname_Taken" );
+	},
+
+	docs_scriptname_Returned = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT_Dropoff" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_def_docroom_1" ); // Go back camping in the doc room.
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"DEFEND_def_docroom_2",
+			"DEFEND_def_docroom_3",
+			"DEFEND_def_docroom_4",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_att_randi_01" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_ax_sneaky_def_01" ); // Axis-only defence position. Disabled at start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_ax_sneaky_def_02" ); // Axis-only defence position. Disabled at start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_ax_docroom_att_1" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_ax_docroom_window_01" ); // Axis-only goal. Disabled at start.
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_ax_def_near_mg_01" ); // Axis-only, Enabled at match start.
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_ax_def_near_mg_centre01" ); // Axis-only, Enabled at match start.
+		Util.MapDebugPrint( "docs_scriptname_Returned" );
+	},
+
+	docs_scriptname_Secured = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT_Dropoff" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"DEFEND_def_docroom_1",
+			"DEFEND_def_docroom_2",
+			"DEFEND_def_docroom_3",
+			"DEFEND_def_docroom_4",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"ATTACK_att_randi_01",
+			"ATTACK_ax_docroom_att_1",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_ax_sneaky_def_01" ); // Axis-only defence position. Disabled at start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_ax_sneaky_def_02" ); // Axis-only defence position. Disabled at start.
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_ax_def_near_mg_01" ); // Axis-only, Enabled at match start.
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_ax_docroom_window_01" ); // Axis-only goal. Disabled at start.
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_ax_def_near_mg_centre01" ); // Axis-only, Enabled at match start.
+		Util.MapDebugPrint( "docs_scriptname_Secured" );
+	},
+};
+
+global OnMapLoad = function()
+{
+	// Home made
+	OnTrigger( "Security gate in.", Map.Security_gate_in );
+	OnTrigger( "Security gate out.", Map.Security_gate_out );
+
+	// Register callback functions
+	OnTrigger( "Allied Fence constructed!", Map.Allied_Fence_Built );
+	OnTrigger( "Axis Pump constructed!", Map.Axis_Pump_Built );
+	OnTrigger( "Axis Sniper Stairs constructed!", Map.Axis_Sniper_Stairs_Built );
+	OnTrigger( "Center Ramp constructed!", Map.Centre_Ramp_Built );
+	OnTrigger( "Command Post constructed.", Map.Command_Post_Built );
+	OnTrigger( "East Ramp constructed!", Map.East_Ramp_Built );
+	OnTrigger( "Planted at the Allied Fence.", Map.Allied_Fence_Planted );
+	OnTrigger( "Planted at the Axis Pump.", Map.Axis_Pump_Planted );
+	OnTrigger( "Planted at the Axis Sniper Stairs.", Map.Axis_Sniper_Stairs_Planted );
+	OnTrigger( "Planted at the Centre Ramp.", Map.Centre_Ramp_Planted );
+	OnTrigger( "Planted at the Command Post.", Map.Command_Post_Planted );
+	OnTrigger( "Planted at the East Ramp.", Map.East_Ramp_Planted );
+	OnTrigger( "Planted at the Wall.", Map.Wall_Planted );
+	OnTrigger( "Defused at the Allied Fence.", Map.Allied_Fence_Defused );
+	OnTrigger( "Defused at the Axis Pump.", Map.Axis_Pump_Defused );
+	OnTrigger( "Defused at the Axis Sniper Stairs.", Map.Axis_Sniper_Stairs_Defused );
+	OnTrigger( "Defused at the Centre Ramp.", Map.Centre_Ramp_Defused );
+	OnTrigger( "Defused at the Command Post.", Map.Command_Post_Defused );
+	OnTrigger( "Defused at the East Ramp.", Map.East_Ramp_Defused );
+	OnTrigger( "Defused at the Wall.", Map.Wall_Defused );
+	OnTrigger( "Allied Fence destroyed!", Map.Allied_Fence_Destroyed );
+	OnTrigger( "Axis Pump destroyed!", Map.Axis_Pump_Destroyed );
+	OnTrigger( "Axis Sniper Stairs destroyed!", Map.Axis_Sniper_Stairs_Destroyed );
+	OnTrigger( "Center Ramp destroyed!", Map.Centre_Ramp_Destroyed );
+	OnTrigger( "Command Post destroyed.", Map.Command_Post_Destroyed );
+	OnTrigger( "East Ramp destroyed!", Map.East_Ramp_Destroyed );
+	OnTrigger( "The Wall is destroyed.", Map.Wall_Destroyed );
+	OnTrigger( "Axis have stolen the Documents!", Map.docs_scriptname_Taken );
+	OnTrigger( "Allies have returned the Documents!", Map.docs_scriptname_Returned );
+	OnTrigger( "MISSING_STRING", Map.docs_scriptname_Secured );
+
+	//~Util.DisableGoal( ".*", true ); // all but routes
+	//~SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_.*" );
+	//~SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_.*" );
+
+	SetGoalPriority( "ATTACK_ax_docroom_window_01", 0.80 );
+	SetGoalPriority( "DEFEND_ax_sneaky_def_01", 0.80 );
+	SetGoalPriority( "DEFEND_ax_sneaky_def_02", 0.80 );
+
+
+// ***** ROUTES *****
+Util.DisableGoal("ROUTE_ax_water_right");  // Axis-only route. Disabled whenever pump is not working.
+//Util.EnableGoal("ROUTE_ax_water_right"); // Axis-only route. Only enabled when pump is working.
+
+
+// ***** WAYPOINTS *****
+
+Wp.SetWaypointFlag( "right_pumpgate_01", "closed", true );  // Disable waypoint. Bots can not move through the gate near Axis pump.
+Wp.SetWaypointFlag( "left_pumpgate_01", "closed", true );  // Disable waypoint. Bots can not move through the gate near the swimming pool.
+
+Wp.SetWaypointFlag( "ax_nearwall_left01", "closed", false );  //enable waypoint. bots can move infront of wall plant.
+Wp.SetWaypointFlag( "ax_nearwall_right01", "closed", false );  //enable waypoint. bots can move infront of wall plant.
+
+Wp.SetWaypointFlag( "wp_wall_left_01", "closed", true );  //disable waypoint. bots can not move through wall. enabled when wall falls down.
+Wp.SetWaypointFlag( "wp_wall_left_01b", "closed", true );  //disable waypoint. bots can not move through wall. enabled when wall falls down.
+
+Wp.SetWaypointFlag( "wp_wall_right_01", "closed", true );  //disable waypoint. bots can not move through wall. enabled when wall falls down.
+
+Wp.SetWaypointFlag( "wp_at_east_ramp_01", "closed", true );  //disable waypoint. bots can not run up on east ramp.
+
+Wp.SetWaypointFlag( "centre_ramp_off", "closed", false );  //enable waypoint. bots can jump down, away from docs.
+
+Wp.SetWaypointFlag( "centre_ramp_on", "closed", true );  //disable waypoint. bots can not run up the ramp, towards the docs, 'cos the ramp isn't there.
+Wp.SetWaypointFlag( "after_east_ramp_is_built", "closed", true );  //disable waypoint. To secure a one-way route for engineers who are going for the east ramp construction box.
+
+Wp.SetWaypointFlag( "in_swim_pool_01", "closed", true );  //Disable waypoint. Bot shortcut through swimming pool.
+
+
+// ***** AXIS ORDERS *****
+
+// Turn off AXIS Attack Goals
+SetAvailableMapGoals( TEAM.AXIS, false, {
+	"ATTACK_ax_docroom_att_1",
+	"ATTACK_att_randi_01",
+});
+SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_ax_forward_def_centre_01" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_ax_forward_def_02b" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_ax_forward_def_03b" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_ax_forward_def_04" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_ax_forward_def_05" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_ax_forward_def_06" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_ax_forward_def_07" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_ax_forward_def_08" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_ax_forward_def_09" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_ax_forward_def_10" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_ax_docroom_window_01" ); // Axis-only goal. Disabled at start.
+
+// Turn off AXIS Build Goals
+SetAvailableMapGoals( TEAM.AXIS, false, {
+	"BUILD_Axis_Pump",
+	"BUILD_Centre_Ramp",
+	"BUILD_Command_Post",
+	"BUILD_East_Ramp",
+});
+
+// Turn off AXIS Plant Goals
+SetAvailableMapGoals( TEAM.AXIS, false, {
+	"PLANT_Wall",
+	"PLANT_Allied_Fence",
+	"PLANT_Command_Post",
+});
+
+// Turn off AXIS supply and health goals that close to the ALLIED base.
+// I.e. the AXIS supply and health cabinets beyond the Wall.
+SetAvailableMapGoals( TEAM.AXIS, false, {
+	"AMMOCAB_supplycabinetaxis_1",
+	"AMMOCAB_supplycabinetaxis_2",
+	"HEALTHCAB_healthcabinetaxis_1",
+	"HEALTHCAB_healthcabinetaxis_2",
+});
+
+// Turn off ALLIED supply and health goals that the AXIS will seldom (never?) reach.
+SetAvailableMapGoals( TEAM.AXIS, false, {
+	"AMMOCAB_allisupply1",
+	"HEALTHCAB_healthalli1",
+});
+
+// Turn off defend goals
+SetAvailableMapGoals( TEAM.AXIS, false, {
+	"DEFEND_def_docroom_1",
+	"DEFEND_def_docroom_2",
+	"DEFEND_def_docroom_3",
+	"DEFEND_def_docroom_4",
+	"DEFEND_walldef01",
+	"DEFEND_walldef02",
+	"DEFEND_walldef03",
+	"DEFEND_ax_door_def_right_01",
+});
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_ax_def_sniperstair_house_01" ); // Axis-only defence position, disabled at start.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_alli_def_upper_right_01" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_alli_def_upper_right_02" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_alli_wall_01" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_alli_def_upper_left_01" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_alli_def_upper_left_02" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_alli_panzer_01" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_alli_panzer_02" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_alli_def_window_01" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_alli_under_pump_01" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_alli_under_pump_02" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_alli_under_pump_03" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_alli_pumpboxes_01" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_alli_window_upper_left_01" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_alli_unorthodox_position_01" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_alli_near_fencebox_01" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_alli_near_fencebox_02" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_alli_unorthodox_near_comp_01" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_ax_sneaky_def_01" ); // Axis-only defence position. Disabled at start.
+SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_ax_sneaky_def_02" ); // Axis-only defence position. Disabled at start.
+
+// Turn off camp goals
+SetAvailableMapGoals( TEAM.AXIS, false, "CAMP_alli_upper_right_01" ); // This is an Allied-only position.
+
+// Turn off sniper goals
+SetAvailableMapGoals( TEAM.AXIS, false, "SNIPE_ax_snipe_that_mg_01" ); // This is an Axis-only snipe position. disabled at start.
+SetAvailableMapGoals( TEAM.AXIS, false, "SNIPE_ax_snipe_that_mg_02" ); // This is an Axis-only snipe position. disabled at start.
+
+// Turn off sniper goals
+SetAvailableMapGoals( TEAM.AXIS, false, "SNIPE_ax_snipe_sniperstairs_01" ); // Axis-only snipe position, disabled at start.
+SetAvailableMapGoals( TEAM.AXIS, false, "SNIPE_ax_snipe_sniperstairs_02" ); // Axis-only snipe position, disabled at start.
+SetAvailableMapGoals( TEAM.AXIS, false, "SNIPE_alli_snipe_01" ); // This is an Allied-only snipe position.
+SetAvailableMapGoals( TEAM.AXIS, false, "SNIPE_alli_pump_01" ); // This is an Allied-only snipe position.
+
+// Turn on defend goals at match start
+SetAvailableMapGoals( TEAM.AXIS, true, {
+	"DEFEND_ax_def_at_alli_wall_door_01",
+	"DEFEND_ax_def_at_alli_wall_door_02",
+	"DEFEND_ax_def_at_alli_wall_door_03",
+	"DEFEND_ax_def_at_alli_wall_door_04",
+	"DEFEND_ax_def_at_alli_wall_door_05",
+	"DEFEND_ax_def_near_mg_01",
+	"DEFEND_ax_def_near_mg_centre01",
+});
+
+// Turn off plant landmines
+SetAvailableMapGoals( TEAM.AXIS, false, {
+	"PLANTMINE_landmines_centerramp",
+	"PLANTMINE_landmines_centerramp_box",
+	"PLANTMINE_landmines_commpost",
+	"PLANTMINE_fencebox_01",
+});
+
+// Turn off mounts.
+
+// Turn off documents
+SetAvailableMapGoals( TEAM.AXIS, false, "FLAG_docs_scriptname" );
+
+// Turn off drop off-zone
+SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT_Dropoff" );
+
+
+// ***** ALLIED ORDERS *****
+
+// Turn off unecessary ALLIES attack goals
+SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_ax_docroom_att_1" ); // An Axis-only attack position.
+SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_att_randi_01" ); // An Axis-only attack position.
+SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_ax_forward_def_centre_01" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_ax_forward_def_02b" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_ax_forward_def_03b" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_ax_forward_def_04" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_ax_forward_def_05" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_ax_forward_def_06" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_ax_forward_def_07" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_ax_forward_def_08" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_ax_forward_def_09" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_ax_forward_def_10" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_ax_door_def_right_01" ); // Axis-only, disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_ax_docroom_window_01" ); // Axis-only goal. Disabled at start.
+
+// Turn on ALLIES Build Goals
+SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+
+// Turn off ALLIES Build Goals
+SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Allied_Fence" );
+
+// Turn off plant landmines
+SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_fencebox_01" );
+
+// Turn off ALLIES defend goals
+SetAvailableMapGoals( TEAM.ALLIES, false, {
+	"DEFEND_def_docroom_1",
+	"DEFEND_def_docroom_2",
+	"DEFEND_def_docroom_3",
+	"DEFEND_def_docroom_4",
+});
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_ax_def_at_alli_wall_door_01" );  // Axis-only defence position.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_ax_def_at_alli_wall_door_02" );  // Axis-only defence position.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_ax_def_at_alli_wall_door_03" );  // Axis-only defence position.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_ax_def_at_alli_wall_door_04" );  // Axis-only defence position.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_ax_def_at_alli_wall_door_05" );  // Axis-only defence position.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_ax_def_near_mg_01" ); // Axis-only defence position.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_ax_def_near_mg_centre01" ); // Axis-only defence position.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_walldef01" ); // Axis-only defence position.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_walldef02" ); // Axis-only defence position.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_walldef03" ); // Axis-only defence position.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_ax_def_sniperstair_house_01" ); // Axis-only defence position.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_panzer_01" ); // Allied-only defence position. Disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_panzer_02" ); // Allied-only defence position. Disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_under_pump_01" ); // Allied-only defence position. Disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_under_pump_02" ); // Allied-only defence position. Disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_under_pump_03" ); // Allied-only defence position. Disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_pumpboxes_01" ); // Allied-only defence position. Disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_window_upper_left_01" ); // Allied-only defence position. Disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_near_fencebox_01" ); // Allied-only defence position. Disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_near_fencebox_02" ); // Allied-only defence position. Disabled at match start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_alli_def_upper_right_02" ); // Allied-only defence position. Disabled at start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_ax_sneaky_def_01" ); // Axis-only defence position. Disabled at start.
+SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_ax_sneaky_def_02" ); // Axis-only defence position. Disabled at start.
+
+// Turn on ALLIES defend goals
+SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_alli_def_upper_right_01" ); // Allied-only defence position. Enabled at start.
+SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_alli_wall_01" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_alli_def_upper_left_01" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_alli_def_upper_left_02" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_alli_def_window_01" ); // Allied-only defence position. Enabled at start.
+SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_alli_unorthodox_position_01" ); // Allied-only defence position.
+SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_alli_unorthodox_near_comp_01" ); // Allied-only defence position. Enabled at start.
+
+// Turn off ALLIES camp goals
+SetAvailableMapGoals( TEAM.ALLIES, false, "CAMP_alli_upper_right_01" ); // This is an Allied-only position. Disabled at match start.
+
+// Turn on  ALLIES sniper goals
+SetAvailableMapGoals( TEAM.ALLIES, true, "SNIPE_alli_snipe_01" ); // This is an Allied-only snipe position.
+SetAvailableMapGoals( TEAM.ALLIES, false, "SNIPE_alli_pump_01" ); // This is an Allied-only snipe position. Disabled at match start.
+
+// Turn off ALLIES sniper goals
+SetAvailableMapGoals( TEAM.ALLIES, false, "SNIPE_ax_snipe_sniperstairs_01" ); // This is an Axis-only snipe position.
+SetAvailableMapGoals( TEAM.ALLIES, false, "SNIPE_ax_snipe_sniperstairs_02" ); // This is an Axis-only snipe position.
+SetAvailableMapGoals( TEAM.ALLIES, false, "SNIPE_ax_snipe_that_mg_01" ); // This is an Axis-only snipe position.
+SetAvailableMapGoals( TEAM.ALLIES, false, "SNIPE_ax_snipe_that_mg_02" ); // This is an Axis-only snipe position.
+
+// Turn off ALLIES Plant Goals
+SetAvailableMapGoals( TEAM.ALLIES, false, {
+	"PLANT_Axis_Pump",
+	"PLANT_Axis_Sniper_Stairs",
+	"PLANT_Centre_Ramp",
+	"PLANT_Command_Post",
+	"PLANT_East_Ramp",
+});
+
+// Turn on ALLIED supply and health goals.
+SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"AMMOCAB_allisupply1",
+	"HEALTHCAB_healthalli1",
+});
+SetAvailableMapGoals( TEAM.ALLIES, true, "AMMOCAB_supplycabinetaxis_1" ); // On the other side of the wall, upper left
+SetAvailableMapGoals( TEAM.ALLIES, true, "HEALTHCAB_healthcabinetaxis_1" ); // On the other side of the wall, upper left
+
+// Turn off the ALLIES supply and health goals that are inside the AXIS base.
+// I.e. the AXIS supply and health cabinets. There is no need for the ALLIES to strive for those.
+SetAvailableMapGoals( TEAM.ALLIES, false, {
+	"AMMOCAB_supplycabinetaxis",
+	"AMMOCAB_supplycabinetaxis_2",
+	"HEALTHCAB_healthcabinetaxis",
+	"HEALTHCAB_healthcabinetaxis_2",
+});
+
+// Turn off drop off-zone
+SetAvailableMapGoals( TEAM.ALLIES, false, "CAPPOINT_Dropoff" );
+
+
+// ***** MAX USER PER GOAL *****
+	Util.SetMaxUsers( 1, "ATTACK_.*" );
+	Util.SetMaxUsers( 1, "DEFEND_.*" );
+
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		ATTACK_ax_docroom_window_01 =
+		{
+			ROUTE_ax_first_spawn =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			},
+
+			ROUTE_ax_first_spawn_01 =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			},
+
+			ROUTE_ax_first_spawn_02 =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			},
+
+			ROUTE_ax_first_spawn_03 =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			},
+
+			ROUTE_ax_first_spawn_04 =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			},
+
+			ROUTE_ax_first_spawn_05 =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			},
+
+			ROUTE_ax_extra_spawns_01 =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			},
+
+			ROUTE_ax_extra_spawns_02 =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			},
+
+			ROUTE_ax_first_spawn_down_01 =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			},
+
+			ROUTE_ax_first_spawn_down_02 =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			},
+
+			ROUTE_ax_2nd_spawn_wall_1 =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			},
+
+			ROUTE_ax_2nd_spawn_rear =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			},
+
+			ROUTE_ax_2nd_spawn_compost_01 =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			},
+
+			ROUTE_ax_2nd_spawn_compost_02 =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			},
+		},
+
+		ATTACK_att_randi_01 =
+		{
+			ROUTE_ax_first_spawn =
+			{
+				ROUTE_randi_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_01 =
+			{
+				ROUTE_randi_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_02 =
+			{
+				ROUTE_randi_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_03 =
+			{
+				ROUTE_randi_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_04 =
+			{
+				ROUTE_randi_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_05 =
+			{
+				ROUTE_randi_01 = {},
+			},
+
+			ROUTE_ax_extra_spawns_01 =
+			{
+				ROUTE_randi_01 = {},
+			},
+
+			ROUTE_ax_extra_spawns_02 =
+			{
+				ROUTE_randi_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_down_01 =
+			{
+				ROUTE_randi_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_down_02 =
+			{
+				ROUTE_randi_01 = {},
+			},
+
+			ROUTE_ax_2nd_spawn_wall_1 =
+			{
+				ROUTE_randi_01 = {},
+			},
+
+			ROUTE_ax_2nd_spawn_rear =
+			{
+				ROUTE_randi_01 = {},
+			},
+
+			ROUTE_ax_2nd_spawn_compost_01 =
+			{
+				ROUTE_randi_01 = {},
+			},
+
+			ROUTE_ax_2nd_spawn_compost_02 =
+			{
+				ROUTE_randi_01 = {},
+			},
+		},
+
+		ATTACK_ax_docroom_att_1 =
+		{
+			ROUTE_ax_first_spawn =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			}
+		},
+
+		ATTACK_ax_docroom_att_1 =
+		{
+			ROUTE_ax_2nd_spawn_rear =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			}
+		},
+
+		ATTACK_ax_docroom_att_1 =
+		{
+			ROUTE_ax_2nd_spawn_wall_1 =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			}
+		},
+
+		ATTACK_ax_docroom_att_1 =
+		{
+			ROUTE_ax_2nd_spawn_wall_2 =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			}
+		},
+
+		ATTACK_ax_docroom_att_1 =
+		{
+			ROUTE_ax_2nd_spawn_compost_01 =
+			{
+				ROUTE_ax_water_left = {},
+				ROUTE_ax_water_right = {},
+			}
+		},
+
+		CAPPOINT_Dropoff =
+		{
+			ROUTE_at_documents =  // At the radio, where the documents are.
+			{
+				ROUTE_al_2nd_spawn1 =  // A sneaky route through the Allied 2nd spawn
+				{
+					ROUTE_alli_2nd_spawn_detour_01 =  // Run via this route to avoid detection.
+					{
+						ROUTE_alli_2nd_spawn_detour_03 =
+						{
+							ROUTE_alli_2nd_spawn_detour_02 =
+							{
+								ROUTE_alli_panzer_01 = {},
+								ROUTE_alli_2nd_spawn_03 = {},
+							}
+						}
+					},
+				},
+
+				ROUTE_at_ladder_2_upstairs_01 = // Near an entrance to the Allied 2nd spawn
+				{
+					ROUTE_at_ladder_2_downstairs_01 = // Just below that entrance.
+						{
+							ROUTE_at_centre_ramp_box_01 =  // To avoid detection.
+								{
+									ROUTE_omni_unorthodox_run_01 = {}, // Run via this route to pick up healh and ammo.
+								},
+						},
+					ROUTE_alli_2nd_spawn_detour_03 =   // Another sneaky route through the Allied 2nd spawn area.
+					{
+						ROUTE_alli_2nd_spawn_detour_02 =
+						{
+							ROUTE_alli_panzer_01 = {},
+							ROUTE_alli_2nd_spawn_03 = {},
+						},
+					},
+				},
+
+				ROUTE_at_ladder_1_upstairs_01 = // Semi-sneaky route
+				{
+					ROUTE_at_centre_ramp_box_01 = {},
+					ROUTE_omni_unorthodox_run_01 = {},
+				},
+
+				ROUTE_centre_ramp_upstairs_01 = // The least sneaky and fastest route back to the truck.
+				{
+					ROUTE_omni_unorthodox_run_01 = {},
+				},
+			},
+		},
+
+		DEFEND_ax_sneaky_def_01 =
+		{
+			ROUTE_ax_first_spawn =
+			{
+				ROUTE_ax_water_left =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+				ROUTE_ax_water_right =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+			},
+
+			ROUTE_ax_first_spawn_01 =
+			{
+				ROUTE_ax_water_left =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+				ROUTE_ax_water_right =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+			},
+
+			ROUTE_ax_first_spawn_02 =
+			{
+				ROUTE_ax_water_left =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+				ROUTE_ax_water_right =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+			},
+
+			ROUTE_ax_first_spawn_03 =
+			{
+				ROUTE_ax_water_left =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+				ROUTE_ax_water_right =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+			},
+
+			ROUTE_ax_first_spawn_04 =
+			{
+				ROUTE_ax_water_left =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+				ROUTE_ax_water_right =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+			},
+
+			ROUTE_ax_first_spawn_05 =
+			{
+				ROUTE_ax_water_left =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+				ROUTE_ax_water_right =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+			},
+
+			ROUTE_ax_extra_spawns_01 =
+			{
+				ROUTE_ax_water_left =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+				ROUTE_ax_water_right =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+			},
+
+			ROUTE_ax_extra_spawns_02 =
+			{
+				ROUTE_ax_water_left =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+				ROUTE_ax_water_right =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+			},
+
+			ROUTE_ax_first_spawn_down_01 =
+			{
+				ROUTE_ax_water_left =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+				ROUTE_ax_water_right =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+			},
+
+			ROUTE_ax_first_spawn_down_02 =
+			{
+				ROUTE_ax_water_left =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+				ROUTE_ax_water_right =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+			},
+
+			ROUTE_ax_2nd_spawn_wall_1 =
+			{
+				ROUTE_ax_water_left =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+				ROUTE_ax_water_right =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+			},
+
+			ROUTE_ax_2nd_spawn_rear =
+			{
+				ROUTE_ax_water_left =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+				ROUTE_ax_water_right =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+			},
+
+			ROUTE_ax_2nd_spawn_compost_01 =
+			{
+				ROUTE_ax_water_left =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+				ROUTE_ax_water_right =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+			},
+
+			ROUTE_ax_2nd_spawn_compost_02 =
+			{
+				ROUTE_ax_water_left =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+				ROUTE_ax_water_right =
+				{
+					ROUTE_to_sneaky_def_01 = {},
+				},
+			},
+		},
+
+
+		DEFEND_ax_sneaky_def_02 =
+		{
+			ROUTE_ax_first_spawn =
+			{
+				ROUTE_ax_water_right =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+				ROUTE_ax_water_left =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+			},
+
+			ROUTE_ax_first_spawn_01 =
+			{
+				ROUTE_ax_water_right =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+				ROUTE_ax_water_left =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+			},
+
+			ROUTE_ax_first_spawn_02 =
+			{
+				ROUTE_ax_water_right =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+				ROUTE_ax_water_left =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+			},
+
+			ROUTE_ax_first_spawn_03 =
+			{
+				ROUTE_ax_water_right =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+				ROUTE_ax_water_left =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+			},
+
+			ROUTE_ax_first_spawn_04 =
+			{
+				ROUTE_ax_water_right =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+				ROUTE_ax_water_left =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+			},
+
+			ROUTE_ax_first_spawn_05 =
+			{
+				ROUTE_ax_water_right =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+				ROUTE_ax_water_left =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+			},
+
+			ROUTE_ax_extra_spawns_01 =
+			{
+				ROUTE_ax_water_right =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+				ROUTE_ax_water_left =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+			},
+
+			ROUTE_ax_extra_spawns_02 =
+			{
+				ROUTE_ax_water_right =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+				ROUTE_ax_water_left =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+			},
+
+			ROUTE_ax_first_spawn_down_01 =
+			{
+				ROUTE_ax_water_right =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+				ROUTE_ax_water_left =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+			},
+
+			ROUTE_ax_first_spawn_down_02 =
+			{
+				ROUTE_ax_water_right =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+				ROUTE_ax_water_left =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+			},
+
+			ROUTE_ax_2nd_spawn_wall_1 =
+			{
+				ROUTE_ax_water_right =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+				ROUTE_ax_water_left =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+			},
+
+			ROUTE_ax_2nd_spawn_rear =
+			{
+				ROUTE_ax_water_right =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+				ROUTE_ax_water_left =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+			},
+
+			ROUTE_ax_2nd_spawn_compost_01 =
+			{
+				ROUTE_ax_water_right =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+				ROUTE_ax_water_left =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+			},
+
+			ROUTE_ax_2nd_spawn_compost_02 =
+			{
+				ROUTE_ax_water_right =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+				ROUTE_ax_water_left =
+				{
+					ROUTE_ax_vent_sneak_01 =
+					{
+						ROUTE_ax_enter_docroom_04 = {},
+					},
+				},
+			},
+		},
+
+
+
+		DEFEND_alli_unorthodox_near_comp_01 =
+		{
+			ROUTE_alli_after_defuse_wall_01 =
+			{
+				ROUTE_under_pumpboxes_01 = {},
+				ROUTE_ax_near_swimpool_01 = {},
+			}
+		},
+
+		DEFEND_alli_unorthodox_position_01 =
+		{
+			ROUTE_alli_after_defuse_wall_01 =
+			{
+				ROUTE_at_commpost_01 = {},
+			}
+		},
+
+		DEFEND_alli_wall_01 =
+		{
+			ROUTE_alli_2nd_spawn_01 =
+			{
+				ROUTE_alli_firstspawn_exit_left_01 = {},
+				ROUTE_pickup_ammo_centre_01 = {},
+			},
+			ROUTE_alli_2nd_spawn_02 =
+			{
+				ROUTE_alli_firstspawn_exit_left_01 = {},
+				ROUTE_pickup_ammo_centre_01 = {},
+			}
+		},
+
+		DEFEND_ax_forward_def_02b =
+		{
+			ROUTE_ax_2nd_spawn_wall_1 =
+			{
+				ROUTE_ax_cellar_route_01 = {},
+				//ROUTE_alli_firstspawn_exit_left_01 = {},
+			},
+			ROUTE_ax_2nd_spawn_rear =
+			{
+				ROUTE_ax_cellar_route_01 = {},
+				//ROUTE_alli_firstspawn_exit_left_01 = {},
+			}
+		},
+
+		ATTACK_ax_forward_def_03b =
+		{
+			ROUTE_ax_2nd_spawn_wall_1 =
+			{
+				ROUTE_ax_cellar_route_01 = {},
+				//ROUTE_alli_firstspawn_exit_left_01 = {},
+			},
+			ROUTE_ax_2nd_spawn_rear =
+			{
+				ROUTE_ax_cellar_route_01 = {},
+				//ROUTE_alli_firstspawn_exit_left_01 = {},
+			}
+		},
+
+		DEFEND_ax_def_at_alli_wall_door_01 =
+		{
+			ROUTE_ax_first_spawn =
+			{
+				ROUTE_ax_firstspawn_exit_01 = {},
+				ROUTE_ax_sniperstair_boxes = {},
+				ROUTE_ax_firstspawn_exit_02 = {},
+				ROUTE_ax_firstspawn_exit_03 = {},
+			},
+			ROUTE_ax_first_spawn_down_01 =
+			{
+				ROUTE_ax_firstspawn_exit_03 = {},
+				ROUTE_ax_firstspawn_exit_04 = {},
+				ROUTE_ax_near_swimpool_01 = {},
+				ROUTE_ax_first_spawn_down_03 = {},
+				ROUTE_ax_first_spawn_down_04 = {},
+			},
+			ROUTE_ax_first_spawn_down_02 =
+			{
+				ROUTE_ax_firstspawn_exit_03 = {},
+				ROUTE_ax_firstspawn_exit_04 = {},
+				ROUTE_ax_near_swimpool_01 = {},
+				ROUTE_ax_first_spawn_down_03 = {},
+				ROUTE_ax_first_spawn_down_04 = {},
+			}
+		},
+
+		DEFEND_ax_def_at_alli_wall_door_02 =
+		{
+			ROUTE_ax_first_spawn =
+			{
+				ROUTE_ax_firstspawn_exit_01 = {},
+				ROUTE_ax_sniperstair_boxes = {},
+				ROUTE_ax_firstspawn_exit_02 = {},
+				ROUTE_ax_firstspawn_exit_03 = {},
+			},
+			ROUTE_ax_first_spawn_down_01 =
+			{
+				ROUTE_ax_firstspawn_exit_03 = {},
+				ROUTE_ax_firstspawn_exit_04 = {},
+				ROUTE_ax_near_swimpool_01 = {},
+				ROUTE_ax_first_spawn_down_03 = {},
+				ROUTE_ax_first_spawn_down_04 = {},
+			},
+			ROUTE_ax_first_spawn_down_02 =
+			{
+				ROUTE_ax_firstspawn_exit_03 = {},
+				ROUTE_ax_firstspawn_exit_04 = {},
+				ROUTE_ax_near_swimpool_01 = {},
+				ROUTE_ax_first_spawn_down_03 = {},
+				ROUTE_ax_first_spawn_down_04 = {},
+			}
+		},
+
+		DEFEND_ax_def_at_alli_wall_door_03 =
+		{
+			ROUTE_ax_first_spawn =
+			{
+				ROUTE_ax_firstspawn_exit_01 = {},
+				ROUTE_ax_sniperstair_boxes = {},
+				ROUTE_ax_firstspawn_exit_02 = {},
+				ROUTE_ax_firstspawn_exit_03 = {},
+			},
+			ROUTE_ax_first_spawn_down_01 =
+			{
+				ROUTE_ax_firstspawn_exit_03 = {},
+				ROUTE_ax_firstspawn_exit_04 = {},
+				ROUTE_ax_near_swimpool_01 = {},
+				ROUTE_ax_first_spawn_down_03 = {},
+				ROUTE_ax_first_spawn_down_04 = {},
+			},
+			ROUTE_ax_first_spawn_down_02 =
+			{
+				ROUTE_ax_firstspawn_exit_03 = {},
+				ROUTE_ax_firstspawn_exit_04 = {},
+				ROUTE_ax_near_swimpool_01 = {},
+				ROUTE_ax_first_spawn_down_03 = {},
+				ROUTE_ax_first_spawn_down_04 = {},
+			}
+		},
+
+		DEFEND_ax_def_at_alli_wall_door_04 =
+		{
+			ROUTE_ax_first_spawn =
+			{
+				ROUTE_ax_firstspawn_exit_01 = {},
+				ROUTE_ax_sniperstair_boxes = {},
+				ROUTE_ax_firstspawn_exit_02 = {},
+				ROUTE_ax_firstspawn_exit_03 = {},
+			},
+			ROUTE_ax_first_spawn_down_01 =
+			{
+				ROUTE_ax_firstspawn_exit_03 = {},
+				ROUTE_ax_firstspawn_exit_04 = {},
+				ROUTE_ax_near_swimpool_01 = {},
+				ROUTE_ax_first_spawn_down_03 = {},
+				ROUTE_ax_first_spawn_down_04 = {},
+			},
+			ROUTE_ax_first_spawn_down_02 =
+			{
+				ROUTE_ax_firstspawn_exit_03 = {},
+				ROUTE_ax_firstspawn_exit_04 = {},
+				ROUTE_ax_near_swimpool_01 = {},
+				ROUTE_ax_first_spawn_down_03 = {},
+				ROUTE_ax_first_spawn_down_04 = {},
+			}
+		},
+
+		DEFEND_ax_def_at_alli_wall_door_05 =
+		{
+			ROUTE_ax_first_spawn =
+			{
+				ROUTE_ax_firstspawn_exit_01 = {},
+				ROUTE_ax_sniperstair_boxes = {},
+				ROUTE_ax_firstspawn_exit_02 = {},
+				ROUTE_ax_firstspawn_exit_03 = {},
+			},
+			ROUTE_ax_first_spawn_down_01 =
+			{
+				ROUTE_ax_firstspawn_exit_03 = {},
+				ROUTE_ax_firstspawn_exit_04 = {},
+				ROUTE_ax_near_swimpool_01 = {},
+				ROUTE_ax_first_spawn_down_03 = {},
+				ROUTE_ax_first_spawn_down_04 = {},
+			},
+			ROUTE_ax_first_spawn_down_02 =
+			{
+				ROUTE_ax_firstspawn_exit_03 = {},
+				ROUTE_ax_firstspawn_exit_04 = {},
+				ROUTE_ax_near_swimpool_01 = {},
+				ROUTE_ax_first_spawn_down_03 = {},
+				ROUTE_ax_first_spawn_down_04 = {},
+			}
+		},
+
+
+
+
+		DEFEND_def_docroom_1 =
+		{
+			ROUTE_al_2nd_spawn1 =
+			{
+				ROUTE_docroom_1 = {},
+				ROUTE_docroom_2 = {},
+			}
+		},
+
+		DEFEND_def_docroom_2 =
+		{
+			ROUTE_al_2nd_spawn1 =
+			{
+				ROUTE_docroom_1 = {},
+				ROUTE_docroom_2 = {},
+			}
+		},
+
+		DEFEND_def_docroom_3 =
+		{
+			ROUTE_al_2nd_spawn1 =
+			{
+				ROUTE_docroom_1 = {},
+				ROUTE_docroom_2 = {},
+			}
+		},
+
+		DEFEND_def_docroom_4 =
+		{
+			ROUTE_al_2nd_spawn1 =
+			{
+				ROUTE_docroom_1 = {},
+				ROUTE_docroom_2 = {},
+			}
+		},
+
+
+		BUILD_Axis_Sniper_Stairs =
+		{
+			ROUTE_ax_first_spawn_down_01 =
+			{
+				ROUTE_ax_first_spawn_down_03 = {},
+				ROUTE_ax_first_spawn_down_04 = {},
+				ROUTE_ax_near_swimpool_01 = {},
+				ROUTE_ax_firstspawn_exit_03 = {},
+				ROUTE_ax_firstspawn_exit_04 = {},
+			},
+			ROUTE_ax_first_spawn_down_02 =
+			{
+				ROUTE_ax_first_spawn_down_03 = {},
+				ROUTE_ax_first_spawn_down_04 = {},
+				ROUTE_ax_near_swimpool_01 = {},
+				ROUTE_ax_firstspawn_exit_03 = {},
+				ROUTE_ax_firstspawn_exit_04 = {},
+			},
+		},
+
+
+		BUILD_Centre_Ramp =
+		{
+			ROUTE_at_pump_01 = // For the Axis engineers who are at the pump.
+			{
+				ROUTE_ax_water_right = {},
+				ROUTE_ax_sneak_near_doc_01 = {},
+			},
+
+			// The Axis spawn positions
+			ROUTE_ax_first_spawn =
+			{
+				ROUTE_ax_water_right = {},
+				ROUTE_ax_sneak_near_doc_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_01 =
+			{
+				ROUTE_ax_water_right = {},
+				ROUTE_ax_sneak_near_doc_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_02 =
+			{
+				ROUTE_ax_water_right = {},
+				ROUTE_ax_sneak_near_doc_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_03 =
+			{
+				ROUTE_ax_water_right = {},
+				ROUTE_ax_sneak_near_doc_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_04 =
+			{
+				ROUTE_ax_water_right = {},
+				ROUTE_ax_sneak_near_doc_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_05 =
+			{
+				ROUTE_ax_water_right = {},
+				ROUTE_ax_sneak_near_doc_01 = {},
+			},
+
+			ROUTE_ax_extra_spawns_01 =
+			{
+				ROUTE_ax_water_right = {},
+				ROUTE_ax_sneak_near_doc_01 = {},
+			},
+
+			ROUTE_ax_extra_spawns_02 =
+			{
+				ROUTE_ax_water_right = {},
+				ROUTE_ax_sneak_near_doc_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_down_01 =
+			{
+				ROUTE_ax_water_right = {},
+				ROUTE_ax_sneak_near_doc_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_down_02 =
+			{
+				ROUTE_ax_water_right = {},
+				ROUTE_ax_sneak_near_doc_01 = {},
+			},
+
+			ROUTE_ax_2nd_spawn_wall_1 =
+			{
+				ROUTE_ax_water_right = {},
+				ROUTE_ax_sneak_near_doc_01 = {},
+			},
+
+			ROUTE_ax_2nd_spawn_rear =
+			{
+				ROUTE_ax_water_right = {},
+				ROUTE_ax_sneak_near_doc_01 = {},
+			},
+
+			ROUTE_ax_2nd_spawn_compost_01 =
+			{
+				ROUTE_ax_water_right = {},
+				ROUTE_ax_sneak_near_doc_01 = {},
+			},
+
+			ROUTE_ax_2nd_spawn_compost_02 =
+			{
+				ROUTE_ax_water_right = {},
+				ROUTE_ax_sneak_near_doc_01 = {},
+			},
+		},
+
+		BUILD_East_Ramp =
+		{
+			// The Engineer at the construction box at the centre ramp.
+			ROUTE_at_centre_ramp_box_01 =
+			{
+				ROUTE_ax_engi_sneak_01 =
+					{
+						ROUTE_ax_engi_sneak_02 = {},
+					},
+				ROUTE_at_ladder_2_upstairs_01 = // Getting into the Allied 2nd spawn area
+					{
+						ROUTE_alli_2nd_spawn_detour_02 =  // To avoid getting too close to Allied 2nd spawn
+							{
+								ROUTE_at_eastramp_box_01 = {},
+							},
+					},
+			},
+
+			// The Axis spawn positions
+			ROUTE_ax_first_spawn =
+			{
+				ROUTE_ax_engi_sneak_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_01 =
+			{
+				ROUTE_ax_engi_sneak_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_02 =
+			{
+				ROUTE_ax_engi_sneak_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_03 =
+			{
+				ROUTE_ax_engi_sneak_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_04 =
+			{
+				ROUTE_ax_engi_sneak_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_05 =
+			{
+				ROUTE_ax_engi_sneak_01 = {},
+			},
+
+			ROUTE_ax_extra_spawns_01 =
+			{
+				ROUTE_ax_engi_sneak_01 = {},
+			},
+
+			ROUTE_ax_extra_spawns_02 =
+			{
+				ROUTE_ax_engi_sneak_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_down_01 =
+			{
+				ROUTE_ax_engi_sneak_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_down_02 =
+			{
+				ROUTE_ax_engi_sneak_01 = {},
+			},
+
+			ROUTE_ax_2nd_spawn_wall_1 =
+			{
+				ROUTE_ax_engi_sneak_01 = {},
+			},
+
+			ROUTE_ax_2nd_spawn_rear =
+			{
+				ROUTE_ax_engi_sneak_01 = {},
+			},
+
+			ROUTE_ax_2nd_spawn_compost_01 =
+			{
+				ROUTE_ax_engi_sneak_01 = {},
+			},
+
+			ROUTE_ax_2nd_spawn_compost_02 =
+			{
+				ROUTE_ax_engi_sneak_01 = {},
+			},
+
+		},
+
+		BUILD_Command_Post =
+		{
+			ROUTE_ax_sniperstair_boxes =
+			{
+				ROUTE_ax_spawn_centre = {},
+				ROUTE_ax_spawn_right_side = {},
+				ROUTE_ax_firstspawn_exit_02 = {},
+			}
+		},
+
+		BUILD_Axis_Pump =
+		{
+			ROUTE_ax_first_spawn =
+			{
+				ROUTE_around_ax_1st_spawn_01 =
+				{
+					ROUTE_ax_sneak_route_01 = {},
+				},
+				ROUTE_ax_sneak_route_01 = {},
+				ROUTE_under_pumpboxes_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_01 =
+			{
+				ROUTE_around_ax_1st_spawn_01 =
+				{
+					ROUTE_ax_sneak_route_01 = {},
+				},
+				ROUTE_ax_sneak_route_01 = {},
+				ROUTE_under_pumpboxes_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_02 =
+			{
+				ROUTE_around_ax_1st_spawn_01 =
+				{
+					ROUTE_ax_sneak_route_01 = {},
+				},
+				ROUTE_ax_sneak_route_01 = {},
+				ROUTE_under_pumpboxes_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_03 =
+			{
+				ROUTE_around_ax_1st_spawn_01 =
+				{
+					ROUTE_ax_sneak_route_01 = {},
+				},
+				ROUTE_ax_sneak_route_01 = {},
+				ROUTE_under_pumpboxes_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_04 =
+			{
+				ROUTE_around_ax_1st_spawn_01 =
+				{
+					ROUTE_ax_sneak_route_01 = {},
+				},
+				ROUTE_ax_sneak_route_01 = {},
+				ROUTE_under_pumpboxes_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_05 =
+			{
+				ROUTE_around_ax_1st_spawn_01 =
+				{
+					ROUTE_ax_sneak_route_01 = {},
+				},
+				ROUTE_ax_sneak_route_01 = {},
+				ROUTE_under_pumpboxes_01 = {},
+			},
+
+			ROUTE_ax_extra_spawns_01 =
+			{
+				ROUTE_around_ax_1st_spawn_01 =
+				{
+					ROUTE_ax_sneak_route_01 = {},
+				},
+				ROUTE_ax_sneak_route_01 = {},
+				ROUTE_under_pumpboxes_01 = {},
+				ROUTE_ax_cellar_route_02 = {},
+			},
+
+			ROUTE_ax_extra_spawns_02 =
+			{
+				ROUTE_around_ax_1st_spawn_01 =
+				{
+					ROUTE_ax_sneak_route_01 = {},
+				},
+				ROUTE_ax_sneak_route_01 = {},
+				ROUTE_under_pumpboxes_01 = {},
+				ROUTE_ax_cellar_route_02 = {},
+			},
+
+			ROUTE_ax_first_spawn_down_01 =
+			{
+				ROUTE_around_ax_1st_spawn_01 =
+				{
+					ROUTE_ax_sneak_route_01 = {},
+				},
+				ROUTE_ax_sneak_route_01 = {},
+				ROUTE_under_pumpboxes_01 = {},
+			},
+
+			ROUTE_ax_first_spawn_down_02 =
+			{
+				ROUTE_around_ax_1st_spawn_01 =
+				{
+					ROUTE_ax_sneak_route_01 = {},
+				},
+				ROUTE_ax_sneak_route_01 = {},
+				ROUTE_under_pumpboxes_01 = {},
+			},
+
+			ROUTE_ax_2nd_spawn_wall_1 =
+			{
+				ROUTE_around_ax_1st_spawn_01 =
+				{
+					ROUTE_ax_sneak_route_01 = {},
+				},
+				ROUTE_ax_sneak_route_01 = {},
+				ROUTE_under_pumpboxes_01 = {},
+				ROUTE_ax_cellar_route_02 = {},
+			},
+
+			ROUTE_ax_2nd_spawn_rear =
+			{
+				ROUTE_around_ax_1st_spawn_01 =
+				{
+					ROUTE_ax_sneak_route_01 = {},
+				},
+				ROUTE_ax_sneak_route_01 = {},
+				ROUTE_under_pumpboxes_01 = {},
+				ROUTE_ax_cellar_route_02 = {},
+			},
+
+			ROUTE_ax_2nd_spawn_compost_01 =
+			{
+				ROUTE_around_ax_1st_spawn_01 =
+				{
+					ROUTE_ax_sneak_route_01 = {},
+				},
+				ROUTE_ax_sneak_route_01 = {},
+				ROUTE_under_pumpboxes_01 = {},
+			},
+
+			ROUTE_ax_2nd_spawn_compost_02 =
+			{
+				ROUTE_around_ax_1st_spawn_01 =
+				{
+					ROUTE_ax_sneak_route_01 = {},
+				},
+				ROUTE_ax_sneak_route_01 = {},
+				ROUTE_under_pumpboxes_01 = {},
+			},
+		},
+
+		PLANT_Wall =
+		{
+			ROUTE_at_commpost_01 =
+			{
+				ROUTE_ax_2nd_spawn_compost_01 = {},
+				ROUTE_ax_2nd_spawn_compost_02 = {},
+			}
+		},
+
+// Start FLAG document script ****************************************************************************
+
+
+
+		FLAG_docs_scriptname =
+		{
+			ROUTE_at_eastramp_box_01 = // For the engi that built the east ramp.
+			{
+				ROUTE_alli_2nd_spawn_detour_02 =
+				{
+					ROUTE_north_east_01 =
+					{
+						ROUTE_ax_enter_docroom_01 = {},
+					},
+				},
+			},
+
+			ROUTE_ax_first_spawn =
+			{
+				ROUTE_ax_spawn_right_side =
+				{
+					ROUTE_alli_inside_ax_2nd_spawn_01 =
+					{
+						ROUTE_ax_to_cellar_01 =
+						{
+							ROUTE_ax_cellar_route_01 =
+							{
+								ROUTE_ax_cellar_route_02 =
+								{
+									ROUTE_pickup_ammo_centre_01 =
+									{
+										ROUTE_at_centre_ramp_box_01 =
+										{
+											ROUTE_at_documents = {},
+											ROUTE_at_ladder_1_upstairs_01 = {},
+											ROUTE_at_ladder_2_upstairs_01 = {},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_01 =
+				{
+					ROUTE_pickup_ammo_centre_01 =
+					{
+						ROUTE_at_centre_ramp_box_01 =
+						{
+							ROUTE_at_documents = {},
+							ROUTE_at_ladder_1_upstairs_01 = {},
+							ROUTE_at_ladder_2_upstairs_01 = {},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_02 =
+				{
+					ROUTE_under_pumpboxes_01 =
+					{
+						ROUTE_ax_sneak_near_doc_01 = {},
+						ROUTE_ax_vent_sneak_01 = {},
+						ROUTE_ax_enter_docroom_02 = {},
+						ROUTE_ax_enter_docroom_03 = {},
+						ROUTE_randi_01 = {},
+					},
+				},
+				ROUTE_ax_near_swimpool_01 =
+				{
+					ROUTE_ax_vent_sneak_01 = {},
+					ROUTE_ax_enter_docroom_02 = {},
+					ROUTE_ax_enter_docroom_03 = {},
+					ROUTE_randi_01 = {},
+				},
+				ROUTE_ax_first_spawn_down_04 =
+				{
+					ROUTE_ax_sneak_route_01 =
+					{
+						ROUTE_ax_water_right =
+						{
+							ROUTE_ax_sneak_near_doc_01 = {},
+							ROUTE_ax_vent_sneak_01 = {},
+							ROUTE_ax_enter_docroom_02 = {},
+							ROUTE_ax_enter_docroom_03 = {},
+							ROUTE_randi_01 = {},
+						},
+					},
+				},
+			},
+
+
+			ROUTE_ax_first_spawn_01 =
+			{
+				ROUTE_ax_spawn_right_side =
+				{
+					ROUTE_alli_inside_ax_2nd_spawn_01 =
+					{
+						ROUTE_ax_to_cellar_01 =
+						{
+							ROUTE_ax_cellar_route_01 =
+							{
+								ROUTE_ax_cellar_route_02 =
+								{
+									ROUTE_pickup_ammo_centre_01 =
+									{
+										ROUTE_at_centre_ramp_box_01 =
+										{
+											ROUTE_at_documents = {},
+											ROUTE_at_ladder_1_upstairs_01 = {},
+											ROUTE_at_ladder_2_upstairs_01 = {},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_01 =
+				{
+					ROUTE_pickup_ammo_centre_01 =
+					{
+						ROUTE_at_centre_ramp_box_01 =
+						{
+							ROUTE_at_documents = {},
+							ROUTE_at_ladder_1_upstairs_01 = {},
+							ROUTE_at_ladder_2_upstairs_01 = {},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_02 =
+				{
+					ROUTE_under_pumpboxes_01 =
+					{
+						ROUTE_ax_sneak_near_doc_01 = {},
+						ROUTE_ax_vent_sneak_01 = {},
+						ROUTE_ax_enter_docroom_02 = {},
+						ROUTE_ax_enter_docroom_03 = {},
+						ROUTE_randi_01 = {},
+					},
+				},
+				ROUTE_ax_near_swimpool_01 =
+				{
+					ROUTE_ax_vent_sneak_01 = {},
+					ROUTE_ax_enter_docroom_02 = {},
+					ROUTE_ax_enter_docroom_03 = {},
+					ROUTE_randi_01 = {},
+				},
+				ROUTE_ax_first_spawn_down_04 =
+				{
+					ROUTE_ax_sneak_route_01 =
+					{
+						ROUTE_ax_water_right =
+						{
+							ROUTE_ax_sneak_near_doc_01 = {},
+							ROUTE_ax_vent_sneak_01 = {},
+							ROUTE_ax_enter_docroom_02 = {},
+							ROUTE_ax_enter_docroom_03 = {},
+							ROUTE_randi_01 = {},
+						},
+					},
+				},
+			},
+
+			ROUTE_ax_first_spawn_02 =
+			{
+				ROUTE_ax_spawn_right_side =
+				{
+					ROUTE_alli_inside_ax_2nd_spawn_01 =
+					{
+						ROUTE_ax_to_cellar_01 =
+						{
+							ROUTE_ax_cellar_route_01 =
+							{
+								ROUTE_ax_cellar_route_02 =
+								{
+									ROUTE_pickup_ammo_centre_01 =
+									{
+										ROUTE_at_centre_ramp_box_01 =
+										{
+											ROUTE_at_documents = {},
+											ROUTE_at_ladder_1_upstairs_01 = {},
+											ROUTE_at_ladder_2_upstairs_01 = {},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_01 =
+				{
+					ROUTE_pickup_ammo_centre_01 =
+					{
+						ROUTE_at_centre_ramp_box_01 =
+						{
+							ROUTE_at_documents = {},
+							ROUTE_at_ladder_1_upstairs_01 = {},
+							ROUTE_at_ladder_2_upstairs_01 = {},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_02 =
+				{
+					ROUTE_under_pumpboxes_01 =
+					{
+						ROUTE_ax_sneak_near_doc_01 = {},
+						ROUTE_ax_vent_sneak_01 = {},
+						ROUTE_ax_enter_docroom_02 = {},
+						ROUTE_ax_enter_docroom_03 = {},
+						ROUTE_randi_01 = {},
+					},
+				},
+				ROUTE_ax_near_swimpool_01 =
+				{
+					ROUTE_ax_vent_sneak_01 = {},
+					ROUTE_ax_enter_docroom_02 = {},
+					ROUTE_ax_enter_docroom_03 = {},
+					ROUTE_randi_01 = {},
+				},
+				ROUTE_ax_first_spawn_down_04 =
+				{
+					ROUTE_ax_sneak_route_01 =
+					{
+						ROUTE_ax_water_right =
+						{
+							ROUTE_ax_sneak_near_doc_01 = {},
+							ROUTE_ax_vent_sneak_01 = {},
+							ROUTE_ax_enter_docroom_02 = {},
+							ROUTE_ax_enter_docroom_03 = {},
+							ROUTE_randi_01 = {},
+						},
+					},
+				},
+			},
+
+			ROUTE_ax_first_spawn_03 =
+			{
+				ROUTE_ax_spawn_right_side =
+				{
+					ROUTE_alli_inside_ax_2nd_spawn_01 =
+					{
+						ROUTE_ax_to_cellar_01 =
+						{
+							ROUTE_ax_cellar_route_01 =
+							{
+								ROUTE_ax_cellar_route_02 =
+								{
+									ROUTE_pickup_ammo_centre_01 =
+									{
+										ROUTE_at_centre_ramp_box_01 =
+										{
+											ROUTE_at_documents = {},
+											ROUTE_at_ladder_1_upstairs_01 = {},
+											ROUTE_at_ladder_2_upstairs_01 = {},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_01 =
+				{
+					ROUTE_pickup_ammo_centre_01 =
+					{
+						ROUTE_at_centre_ramp_box_01 =
+						{
+							ROUTE_at_documents = {},
+							ROUTE_at_ladder_1_upstairs_01 = {},
+							ROUTE_at_ladder_2_upstairs_01 = {},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_02 =
+				{
+					ROUTE_under_pumpboxes_01 =
+					{
+						ROUTE_ax_sneak_near_doc_01 = {},
+						ROUTE_ax_vent_sneak_01 = {},
+						ROUTE_ax_enter_docroom_02 = {},
+						ROUTE_ax_enter_docroom_03 = {},
+						ROUTE_randi_01 = {},
+					},
+				},
+				ROUTE_ax_near_swimpool_01 =
+				{
+					ROUTE_ax_vent_sneak_01 = {},
+					ROUTE_ax_enter_docroom_02 = {},
+					ROUTE_ax_enter_docroom_03 = {},
+					ROUTE_randi_01 = {},
+				},
+				ROUTE_ax_first_spawn_down_04 =
+				{
+					ROUTE_ax_sneak_route_01 =
+					{
+						ROUTE_ax_water_right =
+						{
+							ROUTE_ax_sneak_near_doc_01 = {},
+							ROUTE_ax_vent_sneak_01 = {},
+							ROUTE_ax_enter_docroom_02 = {},
+							ROUTE_ax_enter_docroom_03 = {},
+							ROUTE_randi_01 = {},
+						},
+					},
+				},
+			},
+
+			ROUTE_ax_first_spawn_04 =
+			{
+				ROUTE_ax_spawn_right_side =
+				{
+					ROUTE_alli_inside_ax_2nd_spawn_01 =
+					{
+						ROUTE_ax_to_cellar_01 =
+						{
+							ROUTE_ax_cellar_route_01 =
+							{
+								ROUTE_ax_cellar_route_02 =
+								{
+									ROUTE_pickup_ammo_centre_01 =
+									{
+										ROUTE_at_centre_ramp_box_01 =
+										{
+											ROUTE_at_documents = {},
+											ROUTE_at_ladder_1_upstairs_01 = {},
+											ROUTE_at_ladder_2_upstairs_01 = {},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_01 =
+				{
+					ROUTE_pickup_ammo_centre_01 =
+					{
+						ROUTE_at_centre_ramp_box_01 =
+						{
+							ROUTE_at_documents = {},
+							ROUTE_at_ladder_1_upstairs_01 = {},
+							ROUTE_at_ladder_2_upstairs_01 = {},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_02 =
+				{
+					ROUTE_under_pumpboxes_01 =
+					{
+						ROUTE_ax_sneak_near_doc_01 = {},
+						ROUTE_ax_vent_sneak_01 = {},
+						ROUTE_ax_enter_docroom_02 = {},
+						ROUTE_ax_enter_docroom_03 = {},
+						ROUTE_randi_01 = {},
+					},
+				},
+				ROUTE_ax_near_swimpool_01 =
+				{
+					ROUTE_ax_vent_sneak_01 = {},
+					ROUTE_ax_enter_docroom_02 = {},
+					ROUTE_ax_enter_docroom_03 = {},
+					ROUTE_randi_01 = {},
+				},
+				ROUTE_ax_first_spawn_down_04 =
+				{
+					ROUTE_ax_sneak_route_01 =
+					{
+						ROUTE_ax_water_right =
+						{
+							ROUTE_ax_sneak_near_doc_01 = {},
+							ROUTE_ax_vent_sneak_01 = {},
+							ROUTE_ax_enter_docroom_02 = {},
+							ROUTE_ax_enter_docroom_03 = {},
+							ROUTE_randi_01 = {},
+						},
+					},
+				},
+			},
+
+			ROUTE_ax_first_spawn_05 =
+			{
+				ROUTE_ax_spawn_right_side =
+				{
+					ROUTE_alli_inside_ax_2nd_spawn_01 =
+					{
+						ROUTE_ax_to_cellar_01 =
+						{
+							ROUTE_ax_cellar_route_01 =
+							{
+								ROUTE_ax_cellar_route_02 =
+								{
+									ROUTE_pickup_ammo_centre_01 =
+									{
+										ROUTE_at_centre_ramp_box_01 =
+										{
+											ROUTE_at_documents = {},
+											ROUTE_at_ladder_1_upstairs_01 = {},
+											ROUTE_at_ladder_2_upstairs_01 = {},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_01 =
+				{
+					ROUTE_pickup_ammo_centre_01 =
+					{
+						ROUTE_at_centre_ramp_box_01 =
+						{
+							ROUTE_at_documents = {},
+							ROUTE_at_ladder_1_upstairs_01 = {},
+							ROUTE_at_ladder_2_upstairs_01 = {},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_02 =
+				{
+					ROUTE_under_pumpboxes_01 =
+					{
+						ROUTE_ax_sneak_near_doc_01 = {},
+						ROUTE_ax_vent_sneak_01 = {},
+						ROUTE_ax_enter_docroom_02 = {},
+						ROUTE_ax_enter_docroom_03 = {},
+						ROUTE_randi_01 = {},
+					},
+				},
+				ROUTE_ax_near_swimpool_01 =
+				{
+					ROUTE_ax_vent_sneak_01 = {},
+					ROUTE_ax_enter_docroom_02 = {},
+					ROUTE_ax_enter_docroom_03 = {},
+					ROUTE_randi_01 = {},
+				},
+				ROUTE_ax_first_spawn_down_04 =
+				{
+					ROUTE_ax_sneak_route_01 =
+					{
+						ROUTE_ax_water_right =
+						{
+							ROUTE_ax_sneak_near_doc_01 = {},
+							ROUTE_ax_vent_sneak_01 = {},
+							ROUTE_ax_enter_docroom_02 = {},
+							ROUTE_ax_enter_docroom_03 = {},
+							ROUTE_randi_01 = {},
+						},
+					},
+				},
+			},
+
+			ROUTE_ax_extra_spawns_01 =
+			{
+				ROUTE_ax_spawn_right_side =
+				{
+					ROUTE_alli_inside_ax_2nd_spawn_01 =
+					{
+						ROUTE_ax_to_cellar_01 =
+						{
+							ROUTE_ax_cellar_route_01 =
+							{
+								ROUTE_ax_cellar_route_02 =
+								{
+									ROUTE_pickup_ammo_centre_01 =
+									{
+										ROUTE_at_centre_ramp_box_01 =
+										{
+											ROUTE_at_documents = {},
+											ROUTE_at_ladder_1_upstairs_01 = {},
+											ROUTE_at_ladder_2_upstairs_01 = {},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_01 =
+				{
+					ROUTE_pickup_ammo_centre_01 =
+					{
+						ROUTE_at_centre_ramp_box_01 =
+						{
+							ROUTE_at_documents = {},
+							ROUTE_at_ladder_1_upstairs_01 = {},
+							ROUTE_at_ladder_2_upstairs_01 = {},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_02 =
+				{
+					ROUTE_under_pumpboxes_01 =
+					{
+						ROUTE_ax_sneak_near_doc_01 = {},
+						ROUTE_ax_vent_sneak_01 = {},
+						ROUTE_ax_enter_docroom_02 = {},
+						ROUTE_ax_enter_docroom_03 = {},
+						ROUTE_randi_01 = {},
+					},
+				},
+				ROUTE_ax_towards_swim_01 =
+				{
+					ROUTE_ax_vent_sneak_01 = {},
+					ROUTE_ax_enter_docroom_02 = {},
+					ROUTE_ax_enter_docroom_03 = {},
+					ROUTE_randi_01 = {},
+				},
+				ROUTE_ax_first_spawn_down_04 =
+				{
+					ROUTE_ax_sneak_route_01 =
+					{
+						ROUTE_ax_water_right =
+						{
+							ROUTE_ax_sneak_near_doc_01 = {},
+							ROUTE_ax_vent_sneak_01 = {},
+							ROUTE_ax_enter_docroom_02 = {},
+							ROUTE_ax_enter_docroom_03 = {},
+							ROUTE_randi_01 = {},
+						},
+					},
+				},
+			},
+
+			ROUTE_ax_extra_spawns_02 =
+			{
+				ROUTE_ax_spawn_right_side =
+				{
+					ROUTE_alli_inside_ax_2nd_spawn_01 =
+					{
+						ROUTE_ax_to_cellar_01 =
+						{
+							ROUTE_ax_cellar_route_01 =
+							{
+								ROUTE_ax_cellar_route_02 =
+								{
+									ROUTE_pickup_ammo_centre_01 =
+									{
+										ROUTE_at_centre_ramp_box_01 =
+										{
+											ROUTE_at_documents = {},
+											ROUTE_at_ladder_1_upstairs_01 = {},
+											ROUTE_at_ladder_2_upstairs_01 = {},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_01 =
+				{
+					ROUTE_pickup_ammo_centre_01 =
+					{
+						ROUTE_at_centre_ramp_box_01 =
+						{
+							ROUTE_at_documents = {},
+							ROUTE_at_ladder_1_upstairs_01 = {},
+							ROUTE_at_ladder_2_upstairs_01 = {},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_02 =
+				{
+					ROUTE_under_pumpboxes_01 =
+					{
+						ROUTE_ax_sneak_near_doc_01 = {},
+						ROUTE_ax_vent_sneak_01 = {},
+						ROUTE_ax_enter_docroom_02 = {},
+						ROUTE_ax_enter_docroom_03 = {},
+						ROUTE_randi_01 = {},
+					},
+				},
+				ROUTE_ax_towards_swim_01 =
+				{
+					ROUTE_ax_vent_sneak_01 = {},
+					ROUTE_ax_enter_docroom_02 = {},
+					ROUTE_ax_enter_docroom_03 = {},
+					ROUTE_randi_01 = {},
+				},
+				ROUTE_ax_first_spawn_down_04 =
+				{
+					ROUTE_ax_sneak_route_01 =
+					{
+						ROUTE_ax_water_right =
+						{
+							ROUTE_ax_sneak_near_doc_01 = {},
+							ROUTE_ax_vent_sneak_01 = {},
+							ROUTE_ax_enter_docroom_02 = {},
+							ROUTE_ax_enter_docroom_03 = {},
+							ROUTE_randi_01 = {},
+						},
+					},
+				},
+			},
+
+			ROUTE_ax_first_spawn_down_01 =
+			{
+				ROUTE_ax_spawn_right_side =
+				{
+					ROUTE_alli_inside_ax_2nd_spawn_01 =
+					{
+						ROUTE_ax_to_cellar_01 =
+						{
+							ROUTE_ax_cellar_route_01 =
+							{
+								ROUTE_ax_cellar_route_02 =
+								{
+									ROUTE_pickup_ammo_centre_01 =
+									{
+										ROUTE_at_centre_ramp_box_01 =
+										{
+											ROUTE_at_documents = {},
+											ROUTE_at_ladder_1_upstairs_01 = {},
+											ROUTE_at_ladder_2_upstairs_01 = {},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_01 =
+				{
+					ROUTE_pickup_ammo_centre_01 =
+					{
+						ROUTE_at_centre_ramp_box_01 =
+						{
+							ROUTE_at_documents = {},
+							ROUTE_at_ladder_1_upstairs_01 = {},
+							ROUTE_at_ladder_2_upstairs_01 = {},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_02 =
+				{
+					ROUTE_under_pumpboxes_01 =
+					{
+						ROUTE_ax_sneak_near_doc_01 = {},
+						ROUTE_ax_vent_sneak_01 = {},
+						ROUTE_ax_enter_docroom_02 = {},
+						ROUTE_ax_enter_docroom_03 = {},
+						ROUTE_randi_01 = {},
+					},
+				},
+				ROUTE_ax_near_swimpool_01 =
+				{
+					ROUTE_ax_vent_sneak_01 = {},
+					ROUTE_ax_enter_docroom_02 = {},
+					ROUTE_ax_enter_docroom_03 = {},
+					ROUTE_randi_01 = {},
+				},
+				ROUTE_ax_first_spawn_down_04 =
+				{
+					ROUTE_ax_sneak_route_01 =
+					{
+						ROUTE_ax_water_right =
+						{
+							ROUTE_ax_sneak_near_doc_01 = {},
+							ROUTE_ax_vent_sneak_01 = {},
+							ROUTE_ax_enter_docroom_02 = {},
+							ROUTE_ax_enter_docroom_03 = {},
+							ROUTE_randi_01 = {},
+						},
+					},
+				},
+			},
+
+			ROUTE_ax_first_spawn_down_02 =
+			{
+				ROUTE_ax_spawn_right_side =
+				{
+					ROUTE_alli_inside_ax_2nd_spawn_01 =
+					{
+						ROUTE_ax_to_cellar_01 =
+						{
+							ROUTE_ax_cellar_route_01 =
+							{
+								ROUTE_ax_cellar_route_02 =
+								{
+									ROUTE_pickup_ammo_centre_01 =
+									{
+										ROUTE_at_centre_ramp_box_01 =
+										{
+											ROUTE_at_documents = {},
+											ROUTE_at_ladder_1_upstairs_01 = {},
+											ROUTE_at_ladder_2_upstairs_01 = {},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_01 =
+				{
+					ROUTE_pickup_ammo_centre_01 =
+					{
+						ROUTE_at_centre_ramp_box_01 =
+						{
+							ROUTE_at_documents = {},
+							ROUTE_at_ladder_1_upstairs_01 = {},
+							ROUTE_at_ladder_2_upstairs_01 = {},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_02 =
+				{
+					ROUTE_under_pumpboxes_01 =
+					{
+						ROUTE_ax_sneak_near_doc_01 = {},
+						ROUTE_ax_vent_sneak_01 = {},
+						ROUTE_ax_enter_docroom_02 = {},
+						ROUTE_ax_enter_docroom_03 = {},
+						ROUTE_randi_01 = {},
+					},
+				},
+				ROUTE_ax_near_swimpool_01 =
+				{
+					ROUTE_ax_vent_sneak_01 = {},
+					ROUTE_ax_enter_docroom_02 = {},
+					ROUTE_ax_enter_docroom_03 = {},
+					ROUTE_randi_01 = {},
+				},
+				ROUTE_ax_first_spawn_down_04 =
+				{
+					ROUTE_ax_sneak_route_01 =
+					{
+						ROUTE_ax_water_right =
+						{
+							ROUTE_ax_sneak_near_doc_01 = {},
+							ROUTE_ax_vent_sneak_01 = {},
+							ROUTE_ax_enter_docroom_02 = {},
+							ROUTE_ax_enter_docroom_03 = {},
+							ROUTE_randi_01 = {},
+						},
+					},
+				},
+			},
+
+			ROUTE_ax_2nd_spawn_wall_1 =
+			{
+				ROUTE_ax_02 =
+				{
+					ROUTE_ax_01 =
+					{
+						ROUTE_ax_enter_docroom_01 = {},
+					},
+				},
+
+				ROUTE_ax_spawn_right_side =
+				{
+					ROUTE_alli_inside_ax_2nd_spawn_01 =
+					{
+						ROUTE_ax_to_cellar_01 =
+						{
+							ROUTE_ax_cellar_route_01 =
+							{
+								ROUTE_ax_cellar_route_02 =
+								{
+									ROUTE_pickup_ammo_centre_01 =
+									{
+										ROUTE_at_centre_ramp_box_01 =
+										{
+											ROUTE_at_documents = {},
+											ROUTE_at_ladder_1_upstairs_01 = {},
+											ROUTE_at_ladder_2_upstairs_01 = {},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+
+				ROUTE_ax_left_centre_02 =
+				{
+					ROUTE_under_pumpboxes_01 =
+					{
+						//ROUTE_ax_sneak_near_doc_01 = {},
+						//ROUTE_ax_vent_sneak_01 = {},
+						ROUTE_ax_enter_docroom_02 = {},
+						//ROUTE_ax_enter_docroom_03 = {},
+						//ROUTE_randi_01 = {},
+					},
+				},
+				ROUTE_ax_towards_swim_01 =
+				{
+					//ROUTE_ax_vent_sneak_01 = {},
+					ROUTE_ax_enter_docroom_02 = {},
+					//ROUTE_ax_enter_docroom_03 = {},
+					//ROUTE_randi_01 = {},
+				},
+
+				ROUTE_ax_first_spawn_down_04 =
+				{
+					ROUTE_ax_sneak_route_01 =
+					{
+						ROUTE_ax_water_right =
+						{
+							ROUTE_ax_sneak_near_doc_01 = {},
+							ROUTE_ax_vent_sneak_01 = {},
+							ROUTE_ax_enter_docroom_02 = {},
+							ROUTE_ax_enter_docroom_03 = {},
+							ROUTE_randi_01 = {},
+						},
+					},
+				},
+			},
+
+			ROUTE_ax_2nd_spawn_rear =
+			{
+				ROUTE_ax_02 =
+				{
+					ROUTE_ax_01 =
+					{
+						ROUTE_ax_enter_docroom_01 = {},
+					},
+				},
+
+				ROUTE_ax_left_centre_02 =
+				{
+					ROUTE_under_pumpboxes_01 =
+					{
+						//ROUTE_ax_sneak_near_doc_01 = {},
+						//ROUTE_ax_vent_sneak_01 = {},
+						ROUTE_ax_enter_docroom_02 = {},
+						//ROUTE_ax_enter_docroom_03 = {},
+						//ROUTE_randi_01 = {},
+					},
+				},
+				ROUTE_ax_spawn_right_side =
+				{
+					ROUTE_alli_inside_ax_2nd_spawn_01 =
+					{
+						ROUTE_ax_to_cellar_01 =
+						{
+							ROUTE_ax_cellar_route_01 =
+							{
+								ROUTE_ax_cellar_route_02 =
+								{
+									ROUTE_pickup_ammo_centre_01 =
+									{
+										ROUTE_at_centre_ramp_box_01 =
+										{
+											ROUTE_at_documents = {},
+											ROUTE_at_ladder_1_upstairs_01 = {},
+											ROUTE_at_ladder_2_upstairs_01 = {},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_01 =
+				{
+					ROUTE_pickup_ammo_centre_01 =
+					{
+						ROUTE_at_centre_ramp_box_01 =
+						{
+							ROUTE_at_documents = {},
+							ROUTE_at_ladder_1_upstairs_01 = {},
+							ROUTE_at_ladder_2_upstairs_01 = {},
+						},
+					},
+				},
+				ROUTE_ax_towards_swim_01 =
+				{
+					//ROUTE_ax_vent_sneak_01 = {},
+					ROUTE_ax_enter_docroom_02 = {},
+					//ROUTE_ax_enter_docroom_03 = {},
+					//ROUTE_randi_01 = {},
+				},
+				ROUTE_ax_first_spawn_down_04 =
+				{
+					ROUTE_ax_sneak_route_01 =
+					{
+						ROUTE_ax_water_right =
+						{
+							//ROUTE_ax_sneak_near_doc_01 = {},
+							//ROUTE_ax_vent_sneak_01 = {},
+							ROUTE_ax_enter_docroom_02 = {},
+							//ROUTE_ax_enter_docroom_03 = {},
+							//ROUTE_randi_01 = {},
+						},
+					},
+				},
+			},
+
+			ROUTE_ax_2nd_spawn_compost_01 =
+			{
+				ROUTE_ax_spawn_right_side =
+				{
+					ROUTE_alli_inside_ax_2nd_spawn_01 =
+					{
+						ROUTE_ax_to_cellar_01 =
+						{
+							ROUTE_ax_cellar_route_01 =
+							{
+								ROUTE_ax_cellar_route_02 =
+								{
+									ROUTE_pickup_ammo_centre_01 =
+									{
+										ROUTE_at_centre_ramp_box_01 =
+										{
+											ROUTE_at_documents = {},
+											ROUTE_at_ladder_1_upstairs_01 = {},
+											ROUTE_at_ladder_2_upstairs_01 = {},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_01 =
+				{
+					ROUTE_pickup_ammo_centre_01 =
+					{
+						ROUTE_at_centre_ramp_box_01 =
+						{
+							ROUTE_at_documents = {},
+							ROUTE_at_ladder_1_upstairs_01 = {},
+							ROUTE_at_ladder_2_upstairs_01 = {},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_02 =
+				{
+					ROUTE_under_pumpboxes_01 =
+					{
+						ROUTE_ax_sneak_near_doc_01 = {},
+						ROUTE_ax_vent_sneak_01 = {},
+						ROUTE_ax_enter_docroom_02 = {},
+						ROUTE_ax_enter_docroom_03 = {},
+						ROUTE_randi_01 = {},
+					},
+				},
+				ROUTE_ax_towards_swim_01 =
+				{
+					ROUTE_ax_vent_sneak_01 = {},
+					ROUTE_ax_enter_docroom_02 = {},
+					ROUTE_ax_enter_docroom_03 = {},
+					ROUTE_randi_01 = {},
+				},
+				ROUTE_ax_first_spawn_down_04 =
+				{
+					ROUTE_ax_sneak_route_01 =
+					{
+						ROUTE_ax_water_right =
+						{
+							ROUTE_ax_sneak_near_doc_01 = {},
+							ROUTE_ax_vent_sneak_01 = {},
+							ROUTE_ax_enter_docroom_02 = {},
+							ROUTE_ax_enter_docroom_03 = {},
+							ROUTE_randi_01 = {},
+						},
+					},
+				},
+			},
+
+			ROUTE_ax_2nd_spawn_compost_02 =
+			{
+				ROUTE_ax_spawn_right_side =
+				{
+					ROUTE_alli_inside_ax_2nd_spawn_01 =
+					{
+						ROUTE_ax_to_cellar_01 =
+						{
+							ROUTE_ax_cellar_route_01 =
+							{
+								ROUTE_ax_cellar_route_02 =
+								{
+									ROUTE_pickup_ammo_centre_01 =
+									{
+										ROUTE_at_centre_ramp_box_01 =
+										{
+											ROUTE_at_documents = {},
+											ROUTE_at_ladder_1_upstairs_01 = {},
+											ROUTE_at_ladder_2_upstairs_01 = {},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_01 =
+				{
+					ROUTE_pickup_ammo_centre_01 =
+					{
+						ROUTE_at_centre_ramp_box_01 =
+						{
+							ROUTE_at_documents = {},
+							ROUTE_at_ladder_1_upstairs_01 = {},
+							ROUTE_at_ladder_2_upstairs_01 = {},
+						},
+					},
+				},
+				ROUTE_ax_left_centre_02 =
+				{
+					ROUTE_under_pumpboxes_01 =
+					{
+						ROUTE_ax_sneak_near_doc_01 = {},
+						ROUTE_ax_vent_sneak_01 = {},
+						ROUTE_ax_enter_docroom_02 = {},
+						ROUTE_ax_enter_docroom_03 = {},
+						ROUTE_randi_01 = {},
+					},
+				},
+				ROUTE_ax_towards_swim_01 =
+				{
+					ROUTE_ax_vent_sneak_01 = {},
+					ROUTE_ax_enter_docroom_02 = {},
+					ROUTE_ax_enter_docroom_03 = {},
+					ROUTE_randi_01 = {},
+				},
+				ROUTE_ax_first_spawn_down_04 =
+				{
+					ROUTE_ax_sneak_route_01 =
+					{
+						ROUTE_ax_water_right =
+						{
+							ROUTE_ax_sneak_near_doc_01 = {},
+							ROUTE_ax_vent_sneak_01 = {},
+							ROUTE_ax_enter_docroom_02 = {},
+							ROUTE_ax_enter_docroom_03 = {},
+							ROUTE_randi_01 = {},
+						},
+					},
+				},
+			},
+		},
+
+// End document script ****************************************************************************
+
+	};
+	Util.Routes(MapRoutes);
+};

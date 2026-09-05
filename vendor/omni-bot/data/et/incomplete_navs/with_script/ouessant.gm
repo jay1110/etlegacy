@@ -1,0 +1,129 @@
+//==========================================================================================
+//
+//	ouessant.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	07 September 2018	Initial Script
+//	palota		7 July 2025
+//==========================================================================================
+//
+
+global Map =
+{
+	westbunker_flag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint( "westbunker_flag_Axis_Captured" );
+	},
+	westbunker_flag_Allies_Captured = function()
+	{
+		Util.MapDebugPrint( "westbunker_flag_Allies_Captured" );
+	},
+
+	Road_Gate_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		Util.DisableGoal( "CAMP_Def_S1_.*" );
+		Util.EnableGoal( "CAMP_Def_S2_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "BUILD_Bridge_Controls");
+		SetGoalPriority("CHECKPOINT_westbunker_flag", 0.5, TEAM.AXIS);
+		Util.MapDebugPrint( "Road_Gate_Destroyed" );
+	},
+
+	Software_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_Axis_Restoring_Software");
+		Util.MapDebugPrint( "Software_Built" );
+	},
+	Software_Destroyed = function()
+	{
+		Util.DisableGoal( "CAMP_Def_S2_.*" );
+		Util.MapDebugPrint( "Software_Destroyed" );
+	},
+
+	Bridge_Controls_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"BUILD_Waterside_Ladder",
+			"PLANT_LightHouse",
+			"CAMP_Att_S3_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, 1, {
+			"CAMP_Def_S3_.*",
+			"BUILD_Axis_Restoring_Software",
+		});
+		Util.MapDebugPrint( "Bridge_Controls_Built" );
+	},
+	Bridge_Controls_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Bridge_Controls_Destroyed" );
+	},
+
+	Waterside_Ladder_Built = function()
+	{
+		Wp.SetWaypointFlag("wsl_top", "closed", 0);
+		Util.MapDebugPrint( "Waterside_Ladder_Built" );
+	},
+	Waterside_Ladder_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("wsl_top", "closed", 1);
+		Util.MapDebugPrint( "Waterside_Ladder_Destroyed" );
+	},
+
+	LightHouse_Destroyed = function()
+	{
+		ETUtil.WinningChat( TEAM.ALLIES );
+		Util.MapDebugPrint( "LightHouse_Destroyed" );
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "Allies have destroyed the road gate!", Map.Road_Gate_Destroyed );
+
+	OnTrigger( "Computer software restored!", Map.Software_Built );
+	OnTrigger( "death test axis", Map.Software_Destroyed );
+
+	OnTrigger( "The lighthouse bridge is rising!", Map.Bridge_Controls_Built );
+	OnTrigger( "Lighthouse bridge is lowering!", Map.Bridge_Controls_Destroyed );
+
+	OnTrigger( "Allied ladder access constructed!", Map.Waterside_Ladder_Built );
+	OnTrigger( "Allied ladder access destroyed!", Map.Waterside_Ladder_Destroyed );
+
+	OnTrigger( "Axis capture the Barracks!", Map.westbunker_flag_Axis_Captured );
+	OnTrigger( "We've captured the Garage!  Bomb the road gates!", Map.westbunker_flag_Allies_Captured );
+
+	OnTrigger( "Allies have crippled the German port!", Map.LightHouse_Destroyed );
+
+
+	Util.DisableGoal( ".*", true );
+
+	Util.AddUsePoint( "PLANT_Bridge_Controls", Vec3(-2221,5661,136) );
+
+	Util.SetGoalPosition( 1395, 2921, -40, "BUILD_Command_Post" );
+
+	Util.LimitToClass( "PLANT_Command_Post", 0, 5 );
+	Util.LimitToClass( "PLANT_Axis_Restoring_Software", 1, 5 );
+
+	Util.EnableGoal({
+		"CHECKPOINT_westbunker_flag",
+		"CAMP_Def_S1_.*",
+		".*Command_Post",
+		"AMMO.*",
+		"HEALTH.*",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, 0, "CAMP_Def_S1_[56]");
+	SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_axis_roadblock");
+
+	SetGoalPriority( "BUILD_Command_Post", 0.81 );
+	SetGoalPriority( "BUILD_Waterside_Ladder", 0.81 );
+	SetGoalPriority( "PLANT_axis_roadblock", 0.85 );
+
+	SetMapGoalProperties( "CAMP_.*", {MinCampTime=30, MaxCampTime=200} );
+
+	Wp.SetWaypointFlag("wsl_top", "closed", 1);
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};

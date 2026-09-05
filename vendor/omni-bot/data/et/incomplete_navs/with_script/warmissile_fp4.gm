@@ -1,0 +1,166 @@
+//==========================================================================================
+//
+//	warmissile_fp4.gm
+//
+//	Who                       	When       	What
+//------------------------------------------------------------------------------------------
+//	^1{WeB}^7*^4GA^1NG$^4TA^7*	31 May 2016	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	Allied_Command_Post_Built = function()
+	{
+		Util.DisableGoal( "DEFEND_Command_Post_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Main_Generator_[1-4]" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Outside_Fence_8" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"DEFEND_Main_Generator_[5-8]",
+			"PLANT_generator_door_constructible"
+		});
+
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Built", true );
+	},
+
+	generator_door_constructible_Built = function()
+	{
+		Util.MapDebugPrint( "generator_door_constructible_Built", true );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed", true );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed", true );
+	},
+
+	Main_Generator_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_generator_door_constructible",
+			"DEFEND_Main_Generator_[1-4]",
+			"PLANT_Allied_Command_Post"
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_Keycard_.*",
+			"DEFEND_Missile_1_1",
+			"DEFEND_Missile_[2-4]"
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"DEFEND_Main_Generator_[5-8]",
+			"PLANT_generator_door_constructible"
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"DEFEND_Missile_[3-5]",
+			"FLAG_keycard"
+		});
+
+		Util.MapDebugPrint( "Main_Generator_Destroyed" );
+	},
+
+	generator_door_constructible_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Main_Generator" );
+
+		Util.MapDebugPrint( "generator_door_constructible_Destroyed" );
+	},
+
+	keycard_Taken = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Keycard_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_keycard" );
+
+		Util.MapDebugPrint( "keycard_Taken" );
+	},
+
+	keycard_Returned = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Keycard_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "FLAG_keycard" );
+
+		Util.MapDebugPrint( "keycard_Returned" );
+	},
+
+	Outdoor_Fence_Destroyed = function()
+	{
+		Util.EnableGoal( "DEFEND_Command_Post_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Outside_Fence_[1-4]" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Outside_Fence_[5-8]" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_Command_Post" );
+
+		Util.MapDebugPrint( "Outdoor_Fence_Destroyed" );
+	},
+
+	Generator_Destroyed = function()
+	{
+		Util.DisableGoal( "DEFEND_Generator_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Outside_Fence_[1-4]" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"DEFEND_Outside_Fence_[5-8]",
+			"PLANT_Outdoor_Fence"
+		});
+
+		Util.MapDebugPrint( "Generator_Destroyed" );
+	},
+
+	Forward_Spawn_Captured = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_flag" );
+
+		Util.MapDebugPrint( "Forward_Spawn_Captured" );
+	},
+
+	Axis_Forward_Spawn_Captured = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_flag" );
+
+		Util.MapDebugPrint( "Axis_Forward_Spawn_Captured" );
+	}
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "The generator door has been constructed.", Map.generator_door_constructible_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "The Main Generator has been destroyed", Map.Main_Generator_Destroyed );
+	OnTrigger( "The generator door has been destroyed.", Map.generator_door_constructible_Destroyed );
+	OnTrigger( "The Outdoor Fence has been destroyed.", Map.Outdoor_Fence_Destroyed );
+	OnTrigger( "The generator has been destroyed", Map.Generator_Destroyed );
+	OnTrigger( "The Allies have captured the Forward Spawn !", Map.Forward_Spawn_Captured );
+	OnTrigger( "The Axis have captured the Forward Spawn !", Map.Axis_Forward_Spawn_Captured );
+	OnTrigger( "Allies have stolen the keycard!", Map.keycard_Taken );
+	OnTrigger( "Axis have returned the keycard!", Map.keycard_Returned );
+
+	Util.DisableGoal( ".*", true ); // All but routes
+	Util.EnableGoal( { ".*CAB_.*", "CHECKPOINT_flag_1", "DEFEND_Generator_.*" } );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"BUILD_Axis_Command_Post",
+		"BUILD_generator_door_constructible",
+		"PLANT_Allied_Command_Post"
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"CAPPOINT_Missile_COntrols",
+		"CHECKPOINT_flag",
+		"PLANT_Generator"
+	});
+
+	// Camp times
+	//SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};

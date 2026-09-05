@@ -1,0 +1,261 @@
+//==========================================================================================
+//
+//	villa_france_beta1.gm
+//
+//	Who                        	When		What
+//------------------------------------------------------------------------------------------
+//	^1C^2Y^3B^6E^5R^04^1W^2O^3L^6F	21 April 2022	Initial Script
+//	version TEST 18 May 2022
+//	palota	07 August 2025	optimized script and fixed many bugs, routes, SWITCH goal changed to paththrough useswitch
+//==========================================================================================
+//
+
+global Map =
+{
+	doorOpen = 0,
+	gateOpen = 0,
+
+ 	Switches =
+ 	{
+ 		door_out =
+ 		{
+ 			Enabled = true,
+ 			Priority = 0,
+ 			WaypointName = "door_out",
+ 			AimPosition = Vec3(5154.071, -4928.125, 437.307),
+ 			Wait = function()
+ 			{
+ 				sleep(2);
+ 				return true;
+ 			},
+ 		},
+ 		door_in =
+ 		{
+ 			Enabled = true,
+ 			Priority = 0,
+ 			WaypointName = "door_in",
+ 			AimPosition = Vec3(5047.616, -4404.125, 455.888),
+ 			Wait = function()
+ 			{
+ 				sleep(1);
+ 				return true;
+ 			},
+ 		},
+ 	},
+
+	door_Moving = function()
+	{
+		o = Map.doorOpen;
+ 		Map.Switches.door_in.Enabled = o;
+ 		Map.Switches.door_out.Enabled = o;
+		if(o)
+		{
+			Map.doorOpen = 0;
+			Util.MapDebugPrint("door closing", 1);
+		}else{
+			Map.doorOpen = 1;
+			Util.MapDebugPrint("door opening", 1);
+		}
+	},
+
+	Allied_CP_Built = function()
+	{
+		Util.MapDebugPrint("Allied_CP_Built");
+	},
+	Allied_CP_Destroyed = function()
+	{
+		Util.MapDebugPrint("Allied_CP_Destroyed");
+	},
+	Axis_CP_Built = function()
+	{
+		Util.MapDebugPrint("Axis_CP_Built");
+	},
+	Axis_CP_Destroyed = function()
+	{
+		Util.MapDebugPrint("Axis_CP_Destroyed");
+	},
+
+	Gun1_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"ATTACK_gun1.*",
+			"CALLARTILLERY.*",
+			"ARTILLERY.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, "PLANT_Dynamite_Wall_Of_The_Bridge");
+
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_gun1.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Neutral_Command_Post");
+
+		Util.MapDebugPrint("Gun1_Destroyed");
+	},
+
+	Dynamite_Wall_Of_The_Bridge_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_bridge.*");
+
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"ATTACK_cproom.*",
+			"BUILD_Neutral_Command_Post",
+			"PLANT_Neutral_Command_Post",
+			"PLANT_AAgun2",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"DEFEND_gun2.*",
+			"MOUNTMG42.*",
+			"REPAIRMG42.*",
+		});
+		Util.MapDebugPrint("Dynamite_Wall_Of_The_Bridge_Destroyed");
+	},
+
+	AAgun2_Destroyed = function()
+	{
+		Util.EnableGoal("ATTACK_gate_[12]");
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND.*");
+		Util.MapDebugPrint("AAgun2_Destroyed");
+	},
+
+	gate_open = function()
+	{
+		sleep(0.1);
+		Map.gateOpen=1;
+		Wp.CheckBlockable();
+
+		Util.EnableGoal("ATTACK_gate.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"FLAG_Documents",
+			"CAPPOINT_docsradio",
+			"ATTACK_cproom.*",
+		});
+	    SetAvailableMapGoals(TEAM.AXIS, false, {
+	    	".*MG42_.*",
+	    });
+	    SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_doc.*");
+
+		Util.ChangeSpawn(TEAM.ALLIES, 2);
+		WeaponTable.SetWeaponAvailability(CLASS.SOLDIER, WEAPON.FLAMETHROWER, true);
+		Util.MapDebugPrint("gate_open");
+	},
+
+	Documents_Taken = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_doc.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "ATTACK_cproom.*");
+		Util.MapDebugPrint("Documents_Taken");
+	},
+
+	Documents_Returned = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "ATTACK_cproom.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_doc.*");
+		Util.MapDebugPrint("Documents_Returned");
+	},
+
+	Documents_Secured = function()
+	{
+		Util.MapDebugPrint("Documents_Secured");
+	},
+
+	Documents_Dropped = function()
+	{
+		Util.BotChat(0, "say", "^1THE DOCUMENTS HAVE BEEN DROPPED!", 1);
+		Util.MapDebugPrint("Documents_Dropped");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("Allied Command Post constructed. Charge speed increased!", Map.Allied_CP_Built);
+	OnTrigger("Axis team has destroyed the Allied Command Post!", Map.Allied_CP_Destroyed);
+	OnTrigger("Axis Command Post constructed. Charge speed increased!", Map.Axis_CP_Built);
+	OnTrigger("Allied team has destroyed the Axis Command Post!", Map.Axis_CP_Destroyed);
+	OnTrigger("bridge2_stop", Map.gate_open);
+	OnTrigger("s_door_Moving", Map.door_Moving);
+
+	OnTrigger("AAgun2 Destroyed.", Map.AAgun2_Destroyed);
+	OnTrigger("Dynamite Wall Of The Bridge Destroyed.", Map.Dynamite_Wall_Of_The_Bridge_Destroyed);
+	OnTrigger("Gun1 Destroyed.", Map.Gun1_Destroyed);
+
+	OnTrigger("Flag dropped Documents!", Map.Documents_Dropped);
+	OnTrigger("Allies have stolen Documents!", Map.Documents_Taken);
+	OnTrigger("Flag returned Documents!", Map.Documents_Returned);
+	OnTrigger("Allies captured allied_obj1", Map.Documents_Secured);
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal({
+		"AMMOCAB.*",
+		"HEALTHCAB.*",
+	});
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"DEFEND_gun1.*",
+		"DEFEND_bridge.*",
+		"PLANT_Neutral_Command_Post",
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"ATTACK_bridge.*",
+		"ATTACK_gun1.*",
+		"CALLARTILLERY.*",
+		"ARTILLERY.*",
+		"PLANT_Gun1",
+	});
+
+	SetGoalPriority("PLANT_Gun1.*", 0.9);
+	SetGoalPriority("DEFEND_gun1.*", 0.51);
+	SetGoalPriority("ATTACK_gate.*", 0.49);
+	SetGoalPriority("BUILD_Neutral_Command_Post", 0.81);
+
+	Util.LimitToClass("PLANT_Neutral_Command_Post", 0, CLASS.COVERTOPS);
+
+	Util.AddUseWp("PLANT_Dynamite_Wall_Of_The_Bridge", {"plantbridge_1", "plantbridge_2", "plantbridge_3"});
+
+	WeaponTable.SetWeaponAvailability(CLASS.SOLDIER, WEAPON.FLAMETHROWER, false);
+
+	SetMapGoalProperties({"DEFEND.*", "ATTACK_gate.*"}, {MinCampTime=30, MaxCampTime=80});
+
+	Util.SetMaxUsers(1, {
+		"DEFEND.*",
+		"MOUNTMG42.*",
+		"PLANT_Dynamite_Wall_Of_The_Bridge",
+	});
+
+	Util.MapDebugPrint("ETS^4| ^2Custom ^1C ^04 ^1W ^3Omni-bot map script ^6Version ^1TEST ^11.02 ^3For the map: ^7" + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	p=3; //church
+	if(Map.gateOpen){ p=2; } //command post house
+	bot.ChangeSpawnPoint(p);
+
+	bot.TargetBreakableDist = 90;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		FLAG_Documents = {
+			ROUTE_house = {
+				ROUTE_bunker1={},
+				ROUTE_bunker2={},
+				ROUTE_shaft={},
+			}
+		},
+	};
+	MapRoutes["ATTACK_bridge.*"] = {
+		ROUTE_allied_spawn = {
+			ROUTE_bridgeway_6 = {}
+		}
+	};
+	MapRoutes["ATTACK_cproom.*"] = {
+		ROUTE_church = {
+			ROUTE_g2_1 = {},
+			ROUTE_g2_2 = {},
+			ROUTE_g2_3 = {ROUTE_g2_32 = {}},
+		}
+	};
+	Util.Routes(MapRoutes);
+};

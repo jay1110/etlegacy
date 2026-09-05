@@ -1,0 +1,190 @@
+//==========================================================================================
+//
+//	Chartow_Final.gm
+//
+//	Who        	When		What
+//------------------------------------------------------------------------------------------
+//	=F|A=BLACKWOLF*		15 July 2020	Initial Script nq_chartow_beta2.gm
+//	palota				08 January 2025	Initial Script Chartow_Final.gm
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	Jagdpanther_Stolen = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"ATTACK_allies_.*",
+			"BUILD_Command_Post",
+			"PLANT_Tank_Barrier",
+			"PLANT_Wall_in_The_Axis_Bar",
+			"PLANT_Entry_Gate",
+			"MOUNT_tank",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"MOUNTMG42_depot",
+			"ATTACK_allies_[12]",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"MOUNTMG42_bank",
+		});
+		Util.MapDebugPrint("Jagdpanther_Stolen");
+	},
+
+	BANK_Breached = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"ESCORT_tank",
+			"BUILD_Jagdpanther",
+			"ATTACK_allies_.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"PLANT_Safe",
+			"ATTACK_allies2_.*",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"DEFEND_axis2_.*",
+		});
+
+		Util.MapDebugPrint("BANK_Breached");
+	},
+
+	Safe_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"FLAG_Documents",
+			"CAPPOINT_transmitter",
+		});
+		Util.MapDebugPrint("Safe_Destroyed");
+	},
+
+	Tank_Barrier_Built = function()
+	{
+		Util.MapDebugPrint("Tank_Barrier_Built");
+	},
+
+	Entry_Gate_Destroyed = function()
+	{
+		Util.MapDebugPrint("Entry_Gate_Destroyed");
+	},
+
+	Side_Wall_Destroyed = function()
+	{
+		Util.MapDebugPrint("Side_Wall_Destroyed");
+	},
+
+	Tank_Barrier_Destroyed = function()
+	{
+		Util.MapDebugPrint("Tank_Barrier_Destroyed");
+	},
+
+	Wall_in_Tank_Depot_Destroyed = function()
+	{
+		Util.MapDebugPrint("Wall_in_Tank_Depot_Destroyed");
+	},
+
+	Wall_in_The_Axis_Bar_Destroyed = function()
+	{
+		Util.MapDebugPrint("Wall_in_The_Axis_Bar_Destroyed");
+	},
+
+	Documents_Taken = function()
+	{
+		Util.MapDebugPrint("Documents_Taken");
+	},
+
+	Documents_Returned = function()
+	{
+		Util.MapDebugPrint("Documents_Returned");
+	},
+
+	Documents_Secured = function()
+	{
+		Util.MapDebugPrint("Documents_Secured");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("^1Allied team has stolen the Tank!", Map.Jagdpanther_Stolen);
+	OnTrigger("^1Tank Barrier has been constructed!", Map.Tank_Barrier_Built);
+	OnTrigger("^1The Entry Gate Destroyed!", Map.Entry_Gate_Destroyed);
+	OnTrigger("^1The Safe Destroyed!", Map.Safe_Destroyed);
+	OnTrigger("^1Side Wall Up Destroyed!", Map.Side_Wall_Destroyed);
+	OnTrigger("^1Tank Barrier has been destroyed!", Map.Tank_Barrier_Destroyed);
+	OnTrigger("^1Wall in Tank Depot Destroyed!", Map.Wall_in_Tank_Depot_Destroyed);
+	OnTrigger("^1Wall in The Bar Destroyed!", Map.Wall_in_The_Axis_Bar_Destroyed);
+	OnTrigger("^1The Bank Doors was Destroyed!", Map.BANK_Breached);
+	OnTrigger("^1Allies have stolen the documents!", Map.Documents_Taken);
+	OnTrigger("^1The documents has been returned!", Map.Documents_Returned);
+	OnTrigger("^1Allies have secured the documents!", Map.Documents_Secured);
+
+	//^1Tank Immobilized!
+	//^1Tank in Combat Readiness!
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal({
+		"AMMOCAB_.*",
+		"HEALTHCAB_.*",
+		"PLANT_Command_Post",
+	});
+	
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"BUILD_Tank_Barrier",
+		"BUILD_Command_Post",
+		"DEFEND_axis_.*",
+	});
+	
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"BUILD_Jagdpanther",
+		"ESCORT_tank",
+		"ATTACK_allies_[123]",
+		"MOUNTMG42_depot",
+	});
+
+	SetGoalPriority("PLANT_Tank_Barrier", 0.9);
+	SetGoalPriority("BUILD_Command_Post", 0.81);
+
+	Util.AddUsePoint( "PLANT_Tank_Barrier", { Vec3(8756,5790,-71), Vec3(8969,5777,-63) } );
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.TargetBreakableDist = 80;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		BUILD_Jagdpanther =
+		{
+			ROUTE_allied_spawn =
+			{
+				ROUTE_allied_north_exit = {},
+				ROUTE_allied_south_exit = {},
+				ROUTE_allied_final_exit = {},
+			},
+		},
+	};
+	
+	MapRoutes["DEFEND_axis.*"] =
+	{
+		ROUTE_axis_spawn  =
+		{
+			ROUTE_axis_west_exit = {},
+			ROUTE_axis_north_exit = {},
+			ROUTE_axis_cp_exit = {},
+		},
+	};
+
+	MapRoutes["ATTACK_allies.*"] = MapRoutes.BUILD_Jagdpanther;
+	MapRoutes.ESCORT_tank = MapRoutes.BUILD_Jagdpanther;
+	MapRoutes.MOUNTMG42_depot = MapRoutes.BUILD_Jagdpanther;
+	
+	Util.Routes(MapRoutes);
+};

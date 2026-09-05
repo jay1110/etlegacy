@@ -1,0 +1,202 @@
+//==========================================================================================
+//
+//	1944_antwerp_b3.gm
+//
+//	Who             When			What
+//------------------------------------------------------------------------------------------
+//	MickyP		27 February 2012	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+
+	RideBoat = 0,
+	BoatBuilt = 1,
+	DocumentsSecured = 0,
+	GeneratorDestroyed = 0,
+
+	Boat_Built = function()
+	{
+		if (Map.DocumentsSecured == 1 && GeneratorDestroyed == 1 )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, "RIDE_Boat" );
+			}
+
+		Map.BoatBuilt = 1;
+		Util.MapDebugPrint( "Boat_Built" );
+	},
+
+	Boat_Destroyed = function()
+	{
+		Map.RideBoat = 0;
+		SetAvailableMapGoals( TEAM.AXIS, false, "RIDE_Boat" );
+
+		Util.MapDebugPrint( "Boat_Destroyed" );
+	},
+
+	Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Command_Post_Built" );
+	},
+
+	forward_spawn_Axis_Captured = function()
+	{
+		Util.MapDebugPrint( "forward_spawn_Axis_Captured" );
+	},
+
+	forward_spawn_Allies_Captured = function()
+	{
+		Util.MapDebugPrint( "forward_spawn_Allies_Captured" );
+	},
+
+	Allied_Generator_Destroyed = function()
+	{
+		if ( Map.BoatBuilt == 1 )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, "RIDE_Boat" );
+			}
+
+		Map.GeneratorDestroyed = 1;
+
+		Util.MapDebugPrint( "Allied_Generator_Destroyed" );
+	},
+
+	Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Command_Post_Destroyed" );
+	},
+
+	documents_Taken = function()
+	{
+		// only have the thread running when needed
+		if ( !Map.UpdateCappointThread ) {
+			Map.UpdateCappointThread = thread(Map.UpdateCappoint);
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Boat" );
+
+		Util.MapDebugPrint( "documents_Taken" );
+	},
+
+	documents_Returned = function()
+	{
+		// kill the the thread, since updating the position is pointless
+		if ( Map.UpdateCappointThread ) {
+			threadKill(Map.UpdateCappointThread);
+			Map.UpdateCappointThread = null;
+		}
+
+		Util.MapDebugPrint( "documents_Returned" );
+	},
+
+	documents_Secured = function()
+	{
+		// on successful cap, kill the update thread
+		if ( Map.UpdateCappointThread ) {
+			threadKill(Map.UpdateCappointThread);
+			Map.UpdateCappointThread = null;
+		}
+
+		Map.DocumentsSecured = 1;
+
+		if ( Map.BoatBuilt == 1 && GeneratorDestroyed == 1 )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, "RIDE_Boat" );
+			}
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT_Boat" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Boat" );
+		Util.MapDebugPrint( "documents_Secured" );
+	},
+
+	UpdateCappointThread = null,
+	UpdateCappoint = function()
+	{
+		if(!Map.BoatGoal) { Map.BoatGoal = GetGoal("MOVER_boat"); }
+
+		  // / bot sgn 200 true in 0.71 while standing where the deliver spot is will show offset in console
+		Map.CappointOffset = Vector3(0,-160,-30);
+
+		if ( !Map.BoatGoal ) {
+			if (Map.Debug) { print("UpdateCappoint: Invalid Vehicle Goalname!"); }
+			Map.UpdateCappointThread = null;
+			return;
+		}
+
+		if (!Map.CappointGoal) { Map.CappointGoal = GetGoal("CAPPOINT_Boat"); }
+
+		if (!Map.CappointGoal) {
+			if (Map.Debug) { print("UpdateCappoint: Invalid Cappoint Goalname!"); }
+			Map.UpdateCappointThread = null;
+			return;
+		}
+
+		moverEnt = Map.BoatGoal.GetEntity();
+		// the main loop that updates the cappoint position
+		while(1) {
+			moverPos = Map.BoatGoal.GetPosition();
+
+			// update the position only if the Boat has moved
+			if ( moverPos != Map.BoatPosition ) {
+				Map.BoatPosition = moverPos;
+				newCapPos = GetEntityWorldSpace(moverEnt,Map.CappointOffset);
+				Util.SetGoalPosition(newCapPos.x, newCapPos.y, newCapPos.z, "CAPPOINT_Boat");
+
+				// toggle availability so they repath
+				SetAvailableMapGoals( TEAM.ALLIES, false, "CAPPOINT_Boat" );
+				sleep(0.5);
+				SetAvailableMapGoals( TEAM.ALLIES, true, "CAPPOINT_Boat" );
+			}
+			sleep(0.5);
+		}
+	 },
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "The Boat has been repaired!", Map.Boat_Built );
+	OnTrigger( "The Boat has been damaged!", Map.Boat_Destroyed );
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Command_Post_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Command_Post_Built );
+	OnTrigger( "the Generator has been destroyed, the Boat is ready to move!", Map.Allied_Generator_Destroyed );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Command_Post_Destroyed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Command_Post_Destroyed );
+	OnTrigger( "Axis have stolen the documents!", Map.documents_Taken );
+	OnTrigger( "Documents returned!", Map.documents_Returned );
+	OnTrigger( "Axis have secured the documents!", Map.documents_Secured );
+	OnTrigger( "Axis capture the Forward Spawn!", Map.forward_spawn_Axis_Captured );
+	OnTrigger( "Allies capture the Forward Spawn!", Map.forward_spawn_Allies_Captured );
+
+
+	Util.DisableGoal( ".*", true );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"BUILD_Command_Post",
+		"PLANT_Command_Post",
+		"CAPPOINT_Boat",
+		"FLAG_documents",
+		"PLANT_Allied_Generator",
+		"CHECKPOINT_forward_spawn",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_Command_Post",
+		"PLANT_Command_Post",
+		"CHECKPOINT_forward_spawn",
+	});
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "BUILD_Command_Post" );
+	Util.SetMaxUsers( 1, "PLANT_Command_Post" );
+
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};

@@ -1,0 +1,160 @@
+//==========================================================================================
+//
+//  v2_tram_01.gm
+//
+// Who   	When		What
+//------------------------------------------------------------------------------------------
+// palota	12 August 2025	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	mainDoor = false,
+
+	Tram_Controls_Built = function()
+	{
+		SetGoalPriority("PLANT_Main_Doors", 0.9);
+		Util.MapDebugPrint("Tram_Controls_Built");
+	},
+
+	Tram_Controls_Destroyed = function()
+	{
+		Util.MapDebugPrint("Tram_Controls_Destroyed");
+	},
+
+	Side_Door_Built = function()
+	{
+		Wp.SetWaypointFlag("side_door", "axis", true);
+		SetAvailableMapGoals(TEAM.ALLIES, Map.mainDoor, "FLAG_documents");
+		Util.MapDebugPrint("Side_Door_Built");
+	},
+
+	Side_Door_Planted = function()
+	{
+		foreach(g in Util.GoalTable("DEFUSE_Side_Door.*")){
+			g.AddUsePoint(Vec3(1131, 3851, -55));
+		}
+		Util.MapDebugPrint("Side_Door_Planted");
+	},
+
+	Side_Door_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("side_door", "axis", false);
+		SetAvailableMapGoals(TEAM.ALLIES, true, "FLAG_documents");
+		Util.MapDebugPrint("Side_Door_Destroyed");
+	},
+
+	Main_Door_Destroyed = function()
+	{
+		Map.mainDoor = true;
+		sleep(0.1);
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.AXIS, false, "AIRSTRIKE.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"DEFEND_doc.*",
+			"MOBILEMG42_x.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"FLAG_documents",
+			".*Command_Post",
+		});
+		SetGoalPriority("BUILD_Tram_Controls", 0.81);
+		Util.MapDebugPrint("Main_Door_Destroyed");
+	},
+
+	documents_Taken = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_doc.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_exit.*");
+		Util.MapDebugPrint("documents_Taken");
+	},
+
+	documents_Returned = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_exit.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_doc.*");
+		Util.MapDebugPrint("documents_Returned");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("Tram Controls contructed, trams starting!", Map.Tram_Controls_Built);
+	OnTrigger("Tram Controls damaged, trams stopped!", Map.Tram_Controls_Destroyed);
+	OnTrigger("Axis have constructed the Side Door", Map.Side_Door_Built);
+	OnTrigger("Planted at the Side Door.", Map.Side_Door_Planted);
+	OnTrigger("Allies have destroyed the Side Door", Map.Side_Door_Destroyed);
+	OnTrigger("Allies have destroyed the Main Doors", Map.Main_Door_Destroyed);
+	OnTrigger("Allies have stolen the Secret Documents!", Map.documents_Taken);
+	OnTrigger("Flag returned documents!", Map.documents_Returned);
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal({
+		"AMMOCAB.*",
+		"HEALTHCAB.*",
+	});
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"DEFEND_door.*",
+		"BUILD_Side_Door",
+		"PLANT_Tram_Controls",
+		"PLANTMINE.*",
+		"AIRSTRIKE.*",
+		".*Command_Post",
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"ATTACK_door.*",
+		"CHECKPOINT_hutflag",
+		"BUILD_Tram_Controls",
+		"PLANT_Main_Doors",
+		"PLANT_Side_Door",
+		"CAPPOINT.*",
+	});
+
+	SetGoalPriority("DEFEND_doc.*", 0.51);
+	SetGoalPriority("DEFEND_exit.*", 0.9);
+	SetGoalPriority("BUILD_Command_Post", 0.81, TEAM.ALLIES);
+	SetGoalPriority("PLANT_Command_Post", 0.6, 0, CLASS.ENGINEER);
+	SetGoalPriority("DEFUSE_Main_Door.*", 1.1, 0, 0, true);
+	Util.ExcludeClass("PLANT_Tram_Controls", 0, CLASS.ENGINEER);
+
+	Wp.SetWaypointFlag("side_door", "axis", true);
+	Util.AddUsePoint("BUILD_Side_Door", Vec3(1168, 3659, -51));
+
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=30, MaxCampTime=60});
+
+	Util.SetMaxUsersInProgress(5, "CHECKPOINT.*");
+	Util.SetMaxUsers(1, { "PLANT_.*", "BUILD.*" });
+	Util.SetMaxUsers(2, "PLANT_Side_Door");
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+
+	sleep(240);
+	SetGoalPriority("AIRSTRIKE.*", 0.5);
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		FLAG_documents =
+		{
+			ROUTE_hut_spawn =
+			{
+				ROUTE_ladder ={},
+				ROUTE_stairs ={},
+			}
+		},
+		CAPPOINT_exit =
+		{
+			ROUTE_doc =
+			{
+				ROUTE_ladder ={},
+				ROUTE_stairs ={},
+			}
+		},
+	};
+	Util.Routes(MapRoutes);
+};

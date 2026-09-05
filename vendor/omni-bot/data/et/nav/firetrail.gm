@@ -1,0 +1,310 @@
+//==========================================================================================
+//
+//	firetrail.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	28 September 2018	incomplete waypoints without script
+//	palota	27 June 2025	 waypoints in air shafts, script, goals
+//==========================================================================================
+//
+
+global Map =
+{
+	bridgeTeam = TEAM.ALLIES,
+	mainDestroyed = false,
+	lift1Ent = GetEntityByName("lift_left_side"),
+	lift2Ent = GetEntityByName("lift_right_side"),
+
+	LiftNav = function(ent, y)
+	{
+		this.Goto(this.Bot.GetPosition());
+		for(i=0; i<100; ++i) {
+			if (GetEntPosition(ent).z == -440){
+				this.Bot.MoveTowards(Vec3(-1880, y, -479));
+				this.AddAimRequest(Priority.High, "facing", Vec3(-0.332, 0, -0.943));
+				sleep(1.3);
+				this.Bot.PressButton(BTN.USE);
+				sleep(0.1);
+				this.ReleaseAimRequest();
+				sleep(0.5);
+				if (this.Bot.GetPosition().z > -470){
+					while (GetEntPosition(ent).z < 116) {
+						this.Bot.MoveTowards(this.Bot.GetPosition());
+						yield();
+					}
+					this.Bot.MoveTowards(Vec3(-1727, y, 63));
+					sleep(0.8);
+					return;
+				}
+				else{
+					this.Bot.MoveTowards(Vec3(-1670, y, -485));
+				}
+			}
+			sleep(0.2);
+		}
+		this.Goto(Vec3(-1615, -116, -512));
+	},
+
+	Navigation =
+	{
+		lift1 =
+		{
+			navigate = function() { f=Map.LiftNav; this:f(Map.lift1Ent, -386); }
+		},
+		lift2 =
+		{
+			navigate = function() { f=Map.LiftNav; this:f(Map.lift2Ent, 192); }
+		},
+		shaft1 =
+		{
+			navigate = function()
+			{
+				this.AddAimRequest(Priority.High, "facing", Vec3(1, 0, 0));
+				this.Bot.HoldButton(BTN.FORWARD, 3);
+				sleep(2);
+				this.AddAimRequest(Priority.High, "facing", Vec3(0, 1, 0));
+				sleep(1);
+			}
+		},
+		shaft2 =
+		{
+			navigate = function()
+			{
+				this.AddAimRequest(Priority.High, "facing", Vec3(1, 0, 0));
+				this.Bot.HoldButton(BTN.FORWARD, 3);
+				sleep(2);
+				this.AddAimRequest(Priority.High, "facing", Vec3(0, -1, 0));
+				sleep(1);
+			}
+		},
+		grate =
+		{
+			EvalFunc = function()
+			{
+				return !Map.grateBroken;
+			},
+			navigate = function()
+			{
+				this.Goto(this.Bot.GetPosition());
+				this.AddWeaponRequest(WEAPON.KNIFE);
+				this.AddAimRequest(Priority.High, "facing", Vec3(1, 0, 0));
+				this.Bot.HoldButton(BTN.ATTACK1, BTN.PRONE, 7);
+				sleep(5);
+				this.Bot.HoldButton(BTN.FORWARD, 2);
+				sleep(2);
+				if (this.Bot.GetPosition().x > 1180) {
+					Map.grateBroken = 1;
+				}
+			}
+		},
+	},
+
+	Main_Entrance_Destroyed = function()
+	{
+		Map.mainDestroyed = true;
+		sleep(0.1);
+		Wp.CheckBlockable();
+		Util.DisableGoal("CHECKPOINT.*");
+
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_start.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"MOUNTMG42_2_Stage_Defense",
+			"REPAIRMG42_2_Stage_Defense",
+			"DEFEND_pump.*",
+			"PLANTMINE_p.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"MOUNTMG42_bridge",
+			"REPAIRMG42_bridge",
+			"ATTACK_flag.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"PLANT_Axis_Firetrail_Pumpstation",
+			"PLANT_2_Stage_Defense",
+			"BUILD_Command_Post",
+			"ATTACK_pump.*",
+			"ATTACK_fence.*",
+		});
+		SetGoalPriority("SWITCH_bridge", 0.1);
+		SetGoalPriority("BUILD_Command_Post", 0.81, TEAM.AXIS);
+		Util.MapDebugPrint("Main_Entrance_Destroyed");
+	},
+
+	westbunker_flag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint("westbunker_flag_Axis_Captured");
+	},
+
+	westbunker_flag_Allies_Captured = function()
+	{
+		Util.MapDebugPrint("westbunker_flag_Allies_Captured");
+	},
+
+	Stage_Defense1_Built = function()
+	{
+		Util.MapDebugPrint("Stage_Defense1_Built");
+	},
+
+	Stage_Defense2_Built = function()
+	{
+		Util.DisableGoal("ROUTE_fence");
+
+		if (!Map.mainDestroyed){
+			foreach (bot in BotTable){
+				if (bot.GetClass()==CLASS.ENGINEER && bot.DistanceTo(Vec3(1142, -108, 32)) < 150){
+					bot.ExecCommand("kill");
+				}
+			}
+		}
+		Util.MapDebugPrint("Stage_Defense2_Built");
+	},
+
+	Stage_Defense1_Destroyed = function()
+	{
+		Util.EnableGoal("ROUTE_fence");
+		Util.MapDebugPrint("Stage_Defense1_Destroyed");
+	},
+
+	Stage_Defense2_Destroyed = function()
+	{
+		Util.MapDebugPrint("Stage_Defense2_Destroyed");
+	},
+
+	Side_Entrance_Built = function()
+	{
+		Util.DisableGoal("ROUTE_side");
+		Util.MapDebugPrint("Side_Entrance_Built");
+	},
+
+	bridge_goto = function(trigger)
+	{
+		if (ToVector(trigger.Action).z < 0)
+		{
+			t=TEAM.AXIS;
+		}else{
+			t=TEAM.ALLIES;
+		}
+		if (Map.bridgeTeam!=t) {
+			Util.MapDebugPrint("bridge moving " + t, 1);
+			Map.bridgeTeam = t;
+			Util.DisableGoal("SWITCH_bridge");
+			SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_bridge.*");
+			sleep(20);
+			SetAvailableMapGoals(t, true, "SWITCH_bridge");
+			sleep(2);
+			SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_bridge.*");
+		}
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("Allies have breached the Main Entrance and secured the Forward Bunker!", Map.Main_Entrance_Destroyed);
+	OnTrigger("Axis team has built first Defense Stage!", Map.Stage_Defense1_Built);
+	OnTrigger("Axis team has built complete Defense!", Map.Stage_Defense2_Built);
+	OnTrigger("Allied team has damaged Defense!", Map.Stage_Defense1_Destroyed);
+	OnTrigger("Allied team has destroyed complete Defense!", Map.Stage_Defense2_Destroyed);
+	OnTrigger("Allies have repaired and closed the side Door!", Map.Side_Entrance_Built);
+	OnTrigger("Axis capture the main Bunker!", Map.westbunker_flag_Axis_Captured);
+	OnTrigger("Allies capture the main Bunker!", Map.westbunker_flag_Allies_Captured);
+	OnTrigger("bridge_center_goto", Map.bridge_goto);
+
+	OnTriggerRegion(AABB(229.990,-75.602,123.231,585.801,153.936,337.210), RegionTrigger.DisableCombatMovement);
+	OnTriggerRegion(AABB(751.276,52.443,9.125,941.104,160.873,99.126), RegionTrigger.DisableBotPush);
+	OnTriggerRegion(AABB(-1506.814,-373.143,25.036,-1218.189,157.350,240.821), RegionTrigger.DisableCombatMovement);
+
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal({
+		".*CAB_.*",
+		"PLANT_Command_Post",
+		"CHECKPOINT.*",
+	});
+
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"BUILD_2_Stage_Defense",
+		"PLANT_Side_Entrance",
+		"DEFEND_start.*",
+		"BUILD_Command_Post",
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"PLANT_Main_Entrance",
+		"MOUNTMG42_bridge",
+		"REPAIRMG42_bridge",
+		"SWITCH_bridge",
+		"ATTACK_flag.*",
+	});
+
+	SetGoalPriority("BUILD_Side_Entrance", 0.7);
+	SetGoalPriority("DEFEND_bridge.*", 0.94);
+	SetGoalPriority("DEFEND_start4", 0.51);
+	SetGoalPriority("SWITCH_bridge", 0.6, TEAM.AXIS);
+	SetGoalPriority("BUILD_Command_Post", 0.91, TEAM.AXIS);
+	SetGoalPriority("PLANT_Command_Post", 0.7, 0, CLASS.ENGINEER);
+
+	Util.SetMaxUsersInProgress(3, "SWITCH_bridge");
+	Util.SetMaxUsers(1, "MOUNTMG42_bridge");
+	Util.SetMaxUsers(1, "BUILD_2_Stage_Defense");
+	Util.SetMaxUsers(1, ".*Command_Post");
+	
+	Util.ExcludeClass("PLANT_Command_Post", TEAM.AXIS, CLASS.ENGINEER);
+
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=10, MaxCampTime=50});
+	SetMapGoalProperties("ATTACK_pump.*", {MinCampTime=30, MaxCampTime=50});
+	SetMapGoalProperties("MOUNTMG42.*", {MinCampTime=30, MaxCampTime=90});
+
+	Util.AddUsePoint("PLANT_Axis_Firetrail_Pumpstation", {Vec3(1406,283,36), Vec3(1213,278,36)} );
+	Util.AddUsePoint("BUILD_Command_Post", Vec3(-123,-375,32) );
+	Util.AddUsePoint("PLANT_Command_Post", Vec3(-123,-375,32) );
+
+	WeaponTable.SetWeaponAvailability(CLASS.ENGINEER, { WEAPON.KAR98, WEAPON.CARBINE }, false);
+
+	Util.SetGoalRange("DEFEND_bridge.*", AABB(-1620.874,884.297,-254.875,-695.558,1357.549,-7.226));
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 100;
+};
+
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_westbunker_flag = {
+			ROUTE_allied_spawn = {
+				ROUTE_north = {},
+				ROUTE_tunnel = {},
+			},
+			ROUTE_axis_spawn = {
+				ROUTE_side = {},
+				ROUTE_steam = {},
+			},
+		},
+		PLANT_Axis_Firetrail_Pumpstation = {
+			ROUTE_forward_spawn = {
+				ROUTE_fence = {Weight=8},
+				ROUTE_shaft2 = {Weight=3},
+				ROUTE_side = { ROUTE_shaft1 = {}},
+			}
+		},
+		BUILD_2_Stage_Defense = {
+			ROUTE_forward_spawn = {
+				ROUTE_shaft1 = {},
+			}
+		},
+		PLANT_Command_Post = {
+			ROUTE_axis_spawn = {
+				ROUTE_cp = {},
+			}
+		},
+	};
+	MapRoutes.PLANT_Main_Entrance = MapRoutes.CHECKPOINT_westbunker_flag;
+	MapRoutes["ATTACK_pump.*"] = MapRoutes.PLANT_Axis_Firetrail_Pumpstation;
+	Util.Routes(MapRoutes);
+};

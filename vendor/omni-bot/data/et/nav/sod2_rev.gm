@@ -1,0 +1,273 @@
+//==========================================================================================
+//
+//	sod2_rev.gm
+//
+//	Who                    	When		What
+//------------------------------------------------------------------------------------------
+//	^1{WeB}^7*^4GA^1NG$^4TA^7*	11 November 2016	Initial Script
+//	palota	16 July 2025
+//==========================================================================================
+//
+
+global Map =
+{
+	Tank_Barrier_Built = function()
+	{
+		Util.MapDebugPrint("Tank_Barrier_Built");
+	},
+
+	Tank_Built = function()
+	{
+		Util.MapDebugPrint("Tank_Built");
+	},
+
+	Tank_At_Barrier = function()
+	{
+		SetGoalPriority("PLANT_Tank_Barrier", 0.91);
+		SetAvailableMapGoals(TEAM.AXIS, true, "SMOKEBOMB_barrier");
+		Util.MapDebugPrint("Tank_At_Barrier");
+	},
+
+	Tank_Barrier_Destroyed = function()
+	{
+		Util.MapDebugPrint("Tank_Barrier_Destroyed");
+	},
+
+	Bank_Doors_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		Map.SetGold(0);
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"BUILD__AN_Jagdpanther",
+			"ESCORT_tank",
+			"MOUNT_tank",
+			"SMOKEBOMB_barrier",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"FLAG.*",
+			"BUILD_footbridge",
+			"BUILD_balcony",
+			"PLANT_bank_wall",
+			".*MG42_footbridge",
+			".*_Command_Post",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"DEFEND_a.*",
+			".*MG42_bridge",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			".*MG42_bunker_E",
+		});
+
+		Util.IgnoreTargetGoalAll("MOVER_tank");
+		Util.MapDebugPrint("Bank_Doors_Destroyed");
+	},
+
+	bank_wall_Destroyed = function()
+	{
+		Util.MapDebugPrint("bank_wall_Destroyed");
+	},
+
+	balcony_Built = function()
+	{
+		Util.EnableGoal("ROUTE_balcony");
+		Util.MapDebugPrint("balcony_Built");
+	},
+
+	balcony_Destroyed = function()
+	{
+		Util.DisableGoal("ROUTE_balcony");
+		Util.MapDebugPrint("balcony_Destroyed");
+	},
+
+	SetGold = function(b)
+	{
+		SetAvailableMapGoals(TEAM.AXIS, b, {
+			"DEFEND_Train_[45]",
+			"ATTACK_train.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, !b, {
+			"DEFEND_Bank.*",
+			"CHECKPOINT_forward_flag",
+			".*MG42_bunker_top",
+			".*MG42_bank",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, b, {
+			"DEFEND_Train.*",
+			".*MG42_bunker_W",
+		});
+
+		if (b){ p=0.92; } else { p=0.9; }
+		SetGoalPriority("BUILD_footbridge", p);
+	},
+
+	gold_crate1_Taken = function()
+	{
+		Map.SetGold(1);
+		Util.MapDebugPrint("gold_crate1_Taken");
+	},
+
+	gold_crate1_Returned = function()
+	{
+		Map.SetGold(0);
+		Util.MapDebugPrint("gold_crate1_Returned");
+	},
+
+	gold_crate1_Secured = function()
+	{
+		Util.MapDebugPrint("gold_crate1_Secured");
+	},
+
+	footbridge_Built = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.AXIS, false, "CAPPOINT_wait.*");
+		SetGoalPriority("DEFEND_train.*", 0.51, TEAM.AXIS);
+		Util.MapDebugPrint("footbridge_Built");
+	},
+
+	footbridge_Planted = function()
+	{
+		Util.SetGoalRange("DEFUSE_footbridge.*", 2000);
+		Util.MapDebugPrint("footbridge_Planted");
+	},
+
+	footbridge_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "CAPPOINT_wait.*");
+		SetGoalPriority("DEFEND_train.*", 0.3, TEAM.AXIS);
+		Util.MapDebugPrint("footbridge_Destroyed");
+	},
+
+	forward_flag_Axis_Captured = function()
+	{
+		Util.SetMaxUsersInProgress(1, "CHECKPOINT_forward_flag");
+		SetGoalPriority("MOUNTMG42_bank", 0.4);
+		Util.MapDebugPrint("forward_flag_Axis_Captured");
+	},
+
+	forward_flag_Allies_Captured = function()
+	{
+		Util.SetMaxUsersInProgress(2, "CHECKPOINT_forward_flag");
+		SetGoalPriority("MOUNTMG42_bank", 0.5);
+		Util.MapDebugPrint("forward_flag_Allies_Captured");
+	},
+
+	FenceThread = function()
+	{
+		ent = Util.TraceForEntityInfo(Vec3(-1641, -494, 338), Vec3(-1648, -631, 348), TRACE.FLOODFILLENT);
+		while(EntityIsValid(ent)){
+			sleep(5);
+		}
+		Util.DisableGoal("CALLARTILLERY_Church");
+		Util.MapDebugPrint("Foot bridge fence destroyed");
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("^/The Tank Barrier has been constructed.", Map.Tank_Barrier_Built);
+	OnTrigger("^/The -=^1AN^/=- ^1TANK ^/has been repaired!^1!^/!", Map.Tank_Built);
+	OnTrigger("^/The ^1Axis ^/forces have rebuilt the balcony!", Map.balcony_Built);
+	OnTrigger("^/The ^1Axis ^/forces have rebuilt the footbridge!", Map.footbridge_Built);
+	OnTrigger("Planted at footbridge.", Map.footbridge_Planted);
+	OnTrigger("^/The Tank Barrier has been destroyed.", Map.Tank_Barrier_Destroyed);
+	OnTrigger("^/The ^1Axis ^/forces have destroyed the Bank Doors!", Map.Bank_Doors_Destroyed);
+	OnTrigger("^/The ^4Allied ^/forces have destroyed the balcony!", Map.balcony_Destroyed);
+	OnTrigger("^/The ^1Axis ^/forces have destroyed the bank side wall!", Map.bank_wall_Destroyed);
+	OnTrigger("^/The ^4Allied ^/forces have destroyed the footbridge!", Map.footbridge_Destroyed);
+	OnTrigger("^/The ^1Axis ^/forces have stolen the Spear of Destiny!", Map.gold_crate1_Taken);
+	OnTrigger("^/The ^4Allied ^/forces have returned the Spear of Destiny!", Map.gold_crate1_Returned);
+	OnTrigger("^/The ^1Axis ^/forces have secured the Spear of Destiny!", Map.gold_crate1_Secured);
+	OnTrigger("^/The ^1Axis ^/forces have captured the Forward Flag!", Map.forward_flag_Axis_Captured);
+	OnTrigger("^/The ^4Allies ^/have captured the Forward Flag!", Map.forward_flag_Allies_Captured);
+
+	OnTriggerRegion(AABB(-229.416,-378.662,257.125,308.814,-61.346,659.312), RegionTrigger.DisableCombatMovement); //bunker ladder and door
+	OnTriggerRegion(AABB(-844.862,-1025.400,293.268,-132.008,-776.191,477.608), RegionTrigger.DisableCombatMovement); //train
+
+	Util.DisableGoal({"DEFEND.*", "ATTACK.*", "ROUTE_balcony"});
+	SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_a.*");
+	SetAvailableMapGoals(TEAM.AXIS, false, {
+		"BUILD_balcony",
+		"BUILD_footbridge",
+		"PLANT_bank_wall",
+		"FLAG.*",
+	});
+
+	SetGoalPriority("PLANT_bank_wall", 0.9);
+	SetGoalPriority("MOUNTMG42.*", 0.5);
+	SetGoalPriority("MOUNTMG42_bunker_W", 0.75);
+	SetGoalPriority("MOUNTMG42_footbridge", 0.79);
+	SetGoalPriority("PLANT_balcony", 0.5);
+	SetGoalPriority("FLAG.*", 0.79);
+	SetGoalPriority("CHECKPOINT.*", 0.79, TEAM.AXIS);
+	SetGoalPriority(".*_Command_Post", 0.6, TEAM.AXIS);
+	SetGoalPriority("CAPPOINT_wait.*", 0.89);
+
+	Util.ExcludeClass("PLANT_Neutral_Command_Post", 0, CLASS.ENGINEER);
+	Util.ExcludeClass("PLANT_balcony", 0, CLASS.ENGINEER);
+
+	Util.OnTriggerPosition("MOVER_tank", "barrier", 150, Map.Tank_At_Barrier);
+
+	ETUtil.SetStartIndex("BUILD__AN_Jagdpanther", 2);
+
+	Util.AddUsePoint("PLANT_Tank_Barrier", {Vec3(1051, 935, 280), Vec3(1199, 947, 280)});
+	Util.AddUsePoint("PLANT_balcony", Vec3(2223, -237, 280));
+	Util.AddUsePoint("PLANT_footbridge", Vec3(-1646, -496, 266));
+
+	SetMapGoalProperties({"ATTACK.*", "DEFEND.*"}, {MinCampTime=30, MaxCampTime=120});
+
+	thread(Map.FenceThread);
+
+	Util.SetMaxUsers(1, {
+		"MOUNTMG42_.*",
+		".*Command_Post",
+		"BUILD_balcony",
+		"CHECKPOINT.*",
+	});
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.TargetBreakableDist = 90;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_Tank_Barrier =
+		{
+			ROUTE_axis_spawn =
+			{
+				ROUTE_church1 = {},
+				ROUTE_church2 = {Weight=2,
+					ROUTE_north1 ={},
+					ROUTE_north2 ={},
+				},
+			},
+		},
+		FLAG_gold_crate1 =
+		{
+			ROUTE_forward_spawn = {
+				ROUTE_spear = {Weight=3},
+				ROUTE_balcony = {},
+			},
+			
+		},
+		CAPPOINT_Safe =
+		{
+			ROUTE_spear =
+			{
+				ROUTE_axis_spawn ={Weight=2},
+				ROUTE_bunker1 ={},
+				ROUTE_bunker2 ={},
+			},
+		},
+	};
+	MapRoutes.SMOKEBOMB_barrier = MapRoutes.PLANT_Tank_Barrier;
+	Util.Routes(MapRoutes);
+};

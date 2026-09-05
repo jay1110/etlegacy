@@ -1,0 +1,577 @@
+//==========================================================================================
+//
+//	Missing in Action v1 - mia.gm
+//
+//	Who			When			What
+//------------------------------------------------------------------------------------------
+//	Mateos		06/12/2013		Initial Script
+//
+//==========================================================================================
+
+/****************************************************
+Waypoint mapping and script by Mateos
+Correspondant WAY file hash: -
+Last Update: 2nd November 2023
+****************************************************/
+
+/*
+ * ---
+ * Important notes
+ * ---
+ * Moutains are too high for Mortar to be shot from POW Camp to Nursery area
+ *
+ * Discovered too late that one side of each bamboo cage is breakable,
+ * hence the 3 complicated path-through tables assorted with disabled combat movement region triggers...
+ */
+
+/* ---------------------
+ * Map author requests
+ * ---------------------
+ *
+ * Well basiclly I want the engineers to consentrate on maingate and comandposts
+ *
+ * soldiers on mgs and mia's
+ *
+ * medic is obviously
+ *
+ * field ops:
+ * axis on the dropzone
+ * and
+ * allied on the mg spots
+ *
+ * covert-ops on sniping and comandposts (destroy them)
+ *
+ * for the rest, use your imagination
+ *
+ * +
+ *
+ * FEEDBACK
+ */
+
+global Map =
+{
+	// Used to enable/disable related path through tables
+	isMIAPickable	= true,
+	isMIA1Pickable	= true,
+	isMIA2Pickable	= true,
+
+	// Numbers obtained with /entitylist (ET_ITEM type entries)
+	miaGameID		= 89,
+	mia1GameID		= 90,
+	mia2GameID		= 91,
+
+	// Know if you have to focus on Nursery or POW Camp
+	nbMIAInProgress	= 0,
+
+	// Keep these movers
+	Movers = { "MOVER_huey" },
+
+	// Paththrough Navigation
+	// The USE button must be pressed to pick up the MIA's
+	Navigation =
+	{
+		// /bot waypoint_setproperty paththrough Navigation_PT:jump_on_roof
+		jump_on_roof =
+		{
+			navigate = function( _this )
+			{
+				ground = {};
+				Wp.GetWaypointByName( "ground", ground );
+				if ( _this.Goto( ground.position ) == EVENT.PATH_SUCCESS )
+				{
+					roof = {};
+					Wp.GetWaypointByName( "roof",  roof );
+					_this.AddAimRequest( Priority.High, "position", roof.position );
+					sleep( .5 );
+
+					// Start to move a bit forward
+					_this.Bot.HoldButton( BTN.FORWARD, .1 );
+					sleep( .1 );
+
+					// Do the actual jump
+					_this.Bot.HoldButton( BTN.SPRINT, 1 );
+					_this.Bot.HoldButton( BTN.FORWARD, 1 );
+					_this.Bot.HoldButton( BTN.JUMP, 1 );
+
+					_this.Goto( roof.position ); // Stay on the roof and exit the path through normally
+				}
+			}
+		},
+
+		mia =
+		{
+			// If EvalFunc returns false, navigation and OnExit will not run
+			EvalFunc = function()
+			{
+				// Do nothing if the MIA is already picked-up/secured
+				return Map.isMIAPickable;
+			},
+
+			navigate = function( _this )
+			{
+				// Adding the spot to the wpTable
+				wpTable = {};
+				Wp.GetWaypointByName( "MIA",  wpTable );
+
+				// Limit to Allies
+				_this.LimitToTeam( TEAM.ALLIES );
+
+				// Required action to pick up the MIA's... Well, it works.
+				if ( _this.Goto( wpTable.position ) == EVENT.PATH_SUCCESS )
+				{
+					_this.Bot.HoldButton( BTN.CROUCH, 2 );
+					_this.AddAimRequest( Priority.High, "facing", Vec3( 0.017, 0.840, -0.542 ) );
+
+					sleep( 0.5 );
+
+					_this.Bot.HoldButton( BTN.USE, 0.5 );
+					_this.Bot.HoldButton( BTN.STRAFE_R, 0.1 );
+
+					sleep( 0.5 );
+
+					_this.Bot.HoldButton( BTN.USE, 0.5 );
+				}
+
+				yield();
+			}
+		},
+
+		mia_1 =
+		{
+			// If EvalFunc returns false, navigation and OnExit will not run
+			EvalFunc = function()
+			{
+				// Do nothing if the MIA 1 is already picked-up/secured
+				return Map.isMIA1Pickable;
+			},
+
+			navigate = function( _this )
+			{
+				// Adding the spot to the wpTable
+				wpTable = {};
+				Wp.GetWaypointByName( "MIA1", wpTable );
+
+				// Limit to Allies
+				_this.LimitToTeam( TEAM.ALLIES );
+
+				// Required action to pick up the MIA's... Well, it works.
+				if ( _this.Goto( wpTable.position ) == EVENT.PATH_SUCCESS )
+				{
+					_this.Bot.HoldButton( BTN.CROUCH, 2.5 );
+					_this.AddAimRequest( Priority.High, "facing", Vec3( 0.862, 0.009, -0.507 ) );
+
+					sleep( 0.5 );
+
+					_this.Bot.HoldButton( BTN.USE, 0.5 );
+					_this.Bot.HoldButton( BTN.STRAFE_L, 0.05 );
+					sleep( 0.5 );
+					_this.Bot.HoldButton( BTN.USE, 0.5 );
+				}
+
+				yield();
+			}
+		},
+
+		mia_2 =
+		{
+			// If EvalFunc returns false, navigation and OnExit will not run
+			EvalFunc = function()
+			{
+				// Do nothing if the MIA 2 is already picked-up/secured
+				return Map.isMIA2Pickable;
+			},
+
+			navigate = function( _this )
+			{
+				// Adding the spot to the wpTable
+				wpTable = {};
+				Wp.GetWaypointByName( "MIA2", wpTable );
+
+				// Limit to Allies
+				_this.LimitToTeam( TEAM.ALLIES );
+
+				// Required action to pick up the MIA's... Well, it works.
+				if ( _this.Goto( wpTable.position ) == EVENT.PATH_SUCCESS )
+				{
+					_this.AddAimRequest( Priority.High, "facing", wpTable.facing );
+
+					sleep( 0.5 );
+
+					_this.Bot.HoldButton( BTN.USE, 0.5 );
+					_this.Bot.HoldButton( BTN.STRAFE_L, 0.1 );
+
+					sleep( 0.5 );
+
+					_this.Bot.HoldButton( BTN.USE, 0.5 );
+				}
+
+				yield();
+			}
+		}
+	},
+
+	Allied_CP_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Allied_CP_Built", true );
+	},
+
+	Axis_CP_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Axis_CP_Built", true );
+	},
+
+	Allied_CP_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Allied_CP_Planted", true );
+	},
+
+	Axis_CP_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Axis_CP_Planted", true );
+	},
+
+	maingate_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "maingate_Planted", true );
+	},
+
+	Allied_CP_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Allied_CP_Defused", true );
+	},
+
+	Axis_CP_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Axis_CP_Defused", true );
+	},
+
+	maingate_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "maingate_Defused", true );
+	},
+
+	Allied_CP_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Allied_CP_Destroyed", true );
+	},
+
+	Axis_CP_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Axis_CP_Destroyed", true );
+	},
+
+	maingate_Destroyed = function( trigger )
+	{
+		// To avoid FLAG.* path failed
+		sleep( 0.1 ); // See Wiki
+		Wp.CheckBlockable();
+
+		Cabinets.POWCampCabinets( TEAM.ALLIES, true );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"CAPPOINT_Dropoff",
+			"FLAG_.*",
+			"PLANT_Axis_CP"
+		});
+
+		Util.MapDebugPrint( "maingate_Destroyed" );
+	},
+
+	// The 3 entities have the same scriptname, thus the other wm_announce is triggered 3 times per FLAG goal...
+	// Use the entity Game ID/Index on the generic wm_announce to just call once the right function
+	mia_Taken_Dispatch = function( trigger )
+	{
+		if ( trigger.Entity == null )
+		{
+			// Got dropped once then picked up again before being returned
+			return;
+		}
+
+		// Move from POW Camp to the Nursery
+		Map.MoveToNursery();
+
+		Cabinets.AlliedCampCabinets( TEAM.AXIS, true );
+
+		// Numbers obtained with /entitylist (ET_ITEM type entries)
+		switch( trigger.Entity )
+		{
+			case Map.miaGameID:
+			{
+				Map.mia_Taken( trigger );
+			}
+			case Map.mia1GameID:
+			{
+				Map.mia_1_Taken( trigger );
+			}
+			case Map.mia2GameID:
+			{
+				Map.mia_2_Taken( trigger );
+			}
+			default:
+			{
+				Util.MapDebugPrint( "^1Unknown MIA entity number: " + ToString( GetGameIdFromEntity( trigger.Entity ) ), true );
+			}
+		}
+	},
+
+	mia_Taken = function( trigger )
+	{
+		Map.isMIAPickable = false;
+		Map.nbMIAInProgress += 1;
+
+		Util.MapDebugPrint( "mia_Taken" );
+	},
+
+	mia_1_Taken = function( trigger )
+	{
+		Map.isMIA1Pickable = false;
+		Map.nbMIAInProgress += 1;
+
+		Util.MapDebugPrint( "mia_1_Taken" );
+	},
+
+	mia_2_Taken = function( trigger )
+	{
+		Map.isMIA2Pickable = false;
+		Map.nbMIAInProgress += 1;
+
+		Util.MapDebugPrint( "mia_2_Taken" );
+	},
+
+	mia_Dropped = function( trigger )
+	{
+		// Manage in progress bots
+		if ( !Map.isMIAPickable )
+		{
+			Util.SetMaxUsersInProgress( 0, "FLAG_mia" );
+		}
+
+		if ( !Map.isMIA1Pickable )
+		{
+			Util.SetMaxUsersInProgress( 0, "FLAG_mia_1" );
+		}
+
+		if ( !Map.isMIA2Pickable )
+		{
+			Util.SetMaxUsersInProgress( 0, "FLAG_mia_2" );
+		}
+
+		Util.MapDebugPrint( "mia_Dropped", true );
+	},
+
+	// The 3 entities have the same scriptname, thus the other wm_announce is triggered 3 times per FLAG goal...
+	// Use the entity Game ID/Index on the generic wm_announce to just call once the right function
+	mia_Returned_Dispatch = function( trigger )
+	{
+		Map.DecreaseNbMIAInProgress();
+
+		// Numbers obtained with /entitylist (ET_ITEM type entries)
+		switch( trigger.Entity )
+		{
+			case Map.miaGameID:
+			{
+				Map.mia_Returned( trigger );
+			}
+			case Map.mia1GameID:
+			{
+				Map.mia_1_Returned( trigger );
+			}
+			case Map.mia2GameID:
+			{
+				Map.mia_2_Returned( trigger );
+			}
+			default:
+			{
+				Util.MapDebugPrint( "^1Unknown MIA entity number: " + ToString( GetGameIdFromEntity( trigger.Entity ) ), true );
+			}
+		}
+	},
+
+	mia_Returned = function( trigger )
+	{
+		Map.isMIAPickable = true;
+
+		Util.SetMaxUsersInProgress( 1, "FLAG_mia" ); // One bot per path through
+
+		Util.MapDebugPrint( "mia_Returned" );
+	},
+
+	mia_1_Returned = function( trigger )
+	{
+		Map.isMIA1Pickable = true;
+
+		Util.SetMaxUsersInProgress( 1, "FLAG_mia_1" ); // One bot per path through
+
+		Util.MapDebugPrint( "mia_1_Returned" );
+	},
+
+	mia_2_Returned = function( trigger )
+	{
+		Map.isMIA2Pickable = true;
+
+		Util.SetMaxUsersInProgress( 1, "FLAG_mia_2" ); // One bot per path through
+
+		Util.MapDebugPrint( "mia_2_Returned" );
+	},
+
+	// Leave Pickable flags as-is here, so related path through remain disabled
+	mia_Secured = function( trigger )
+	{
+		Map.DecreaseNbMIAInProgress();
+
+		Util.MapDebugPrint( "mia_Secured" );
+	},
+
+	DecreaseNbMIAInProgress = function()
+	{
+		Map.nbMIAInProgress -= 1;
+		if ( Map.nbMIAInProgress == 0 )
+		{
+			// Back to the POW Camp
+			Map.MoveToPOWCamp();
+		}
+	},
+
+	MoveToNursery = function()
+	{
+		Map.MoveToDropoff( true );
+	},
+
+	MoveToPOWCamp = function()
+	{
+		Map.MoveToDropoff( false );
+	},
+
+	MoveToDropoff = function( bObj )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, !bObj, Groups.POW_Camp.AXIS );
+		SetAvailableMapGoals( TEAM.AXIS, bObj, Groups.Nursery.AXIS );
+
+		SetAvailableMapGoals( TEAM.ALLIES, !bObj, Groups.POW_Camp.ALLIES );
+		SetAvailableMapGoals( TEAM.ALLIES, bObj, Groups.Nursery.ALLIES );
+
+		// Specific objective(s) avaiable once the Main Gate is destroyed
+		SetAvailableMapGoals( TEAM.ALLIES, !bObj, "PLANT_Axis_CP" );
+	},
+};
+
+global OnMapLoad = function()
+{
+	// *** TRIGGERS ***
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_CP_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_CP_Built );
+	OnTrigger( "Planted at the Allied CP.", Map.Allied_CP_Planted );
+	OnTrigger( "Planted at the Axis CP.", Map.Axis_CP_Planted );
+	OnTrigger( "Planted at The maingate.", Map.maingate_Planted );
+	OnTrigger( "Defused at the Allied CP.", Map.Allied_CP_Defused );
+	OnTrigger( "Defused at the Axis CP.", Map.Axis_CP_Defused );
+	OnTrigger( "Defused at The maingate.", Map.maingate_Defused );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_CP_Destroyed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_CP_Destroyed );
+	OnTrigger( "The Allies have destroyed the maingate!", Map.maingate_Destroyed );
+
+	OnTrigger( "Allies have stolen m.i.a soldier!", Map.mia_Taken_Dispatch );
+	OnTrigger( "Flag dropped mia!", Map.mia_Dropped );
+	OnTrigger( "Flag returned mia!", Map.mia_Returned_Dispatch );
+	OnTrigger( "Allies captured mia_holder", Map.mia_Secured );
+
+	OnTriggerRegion( AABB( -2841.205, -2971.366, 130.125, -2720.160, -2927.125, 204.125 ), RegionTrigger.DisableCombatMovement ); // MIA
+	OnTriggerRegion( AABB( -3053.125, -3098.678, 130.314, -3015.125, -2959.495, 204.314 ), RegionTrigger.DisableCombatMovement ); // MIA1
+	OnTriggerRegion( AABB( -3160.857, -2828.875, 132.234, -3050.079, -2790.830, 208.121 ), RegionTrigger.DisableCombatMovement ); // MIA2
+
+	// *** CLEAR ALL GOALS FOR BOTH TEAMS ***
+	Util.DisableGoal( ".*" );
+
+	// Util.EnableGoal( "MOUNTMG42_Outter_MG") ; // Useless
+
+	Cabinets.POWCampCabinets( TEAM.AXIS, true );
+	Cabinets.AlliedCampCabinets( TEAM.ALLIES, true );
+
+	// *** AXIS GOALS ***
+	SetAvailableMapGoals( TEAM.AXIS, true, Groups.POW_Camp.AXIS );
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANTMINE_Axis_POW_Camp.*" ); // Stay on all the time
+
+	// *** ALLIED GOALS ***
+	SetAvailableMapGoals( TEAM.ALLIES, true, Groups.POW_Camp.ALLIES );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_maingate" ); // So that there's no failed goal query once destroyed
+
+	// *** GOAL PROPERTIES ***
+	// Util.LimitToClass( "MOUNTMG42.*", TEAM.AXIS, CLASS.SOLDIER );	// Handled by other goals priority/availability
+	// Util.LimitToClass( "MOUNTMG42.*", TEAM.ALLIES, CLASS.SOLDIER );	// Handled by other goals priority/availability
+	Util.LimitToClass( "PLANT_Allied_CP", TEAM.AXIS, CLASS.COVERTOPS );
+	Util.LimitToClass( "PLANT_Axis_CP", TEAM.ALLIES, CLASS.COVERTOPS );
+	Util.SetMaxUsersInProgress( 1, "FLAG_.*" ); // One bot per path through
+
+	Util.MapDebugPrint( "Omni-bot map script for Missing in Action v1 executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	// Visible distance for bots
+	bot.MaxViewDistance = 2048;
+	bot.IgnoreTarget( GetGoal( "MOVER_huey" ).GetEntity(), 9999 );
+};
+
+global Groups =
+{
+	POW_Camp =
+	{
+		ALLIES =
+		{
+			"ARTILLERY_S_Axis_Camp_MG",
+			"ATTACK_Alpha.*",
+			"BUILD_Allied_CP",
+			"CALLARTILLERY_Allied_Position",
+			"REPAIRMG42_Allied_Camp_MG",
+			"SNIPE_Alpha_Allies"
+		},
+
+		AXIS =
+		{
+			"ARTILLERY_S_Chopper_Landing_Area",
+			"BUILD_Axis_CP",
+			"CALLARTILLERY_Axis_Position",
+			"DEFEND_Alpha.*",
+			"MOBILEMG42_Axis_POW_Camp",
+			"MOUNTMG42_Axis_Camp_MG",
+			"REPAIRMG42_Axis_Camp_MG",
+			"SNIPE_Alpha_Axis"
+		}
+	},
+
+	Nursery =
+	{
+		ALLIES =
+		{
+			"CAMP_Bravo.*",
+			"MOUNTMG42_Allied_Camp_MG",
+			"REPAIRMG42_Allied_Camp_MG"
+		},
+
+		AXIS =
+		{
+			"CAMP_Bravo.*",
+			"MOBILEMG42_Axis_Nursery",
+			"MOUNTMG42_Allied_Camp_MG"
+		}
+	}
+};
+
+global Cabinets =
+{
+	AlliedCampCabinets = function( team, bAvailability )
+	{
+		SetAvailableMapGoals( team, bAvailability, {
+			"AMMOCAB_first_ammocabinet",
+			"HEALTHCAB_first_healthcabinet"
+		});
+	},
+
+	POWCampCabinets = function( team, bAvailability )
+	{
+		SetAvailableMapGoals( team, bAvailability, {
+			"AMMOCAB_second_ammocabinet",
+			"HEALTHCAB_second_healthcabinet"
+		});
+	}
+};

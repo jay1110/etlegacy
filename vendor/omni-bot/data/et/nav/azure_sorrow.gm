@@ -1,0 +1,168 @@
+//======================================================================================
+//
+//	azure_sorrow.gm
+//
+//	Who         	When		What
+//--------------------------------------------------------------------------------------
+//	^5|^pW^5a^prden	11 February 2024	Initial Script
+//	Kommandant	13 February 2024	Edit Acid Extractor attack/defend goals
+//  palota	19 January 2025	fixed ESCORT_tank, trigger TankReady
+//======================================================================================
+
+global Map =
+{
+	Acid_Extractor_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_phase4a.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Bioreactor" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_phase4a.*" );
+
+		Util.MapDebugPrint( "Acid_Extractor_Built" );
+	},
+
+	Radio_Kit_Built = function()
+	{
+		SetGoalPriority( "PLANT_Tank_Barrier", 0.90, TEAM.ALLIES, CLASS.ENGINEER );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_phase1.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_phase1.*",
+			"SNIPE_phase1.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_phase2.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ATTACK_phase2.*",
+			"SNIPE_phase2.*",
+		});
+
+		Util.MapDebugPrint( "Radio_Kit_Built" );
+	},
+
+	TankReady = function()
+	{
+		sleep(5);
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ESCORT_tank");
+		Util.MapDebugPrint( "TankReady" );
+	},
+	
+	Tank_Barrier_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Tank_Barrier" );
+
+		Util.MapDebugPrint( "Tank_Barrier_Built" );
+	},
+
+	Bioreactor_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Bioreactor_Destroyed" );
+	},
+
+	MainDoor_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"MOUNTMG42_127",
+			"REPAIRMG42_127",
+			"DEFEND_phase2.*",
+			"SNIPE_phasex.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ESCORT_tank",
+			"ATTACK_phase2.*",
+			"SNIPE_phase2.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_phase3.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"SWITCH_291",
+			"ATTACK_phase3.*",
+		});
+
+		Util.MapDebugPrint( "MainDoor_Destroyed" );
+	},
+
+	PlatformElevator_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_291" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_forward_flag" );
+
+		Util.MapDebugPrint( "PlatformElevator_Destroyed" );
+	},
+
+	SecurityDoor_Destroyed = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_SecurityDoor");
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Radio_Kit" );
+
+		Util.MapDebugPrint( "SecurityDoor_Destroyed" );
+	},
+
+	Tank_Barrier_Destroyed = function()
+	{
+		Util.SetMaxUsersInProgress(4, "ESCORT_tank");
+		Util.MapDebugPrint( "Tank_Barrier_Destroyed" );
+	},
+
+	forward_flag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint( "forward_flag_Axis_Captured" );
+	},
+
+	forward_flag_Allies_Captured = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_phase3.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_phase3.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_phase4.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Acid_Extractor",
+			"ATTACK_phase4.*",
+		});
+
+		Util.MapDebugPrint( "forward_flag_Allies_Captured" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "^4|^7Allies have constructed the Acid Extractor!", Map.Acid_Extractor_Built );
+	OnTrigger( "^4|^7Allies have built the Radio Kit!", Map.Radio_Kit_Built );
+	OnTrigger( "^1|^7Tank Barrier has been constructed!", Map.Tank_Barrier_Built );
+	OnTrigger( "^3|^7The Allies have destroyed the Bioreactor!", Map.Bioreactor_Destroyed );
+	OnTrigger( "^3|^7The Main Doors have been destroyed!", Map.MainDoor_Destroyed );
+	OnTrigger( "^3|^7Dropping!", Map.PlatformElevator_Destroyed );
+	OnTrigger( "^4|^7Allies have entered the Radio Tower!", Map.SecurityDoor_Destroyed );
+	OnTrigger( "^4|^7Tank Barrier has been destroyed!", Map.Tank_Barrier_Destroyed );
+	OnTrigger( "MISSING_STRING", Map.forward_flag_Axis_Captured );
+	OnTrigger( "^4|^7Allies have captured the Forward Flag!", Map.forward_flag_Allies_Captured );
+	OnTrigger( "^3|^7The tank is ready to go!", Map.TankReady);
+
+	Util.DisableGoal( ".*", true );
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"MOUNTMG42_127",
+		"REPAIRMG42_127",
+		"BUILD_Tank_Barrier",
+		"DEFEND_phase1.*",
+		"SNIPE_phasex.*",
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"PLANT_SecurityDoor",
+		"ATTACK_phase1.*",
+		"SNIPE_phase1.*",
+	});
+
+	Util.AddInvVehicle("MOVER_tank");
+	
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};

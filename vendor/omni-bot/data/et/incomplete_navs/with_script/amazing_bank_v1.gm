@@ -1,0 +1,270 @@
+global Map =
+{
+	// ************* GATEFLAG ***********************
+	Gateflag_Axis_Captured = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "PLANT_Allied_gate");
+		Util.MapDebugPrint("gateflag_Axis_Captured");
+	},
+
+	Gateflag_Allies_Captured = function()
+	{
+		Util.MapDebugPrint("gateflag_Allies_Captured");
+	},
+
+	Gateflag_cover_down = function()
+	{
+		Util.EnableGoal("CHECKPOINT_gateflag");
+		Util.MapDebugPrint("gateflag_cover_down");
+	},
+
+	// ************* THE GATE ***********************
+	Allied_gate_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("gatekeeper", "closed", false);
+		Wp.SetWaypointFlag("gatewalk.*", "closed", true);
+		Wp.SetWaypointFlag("ax_bankplantspot1", "closed", false);
+		Wp.SetWaypointFlag("ax_gold_spot", "closed", false);
+
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"DEFEND_gateflag_ax_def.*",
+			"DEFEND_ax_gatedef_.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"DEFEND_gate_al_.*",
+		});
+		Util.EnableGoal({
+			"CHECKPOINT_bankflag",
+			"BUILD_Command_Post",
+			"PLANT_Command_Post",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"DEFEND_bank_al_.*",
+			"PLANT_Ramp",
+		});
+
+		Util.MapDebugPrint("Allied_gate_Destroyed");
+	},
+
+	// ************* BANK FLAG ***********************
+	Bankflag_Axis_Captured = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"PLANT_Side_Route",
+			"BUILD_Ramp",
+			"PLANT_Bank_Wall",
+			"ATTACK_bank.*",
+		});
+		Util.MapDebugPrint("bankflag_Axis_Captured");
+	},
+
+	Bankflag_Allies_Captured = function()
+	{
+		Util.MapDebugPrint("bankflag_Allies_Captured");
+	},
+
+	// ************* SIDE ROUTE ***********************
+	Side_Route_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("sideroute01", "closed", false);
+		Util.MapDebugPrint("Side_Route_Destroyed");
+	},
+
+	// ************* BANK RAMP ***********************
+	Ramp_Built = function()
+	{
+		Wp.SetWaypointFlag("ramp01", "closed", false);
+		Util.MapDebugPrint("Ramp_Built");
+	},
+
+	Ramp_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("ramp01", "closed", true);
+		Util.MapDebugPrint("Ramp_Destroyed");
+	},
+
+	// ************* BANK WALL ***********************
+	Bank_Wall_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("bankgate.*", "closed", false);
+		Wp.SetWaypointFlag("ax_door_left", "closed", false);
+		Wp.SetWaypointFlag("ax_door_right", "closed", false);
+
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"FLAG_allied_goldbox",
+			"CAPPOINT_Drop_gold_here",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_al_bank_def_.*");
+		Util.MapDebugPrint("Bank_Wall_Destroyed");
+	},
+
+	// ************* THE GOLD ***********************
+	Allied_goldbox_Taken = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"DEFEND_bank_al_.*",
+			"DEFEND_al_bank_def_.*",
+		});
+		Util.MapDebugPrint("allied_goldbox_Taken");
+	},
+
+	Allied_goldbox_Returned = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"DEFEND_bank_al_.*",
+			"DEFEND_al_bank_def_.*",
+		});
+		Util.MapDebugPrint("allied_goldbox_Returned");
+	},
+
+	Allied_goldbox_Secured = function()
+	{
+		Util.MapDebugPrint("allied_goldbox_Secured");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+
+// ******************** GATE FLAG
+	OnTrigger("sm_gateflag_cover_Moving", Map.Gateflag_cover_down);
+	OnTrigger("^1Axis reclaim the Gate Flag!", Map.Gateflag_Axis_Captured);
+	OnTrigger("Allied Forces reclaim the Gate Flag", Map.Gateflag_Allies_Captured);
+
+// ******************** THE GATE
+	OnTrigger("^1The Axis have dynamited the Gate!", Map.Allied_gate_Destroyed);
+
+// ******************** BANK FLAG
+	OnTrigger("^1Axis reclaim the Bank Flag!", Map.Bankflag_Axis_Captured);
+	OnTrigger("^1Allied Forces reclaim the Bank Flag!", Map.Bankflag_Allies_Captured);
+
+// ******************** SIDE ROUTE
+	OnTrigger("^1The Axis have dynamited the Side Route.", Map.Side_Route_Destroyed);
+
+// ******************** BANK RAMP
+	OnTrigger("The Axis have constructed the Ramp! (A satchel will destroy it.)", Map.Ramp_Built);
+	OnTrigger("The Allies have destroyed the Ramp", Map.Ramp_Destroyed);
+
+// ******************** BANK WALL
+	OnTrigger("^1The Axis have dynamited the Bank Wall.", Map.Bank_Wall_Destroyed);
+
+// ******************** THE GOLD
+	OnTrigger("Axis have stolen Gold!", Map.Allied_goldbox_Taken);
+	OnTrigger("Allies have returned Gold!", Map.Allied_goldbox_Returned);
+	OnTrigger("^1Acta est fabula.", Map.Allied_goldbox_Secured);
+
+	Util.DisableGoal(".*", true);
+	
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"DEFEND_ax_gatedef_.*",
+		"DEFEND_gateflag_ax_def.*",
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_gate_al_.*");
+
+	SetGoalPriority("BUILD_.*", 0.81, TEAM.AXIS);
+	SetGoalPriority("PLANT_Ramp", 0.5, TEAM.AXIS, CLASS.ENGINEER);
+
+
+	// ***** WAYPOINTS *****
+	Wp.SetWaypointFlag("gatewalk.*", "closed", false);
+
+	Wp.SetWaypointFlag("gatekeeper", "closed", true);
+	Wp.SetWaypointFlag("sideroute01", "closed", true);
+	Wp.SetWaypointFlag("ramp01", "closed", true);
+
+	Wp.SetWaypointFlag("bankgate.*", "closed", true);
+	Wp.SetWaypointFlag("ax_bankplantspot1", "closed", true);
+
+	Wp.SetWaypointFlag("ax_door_left", "closed", true);
+	Wp.SetWaypointFlag("ax_door_right", "closed", true);
+
+	Wp.SetWaypointFlag("ax_gold_spot", "closed", true);
+
+
+	Util.SetMaxUsersInProgress(1, "BUILD_Command_Post");
+	Util.SetMaxUsersInProgress(1, "BUILD_Ramp");
+	Util.SetMaxUsersInProgress(1, "PLANT_Ramp");
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_gateflag =
+		{
+			ROUTE_ax_base_01 =
+			{
+				ROUTE_ax_in_gate_spawn_1 = {},
+				ROUTE_ax_in_gate_spawn_2 = {},
+				ROUTE_gold_left = {},
+				ROUTE_gold_centre = {},
+			},
+		},
+
+
+		PLANT_Allied_gate =
+		{
+			ROUTE_ax_base_01 =
+			{
+				ROUTE_ax_in_gate_spawn_1 = {},
+				ROUTE_ax_in_gate_spawn_2 = {},
+			},
+		},
+
+		FLAG_allied_goldbox =
+		{
+			ROUTE_ax_bankflag_spawn_01 =
+			{
+				ROUTE_ax_bank_left_01 =
+				{
+						ROUTE_ax_bank_left_02 = {},
+						ROUTE_ax_bank_left_03 = {},
+				},
+
+				ROUTE_ax_bank_centre_01 =
+				{
+				},
+
+				ROUTE_ax_bank_right_01 =
+				{
+						ROUTE_ax_bank_right_02 = {},
+						ROUTE_ax_bank_right_03 = {},
+				},
+			},
+		},
+
+
+		CAPPOINT_Drop_gold_here =
+		{
+			ROUTE_at_gold =
+			{
+				ROUTE_gold_left =
+				{
+					ROUTE_gold_left2 =
+					{
+						ROUTE_gold_left3a = {},
+						ROUTE_gold_left3b = {},
+					}
+				},
+
+				ROUTE_gold_centre =
+				{
+					ROUTE_gold_centre2 =
+					{
+						ROUTE_gold_centre3a = {},
+						ROUTE_gold_centre3b = {},
+					}
+				},
+			},
+		},
+	};
+	Util.Routes(MapRoutes);
+};

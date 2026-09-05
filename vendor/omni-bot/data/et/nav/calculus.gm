@@ -1,0 +1,584 @@
+//==========================================================================================
+//
+//  Calculus (Beta 1) - calculus.gm
+//
+//  Who         When                What
+//------------------------------------------------------------------------------------------
+//  Mateos      25 November 2017    Initial Script
+//
+//==========================================================================================
+//
+
+/****************************************************
+Path mapping and script by Mateos
+Correspondant WAY file size: 25,4 Ko (26 031 octets)
+Last update: 28th October 2020
+****************************************************/
+
+global objStatus =
+ {
+    DEFAULT = 0,
+    TAKEN  = 1,
+    SECURED = 2,
+ };
+
+global Map =
+{
+    // ************************************************************************
+
+    /** Indicates if the painting are either secured or not */
+    arePaintingsSecured = false,
+
+    /** Indicates if the Canyon MG is either built or not */
+    isCanyonMGBuilt = false,
+
+    /**
+     * Indicates if the Train is gone past the tracks section
+     * handled by the switch with the paintings
+     */
+    isSwitchUseless = false,
+
+    /** Manifest status */
+    manifestStatus = objStatus.DEFAULT,
+
+    // ************************************************************************
+
+    Roles =
+    {
+        AXIS =
+        {
+            // CAMP_Truck and DEFEND_Docs (not active at once)
+            DEFENDER =
+            {
+                numbots = 3,
+                voice = "defend",
+            },
+
+            // CAMP_Train and RIDE_Train
+            DEFENDER1 =
+            {
+                numbots = 5,
+                voice = "defend",
+            },
+
+            // CAMP_Switch and SWITCH_Track
+            DEFENDER2 =
+            {
+                numbots = 2,
+                voice = "defend",
+            },
+        },
+
+        ALLIES =
+        {
+            // Necessary so they do their job...
+            AllBots = true,
+
+            // CAMP_Truck
+            ATTACKER =
+            {
+                numbots = 3,
+                voice = "attack",
+            },
+
+            // CAMP_Train and RIDE_Train
+            ATTACKER1 =
+            {
+                numbots = 5,
+                voice = "attack",
+            },
+
+            // CAMP_Switch and SWITCH_Track
+            ATTACKER2 =
+            {
+                numbots = 2,
+                voice = "attack",
+            },
+        },
+    },
+
+    // ************************************************************************
+
+    /**
+     * Enables/Disables the track switch (and its protection by a landmine) for the correct team
+     * Does nothing if the switch is useless (see Map.isSwitchUseless)
+     */
+    EnableSwitchForTeam = function( team )
+    {
+        if ( Map.isSwitchUseless )
+        {
+            return;
+        }
+
+        isTeamAllies = team == TEAM.ALLIES;
+
+        SetAvailableMapGoals( TEAM.ALLIES, isTeamAllies, "SWITCH_Track" );
+        SetAvailableMapGoals( TEAM.AXIS, !isTeamAllies, "SWITCH_Track" );
+
+        SetAvailableMapGoals( TEAM.ALLIES, !isTeamAllies, "PLANTMINE_ControlTower" );
+        SetAvailableMapGoals( TEAM.AXIS, isTeamAllies, "PLANTMINE_ControlTower" );
+    },
+
+    /**
+     * Sets the weapon goals availability
+     */
+    SetWeaponGoalsAvailability = function()
+    {
+        while ( true )
+        {
+            // Sleep first so the entity var is initialized
+            sleep( 1 );
+
+            SetAvailableMapGoals( TEAM.ALLIES, Map.ProcessCanyonMG42Availability(), {
+                "MOUNTMG42_Canyon_MG",
+                "REPAIRMG42_Canyon_MG",
+            });
+
+            // The West Depot MG42 is badly placed...
+            SetAvailableMapGoals( TEAM.AXIS, Map.ProcessAxisWeaponGoalsAvailability(), {
+                ".*ARTILLERY.*_Axis",
+                "MOBILEMG42_Axis",
+                "MOBILEMORTAR_Axis",
+                "MOUNTMG42_EastDepotMG42",
+                //"MOUNTMG42_WestDepotMG42",
+                "REPAIRMG42_EastDepotMG42",
+                //"REPAIRMG42_WestDepotMG42",
+                "SNIPE_Axis",
+            });
+        }
+    },
+
+    /**
+     * Does the canyon MG42 availability check
+     * @returns true if the MG42 is available, false otherwise
+     */
+    ProcessCanyonMG42Availability = function()
+    {
+        if ( !Map.isCanyonMGBuilt )
+        {
+            return false;
+        }
+
+        if ( Map.manifestStatus == objStatus.TAKEN )
+        {
+            return true;
+        }
+
+        // Train is not coming back yet
+        if ( !Map.isSwitchUseless )
+        {
+            return false;
+        }
+
+        // Check if the Train is past half the tunnel, while coming back
+        trainPosition = GetEntPosition( TrainCampManagement.ENTITY );
+        return trainPosition.y < -635;
+    },
+
+    /**
+     * Does the Axis weapon goals availability check
+     * @returns true if these goals are available, false otherwise
+     */
+    ProcessAxisWeaponGoalsAvailability = function()
+    {
+        // If the manifest is being taken, have it off
+        if ( Map.manifestStatus == objStatus.TAKEN )
+        {
+            return false;
+        }
+
+        // If the manifest can be taken, have it on
+        if ( Map.manifestStatus == objStatus.DEFAULT )
+        {
+            return true;
+        }
+
+        // Else, the manifest is secured,
+        // so check if the Train is in the Depot area
+        trainPosition = GetEntPosition( TrainCampManagement.ENTITY );
+        return trainPosition.x > -2475 && trainPosition.y > 470;
+    },
+
+    // ************************************************************************
+
+    Canyon_MG_Built = function()
+    {
+        Map.isCanyonMGBuilt = true;
+
+        // Because sometimes the engineers go for it even though it is built...
+        SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Canyon_MG" );
+
+        Util.MapDebugPrint( "Canyon_MG_Built", true );
+    },
+
+    Canyon_MG_Destroyed = function()
+    {
+        Map.isCanyonMGBuilt = false;
+
+        SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Canyon_MG" );
+
+        Util.MapDebugPrint( "Canyon_MG_Destroyed", true );
+    },
+
+    Allies_Track_Switched = function()
+    {
+        Map.EnableSwitchForTeam( TEAM.AXIS );
+
+        Util.MapDebugPrint( "Allies_Track_Switched" );
+    },
+
+    Axis_Track_Switched = function()
+    {
+        Map.EnableSwitchForTeam( TEAM.ALLIES );
+
+        Util.MapDebugPrint( "Axis_Track_Switched" );
+    },
+
+    garage_docs_Taken = function()
+    {
+        Map.manifestStatus = objStatus.TAKEN;
+
+        Util.EnableGoal( "CAMP_Truck.*" );
+
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+            "DEFEND_Docs.*",
+            "MOBILEMG42_Manifest",
+            "PLANTMINE_Depot.*",
+        });
+
+        Util.MapDebugPrint( "garage_docs_Taken" );
+    },
+
+    garage_docs_Returned = function()
+    {
+        Map.manifestStatus = objStatus.DEFAULT;
+
+        Util.DisableGoal( "CAMP_Truck.*" );
+
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+            "DEFEND_Docs.*",
+            "MOBILEMG42_Manifest",
+            "PLANTMINE_Depot.*",
+        });
+
+        Util.MapDebugPrint( "garage_docs_Returned" );
+    },
+
+    garage_docs_Secured = function()
+    {
+        Map.manifestStatus = objStatus.SECURED;
+
+        Util.DisableGoal( "CAMP_Truck.*" );
+
+        Util.MapDebugPrint( "garage_docs_Secured" );
+    },
+
+    Paintings_Secured = function()
+    {
+        Map.arePaintingsSecured = true;
+
+        Util.DisableGoal( "RIDE_Train" );
+
+        Util.MapDebugPrint( "Paintings_Secured" );
+    },
+
+    Game_Over = function()
+    {
+        Util.MapDebugPrint( "Game_Over", true );
+    },
+
+    vehicle_at_location = function()
+    {
+        switch( Map.VehicleLocation )
+        {
+            case 1:
+            {
+                Util.MapDebugPrint( "First passage forward without the paintings", true );
+            }
+
+            case 2:
+            {
+                Util.MapDebugPrint( "(Second trigger) First passage forward without the paintings", true );
+            }
+
+            case 3:
+            {
+                Map.EnableSwitchForTeam( TEAM.ALLIES );
+
+                Util.MapDebugPrint( "(Second trigger) First passage backward without the paintings: the track switch must be available for the Allies" );
+            }
+
+            case 4:
+            {
+                Util.MapDebugPrint( "First passage backward without the paintings", true );
+            }
+
+            case 5:
+            {
+                Util.MapDebugPrint( "Second passage forward with the paintings", true );
+            }
+
+            case 6:
+            {
+                Util.MapDebugPrint( "(Second trigger) Second passage forward with the paintings", true );
+            }
+
+            case 7:
+            {
+                Map.EnableSwitchForTeam( TEAM.ALLIES );
+
+                Util.MapDebugPrint( "(Second trigger) Second passage backward with the paintings: the track switch must be available for the Allies" );
+            }
+
+            case 8:
+            {
+                Map.isSwitchUseless = true;
+
+                Util.DisableGoal( "CAMP_Switch.*" );
+                Util.DisableGoal( "PLANTMINE_ControlTower" );
+                Util.DisableGoal( "SWITCH_Track" );
+
+                Util.MapDebugPrint( "Second passage backward with the paintings: disabling the track switch" );
+            }
+        }
+    },
+};
+
+/** Make the bots defend the Train all along its journey to the paintings and back to the Truck */
+global TrainCampManagement =
+{
+    /** Entity target name, to track its position */
+    ENTITY_TARGET_NAME,
+
+    /** Entity to track the position of */
+    ENTITY,
+
+    /** Radius around the entity to enable the goals from */
+    RADIUS,
+
+    /** List of the goals to manage */
+    GOAL_LIST,
+
+    /** Check interval */
+    CHECK_INTERVAL,
+
+    /** Enity last position, to detect if it's either moving or not */
+    entityPreviousPosition,
+
+    Start = function()
+    {
+        TrainCampManagement.Init();
+        thread( TrainCampManagement.TrackMovement );
+    },
+
+    Init = function()
+    {
+        TrainCampManagement.ENTITY_TARGET_NAME = "train";
+        TrainCampManagement.ENTITY = GetEntityByName( TrainCampManagement.ENTITY_TARGET_NAME );
+        TrainCampManagement.entityPreviousPosition = GetEntPosition( TrainCampManagement.ENTITY );
+
+        TrainCampManagement.RADIUS = 512;
+
+        TrainCampManagement.GOAL_LIST = Util.GoalTable( "CAMP_Train.*" );
+
+        TrainCampManagement.CHECK_INTERVAL = 1.0;
+    },
+
+    TrackMovement = function()
+    {
+        Util.MapDebugPrint( "Starting Train defense management thread...", true );
+
+        while ( !Map.arePaintingsSecured )
+        {
+            entityCurrentPosition = GetEntPosition( TrainCampManagement.ENTITY );
+            if ( entityCurrentPosition != TrainCampManagement.entityPreviousPosition )
+            {
+                TrainCampManagement.entityPreviousPosition = entityCurrentPosition;
+                TrainCampManagement.ManageGoals();
+            }
+
+            // For debug purposes
+            DrawRadius( entityCurrentPosition, TrainCampManagement.RADIUS, COLOR.BLUE, TrainCampManagement.CHECK_INTERVAL );
+
+            sleep( TrainCampManagement.CHECK_INTERVAL );
+        }
+
+        Util.MapDebugPrint( "Paintings got secured, exiting the Train defense management thread!", true );
+    },
+
+    ManageGoals = function()
+    {
+        foreach ( goal in TrainCampManagement.GOAL_LIST )
+        {
+            shouldGoalBeEnabled = DistanceBetween( goal, TrainCampManagement.ENTITY ) <= TrainCampManagement.RADIUS;
+            goal.SetAvailable( TEAM.AXIS, shouldGoalBeEnabled );
+            goal.SetAvailable( TEAM.ALLIES, shouldGoalBeEnabled );
+
+            // For debug purposes
+            goalPosition = goal.GetPosition();
+            goalEyePosition = Vector3( goalPosition.x, goalPosition.y, goalPosition.z + 64 );
+            if ( shouldGoalBeEnabled )
+            {
+                DrawDebugLine( goalPosition, goalEyePosition, COLOR.MAGENTA, 5 );
+            }
+            else
+            {
+                DrawDebugLine( goalPosition, goalEyePosition, COLOR.ORANGE, 5 );
+            }
+        }
+    },
+};
+
+global OnMapLoad = function()
+{
+    // *** TRIGGERS ***
+    OnTrigger( "Allied team has constructed the Canyon MG!", Map.Canyon_MG_Built );
+    OnTrigger( "Axis team has destroyed the Canyon MG!", Map.Canyon_MG_Destroyed );
+
+    OnTrigger( "The Allies switched the track!", Map.Allies_Track_Switched );
+    OnTrigger( "The Axis switched the track!", Map.Axis_Track_Switched );
+
+    OnTrigger( "Allies have stolen the Manifest!", Map.garage_docs_Taken );
+    OnTrigger( "Flag returned garage_docs!", Map.garage_docs_Returned );
+    OnTrigger( "The Allies have secured the manifest in the truck!", Map.garage_docs_Secured );
+
+    OnTrigger( "Allied team has secured the paintings!", Map.Paintings_Secured );
+
+    OnTrigger( "Allied team has secured the paintings and the manifest!", Map.Game_Over );
+
+    // Train triggers
+    OnTriggerRegion( AABB( 100.515, 493.383, 17.125, 242.608, 677.495, 91.125 ), RegionTrigger.VehicleTrigger );
+    OnTriggerRegion( AABB( 312.885, 487.494, 17.125, 461.133, 673.970, 92.070 ), RegionTrigger.VehicleTrigger );
+    OnTrigger( "train at location", Map.vehicle_at_location );
+
+    // *** CLEAR ALL GOALS FOR BOTH TEAMS ***
+    Util.DisableGoal( ".*", true ); // All but routes
+
+    Util.EnableGoal( "CAMP_Switch.*" );
+
+    // Enabled for Axis as well for a good defense
+    Util.EnableGoal( "RIDE_Train.*" );
+
+    // *** AXIS GOALS ***
+    // The West Depot MG42 is badly placed...
+    SetAvailableMapGoals( TEAM.AXIS, true, {
+        ".*ARTILLERY.*_Axis",
+        "DEFEND_Docs.*",
+        "MOBILEMG42_.*",
+        "MOBILEMORTAR_Axis",
+        "MOUNTMG42_EastDepotMG42",
+        //"MOUNTMG42_WestDepotMG42",
+        "PLANTMINE_.*",
+        "REPAIRMG42_EastDepotMG42",
+        //"REPAIRMG42_WestDepotMG42",
+        "SNIPE_Axis",
+    });
+
+    // *** ALLIED GOALS ***
+    SetAvailableMapGoals( TEAM.ALLIES, true, {
+        "BUILD_Canyon_MG",
+        "CAPPOINT_Truck",
+        "FLAG_garage_docs",
+        "SWITCH_Track",
+    });
+
+    // *** GOAL PROPERTIES ***
+    SetGoalPriority( "CAMP_Truck.*", 0.51 );
+    SetGoalPriority( "PLANTMINE_Depot.*", 0.78 ); // To let PLANTMINE_ControlTower at 0.79
+    SetGoalPriority( "RIDE_Train",   0.8 ); // Same as FLAG_garage_docs
+    SetGoalPriority( "SWITCH_Track", 0.8 ); // Same as FLAG_garage_docs
+    SetMapGoalProperties( "CAMP_.*",    { mincamptime = 60, maxcamptime = 120 } );
+    SetMapGoalProperties( "DEFEND_.*",  { mincamptime = 60, maxcamptime = 120 } );
+
+    // Because it is sometimes available to covis...
+    Util.LimitToClass( "BUILD_Canyon_MG", TEAM.ALLIES, CLASS.ENGINEER );
+    Util.LimitToClass( "PLANT_Canyon_MG", TEAM.AXIS, CLASS.COVERTOPS );
+
+    Util.SetMaxUsersInProgress( 1, "MOUNTMG42_.*DepotMG42" );
+    Util.SetMaxUsersInProgress( 3, "RIDE_Train" );
+    Util.SetMaxUsersInProgress( 2, "SWITCH_Track" );
+
+    // *** GOAL ROLES ***
+    SetGoalRole( "CAMP_Truck.*", { ROLE.ATTACKER, ROLE.DEFENDER } );
+    SetGoalRole( { "DEFEND_Docs.*", "MOBILEMG42_Manifest" }, ROLE.DEFENDER );
+    SetGoalRole( { "CAMP_Train.*", "RIDE_Train" }, { ROLE.DEFENDER1, ROLE.ATTACKER1 } );
+    SetGoalRole( { "CAMP_Switch.*", "SWITCH_Track" }, { ROLE.DEFENDER2, ROLE.ATTACKER2 } );
+
+    // Useless goal
+    Util.RemoveGoal( "BUILD_Train" );
+
+    TrainCampManagement.Start();
+
+    thread( Map.SetWeaponGoalsAvailability );
+
+    Util.MapDebugPrint( "Omni-Bot 0.8x map script for Calculus (Beta 1) by Mateos executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+    bot.TargetBreakableDist = 90.0;
+
+    bot.MaxViewDistance = 2400;
+
+    // Break the objects with a primary weapon instead of the secondary one/knife
+    weaps =
+    {
+        WEAPON.THOMPSON, WEAPON.MP40,
+        WEAPON.BAR, WEAPON.STG44,
+        WEAPON.SHOTGUN, WEAPON.M97, WEAPON.M7,
+        WEAPON.GARAND, WEAPON.K43,
+        WEAPON.STEN, WEAPON.MP34, WEAPON.FG42
+    };
+
+    foreach( id and weap in weaps )
+    {
+        bot.GetWeapon( weap ).PrimaryFire.SetTargetBias( CLASS.BREAKABLE, 1.2 );
+    }
+
+    bot.GetWeapon( WEAPON.KNIFE ).PrimaryFire.SetDesirabilityRange( 0, 48, 0.6 );
+
+    // Ignore the plane
+    bot.IgnoreTarget( GetGameEntityFromId( 94 ), 9999 );
+};
+
+global InitializeRoutes = function()
+{
+    MapRoutes =
+    {
+        CAPPOINT_Truck =
+        {
+            ROUTE_Manifest =
+            {
+                ROUTE_MountainWest =
+                {
+                    ROUTE_Truck = {},
+                },
+
+                ROUTE_Tunnel =
+                {
+                    ROUTE_Truck = {},
+                },
+            },
+        },
+
+        FLAG_garage_docs =
+        {
+            ROUTE_FrenchVillaDownstairsEast =
+            {
+                ROUTE_MountainEast = {},
+
+                ROUTE_FrenchVillaWestRoad =
+                {
+                    ROUTE_MountainWest = {},
+                    ROUTE_Tunnel = {},
+                },
+            },
+        },
+    };
+
+    MapRoutes.FLAG_garage_docs.ROUTE_FrenchVillaDownstairsWest = MapRoutes.FLAG_garage_docs.ROUTE_FrenchVillaDownstairsEast;
+    MapRoutes.FLAG_garage_docs.ROUTE_FrenchVillaUpstairsEast   = MapRoutes.FLAG_garage_docs.ROUTE_FrenchVillaDownstairsEast;
+    MapRoutes.FLAG_garage_docs.ROUTE_FrenchVillaUpstairsWest   = MapRoutes.FLAG_garage_docs.ROUTE_FrenchVillaDownstairsEast;
+
+    Util.Routes( MapRoutes );
+};

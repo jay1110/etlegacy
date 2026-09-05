@@ -1,0 +1,321 @@
+//==========================================================================================
+//
+//  Dingenskirchen (Beta 3)
+//
+//  Who             When                What
+//------------------------------------------------------------------------------------------
+//  Mateos          28 March 2020       Adapted from Beta 3 waypoints
+//  Mateos          21 September 2019   Initial Script
+//
+//==========================================================================================
+
+/****************************************************
+Path mapping and script by Mateos
+Correspondant WAY file size: -
+Last update: 30th March 2020
+****************************************************/
+
+global Spawns =
+{
+    VILLAGE = 2,
+    RIVER = 3,
+};
+
+global Map =
+{
+    isCastleWolfensteinBreached = false,
+    isConferenceRoomOpen = false,
+    mapLoadingFlagForLever = true, // For Conference Room Door closing OnMapLoad
+
+    Allied_Command_Post_Built = function()
+    {
+        Util.MapDebugPrint( "Allied_Command_Post_Built" );
+    },
+
+    Bridge_Built = function()
+    {
+        Util.MapDebugPrint( "Bridge_Built" );
+    },
+
+    Cellar_Door_Built = function()
+    {
+        Util.MapDebugPrint( "Cellar_Door_Built" );
+    },
+
+    Tank_Built = function()
+    {
+        Util.MapDebugPrint( "Tank_Built" );
+    },
+
+    Tank_Barrier_Built = function()
+    {
+        Util.MapDebugPrint( "Tank_Barrier_Built" );
+    },
+
+    Water_Pump_Built = function()
+    {
+        Util.MapDebugPrint( "Water_Pump_Built" );
+    },
+
+    Allied_Command_Post_Destroyed = function()
+    {
+        Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+    },
+
+    Bridge_Destroyed = function()
+    {
+        Util.MapDebugPrint( "Bridge_Destroyed" );
+    },
+
+    Cellar_Door_Destroyed = function()
+    {
+        Util.MapDebugPrint( "Cellar_Door_Destroyed" );
+    },
+
+    Tank_Barrier_Destroyed = function()
+    {
+        Util.MapDebugPrint( "Tank_Barrier_Destroyed" );
+    },
+
+    Tunnel_Doors_Destroyed = function()
+    {
+        Util.MapDebugPrint( "Tunnel_Doors_Destroyed" );
+    },
+
+    Water_Pump_Destroyed = function()
+    {
+        Util.MapDebugPrint( "Water_Pump_Destroyed" );
+    },
+
+    suitcase_Taken = function()
+    {
+        Util.MapDebugPrint( "suitcase_Taken" );
+    },
+
+    suitcase_Returned = function()
+    {
+        Util.MapDebugPrint( "suitcase_Returned" );
+    },
+
+    suitcase_Secured = function()
+    {
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+            "CAPPOINT_Suitcase_Bomb_Dropoff",
+            "FLAG_suitcase",
+        });
+        SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Suitcase_Bomb" );
+
+        Util.MapDebugPrint( "suitcase_Secured" );
+    },
+
+    river_flag_Axis_Captured = function()
+    {
+        Util.MapDebugPrint( "river_flag_Axis_Captured" );
+    },
+
+    river_flag_Allies_Captured = function()
+    {
+        if ( !Map.isCastleWolfensteinBreached )
+        {
+            // Move Allies to this spawn
+            // TODO: Only during Tank escort phase and if the Tank is there...
+            Util.ChangeSpawn( TEAM.ALLIES, Spawns.RIVER );
+        }
+
+        Util.MapDebugPrint( "river_flag_Allies_Captured" );
+    },
+
+    village_flag_Axis_Captured = function()
+    {
+        Util.MapDebugPrint( "village_flag_Axis_Captured" );
+    },
+
+    village_flag_Allies_Captured = function()
+    {
+        Util.MapDebugPrint( "village_flag_Allies_Captured" );
+    },
+
+    Tank_Passed_Barrier = function()
+    {
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+            "BUILD_Tank_Barrier",
+            "DEFEND_Alpha.*",
+        });
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Bravo.*" );
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Tank_Barrier" );
+
+        Util.MapDebugPrint( "Tank_Passed_Barrier" );
+    },
+
+    Village_Secured = function()
+    {
+        // Move Allies to this spawn
+        Util.ChangeSpawn( TEAM.ALLIES, Spawns.VILLAGE );
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Bravo.*" );
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+            "DEFEND_Charlie.*",
+            "DEFEND_Delta.*",
+        });
+
+        SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Water_Pump" );
+
+        Util.MapDebugPrint( "Village_Secured" );
+    },
+
+    Tank_Passed_Tunnel_Doors = function()
+    {
+        // TODO: This starting when the Village is secured and River flag reachable
+        // (either Water Pump built AND path clear (no water) OR Tunnel Doors destroyed)
+        Util.EnableGoal( "CHECKPOINT_river_flag" );
+
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+            "DEFEND_Charlie.*",
+            "DEFEND_Delta.*",
+        });
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Echo.*" );
+
+        SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Bridge" );
+
+        Util.MapDebugPrint( "Tank_Passed_Tunnel_Doors" );
+    },
+
+    Tank_Across_Bridge = function()
+    {
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Echo.*" );
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Foxtrot.*" );
+
+        Util.MapDebugPrint( "Tank_Across_Bridge" );
+    },
+
+    Castle_Wolfenstein_Breached = function()
+    {
+        Map.isCastleWolfensteinBreached = true;
+
+        // Remains available while being totally useless at this point
+        Util.DisableGoal( "CHECKPOINT_river_flag" );
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Foxtrot.*" );
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+            "BUILD_Axis_Command_Post",
+            "DEFEND_Golf.*",
+        });
+
+        // Allies now spawn next to the Tank
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+            "BUILD_Bridge",
+            "BUILD_Tank",
+            "ESCORT_Tank",
+            "MOUNT_Tank",
+        });
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            "FLAG_suitcase",
+            "SWITCH_Conference_Room",
+        });
+
+        Util.MapDebugPrint( "Castle_Wolfenstein_Breached" );
+    },
+
+    Conference_Room_Door_Lever_Dispatch = function()
+    {
+        if ( Map.mapLoadingFlagForLever )
+        {
+            Map.mapLoadingFlagForLever = false;
+            return;
+        }
+
+        Map.isConferenceRoomOpen = !Map.isConferenceRoomOpen;
+
+        SetAvailableMapGoals( TEAM.ALLIES, !Map.isConferenceRoomOpen, "SWITCH_Conference_Room" );
+
+        // It takes 5 seconds for the Door to open and to get the blockwall flags to refresh
+        sleep( 5 );
+
+        SetAvailableMapGoals( TEAM.ALLIES, Map.isConferenceRoomOpen, "CAPPOINT_Suitcase_Bomb_Dropoff" );
+
+        Util.MapDebugPrint( "Conference_Room_Door_Lever_Dispatch" );
+    },
+};
+
+global OnMapLoad = function()
+{
+    // Register callback functions
+    //
+    // Notes:
+    // Extra-trigger by OB: Tunnel_Doors_Built
+    //
+    // Other wm_announce's, some to use:
+    // Suitcase Bomb dropped!
+    // ^5The Allies have armed the Suitcase Bomb!
+    // ^5The Allies started arming the Suitcase Bomb!
+    // ^5The Allies have destroyed the Side Wall!
+    // ^1Axis Command Post constructed. Charge speed increased!
+    // ^5The Allies have destroyed the Axis Command Post!
+    // ^5The Allies have secured the Village and can now capture the River!
+    // ^5The Tank has passed the Tank Barrier!
+    // ^5The Tank has passed the Tunnel Doors!
+    // ^5The Tank is across the Bridge!
+    // ^5The Allies have breached Castle Wolfenstein!
+    // ^5+10min Timelimit!
+    // ^1The Tank has been damaged!
+    OnTrigger( "^5Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+    OnTrigger( "^5The Allies have constructed the Bridge!", Map.Bridge_Built );
+    OnTrigger( "^1The Axis have constructed the Cellar Door!", Map.Cellar_Door_Built );
+    OnTrigger( "^5The Tank has been repaired!", Map.Tank_Built );
+    OnTrigger( "^1Axis team has built the Barrier!", Map.Tank_Barrier_Built );
+    OnTrigger( "^5The Allies have repaired the Water Pump!", Map.Water_Pump_Built );
+    OnTrigger( "^1The Axis have destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+    OnTrigger( "^1The Axis have destroyed the Bridge!", Map.Bridge_Destroyed );
+    OnTrigger( "^5The Allies have destroyed the Cellar Door!", Map.Cellar_Door_Destroyed );
+    OnTrigger( "^5Allied team has destroyed the Barrier!", Map.Tank_Barrier_Destroyed );
+    OnTrigger( "^5The Allies have destroyed the Tunnel Doors!", Map.Tunnel_Doors_Destroyed );
+    OnTrigger( "^1The Axis have destroyed the Water Pump!", Map.Water_Pump_Destroyed );
+    OnTrigger( "^5The Allies have picked up the Suitcase Bomb!", Map.suitcase_Taken );
+    OnTrigger( "^1The Axis have returned the Suitcase Bomb!", Map.suitcase_Returned );
+    OnTrigger( "^5The Allies have placed the Suitcase Bomb!", Map.suitcase_Secured );
+    OnTrigger( "^1The Axis have reclaimed the River!", Map.river_flag_Axis_Captured );
+    OnTrigger( "^5The Allies have captured the River!", Map.river_flag_Allies_Captured );
+    OnTrigger( "^1The Axis have reclaimed the Village!", Map.village_flag_Axis_Captured );
+    OnTrigger( "^5The Allies have captured the Village!", Map.village_flag_Allies_Captured );
+
+    // Tank progress triggers
+    OnTrigger( "^5The Tank has passed the Tank Barrier!", Map.Tank_Passed_Barrier );
+    OnTrigger( "^5The Allies have secured the Village and can now capture the River!", Map.Village_Secured );
+    OnTrigger( "^5The Tank has passed the Tunnel Doors!", Map.Tank_Passed_Tunnel_Doors );
+    OnTrigger( "^5The Tank is across the Bridge!", Map.Tank_Across_Bridge );
+    OnTrigger( "^5The Allies have breached Castle Wolfenstein!", Map.Castle_Wolfenstein_Breached );
+
+    OnTrigger( "cmd_door_lever_Moving", Map.Conference_Room_Door_Lever_Dispatch );
+
+    // *** CLEAR ALL GOALS FOR BOTH TEAMS ***
+    Util.DisableGoal( ".*", true ); // All but routes
+
+    Util.EnableGoal( "CHECKPOINT_village_flag" );
+
+    // *** AXIS GOALS ***
+    SetAvailableMapGoals( TEAM.AXIS, true, {
+        "BUILD_Tank_Barrier",
+        "DEFEND_Alpha.*",
+    });
+
+    // *** ALLIED GOALS ***
+    SetAvailableMapGoals( TEAM.ALLIES, true, {
+        "BUILD_Tank",
+        "ESCORT_Tank",
+        "MOUNT_Tank",
+        "PLANT_Tank_Barrier",
+        "PLANT_Tunnel_Doors",
+    });
+
+    // Misc.
+    Util.AddUsePoint( "PLANT_Tunnel_Doors", Vec3( -1230, 2360, 250 ) );
+
+    Util.MapDebugPrint( "Omni-Bot 0.87+ map script for Dingenskirchen (Beta 3) executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+    // For shootable breakables
+    bot.TargetBreakableDist = 90.0;
+};

@@ -1,0 +1,532 @@
+//==========================================================================================
+//
+//	coldfortb1.gm
+//    Cold Fort map name
+//
+//	Who          	When		What
+//------------------------------------------------------------------------------------------
+//	^1[UJE]^3Captain	14 January 2019	Attack/Defense/Roles/Routes and more...
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	DoorClosed = true,
+	Gold = true,
+	SideWall = false,
+	MainGate = false,
+	Fence = false,
+	Roles =
+	{
+		AXIS =
+		{
+		      AllBots = true, // each bot is considered for a role
+			ATTACKER =
+			{
+				numbots = 6,
+			},
+		},
+		ALLIES =
+		{
+			AllBots = true, // default: every other bot
+			DEFENDER =
+			{
+				numbots = 6,
+			},
+		},
+	},
+	// bots inside area gold with closed door
+	// basic On Trigger Region use inside switch
+      Inside_Gold_Area =
+      {
+ 	Name="Gold_Area",
+ 	TriggerOnClass=CLASS.ANYPLAYER,
+ 	OnEnter = function(ent)
+ 	  {
+	   if( Map.DoorClosed )
+		{
+	      Util.EnableGoal("SWITCH_Door_Closed");
+		}
+ 		Util.MapDebugPrint(GetEntName(ent) + " entered Gold_Area");
+ 	  },
+ 	  OnExit = function(ent)
+ 	      {
+		Util.DisableGoal("SWITCH_Door_Closed");
+ 		Util.MapDebugPrint(GetEntName(ent) + " exited Gold_Area");
+ 	      },
+      },
+	Allied_Command_Post_Built = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Neutral_Command_Post" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Neutral_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"PLANT_Neutral_Command_Post","BUILD_Neutral_Command_Post"} );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+      SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Neutral_Command_Post" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Neutral_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Neutral_Command_Post" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Neutral_Command_Post" );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+      Axis_Command_Post_Built = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, {"BUILD_Neutral_Command_Post","PLANT_Neutral_Command_Post"} );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Neutral_Command_Post" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Neutral_Command_Post" );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+      SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Neutral_Command_Post" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Neutral_Command_Post" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Neutral_Command_Post" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Neutral_Command_Post" );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+	Axis_Basement_Fence_Built = function()
+	{
+	Map.Fence = true;
+	if ( Map.Gold && Map.SideWall or Map.MainGate )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Axis_Basement_Fence" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Axis_Basement_Fence" );
+
+		Util.MapDebugPrint( "Axis_Basement_Fence_Built" );
+	},
+
+	Axis_Basement_Fence_Destroyed = function()
+	{
+	Map.Fence = false;
+	if ( Map.Gold )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Axis_Basement_Fence" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Axis_Basement_Fence" );
+
+		Util.MapDebugPrint( "Axis_Basement_Fence_Destroyed" );
+	},
+
+	Main_Gate_Destroyed = function()
+	{
+	Map.MainGate = true;
+      if ( Map.DoorClosed && Map.Gold )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Objective_Door" );
+	}
+	if ( Map.Gold )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, {"ATTACK_Gold.*",".*CAB.*"} );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Gold.*" );
+	}
+	if ( Map.Fence )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Axis_Basement_Fence" );
+	}
+	if ( !Map.Fence )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Axis_Basement_Fence" );
+	}
+      SetAvailableMapGoals( TEAM.AXIS, false, {"CHECKPOINT_forward_flag","ATTACK_First.*"} );
+	SetAvailableMapGoals( TEAM.AXIS, true, ".*CAB.*" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"CHECKPOINT_forward_flag","DEFEND_First.*"} );
+
+	ClearGoalRole("DEFEND_Gold.*", ROLE.DEFENDER);
+	ClearGoalRole("ATTACK_Gold.*", ROLE.ATTACKER);
+
+	Wp.SetWaypointFlag( "Door_1", "door", false );
+	Wp.SetWaypointFlag( "Door_1", "allies", false );
+	Wp.SetWaypointFlag( "Door_2", "allies", false );
+	Wp.SetWaypointFlag( "Door_2", "door", false );
+	Wp.SetWaypointFlag( "Door_3", "allies", false );
+	Wp.SetWaypointFlag( "Door_3", "door", false );
+	Wp.SetWaypointFlag( "Door_4", "allies", false );
+	Wp.SetWaypointFlag( "Door_4", "door", false );
+
+	Util.MapDebugPrint( "Main_Gate_Destroyed" );
+	},
+
+	Side_Wall_Destroyed = function()
+	{
+	Map.SideWall = true;
+      if ( Map.DoorClosed && Map.Gold )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Objective_Door" );
+	}
+	if ( Map.Gold )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Gold.*" );
+	SetAvailableMapGoals( TEAM.AXIS, true, {"ATTACK_Gold.*",".*CAB.*"} );
+	}
+	if ( !Map.MainGate )
+	{
+	SetGoalRole("DEFEND_Gold.*", ROLE.DEFENDER);
+	SetGoalRole("ATTACK_Gold.*", ROLE.ATTACKER);
+	}
+	if ( Map.Fence )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Axis_Basement_Fence" );
+	}
+		Util.MapDebugPrint( "Side_Wall_Destroyed" );
+	},
+
+	forward_flag_Axis_Captured = function()
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_forward_flag" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_forward_flag" );
+
+		Util.MapDebugPrint( "forward_flag_Axis_Captured" );
+	},
+
+	forward_flag_Allies_Captured = function()
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_forward_flag" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_forward_flag" );
+
+		Util.MapDebugPrint( "forward_flag_Allies_Captured" );
+	},
+
+	Objective_Door_Opened = function()
+	{
+	Map.DoorClosed = false;
+
+	if ( Map.Gold )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "FLAG.*" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_Objective_Door" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Objective_Door" );
+
+		Util.MapDebugPrint( "Door_Opened" );
+	},
+
+	Objective_Door_Closed = function()
+	{
+	Map.DoorClosed = true;
+
+	if ( Map.Gold )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "FLAG.*" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Objective_Door" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Objective_Door" );
+
+		Util.MapDebugPrint( "Door_Closed" );
+	},
+
+	allied_gold_Taken = function()
+	{
+	Map.Gold = false;
+	if ( !Map.Fence )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Axis_Basement_Fence" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, true, {"CAPPOINT.*","ATTACK_Cappoint.*"} );
+	SetAvailableMapGoals( TEAM.AXIS, false, {"Flag.*","ATTACK_Gold.*"} );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Cappoint.*" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"DEFEND_Gold.*","SWITCH_Objective_Door"} );
+
+		Util.MapDebugPrint( "allied_gold_Taken" );
+	},
+
+	allied_gold_Returned = function()
+	{
+	Map.Gold = true;
+	if ( !Map.MainGate )
+	{
+	SetGoalRole("DEFEND_Gold.*", ROLE.DEFENDER);
+	SetGoalRole("ATTACK_Gold.*", ROLE.ATTACKER);
+	ClearGoalRole("DEFEND_Cappoint.*", ROLE.DEFENDER);
+	ClearGoalRole("ATTACK_Cappoint.*", ROLE.ATTACKER);
+	}
+	if ( !Map.Fence )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Axis_Basement_Fence" );
+	}
+	if ( !Map.DoorClosed )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Objective_Door" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "FLAG.*" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_Objective_Door" );
+	}
+	else
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Objective_Door" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Gold.*" );
+	SetAvailableMapGoals( TEAM.AXIS, false, {"CAPPOINT.*","ATTACK_Cappoint.*"} );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Gold.*" );
+      SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Cappoint.*" );
+
+		Util.MapDebugPrint( "allied_gold_Returned" );
+	},
+
+	allied_gold_Secured = function()
+	{
+		Util.MapDebugPrint( "allied_gold_Secured" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+
+	OnTrigger( "Allied Fence Constructed!", Map.Axis_Basement_Fence_Built );
+	OnTrigger( "The Allied Fence has been destroyed!", Map.Axis_Basement_Fence_Destroyed );
+	OnTrigger( "The Axis have destroyed the Main Gate!", Map.Main_Gate_Destroyed );
+	OnTrigger( "The Axis have destroyed the Side Wall!", Map.Side_Wall_Destroyed );
+
+	OnTrigger( "Axis have captured the Forward Flag!", Map.forward_flag_Axis_Captured );
+	OnTrigger( "Allies have reclaimed the Forward Flag!", Map.forward_flag_Allies_Captured );
+
+	OnTrigger( "Objective Door opened!", Map.Objective_Door_Opened );
+	OnTrigger( "Objective Door closed!", Map.Objective_Door_Closed );
+
+	OnTrigger( "The Axis have stolen the Allied gold", Map.allied_gold_Taken );
+	OnTrigger( "The Allies have retrieved the gold", Map.allied_gold_Returned );
+	OnTrigger( "The Axis have secured the Allied gold", Map.allied_gold_Secured );
+	OnTriggerRegion(AABB(931.391,891.244,-382.830,1008.779,1087.062,-273.891), Map.Inside_Gold_Area);
+
+	// all but routes
+	Util.DisableGoal( ".*", true );
+
+      //Axis goals activation
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"BUILD_Neutral_Command_Post",
+		"PLANT_Main_Gate",
+		"PLANT_Side_Wall",
+		"CHECKPOINT.*",
+		"ATTACK_First.*"
+	});
+      //Allies goals activation
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_Neutral_Command_Post",
+		//"BUILD_Axis_Basement_Fence",
+		"CHECKPOINT.*",
+		".*CAB.*",
+		"DEFEND_First.*"
+	});
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "DEFEND.*" );
+	Util.SetMaxUsers( 1, "ATTACK.*" );
+	Util.SetMaxUsers( 1, "CHECKPOINT_forward_flag" );
+	Util.SetMaxUsers( 1, "BUILD_Neutral_Command_Post" );
+	Util.SetMaxUsers( 2, "FLAG.*" );
+	Util.SetMaxUsers( 1, "BUILD.*" );
+	Util.SetMaxUsers( 1, "PLANT.*" );
+
+	// Camp times
+	SetMapGoalProperties( "ATTACK.*", {MinCampTime=60, MaxCampTime=90} );
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=60, MaxCampTime=90} );
+
+	//SetGoalPriority
+	SetGoalPriority( "BUILD_Neutral_Command_Post", 0.92, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Main_Gate", 0.92, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Side_Wall", 0.92, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Neutral_Command_Post", 0.96,  TEAM.AXIS, CLASS.COVERTOPS );
+	SetGoalPriority( "PLANT_Neutral_Command_Post", 0.96,  TEAM.ALLIES, CLASS.COVERTOPS );
+	SetGoalPriority( "PLANT_Axis_Basement_Fence", 0.96,  TEAM.ALLIES, CLASS.COVERTOPS );
+	SetGoalPriority( "BUILD_Axis_Basement_Fence", 0.96, TEAM.ALLIES, CLASS.ENGINEER );
+	SetGoalPriority( "DEFEND_Cappoint.*", 0.98 );
+
+	//Offset Plant/Build Fix
+      Util.SetGoalOffset( -25, 0, 0, "PLANT_Axis_Basement_Fence" );
+
+	Wp.SetWaypointFlag( "Door_1", "allies", true );
+	Wp.SetWaypointFlag( "Door_1", "door", true );
+	Wp.SetWaypointFlag( "Door_2", "allies", true );
+	Wp.SetWaypointFlag( "Door_2", "door", true );
+	Wp.SetWaypointFlag( "Door_3", "allies", true );
+	Wp.SetWaypointFlag( "Door_3", "door", true );
+	Wp.SetWaypointFlag( "Door_4", "allies", true );
+	Wp.SetWaypointFlag( "Door_4", "door", true );
+      ClearGoalRole ({ "DEFEND_Gold.*","ATTACK_Gold.*" }, {ROLE.DEFENDER, ROLE.ATTACKER} );
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		FLAG_allied_gold =
+		{
+			ROUTE_Flag_S  =
+			{
+				ROUTE_Flag  =
+				{
+					ROUTE_Stair_Fence  =
+					{
+						ROUTE_Fence  =
+						{
+							ROUTE_Gold  =
+							{
+							},
+						},
+					},
+				},
+				ROUTE_Flag  =
+				{
+					ROUTE_Stair_M  =
+					{
+						ROUTE_Front_Door  =
+						{
+							ROUTE_Gold  =
+							{
+							},
+						},
+					},
+				},
+				ROUTE_Main_Gate  =
+				{
+					ROUTE_Side  =
+					{
+						ROUTE_Stair_Fence  =
+						{
+							ROUTE_Fence  =
+							{
+							},
+						},
+					},
+				},
+			},
+		},
+		CHECKPOINT_forward_flag =
+		{
+			ROUTE_First_Allied_S  =
+			{
+				ROUTE_Exit_S  =
+				{
+					ROUTE_Fence  =
+					{
+						ROUTE_Stair_M  =
+						{
+							ROUTE_Flag  =
+							{
+							},
+						},
+					},
+					ROUTE_Front_Door  =
+					{
+						ROUTE_Stair_M  =
+						{
+							ROUTE_Flag  =
+							{
+							},
+						},
+						ROUTE_CP_Stairs  =
+						{
+							ROUTE_CP  =
+							{
+							},
+						},
+					},
+				},
+			},
+		},
+
+		CAPPOINT_207 =
+		{
+			ROUTE_Gold  =
+			{
+				ROUTE_Front_Door  =
+				{
+					ROUTE_Stair_M  =
+					{
+						ROUTE_CP_Stairs  =
+						{
+							ROUTE_CP  =
+							{
+								ROUTE_Main_Gate  =
+								{
+									ROUTE_Cappoint  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Fence  =
+				{
+					ROUTE_Stair_Fence  =
+					{
+						ROUTE_Cappoint  =
+						{
+						},
+					},
+				},
+			},
+		},
+
+	};
+	MapRoutes["DEFEND_Cappoint.*"] =
+		{
+			ROUTE_First_Allied_S  =
+			{
+				ROUTE_Exit_S  =
+				{     Weight = 4,
+					ROUTE_Fence  =
+					{
+						ROUTE_Stair_Fence  =
+						{
+							ROUTE_Side  =
+							{
+							},
+						},
+					},
+					ROUTE_Front_Door  =
+					{
+						ROUTE_Stair_M  =
+						{
+							ROUTE_Main_Gate  =
+							{
+							},
+							ROUTE_CP_Stairs  =
+							{
+								ROUTE_CP  =
+								{
+									ROUTE_Main_Gate  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		};
+
+	Util.Routes(MapRoutes);
+};

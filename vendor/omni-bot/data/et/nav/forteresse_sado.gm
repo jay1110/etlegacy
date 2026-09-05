@@ -1,0 +1,338 @@
+//==========================================================================================
+//
+//  forteresse_sado.gm
+//
+// Who   	When		What
+//------------------------------------------------------------------------------------------
+// palota	28 June 2025	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	SaveRoles = 0,
+	barrierStatus = 0,
+	wallStatus = 0,
+
+	Roles =
+	{
+		AXIS =
+		{
+			DEFENDER =
+			{
+				numbots = 4,
+			},
+		}
+	},
+
+	wall_Destroyed = function()
+	{
+		if (Map.wallStatus){ return; }
+		Map.wallStatus = 1;
+
+		sleep(0.1);
+		Wp.CheckBlockable();
+		Util.DisableGoal(
+			"HEALTHCAB_vie1"
+		);
+		Util.EnableGoal({
+			"AMMOCAB_mun2",
+			"HEALTHCAB_vie2",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"DEFEND_1_.*",
+			"MOBILEMG42_wall.*",
+			"PLANTMINE_wall.*",
+			"BUILD_Command_Post",
+			"PLANT_Command_Post",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"DEFEND_base.*",
+			"PLANTMINE_base.*",
+			"SNIPE_base.*",
+			"MOUNTMG42_fortress",
+			"REPAIRMG42_fortress",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"ATTACK_wall.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"ATTACK_base.*",
+			"GRENADE_mg",
+			"PLANT_door__1",
+			"PLANT_Wood_Barrier_1_",
+			"PLANT_Wood_Barrier_2_",
+			"PLANT_cases_barrier_",
+		});
+	},
+
+	barrier_Destroyed = function()
+	{
+		if (Map.barrierStatus){ return; }
+		Map.barrierStatus = 1;
+
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"DEFEND_radio.*",
+			"DEFEND_fuel.*",
+			"PLANTMINE_fuel.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_base[256]");
+		SetMapGoalProperties("ATTACK_base.*", {MinCampTime=5, MaxCampTime=15});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"ATTACK_radio.*",
+			"ATTACK_fuel.*",
+			"PLANT_radio_",
+			"PLANT_fueldump_",
+		});
+
+		SetGoalRole("DEFEND_base.*", ROLE.DEFENDER);
+		SetGoalPriority("PLANT_Wood_Barrier.*", 0.6, TEAM.ALLIES, CLASS.ENGINEER);
+	},
+
+	door_Destroyed = function(trigger)
+	{
+		if (trigger.Entity == Map.door2Ent)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, true, "ROUTE_axis_spawn");
+			Map.barrier_Destroyed();
+			Util.MapDebugPrint("door2_Destroyed");
+		}else{
+			Map.wall_Destroyed();
+			Util.MapDebugPrint("door1_Destroyed");
+		}
+	},
+
+	rock_wall_Destroyed = function()
+	{
+		Map.wall_Destroyed();
+		Util.MapDebugPrint("rock_wall_Destroyed");
+	},
+
+	WoodBarrier1Thread = function()
+	{
+		//map does not have any trigger if wood barriers are destroyed by satchels
+		e = GetGoal("PLANT_Wood_Barrier_1_").GetEntity();
+		dowhile (EntityIsValid(e)){
+			sleep(2);
+		}
+		Util.EnableGoal("ROUTE_wood1.*");
+		Map.barrier_Destroyed();
+		Util.MapDebugPrint("Wood_Barrier_1__Destroyed");
+	},
+
+	WoodBarrier2Thread = function()
+	{
+		e = GetGoal("PLANT_Wood_Barrier_2_").GetEntity();
+		dowhile (EntityIsValid(e)){
+			sleep(2);
+		}
+		Util.EnableGoal("ROUTE_wood2.*");
+		Map.barrier_Destroyed();
+		Util.MapDebugPrint("Wood_Barrier_2__Destroyed");
+	},
+
+	cases_barrier__Destroyed = function()
+	{
+		Util.EnableGoal("ROUTE_cases_barrier");
+		Map.barrier_Destroyed();
+		Util.MapDebugPrint("cases_barrier__Destroyed");
+	},
+
+	fueldump__Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"DEFEND_fuel.*",
+			"PLANTMINE_fuel.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"ATTACK_fuel.*",
+		});
+		Util.MapDebugPrint("fueldump__Destroyed");
+	},
+
+	radio__Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"DEFEND_radio.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"ATTACK_radio.*",
+		});
+		Util.MapDebugPrint("radio__Destroyed");
+	},
+
+	roadbunker_Axis_Captured = function()
+	{
+		Util.MapDebugPrint("roadbunker_Axis_Captured");
+	},
+
+	roadbunker_Allies_Captured = function()
+	{
+		Util.MapDebugPrint("roadbunker_Allies_Captured");
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("Allies have breached the door!", Map.door_Destroyed);
+	OnTrigger("Allies have breached the rock wall!", Map.rock_wall_Destroyed);
+	OnTrigger("Allies have breached the barrier!", Map.cases_barrier__Destroyed);
+	OnTrigger("Allies have destroyed the fueldump!", Map.fueldump__Destroyed);
+	OnTrigger("Allies have destroyed the radio!", Map.radio__Destroyed);
+	OnTrigger("Axis reclaim the Forward Bunker!", Map.roadbunker_Axis_Captured);
+	OnTrigger("Allies capture the Forward Bunker!", Map.roadbunker_Allies_Captured);
+
+	OnTriggerRegion(AABB(-1751.142,1603.388,496.028,-1450.020,2115.720,654.551), RegionTrigger.DisableCombatMovement);
+	OnTriggerRegion(AABB(-3080.664,-750.420,169.125,-2335.956,-534.046,343.908), RegionTrigger.DisableCombatMovement);
+
+	Util.DisableGoal(".*", true);
+	Util.DisableGoal({ "ROUTE_wood.*", "ROUTE_cases_barrier" });
+	SetAvailableMapGoals(TEAM.ALLIES, false, "ROUTE_axis_spawn");
+
+	Util.EnableGoal({
+		"CHECKPOINT_roadbunker",
+		"BUILD_Command_Post",
+		"PLANT_Command_Post",
+		"AMMOCAB_mun1",
+		"HEALTHCAB_vie1",
+	});
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"DEFEND_1_.*",
+		".*MG42_wall.*",
+		"PLANTMINE_wall.*",
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"ATTACK_wall.*",
+		"PLANT_door_",
+		"PLANT_rock_wall_",
+	});
+
+	SetGoalPriority("BUILD_Command_Post", 0.81);
+	SetGoalPriority("PLANTMINE_wall.*", 0.6);
+
+	Util.SetMaxUsers(1, ".*Command_Post");
+	Util.SetMaxUsers(1, "MOUNTMG42.*");
+	Util.SetMaxUsers(1, "GRENADE.*");
+
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=15, MaxCampTime=60});
+	SetMapGoalProperties("ATTACK.*", {MinCampTime=15, MaxCampTime=60});
+	SetMapGoalProperties("MOUNTMG42_.*", {MinCampTime=30, MaxCampTime=90});
+	SetMapGoalProperties("SNIPE.*", {MinCampTime=20, MaxCampTime=90});
+
+	Util.AddUsePoint( "PLANT_fueldump_", { Vec3(2523,3323,520),Vec3(2533, 3027, 520),Vec3(2753, 3291, 872),Vec3(2588, 3048, 760),Vec3(2763, 3068, 520),Vec3(2630, 3048, 760) } );
+
+	thread(Map.WoodBarrier1Thread);
+	thread(Map.WoodBarrier2Thread);
+
+	Map.door2Ent = GetGoal("PLANT_door__1").GetEntity();
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.TargetBreakableDist = 90;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_roadbunker =
+		{
+			ROUTE_allied_spawn =
+			{
+				ROUTE_a1 =
+				{
+					Weight=3,
+					ROUTE_stairs = {},
+					ROUTE_west = {},
+				},
+				ROUTE_a2 = {},
+				ROUTE_a3 = {},
+				ROUTE_tunnel = {Weight=2},
+			},
+			ROUTE_axis_spawn =
+			{
+				ROUTE_enter1 =
+				{
+					ROUTE_wall1 = {},
+					ROUTE_wall2 = {},
+				},
+				ROUTE_enter2 =
+				{
+					ROUTE_wall1 = {},
+					ROUTE_wall2 = {},
+				}
+			}
+		},
+		PLANT_radio_ =
+		{
+			ROUTE_bunker_spawn =
+			{
+				ROUTE_water =
+				{
+					Weight=3,
+					ROUTE_wood1_barrier = {},
+					ROUTE_wood2_barrier_N = { ROUTE_wood2_barrier = {} },
+					ROUTE_axis_spawn = {},
+				},
+				ROUTE_enter1 =
+				{
+					ROUTE_wood1_barrier = {},
+					ROUTE_wood2_barrier_N = {},
+					ROUTE_axis_spawn = {},
+				},
+				ROUTE_enter2 =
+				{
+					ROUTE_wood1_barrier = {},
+					ROUTE_wood2_barrier_S = { ROUTE_wood2_barrier = {} },
+					ROUTE_cases_barrier = {},
+					ROUTE_axis_spawn = {},
+				},
+				ROUTE_enter3 =
+				{
+					ROUTE_wood1_barrier = {},
+					ROUTE_wood2_barrier_S = {},
+					ROUTE_cases_barrier = {},
+					ROUTE_axis_spawn = {},
+				},
+				ROUTE_enter4 =
+				{
+					Weight=2,
+					ROUTE_enter4_2 = {
+						ROUTE_wood2_barrier_S = {},
+						ROUTE_cases_barrier = {},
+					}
+				},
+			},
+		},
+		PLANT_door__1 =
+		{
+			ROUTE_bunker_spawn =
+			{
+				ROUTE_water = {Weight=5},
+				ROUTE_enter1 = {Weight=2},
+				ROUTE_enter2 = {},
+				ROUTE_enter3 = {},
+				ROUTE_enter4 = {Weight=2, ROUTE_enter4_2 = {} },
+			}
+		},
+		MOUNTMG42_wall =
+		{
+			ROUTE_axis_spawn =
+			{
+				ROUTE_enter2 = {},
+				ROUTE_enter3 = {Weight=2},
+			}
+		},
+	};
+	MapRoutes.PLANT_rock_wall_ = MapRoutes.CHECKPOINT_roadbunker;
+	MapRoutes.PLANT_door_ = MapRoutes.CHECKPOINT_roadbunker;
+	MapRoutes["ATTACK_base.*"] = MapRoutes.PLANT_door__1;
+	MapRoutes.PLANT_fueldump_ = MapRoutes.PLANT_radio_;
+	MapRoutes["ATTACK_radio.*"] = MapRoutes.PLANT_radio_;
+	MapRoutes["ATTACK_fuel.*"] = MapRoutes.PLANT_fueldump_;
+	Util.Routes(MapRoutes);
+};

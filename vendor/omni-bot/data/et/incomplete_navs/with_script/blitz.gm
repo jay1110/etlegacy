@@ -1,0 +1,377 @@
+//==========================================================================================
+//
+//	blitz.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	05 February 2018	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	TempleDoorBlown = 0,
+	BarricadeBuilt = 0,
+
+	// ROLES --------------------------------------------------------------------
+
+/*
+	Roles =
+	{
+		AXIS = // Team
+		{
+			AllBots = 1,
+			DEFENDER =
+			{
+				voice = "attack",
+				spawnpt = 1,
+				numbots = 1,
+				crucialClass = CLASS.ENGINEER,
+				MinBotsForRole = 5,
+			},
+		},
+
+		ALLIES =
+		{
+			AllBots = 1, // default = false: every other bot
+			ATTACKER =
+			{
+				voice = "attack",
+				spawnpt = 1,
+				numbots = 1,
+				crucialClass = CLASS.ENGINEER,
+				MinBotsForRole = 5,
+			},
+		},
+	},
+*/
+
+	// CALLBACKS ----------------------------------------------------------------
+
+	Axis_Dam_Control_Pipe_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, 0, "BUILD_Axis_Dam_Control_Pipe" );
+		Util.MapDebugPrint( "Axis_Dam_Control_Pipe_Built" );
+	},
+	Axis_Dam_Control_Pipe_Planted = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 0, "PLANT_Axis_Dam_Control_Pipe" );
+		Util.MapDebugPrint( "Axis_Dam_Control_Pipe_Planted" );
+	},
+	Axis_Dam_Control_Pipe_Defused = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_Axis_Dam_Control_Pipe" );
+		Util.MapDebugPrint( "Axis_Dam_Control_Pipe_Defused" );
+	},
+	Axis_Dam_Control_Pipe_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 0, "PLANT_Axis_Dam_Control_Pipe" );
+		SetAvailableMapGoals( TEAM.AXIS, 1, "BUILD_Axis_Dam_Control_Pipe" );
+		Util.MapDebugPrint( "Axis_Dam_Control_Pipe_Destroyed" );
+	},
+
+	Tank_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, 0, "BUILD_Tank" );
+		SetAvailableMapGoals( TEAM.AXIS, 1, "ESCORT_Tank" );
+		Util.MapDebugPrint( "Tank_Built" );
+	},
+
+	Tank_Stolen = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 0, "ATTACK_S1_.*" );
+		Util.DisableGroup( "Stage1" );
+		Util.EnableGroup( "Stage2" );
+
+		Util.MapDebugPrint( "Tank_Built" );
+	},
+
+	Tank_Damaged = function()
+	{
+		if ( Map.Temple_Door_Blown ) //discard tank
+		{
+			SetAvailableMapGoals( TEAM.AXIS, 0, {
+				"BUILD_Tank",
+				"ESCORT_Tank",
+				"MOUNT_Tank",
+			});
+		}
+		Util.MapDebugPrint( "Tank_Damaged" );
+	},
+
+	Temple_Door_Barricade_Built = function()
+	{
+		Map.BarricadeBuilt = 1;
+		SetAvailableMapGoals( TEAM.ALLIES, 0, "BUILD_Temple_Door_Barricade" );
+		SetAvailableMapGoals( TEAM.AXIS, 1, "PLANT_Temple_Door_Barricade" );
+		Util.MapDebugPrint( "Temple_Door_Barricade_Built" );
+	},
+
+	Temple_Door_Barricade_Destroyed = function()
+	{
+		Map.BarricadeBuilt = 0;
+		SetAvailableMapGoals( TEAM.AXIS, 0, "PLANT_Temple_Door_Barricade" );
+		Util.MapDebugPrint( "Temple_Door_Barricade_Destroyed" );
+	},
+
+	Temple_Door_Blown = function()
+	{
+		Map.TempleDoorBlown = 1;
+		SetAvailableMapGoals( TEAM.AXIS, 1, "FLAG_Key_Card" );
+		Util.MapDebugPrint( "Temple_Door_Blown" );
+	},
+
+	Key_Card_Taken = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, 1, "CAPPOINT_Key" );
+		Util.MapDebugPrint( "Key_Card_Taken" );
+	},
+
+	Key_Card_Returned = function()
+	{
+		Util.MapDebugPrint( "Key_Card_Returned" );
+	},
+
+	Key_Card_Secured = function()
+	{
+		Util.MapDebugPrint( "Key_Card_Secured" );
+	},
+
+	forward_flag_Allies_Captured = function()
+	{
+		Util.MapDebugPrint( "forward_flag_Allies_Captured" );
+	},
+
+	forward_flag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint( "forward_flag_Axis_Captured" );
+	},
+
+	// Neutral Command Post
+	CP_Owner = 0,
+	CP_Dyno = 0,
+
+	Set_CP = function(_p) // p = TEAM.ALLIES or TEAM.AXIS or 0 (unbuilt/destroyed)
+	{
+		switch(_p)
+		{
+			case 0:
+			{
+				Map.CP_Owner = 0;
+				SetAvailableMapGoals( TEAM.ALLIES, 1, "BUILD_Neutral_Command_Post" );
+				SetAvailableMapGoals( TEAM.ALLIES, 0, "PLANT_Neutral_Command_Post" );
+				SetAvailableMapGoals( TEAM.AXIS,   1, "BUILD_Neutral_Command_Post" );
+				SetAvailableMapGoals( TEAM.AXIS,   0, "PLANT_Neutral_Command_Post" );
+			}
+			case TEAM.ALLIES:
+			{
+				Map.CP_Owner = TEAM.ALLIES;
+				SetAvailableMapGoals( TEAM.ALLIES, 0, "BUILD_Neutral_Command_Post" );
+				SetAvailableMapGoals( TEAM.ALLIES, 0, "PLANT_Neutral_Command_Post" );
+				SetAvailableMapGoals( TEAM.AXIS,   1, "PLANT_Neutral_Command_Post" );
+			}
+			case TEAM.AXIS:
+			{
+				Map.CP_Owner = TEAM.AXIS;
+				SetAvailableMapGoals( TEAM.ALLIES, 0, "BUILD_Neutral_Command_Post" );
+				SetAvailableMapGoals( TEAM.ALLIES, 1, "PLANT_Neutral_Command_Post" );
+				SetAvailableMapGoals( TEAM.AXIS,   0, "PLANT_Neutral_Command_Post" );
+			}
+		}
+		//Util.MapDebugPrint("CP Owner: " + Map.CP_Owner );
+	},
+	Allied_CP_Built = function()
+	{
+		Map.Set_CP(TEAM.ALLIES);
+		Util.MapDebugPrint( "Allied_CP_Built" );
+	},
+	Allied_CP_Destroyed = function()
+	{
+		Map.CP_Dyno = 0;
+		Map.Set_CP(0);
+		Util.MapDebugPrint( "Allied_CP_Destroyed" );
+	},
+	Axis_CP_Built = function()
+	{
+		Map.Set_CP(TEAM.AXIS);
+		Util.MapDebugPrint( "Axis_CP_Built" );
+	},
+	Axis_CP_Destroyed = function()
+	{
+		Map.CP_Dyno = 0;
+		Map.Set_CP(0);
+		Util.MapDebugPrint( "Axis_CP_Destroyed" );
+	},
+	CP_Planted = function()
+	{
+		Map.CP_Dyno += 1;
+		Util.MapDebugPrint( "CP_Planted" );
+	},
+	CP_Defused = function()
+	{
+		Map.CP_Dyno -= 1;
+		Util.MapDebugPrint( "CP_Defused" );
+	},
+
+	// Command Post END
+
+	// custom triggers
+	Allies_Near_Dam = 0,
+
+	Allies_To_Dam =
+	{
+		Name = "Allies_To_Dam",
+		TriggerOnClass = CLASS.ENGINEER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				Map.Allies_Near_Dam += 1;
+				SetAvailableMapGoals( TEAM.AXIS, 1, "DEFEND_Dam_.*" );
+				bot = Util.IsBot(ent);
+				if(bot)
+				{
+					//bot.SetRoles(ROLE.ATTACKER);
+				}
+				Util.MapDebugPrint( "Allies attacking Dam!" );
+			}
+		},
+
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+
+	OnTriggerRegion(AABB(-616.808,-1153.087,127.125,-571.980,-931.066,201.125), Map.Allies_To_Dam );
+
+	OnTrigger( "The tank has been repaired!", Map.Tank_Built );
+	OnTrigger( "The tank has been damaged!", Map.Tank_Damaged );
+
+	OnTrigger( "The Axis Dam Control Pipe has been constructed.", Map.Axis_Dam_Control_Pipe_Built );
+	OnTrigger( "Planted at Axis Dam Control Pipe.", Map.Axis_Dam_Control_Pipe_Planted );
+	OnTrigger( "Defused at Axis Dam Control Pipe.", Map.Axis_Dam_Control_Pipe_Defused );
+	OnTrigger( "Allies have destroyed the control-pipe!", Map.Axis_Dam_Control_Pipe_Destroyed );
+	//"The Water-level is rising, Repair the Water-pipes!"
+	//"Axis have 25 seconds left to repair the Control-pipes!"
+	//"The Allies drowned the Axis Forces!"
+
+	//"The Side door is open!"
+	OnTrigger( "Allied Team have built the Temple Door-barricade!", Map.Temple_Door_Barricade_Built );
+	OnTrigger( "Axis have destroyed Temple Door-barricade!", Map.Temple_Door_Barricade_Destroyed );
+
+	OnTrigger( "Axis have blown open the Temple Main Door!", Map.Temple_Door_Blown );
+
+	OnTrigger( "Axis have stolen The Key Card!", Map.Key_Card_Taken );
+	OnTrigger( "MISSING_STRING", Map.Key_Card_Returned );
+
+	//end game //"The V1 is Launched!"
+	OnTrigger( "The Axis blew up the Allies spawn with the V1 Rocket!", Map.Key_Card_Secured );
+
+	OnTrigger( "Allies have captured the Forward Flag!", Map.forward_flag_Allies_Captured );
+	OnTrigger( "Axis have captured the Forward Flag!", Map.forward_flag_Axis_Captured );
+
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!",  Map.Allied_CP_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!",          Map.Allied_CP_Destroyed );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!",    Map.Axis_CP_Built );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!",          Map.Axis_CP_Destroyed );
+	OnTrigger( "Planted at the Command Post.",                              Map.CP_Planted  );
+	OnTrigger( "Defused at the Command Post.",                              Map.CP_Defused  );
+
+	//---------------------------------------------------------------------------
+
+	Util.DisableGoal( ".*", 1 ); // all but routes
+
+	// TWEAKS
+	Util.AddUsePoint( "BUILD_Axis_Dam_Control_Pipe", Vec3( -4633, -1975, 210 ) );
+	Util.AddUsePoint( "PLANT_Axis_Dam_Control_Pipe", Vec3( -4670, -2028, 210 ) );
+	Util.AddUseWp( "PLANT_Temple_Door_Barricade", {"barricade1wp", "barricade2wp"} );
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+	Util.SetMaxUsers( 1, "DEFEND_Dam_.*" );
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+
+	ETUtil.SetPrimaryGoals( 1.0 );
+
+	Util.EnableGroup( "Stage1" );
+
+	// ALLIES BRIEFING ----------------------------------------------------------
+
+	SetAvailableMapGoals( TEAM.ALLIES, 1, {
+		"ATTACK_.*",
+		"BUILD_Neutral.*",
+		"BUILD_Temple_Door_Barricade",
+		"PLANT_Axis_Dam_Control_Pipe",
+		"CHECKPOINT_.*",
+		"PLANTMINE_Al_.*",
+	});
+
+	// AXIS BRIEFING ------------------------------------------------------------
+
+	//Axis //dual map but we need to differentiate, so set Axis to DEFEND_
+	SetAvailableMapGoals( TEAM.AXIS, 1, {
+		"DEFEND_.*",
+		"BUILD_Neutral.*",
+		"CHECKPOINT_.*",
+		"BUILD_Tank",
+		"PLANTMINE_Ax_.*",
+	});
+
+	SetGoalPriority( "BUILD_Axis_Dam_Control_Pipe", 1.1 );
+	SetGoalPriority( "PLANT_Axis_Dam_Control_Pipe", 0.75 );
+	SetGoalPriority( "DEFEND_Dam_.*", 0.75 );
+	Util.LimitToClass( "DEFEND_Dam_.*", TEAM.AXIS, CLASS.SOLDIER, CLASS.MEDIC, CLASS.FIELDOPS );
+	Util.ExcludeClass( "CHECKPOINT_.*", TEAM.AXIS, CLASS.ENGINEER );
+
+	//Covy missions
+	Util.LimitToClass( "PLANT_Neutral_Command_Post", 0, 5 );
+	Util.LimitToClass( "PLANT_Temple_Door_Barricade", 1, 5 );
+	Util.LimitToClass( "FLAG_Key_Card", 1, 5 );
+
+	//---------------------------------------------------------------------------
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	ETUtil.SetDualObjective(bot);
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		BUILD_Axis_Dam_Control_Pipe =
+		{
+			ROUTE_AxSp_1 =
+			{
+				ROUTE_Dam = {}
+			}
+		},
+		PLANT_Axis_Dam_Control_Pipe =
+		{
+			ROUTE_AlSp_1 =
+			{
+				ROUTE_Alt_1 =
+				{
+					ROUTE_Dam = {}
+				}
+			}
+		},
+		CHECKPOINT_forward_flag =
+		{
+			ROUTE_AxSp_1 =
+			{
+				ROUTE_FF = {}
+			}
+		}
+	};
+	Util.Routes(MapRoutes);
+};

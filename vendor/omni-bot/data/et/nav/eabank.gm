@@ -1,0 +1,115 @@
+//==========================================================================================
+//
+//  eabank.gm
+//
+// Who   	When		What
+//------------------------------------------------------------------------------------------
+// palota	11 June 2025	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	goldCount = 0,
+
+	Roles =
+	{
+		AXIS =
+		{
+			DEFENDER =
+			{
+				numbots = 3,
+				crucialClass = { CLASS.ENGINEER, CLASS.MEDIC, CLASS.FIELDOPS }
+			},
+		},
+	},
+
+	Tresor_Wall_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.ALLIES, true, "FLAG_Gold_Bars");
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_gold.*");
+		Util.MapDebugPrint("Tresor_Wall_Destroyed");
+	},
+
+	Gold_Bars_Taken = function()
+	{
+		if (!Map.goldCount){
+			SetAvailableMapGoals(TEAM.AXIS, true, "CAMP_c.*");
+			SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_g.*");
+		}
+		++Map.goldCount;
+		Util.MapDebugPrint("Gold_Bars_Taken");
+	},
+
+	Gold_Bars_Dropped = function()
+	{
+		--Map.goldCount;
+		Util.MapDebugPrint("Gold_Bars_Dropped");
+	},
+
+	Gold_Bars_Returned = function()
+	{
+		if (!Map.goldCount){
+			SetAvailableMapGoals(TEAM.AXIS, false, "CAMP_c.*");
+			SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_g.*");
+		}
+		Util.MapDebugPrint("Gold_Bars_Returned");
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("^1Allies have Destroyed the Tresor Wall !", Map.Tresor_Wall_Destroyed);
+	OnTrigger("Allies have stolen The Gold Bars!", Map.Gold_Bars_Taken);
+	OnTrigger("Flag returned Gold Bars!", Map.Gold_Bars_Returned);
+	OnTrigger("Flag dropped Gold Bars!", Map.Gold_Bars_Dropped);
+
+	Util.DisableGoal({ "FLAG_Gold_Bars", "CAMP_c.*", "DEFEND_gold.*" });
+	SetGoalPriority("CAMP_c.*", 0.8);
+	SetGoalRole("DEFEND_g.*", ROLE.DEFENDER);
+
+	SetMapGoalProperties("ATTACK.*", {MinCampTime=5, MaxCampTime=20});
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=20, MaxCampTime=60});
+	SetMapGoalProperties("CAMP.*", {MinCampTime=20, MaxCampTime=90} );
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 150; //sniper windows
+};
+
+global InitializeRoutes = function()
+{
+	r = {
+		ROUTE_city1 = {Weight=3},
+		ROUTE_city2 = {},
+		ROUTE_city3 = {},
+		ROUTE_city4 = {},
+		ROUTE_city5 = {},
+		ROUTE_city6 = {},
+		ROUTE_city7 = {Weight=3},
+	};
+	MapRoutes =
+	{
+		FLAG_Gold_Bars =
+		{
+			ROUTE_allies =
+			{
+				ROUTE_a1 = r,
+				ROUTE_a2 = r,
+			},
+		},
+		CAPPOINT_gold =
+		{
+			ROUTE_gold = r
+		},
+	};
+	MapRoutes["ATTACK.*"] = MapRoutes.FLAG_Gold_Bars;
+	MapRoutes.PLANT_Tresor_Wall = MapRoutes.FLAG_Gold_Bars;
+	Util.Routes(MapRoutes);
+};

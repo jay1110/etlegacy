@@ -1,0 +1,244 @@
+//==========================================================================================
+//
+//	sottevast_pe.gm
+//
+//	Who       	When		What
+//------------------------------------------------------------------------------------------
+//	^1[UJE]^3Niek	12 October 2016	waypoints without script
+//	palota	18 July 2025	initial script
+//==========================================================================================
+//
+
+global Map =
+{
+
+	Entrance_Destroyed = function()
+	{
+		Wp.CheckBlockable();
+		Util.EnableGoal("ROUTE_entrance");
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"DEFEND_entrance.*",
+			"DEFEND_flag.*",
+			"PLANTMINE_e.*",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_parts.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"FLAG_parts",
+			".*Command_Post",
+		});
+		SetGoalPriority("SWITCH_door", 0.8, TEAM.ALLIES);
+		Util.SetMaxUsersInProgress(3, "CHECKPOINT.*");
+		Util.MapDebugPrint("Entrance_Destroyed");
+	},
+
+	Axis_Barricade_Built = function()
+	{
+		Wp.SetWaypointFlag("door", "axis", true);
+		Util.LimitToTeam(TEAM.AXIS, "ROUTE_barrier");
+		Util.MapDebugPrint("Axis_Barricade_Built");
+	},
+
+	Allied_Barricade_Built = function()
+	{
+		Wp.SetWaypointFlag("door", "allies", true);
+		Util.LimitToTeam(TEAM.ALLIES, "ROUTE_barrier");
+		Util.MapDebugPrint("Allied_Barricade_Built");
+	},
+
+	Barricade_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("door", {"axis", "allies"}, false);
+		Util.MapDebugPrint("Barricade_Destroyed");
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+		Util.SetMaxUsersInProgress(1, "CHECKPOINT.*");
+		Util.MapDebugPrint("Allied_Command_Post_Built");
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+		Util.SetMaxUsersInProgress(3, "CHECKPOINT.*");
+		Util.MapDebugPrint("Allied_Command_Post_Destroyed");
+	},
+
+	parts_Taken = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_parts.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_truck.*");
+		Util.MapDebugPrint("parts_Taken");
+	},
+
+	parts_Returned = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_parts.*");
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_truck.*");
+		Util.MapDebugPrint("parts_Returned");
+	},
+
+	parts_Secured = function()
+	{
+		Util.MapDebugPrint("parts_Secured");
+	},
+
+	flag_Allies_Captured = function()
+	{
+		Util.MapDebugPrint("flag_Allies_Captured");
+	},
+
+	flag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint("flag_Axis_Captured");
+	},
+
+	flag2_flag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint("flag2_flag_Axis_Captured");
+	},
+
+	flag2_flag_Allies_Captured = function()
+	{
+		Util.MapDebugPrint("flag2_flag_Allies_Captured");
+	},
+
+	door_goto = function(trigger)
+	{
+		b=ToVector(trigger.Action).y < 0;
+		if (b){
+			t=TEAM.AXIS;
+			m="open";
+		}
+		else
+		{
+			t=TEAM.ALLIES;
+			m="close";
+		}
+		Util.LimitToTeam(t, "SWITCH_door");
+		SetAvailableMapGoals(0, b, "ROUTE_side_door");
+		Util.MapDebugPrint("side door " + m, 1);
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("The Main Entrance is breached!", Map.Entrance_Destroyed);
+	OnTrigger("The Axis have barricaded the tunnels!", Map.Axis_Barricade_Built);
+	OnTrigger("The Allies have barricaded the tunnels!", Map.Allied_Barricade_Built);
+	OnTrigger("Axis barricade destroyed! The tunnels are open!", Map.Barricade_Destroyed);
+	OnTrigger("Allied barricade destroyed! The tunnels are open!", Map.Barricade_Destroyed);
+	OnTrigger("Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built);
+	OnTrigger("Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed);
+	OnTrigger("Allies have stolen the Targeting System!", Map.parts_Taken);
+	OnTrigger("Flag returned parts!", Map.parts_Returned);
+	OnTrigger("Allied team has captured the Targeting System!", Map.parts_Secured);
+	OnTrigger("The Allies have captured the forward bunker!", Map.flag_Allies_Captured);
+	OnTrigger("The Axis have reclaimed the forward bunker!", Map.flag_Axis_Captured);
+	//OnTrigger("Axis are pushed back, the Forward bunker has been captured by the Allies and secured for 30 seconds.", Map.flag_Allies_Captured);
+	OnTrigger("bd_left_d_goto", Map.door_goto);
+
+	Util.DisableGoal(".*", true);
+	Util.DisableGoal({"ROUTE_side_door", "ROUTE_entrance"});
+	Util.EnableGoal({
+		"AMMO.*",
+		"CHECKPOINT_flag1.*",
+		"BUILD_Tunnel_Barricade",
+		"PLANT_Tunnel_Barricade",
+	});
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		".*Command_Post",
+		"DEFEND_entrance.*",
+		"DEFEND_flag.*",
+		"PLANTMINE_e.*",
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"CAPPOINT_truck",
+		"ATTACK_flag.*",
+		"PLANT_Main_Entrance",
+		"SWITCH_door",
+	});
+
+	SetGoalPriority("SWITCH_door", 0, TEAM.ALLIES);
+	SetGoalPriority("PLANT_Main_Entrance", 0.9);
+	SetGoalPriority("FLAG.*", 0.7);
+
+	Util.AddUsePoint("PLANT_Tunnel_Barricade", {Vec3(2940,1119,-7), Vec3(3069, 984, -3)} );
+
+	Wp.SetWaypointFlag("door", {"axis", "allies"}, false);
+
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=30, MaxCampTime=60});
+
+	Util.SetMaxUsers(1, {
+		"SWITCH.*",
+		"BUILD_Neutral_Command_Post",
+	});
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		FLAG_parts =
+		{
+			ROUTE_cp_spawn =
+			{
+				ROUTE_parts5 ={},
+				ROUTE_parts6 ={},
+				ROUTE_entrance2 ={},
+			},
+			ROUTE_forward_spawn =
+			{
+				ROUTE_entrance =
+				{
+					ROUTE_entrance2 =
+					{
+						ROUTE_parts4 ={},
+						ROUTE_parts5 ={},
+					},
+					ROUTE_cp1 =
+					{
+						ROUTE_parts5 ={},
+						ROUTE_parts6 ={},
+					},
+					ROUTE_cp2 =
+					{
+						ROUTE_parts5 ={},
+						ROUTE_parts6 ={},
+					},
+				},
+				ROUTE_barrier =
+				{
+					ROUTE_parts1 ={},
+					ROUTE_parts2 ={},
+					ROUTE_parts3 ={},
+					ROUTE_parts4 ={},
+				},
+				ROUTE_side_door =
+				{
+					ROUTE_parts1 ={},
+					ROUTE_parts3 ={},
+					ROUTE_parts4 ={},
+				},
+			},
+		},
+		CAPPOINT_truck =
+		{
+			ROUTE_parts =
+			{
+				ROUTE_entrance =
+				{
+					ROUTE_truck1 ={},
+					ROUTE_truck2 ={},
+					ROUTE_truck3 ={},
+				},
+				ROUTE_side_door ={},
+				ROUTE_barrier ={},
+			},
+		},
+	};
+	Util.Routes(MapRoutes);
+};

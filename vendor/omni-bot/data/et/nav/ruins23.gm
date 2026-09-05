@@ -1,0 +1,842 @@
+//==============================================================================
+//
+//  Ruins of Acquiesce - ruins23.gm
+//
+//  Who         When                What
+//------------------------------------------------------------------------------
+//  Mateos      28 June 2022        Various improvements and fixes
+//
+//==============================================================================
+
+/****************************************************
+Script updated by Mateos
+Correspondant WAY file size: -
+Last update: 10th September 2023
+****************************************************/
+
+/*
+ * TODO:
+ * - Not always going well through the Well Grate
+ * - When the Palace main doors are destroyed, Allies are moved back; check their goal availability (neutral CP, ...)
+ * - Review the suicide sections
+ * - When at the Hourglass, if the Allies move from one camp goal to an other, an Axis can quickly run through and secure the Dagger...
+ * - END phase: perhaps Allied engineers shouldn't plant the Stairwell CP...
+ * - Landmines
+ *
+ * - Roles to handle the fact you can totally skip the Tank stuff? (later perhaps)
+ * - There's one ROUTE node, alone... Could be nice to go further, heh - not often several paths available though
+ */
+
+global Phase =
+{
+	START				= 1, // First spawn, get the Tank and escort it
+	COURTYARD			= 2, // Second spawn, keep escorting the Tank
+	PALACE_MAIN_DOORS	= 3, // Third spawn, no need to escort the Tank anymore
+	// TODO: Moved END to be both Old Village/Before Fortress and Fortress, perhaps something inbetween here
+	END					= 4, // Forward spawns... Old Village/Fortress
+};
+
+global Spawn =
+{
+	FORTRESS_TOWERS	= 1,
+	AXIS_BEACH		= 2,
+	PALACE_GARDEN	= 3,
+	PALACE_SPAWN	= 4,
+	OLD_VILLAGE		= 5,
+	ALLIED_BASE		= 6,
+};
+
+global Map =
+{
+	tblDefenseKey = { ".*DefenseKey.*", "TRIPMINE_Key.*" },
+	tblDefenseDagger = { ".*DefenseDagger.*", ".*DefenseCaptureKey[456]", "TRIPMINE_Dagger.*" },
+	DefenseKeyCapture = ".*DefenseCaptureKey.*", // Can be secured at 3 locations (Hourglass gate + Dagger gates)
+	tblDefenseDaggerCapture = { ".*DefenseCaptureDagger.*", ".*DefenseCaptureKey[12]" },
+	AttackDagger = ".*AttackDagger.*",
+
+	gate = false, // Closed
+
+	phase = Phase.START,
+
+	hasPalaceDefensesFallen = false,
+	isAxisOnlyCPBuilt = false, // To help managing Gate switches
+	isTowerWallDestroyed = false, // For the Gate' Axis switch reachability
+	isWellHouseSideEntranceDestroyed = false, // Once Palace Defenses done, can be used
+
+	isKeyStolen = false,
+	isKeySecured = false,
+
+	// *************************************************************************
+
+	axisonly_radio_built_Built = function( trigger )
+	{
+		Map.isAxisOnlyCPBuilt = true;
+
+		Map.Handle_Gate_Switches();
+
+		Util.MapDebugPrint( "axisonly_radio_built_Built" );
+	},
+
+	axisonly_radio_built_Destroyed = function( trigger )
+	{
+		Map.isAxisOnlyCPBuilt = false;
+
+		Map.Handle_Gate_Switches();
+
+		Util.MapDebugPrint( "axisonly_radio_built_Destroyed" );
+	},
+
+	Escort_Neotics_Tank = function( bAvailability )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, bAvailability, {
+			"ESCORT_neotics_tank",
+			"MOUNT_neotics_tank",
+		});
+	},
+
+	north_assault_ramp_Built = function( trigger )
+	{
+		Map.Manage_Key_Related_Goals();
+
+		Util.MapDebugPrint( "north_assault_ramp_Built" );
+	},
+
+	south_assault_ramp_Built = function( trigger )
+	{
+		Map.Manage_Key_Related_Goals();
+
+		Util.MapDebugPrint( "south_assault_ramp_Built" );
+	},
+
+	tank_repaired = function( trigger )
+	{
+		if ( phase < Phase.PALACE_MAIN_DOORS )
+		{
+			Map.Escort_Neotics_Tank( true );
+		}
+
+		Util.MapDebugPrint( "tank_repaired" );
+	},
+
+	tank_damaged = function( trigger )
+	{
+		if ( phase < Phase.PALACE_MAIN_DOORS )
+		{
+			Map.Escort_Neotics_Tank( false );
+		}
+
+		Util.MapDebugPrint( "tank_damaged" );
+	},
+
+	Courtyard_Captured = function( trigger )
+	{
+		Map.phase = Phase.COURTYARD;
+
+		// Too far away, give it up
+		Util.DisableGoal( "SWITCH_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"AMMOCAB_ammocabinet",
+			"HEALTHCAB_healthcabinet",
+			"PLANT_Axis_Command_Post"
+		});
+
+		Util.MapDebugPrint( "Courtyard_Captured" );
+	},
+
+	allied_compost_built_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "allied_compost_built_Built", true );
+	},
+
+	axis_compost_built_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "axis_compost_built_Built", true );
+	},
+
+	well_house_side_entrance_Destroyed = function( trigger )
+	{
+		Map.isWellHouseSideEntranceDestroyed = true;
+
+		Map.Manage_Well_House_Side_Entrance();
+
+		Util.MapDebugPrint( "well_house_side_entrance_Destroyed" );
+	},
+
+	tank_side_wall_Destroyed = function( trigger )
+	{
+		if ( Map.phase < Phase.END )
+		{
+			Wp.CheckBlockable();
+
+			// Since the Tank can be skipped, make sure this is executed without the action being forward...
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_neotics_tank" );
+
+			// DEFEND goals for Allies all along the Tank journey
+			TankDefenceManagement.Start();
+		}
+
+		Util.MapDebugPrint( "tank_side_wall_Destroyed" );
+	},
+
+	// TODO Changes spawns, might be a good idea to raise the priority
+	main_door_Destroyed = function( trigger )
+	{
+		Map.Manage_Key_Related_Goals();
+		Util.DisableGoal( "CHECKPOINT_forward_spawn" ); // Removed upon this event without wm_announce
+
+		Util.MapDebugPrint( "main_door_Destroyed", true );
+
+		// kill the allies
+		// change spawn
+		// half the allies should spawn at the cp
+		// TODO No code for 'half'
+		// TODO May kill Allies defending for the final obj...
+		foreach ( id and bot in BotTable )
+		{
+			if ( bot.GetTeam() == TEAM.ALLIES )
+			{
+				bot.ChangeSpawnPoint( Spawn.ALLIED_BASE ); // last spawn
+				// bot.ExecCommand("kill");
+			}
+		}
+	},
+
+	// TODO If the South one isn't built and the Fortress Main Entrance isn't destroyed,
+	// TODO this will cause reachability issues for Axis bots being outside
+	north_assault_ramp_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "north_assault_ramp_Destroyed", true );
+	},
+
+	tower_wall_Destroyed = function( trigger )
+	{
+		Map.isTowerWallDestroyed = true;
+
+		Wp.CheckBlockable();
+
+		if ( Map.phase < Phase.END )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Command_Post" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Command_Post" );
+		}
+
+		Util.MapDebugPrint( "tower_wall_Destroyed" );
+	},
+
+	south_assault_ramp_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "south_assault_ramp_Destroyed", true );
+	},
+
+	closet_door_Destroyed = function( trigger )
+	{
+		// When destroying it from the CP side
+		Util.EnableGoal( Groups.ALL.Old_Village );
+		Groups.EnableAxis( Groups.AXIS.Old_Village );
+		Groups.EnableAllies( Groups.ALLIES.Old_Village );
+
+		// When destroying it from the Old Village side
+		Util.EnableGoal( { "BUILD_Stair_Well_Command_Post", "PLANT_Stair_Well_Command_Post" } );
+
+		Util.MapDebugPrint( "closet_door_Destroyed" );
+	},
+
+	// TODO Little sleep to wait for the blockwall flags refresh
+	stair_well_side_entrance_Destroyed = function( trigger )
+	{
+		Map.phase = Phase.END;
+
+		Util.EnableGoal( { "BUILD_Stair_Well_Command_Post", "PLANT_Stair_Well_Command_Post" } );
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"BUILD_South_Assault_Ramp",
+			"PLANT_Barrier_Side_Wall",
+			"PLANT_Closet_Door"
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, Map.DefenseKeyCapture );
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			Map.tblDefenseKey,
+			"PLANT_South_Assault_Ramp",
+		});
+
+		Util.MapDebugPrint( "stair_well_side_entrance_Destroyed" );
+	},
+
+	allied_compost_built_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "allied_compost_built_Destroyed", true );
+	},
+
+	axis_compost_built_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "axis_compost_built_Destroyed", true );
+	},
+
+	barrier_side_wall_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "barrier_side_wall_Destroyed", true );
+	},
+
+	// TODO No matter if escorting the Tank is done or not, this gives Axis access to the next area
+	// Axis can than build/destroy objectives leading to the end map objectives...
+	// TODO Perhaps later change phase here if still < PALACE_MAIN_DOORS, and handle (never saw it played like that yet though)
+	well_grate_Destroyed = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Stair_Well_Side_Entrance" );
+
+		Util.MapDebugPrint( "well_grate_Destroyed" );
+	},
+
+	// Same access as well_grate_Destroyed
+	// TODO: Move Allies to the Old Village spawn here? Split?
+	palace_main_doors_Destroyed = function( trigger )
+	{
+		TankDefenceManagement.Stop();
+
+		Map.phase = Phase.PALACE_MAIN_DOORS;
+		Map.hasPalaceDefensesFallen = true;
+
+		DeleteTriggerRegion( "Switch_Tank_Offsets_To_Behind" );
+		DeleteTriggerRegion( "Switch_Tank_Offsets_To_Left" );
+
+		// The Well Grate looses interest at this point
+		Map.Escort_Neotics_Tank( false );
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_neotics_tank",
+			"PLANT_Well_Grate"
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Stair_Well_Side_Entrance" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Stair_Well_Command_Post" );
+
+		Map.Manage_Well_House_Side_Entrance();
+
+		// If the Axis-only CP isn't built at that moment, just have one Axis going for it
+		Util.SetMaxUsersInProgress( 1, "BUILD_Axis_Command_Post" );
+
+		Util.MapDebugPrint( "palace_main_doors_Destroyed" );
+	},
+
+	garage_wall_Destroyed = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Ruins_Entrance.*" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Ruins_Entrance.*" );
+
+		Util.MapDebugPrint( "garage_wall_Destroyed" );
+	},
+
+	Manage_Well_House_Side_Entrance = function()
+	{
+		if ( Map.hasPalaceDefensesFallen && Map.isWellHouseSideEntranceDestroyed )
+		{
+			Map.phase = Phase.END;
+
+			sleep( 3 );
+
+			Wp.CheckBlockable();
+
+			// New objectives are reachable for Axis through the Well House Side Entrance
+			// And thus Allies should take that into account
+			Util.EnableGoal( Groups.ALL.Old_Village );
+			Groups.EnableAxis( Groups.AXIS.Old_Village );
+			Groups.EnableAllies( Groups.ALLIES.Old_Village );
+		}
+	},
+
+	// Once the Key is reachable
+	Manage_Key_Related_Goals = function()
+	{
+		// TODO Call where needed
+		if ( Map.isKeySecured )
+		{
+			return;
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "FLAG_gate_key" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "TRIPMINE_Hourglass" );
+
+		if ( Map.isKeyStolen )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, Map.tblDefenseKey );
+			SetAvailableMapGoals( TEAM.ALLIES, true, Map.DefenseKeyCapture );
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, Map.DefenseKeyCapture );
+			SetAvailableMapGoals( TEAM.ALLIES, true, Map.tblDefenseKey );
+		}
+	},
+
+	Allies_Capture_Flag = function( trigger )
+	{
+		// TODO Also called when Axis first capture it...
+		Util.MapDebugPrint( "Allies_Capture_Flag", true );
+	},
+
+	Axis_Capture_Flag = function( trigger )
+	{
+		Util.MapDebugPrint( "Axis_Capture_Flag", true );
+	},
+
+	 Axis_Flag = function( trigger )
+	{
+		// Forget about far away objectives
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_Axis_Command_Post",
+			"PLANT_Stair_Well_Side_Entrance",
+			"PLANT_Well_Grate",
+			"PLANT_Well_House_Side_Entrance",
+		});
+
+		Util.MapDebugPrint( "Axis_Capture_Flag", true );
+	},
+
+	Key_Stolen = function( trigger )
+	{
+		Map.isKeyStolen = true;
+
+		if ( Map.phase < Phase.END ) // TODO Cannot happen anymore until revised
+		{
+			// kill the allies
+			// change spawn
+			// half the allies should spawn at the cp TODO sic
+			foreach ( id and bot in BotTable )
+			{
+				if ( bot.GetTeam() == TEAM.ALLIES )
+				{
+					bot.ChangeSpawnPoint( Spawn.ALLIED_BASE ); // last spawn
+					bot.ExecCommand( "kill" );
+				}
+			}
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, Map.DefenseKeyCapture );
+		SetAvailableMapGoals( TEAM.ALLIES, false, Map.tblDefenseKey );
+
+		Util.MapDebugPrint( "Key_Stolen" );
+	},
+
+	Key_Returned = function( trigger )
+	{
+		Map.isKeyStolen = false;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, Map.DefenseKeyCapture );
+		SetAvailableMapGoals( TEAM.ALLIES, true, Map.tblDefenseKey );
+
+		Util.MapDebugPrint( "Key_Returned" );
+	},
+
+	Key_Captured = function( trigger )
+	{
+		Map.isKeySecured = true;
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"CAPPOINT_DeliverKey",
+			"FLAG_gate_key"
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"CAPPOINT_DeliverDagger",
+			"FLAG_dagger"
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			Map.tblDefenseDaggerCapture,
+			Map.tblDefenseKey,
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false,  Map.DefenseKeyCapture );
+		SetAvailableMapGoals( TEAM.ALLIES, true, Map.tblDefenseDagger );
+
+		Util.MapDebugPrint( "Key_Captured" );
+	},
+
+	// Game lost for allies
+	Dagger_Captured = function( trigger )
+	{
+		Util.MapDebugPrint( "Dagger_Captured", true );
+	},
+
+	Dagger_Stolen = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, Map.AttackDagger );
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			Map.tblDefenseDagger,
+			Map.tblDefenseKey,
+			Map.DefenseKeyCapture,
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, Map.tblDefenseDaggerCapture );
+
+		Util.MapDebugPrint( "Dagger_Stolen" );
+	},
+
+	Dagger_Returned = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, Map.AttackDagger );
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			Map.tblDefenseDaggerCapture,
+			Map.tblDefenseKey,
+			Map.DefenseKeyCapture,
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, Map.tblDefenseDagger );
+
+		Util.MapDebugPrint( "Dagger_Returned" );
+	},
+
+	Gate = function( trigger )
+	{
+		vel = ToVector( trigger.Action );
+		if ( vel[0] > 0 )
+		{
+			Map.gate = false;
+			Util.MapDebugPrint( "gate closing", true );
+		}
+		else if ( vel[0] < 0 )
+		{
+			Map.gate = true;
+			Util.MapDebugPrint( "gate opening", true );
+		}
+
+		Map.Handle_Gate_Switches();
+
+		Util.MapDebugPrint( "Gate" );
+	},
+
+	Handle_Gate_Switches = function()
+	{
+		if ( Map.phase > Phase.START )
+		{
+			return;
+		}
+
+		// Axis-only CP destroyed -> Gate is powered-off
+		if ( !Map.isAxisOnlyCPBuilt )
+		{
+			Util.DisableGoal( "SWITCH_.*" );
+			SetAvailableMapGoals( TEAM.AXIS, Map.isTowerWallDestroyed, "BUILD_Axis_Command_Post" );
+			return;
+		}
+
+		if ( Map.gate )
+		{
+			// Gate is opened and Axis-only CP built
+			// Both teams want it to stay like this
+			Util.DisableGoal( "SWITCH_.*" );
+		}
+		else
+		{
+			// Gate is closed and Axis-only CP built
+			// Both teams want it opened
+			Util.EnableGoal( "SWITCH_GateAllies" );
+			SetAvailableMapGoals( TEAM.AXIS, Map.isTowerWallDestroyed, "SWITCH_GateAxis" );
+		}
+
+		// Now that the switch goals are managed, handle the Axis-only CP
+		SetAvailableMapGoals( TEAM.AXIS, Map.isTowerWallDestroyed || Map.gate, "BUILD_Axis_Command_Post" );
+		SetAvailableMapGoals( TEAM.ALLIES, Map.gate, "PLANT_Axis_Command_Post" );
+	},
+};
+
+global OnMapLoad = function()
+{
+	// The announcements are trimmed to 71 chars, the maximum supported by Omni-Bot
+	OnTrigger( "*^1Axis Command Post constructed. Charge speed increased!^7", Map.axis_compost_built_Built );
+	OnTrigger( "*^1Allied Command Post constructed. Charge speed increased!^7", Map.allied_compost_built_Built );
+	OnTrigger( "*^1Axis team has destroyed the Allied Command Post!^7", Map.allied_compost_built_Destroyed );
+	OnTrigger( "*^1Allied team has destroyed the Axis Command Post!^7", Map.axis_compost_built_Destroyed );
+
+	OnTrigger( "*^1Axis Command Post constructed. Charge speed increased!", Map.axisonly_radio_built_Built );
+	OnTrigger( "*^1Allies has destroyed the Axis Command Post!", Map.axisonly_radio_built_Destroyed );
+
+	OnTrigger( "*^1The Tank has been repaired!^7", Map.tank_repaired );
+	OnTrigger( "*^1The Tank has been damaged!^7", Map.tank_damaged );
+	OnTrigger( "*^1Axis have captured the Palace Garden Courtyard!^7", Map.Courtyard_Captured );
+	OnTrigger( "*^1Axis have constructed the South Assault Ramp!^7", Map.south_assault_ramp_Built );
+	OnTrigger( "*^1Allies have blown the South Assault Ramp!^7", Map.south_assault_ramp_Destroyed );
+	OnTrigger( "*^1Axis have breached a part of the Barrier Side Wall!^7", Map.barrier_side_wall_Destroyed );
+
+	OnTrigger( "*^1Axis have breached the Tower!^7", Map.tower_wall_Destroyed );
+	OnTrigger( "*^1Axis have blown the Palace Main Doors!^7", Map.palace_main_doors_Destroyed );
+
+	OnTrigger( "*^1Axis have destroyed the Fortress Main Entrance and captured the Fort", Map.main_door_Destroyed );
+	OnTrigger( "*^1The Well Grate has been blown!^7", Map.well_grate_Destroyed );
+	OnTrigger( "*^1Axis have breached the Tank Side Wall!^7" , Map.tank_side_wall_Destroyed );
+	OnTrigger( "*^1Axis have crashed through the garage wall!^7", Map.garage_wall_Destroyed );
+	OnTrigger( "*^1Allies have blown the North Assault Ramp!^7", Map.north_assault_ramp_Destroyed );
+	OnTrigger( "*^1Axis have constructed the North Assault Ramp!^7", Map.north_assault_ramp_Built );
+
+	OnTrigger( "*^1Axis have destroyed the Closet Door!^7" , Map.closet_door_Destroyed );
+	OnTrigger( "*^1Axis have destroyed the Well House Side Entrance!^7" , Map.well_house_side_entrance_Destroyed );
+
+	OnTrigger( "*^1Axis have destroyed the Stair Well Side Entrance!^7" , Map.stair_well_side_entrance_Destroyed );
+	OnTrigger( "*^1The Old Village is now permanently captured by Axis!^7", Map.Axis_Flag );
+	OnTrigger( "*^1Axis have secured the Old Village and if held for 7 seconds will be ", Map.Allies_Capture_Flag );
+	OnTrigger( "*^1Allies have captured the Old Village!^7", Map.Axis_Capture_Flag );
+
+	OnTrigger( "*^1Axis are attempting to unlock the Dagger's Gate!^7", Map.Key_Stolen );
+	OnTrigger( "*^1Allies have returned the Gate Key!^7", Map.Key_Returned );
+	OnTrigger( "*^1The Dagger of Time and Hourglass have been breached and are now defe", Map.Key_Captured );
+
+	OnTrigger( "Axis have stolen the Dagger of Time!", Map.Dagger_Stolen );
+	OnTrigger( "*^1Allies have returned the Dagger of Time!^7", Map.Dagger_Returned );
+	OnTrigger( "*^1The Power and Wrath of the Hourglass have been unleashed!!^7", Map.Dagger_Captured );
+
+	// Notes
+	// The Gate can only be activated while the Axis-only CP is built
+	// Both levers move at once when one is activated, thus calling Gate twice
+	// When the Axis-only CP gets destroyed, the Gate is closing, without moving the levers!
+	// So for now we'll keep this trigger as-is
+	OnTrigger( "side_door_side_door1_goto", Map.Gate );
+
+	OnTriggerRegion( Vec3( 3475, -2920, 650 ), 35, RegionsTriggers.Switch_Tank_Offsets_To_Behind );	// Has moved once, make sure the back one is used from now on
+	OnTriggerRegion( Vec3( 1905, -3200, 650 ), 35, RegionsTriggers.Switch_Tank_Offsets_To_Left );	// Just upon entering the Palace Garden area, before stairs
+	OnTriggerRegion( Vec3( -145, -3200, 650 ), 35, RegionsTriggers.Switch_Tank_Offsets_To_Behind );	// Just after exiting the Palace Garden area, after stairs
+
+
+	SetGoalPriority( "PLANT_Well_Grate", 0.82 );
+	SetGoalPriority( "PLANT_damaged_Tank_Side_Wall", 0.83 );
+	SetGoalPriority( "PLANT_weak_Tower_Wall", 0.83 );
+
+
+	// The following 2 goals can be planted on both sides
+	// Cover-splitting ofc requires to have a use point on each side for cover spots to work properly
+	Util.AddUsePoint( "PLANT_Barrier_Side_Wall", Vec3( -1890, 1900, 1035 ) ); // South Assault Ramp side
+	Util.AddUsePoint( "PLANT_Barrier_Side_Wall", Vec3( -1975, 2215, 1035 ) ); // Fortress Main Entrance side
+
+	Util.AddUsePoint( "PLANT_Closet_Door", Vec3( -2390, 535, 1050 ) ); // South Assault Ramp side
+	Util.AddUsePoint( "PLANT_Closet_Door", Vec3( -2515, 545, 1050 ) ); // Old Village side
+
+	Util.SetGoalOffset( 150, 0, 0, "PLANT_damaged_Tank_Side_Wall" );
+	Util.SetGoalOffset( 0, 0, 25, "PLANT_Well_Grate" );
+	Util.SetGoalPosition( -3475, 2520, 1560, "PLANT_North_Assault_Ramp" );
+	Util.SetGoalPosition( -2525, 1610, 1300, "PLANT_South_Assault_Ramp" );
+	Util.SetGoalPosition( 5800, -1970, 575, "PLANT_weak_Tower_Wall" );
+
+
+	Util.DisableGoal( ".*", true ); // All but routes
+	Util.EnableGoal( { "AMMOCAB_ammocabinet", "HEALTHCAB_healthcabinet" } );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"ATTACK_Ruins_Entrance.*",
+		"CAPPOINT_DeliverKey",
+		"PLANT_damaged_Tank_Side_Wall",
+		"PLANT_weak_Tower_Wall",
+		"PLANT_Well_Grate",
+		"PLANT_Well_House_Side_Entrance"
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Ruins_Entrance.*" );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 300.0;
+	bot.GetWeapon( WEAPON.KNIFE ).PrimaryFire.SetDesirabilityRange( 0, 48, 0.6 );
+};
+
+global Groups =
+{
+	ALL =
+	{
+		Old_Village =
+		{
+			"CHECKPOINT_forward_spawn" // TODO Might be gone when called or reachability issue upon main_door_Destroyed?
+		},
+	},
+
+	ALLIES =
+	{
+		Old_Village =
+		{
+			"PLANT_North_Assault_Ramp"
+		},
+	},
+
+	AXIS =
+	{
+		Old_Village =
+		{
+			"BUILD_North_Assault_Ramp",
+			"PLANT_Barrier_Side_Wall", // TODO If already destroyed, generates a print in the console upon Closet Door destruction for instance
+			"PLANT_Closet_Door",
+			"PLANT_Fortress_Main_Entrance"
+		},
+	},
+
+	DisableAllies = function( goals )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, goals );
+	},
+
+	DisableAxis = function( goals )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, goals );
+	},
+
+	EnableAllies = function( goals )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, goals );
+	},
+
+	EnableAxis = function( goals )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, goals );
+	},
+};
+
+global RegionsTriggers =
+{
+	BUILD_TANK_BEHIND_OFFSET = 0,
+	BUILD_TANK_LEFT_OFFSET = 1,
+
+	ESCORT_TANK_BEHIND_OFFSETS = { 0, 1 },
+	ESCORT_TANK_LEFT_OFFSETS = { 2, 3 },
+
+	Switch_Tank_Offsets_To_Behind =
+	{
+		Name = "Switch_Tank_Offsets_To_Behind",
+		TriggerOnEntity = GetGoal( "MOVER_tank" ).GetEntity(),
+		OnEnter = function( ent )
+		{
+			ETUtil.SetExcludeIndexes( "BUILD_neotics_tank", { RegionsTriggers.BUILD_TANK_LEFT_OFFSET } );
+			ETUtil.SetExcludeIndexes( "ESCORT_neotics_tank", RegionsTriggers.ESCORT_TANK_LEFT_OFFSETS );
+
+			Util.MapDebugPrint( "Switch_Tank_Offsets_To_Behind", true );
+		},
+	},
+
+	Switch_Tank_Offsets_To_Left =
+	{
+		Name = "Switch_Tank_Offsets_To_Left",
+		TriggerOnEntity = GetGoal( "MOVER_tank" ).GetEntity(),
+		OnEnter = function( ent )
+		{
+			ETUtil.SetExcludeIndexes( "BUILD_neotics_tank", { RegionsTriggers.BUILD_TANK_BEHIND_OFFSET } );
+			ETUtil.SetExcludeIndexes( "ESCORT_neotics_tank", RegionsTriggers.ESCORT_TANK_BEHIND_OFFSETS );
+
+			Util.MapDebugPrint( "Switch_Tank_Offsets_To_Left", true );
+		},
+	},
+};
+
+/** Make the Allied bots defend the Tank all along its journey to the Palace Main Doors */
+global TankDefenceManagement =
+{
+	/** Entity target name, to track its position */
+	ENTITY_TARGET_NAME,
+
+	/** Entity to track the position of */
+	ENTITY,
+
+	/** Radius around the entity to enable the goals from */
+	RADIUS,
+
+	/** List of the goals to manage */
+	GOAL_LIST,
+
+	/** Check interval */
+	CHECK_INTERVAL,
+
+	/** Team for which handle the goals availability */
+	TEAM,
+
+	/** Entity last position, to detect if it's either moving or not */
+	entityPreviousPosition,
+
+	/** Flag that indicates if the thread can run or not */
+	run,
+
+	// *************************************************************************
+
+	Start = function()
+	{
+		TankDefenceManagement.Init();
+		thread( TankDefenceManagement.TrackMovement );
+	},
+
+	Init = function()
+	{
+		TankDefenceManagement.ENTITY_TARGET_NAME = "tank";
+		TankDefenceManagement.ENTITY = GetEntityByName( TankDefenceManagement.ENTITY_TARGET_NAME );
+
+		TankDefenceManagement.RADIUS = 768;
+
+		TankDefenceManagement.GOAL_LIST = Util.GoalTable( "CAMP_Tank.*"  );
+
+		TankDefenceManagement.CHECK_INTERVAL = 1.0;
+
+		TankDefenceManagement.TEAM = TEAM.AXIS & TEAM.ALLIES; // Both teams
+
+		TankDefenceManagement.run = true;
+	},
+
+	TrackMovement = function()
+	{
+		Util.MapDebugPrint( "Starting Tank defence management thread...", true );
+
+		while ( TankDefenceManagement.run )
+		{
+			entityCurrentPosition = GetEntPosition( TankDefenceManagement.ENTITY );
+			if ( entityCurrentPosition != TankDefenceManagement.entityPreviousPosition )
+			{
+				TankDefenceManagement.entityPreviousPosition = entityCurrentPosition;
+				TankDefenceManagement.ManageGoals();
+			}
+			else
+			{
+				// For debug purposes
+				foreach ( goal in TankDefenceManagement.GOAL_LIST )
+				{
+					TankDefenceManagement.DrawDebugGoal( goal );
+				}
+			}
+
+			// For debug purposes
+			DrawRadius( entityCurrentPosition, TankDefenceManagement.RADIUS, COLOR.BROWN, TankDefenceManagement.CHECK_INTERVAL );
+
+			sleep( TankDefenceManagement.CHECK_INTERVAL );
+		}
+
+		foreach ( goal in TankDefenceManagement.GOAL_LIST )
+		{
+			goal.SetAvailable( TankDefenceManagement.TEAM, false );
+		}
+
+		Util.MapDebugPrint( "Stopping Tank defence management thread...", true );
+	},
+
+	ManageGoals = function()
+	{
+		foreach ( goal in TankDefenceManagement.GOAL_LIST )
+		{
+			shouldGoalBeEnabled = DistanceBetween( goal, TankDefenceManagement.ENTITY ) <= TankDefenceManagement.RADIUS;
+			goal.SetAvailable( TankDefenceManagement.TEAM, shouldGoalBeEnabled );
+
+			// For debug purposes
+			TankDefenceManagement.DrawDebugGoal( goal );
+		}
+	},
+
+	DrawDebugGoal = function( goal )
+	{
+		goalPosition = goal.GetPosition();
+		goalEyePosition = Vector3( goalPosition.x, goalPosition.y, goalPosition.z + 64 );
+
+		color;
+		if ( goal.IsAvailable( TEAM.AXIS ) || goal.IsAvailable( TEAM.ALLIES ) )
+		{
+			color = COLOR.CYAN;
+		}
+		else
+		{
+			color = COLOR.ORANGE;
+		}
+
+		DrawDebugLine( goalPosition, goalEyePosition, color, TankDefenceManagement.CHECK_INTERVAL );
+	},
+
+	Stop = function()
+	{
+		TankDefenceManagement.run = false;
+	},
+};

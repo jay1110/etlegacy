@@ -1,0 +1,677 @@
+//==========================================================================================
+//
+//	Beta1 script
+//
+//	river_port.gm
+//
+//	Who                    	When		What
+//------------------------------------------------------------------------------------------
+//	^1{WeB}^7*^4GA^1NG$^4TA^7*	24 January 2016	Initial Script
+//	SSF-Sage					21 November 2016 Adding tweaks and scripts
+//	palota						14 April 2018	fixed unreachable goals and balcony mg42, script cleanup
+//==========================================================================================
+//
+
+global Map =
+{
+	uboat = 0,
+
+	M8_Greyhound_Built = function()
+	{
+		Util.MapDebugPrint( "M8_Greyhound_Built" );
+	},
+
+	Tank_Barrier_Built = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_Built" );
+	},
+
+	MG_kit_available = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_balcony_mg",
+			"MOUNTMG42_balcony_mg",
+			"REPAIRMG42_balcony_mg",
+		});
+
+		Util.MapDebugPrint( "MG_kit_available" );
+	},
+
+	Tank_on_bridge = function()
+	{
+		SetGoalPriority( "PLANT_Tank_Barrier", 0.91, TEAM.ALLIES );
+		SetGoalPriority( "ESCORT_tank", 0.5, TEAM.ALLIES );
+
+		Util.MapDebugPrint( "Tank_on_bridge" );
+	},
+
+	Anti_Tank_Gun_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ESCORT_tank",
+			"MOUNT_tank_allied",
+			"BUILD_M8_Greyhound",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ROUTE_allied_spawn" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Tank_Barrier" );
+
+		Util.SetMaxUsersInUse( 2, "ESCORT_tank" );
+		Util.SetMaxUsersInProgress( 3, "ESCORT_tank" );
+
+		Util.MapDebugPrint( "Anti_Tank_Gun_Destroyed" );
+	},
+
+	Tank_Barrier_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_Destroyed" );
+	},
+
+	GoSub = function()
+	{
+		Util.DisableGoal("DEFEND_radio.*");
+		Util.EnableGoal("ATTACK_Sub.*");
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Sub.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Sub_[12]" );
+	},
+
+	secret_documents_Taken = function()
+	{
+		Map.docs = 1;
+		if (Map.uboat){
+			Map.GoSub();
+		}
+		Util.MapDebugPrint( "secret_documents_Taken" );
+	},
+
+	secret_documents_Returned = function()
+	{
+		Map.docs = 0;
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"DEFEND_radio_[456]",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_radio.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"ATTACK_Sub.*",
+			"DEFEND_Sub.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_Sub.*",
+			"DEFEND_Sub_[12]",
+		});
+
+		Util.MapDebugPrint( "secret_documents_Returned" );
+	},
+
+	secret_documents_Secured = function()
+	{
+		Map.GoSub();
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"FLAG_secret_documents",
+			"CAPPOINT_submarine",
+        });
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_v2_allied" );
+
+		Util.MapDebugPrint( "secret_documents_Secured" );
+	},
+
+	Tank_Passed_Barrier = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_radio_[123]",
+		});
+
+		SetGoalPriority( "DEFEND_radio_[123]", 0.51, TEAM.AXIS );
+		SetGoalPriority( "ESCORT_tank", 0.79, TEAM.ALLIES );
+
+		Util.MapDebugPrint( "Tank_Passed_Barrier" );
+	},
+
+	Headquarter_Entrance_Breached = function()
+	{
+		sleep(2);
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ESCORT_tank",
+			"MOUNT_tank_allied",
+			"BUILD_M8_Greyhound",
+			"DEFEND_Barrier.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"SWITCH_radio_1",
+			"DEFEND_radio_[456]",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_radio_[456]",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_Barrier.*",
+		});
+
+		SetGoalPriority( "DEFEND_radio_[123]", 0.5, TEAM.AXIS );
+
+		Util.MapDebugPrint( "Headquarter_Entrance_Breached" );
+	},
+
+	Allies_Activate_Radio = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_radio_1" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_radio_1" );
+
+		Util.MapDebugPrint( "Allies_Activate_Radio" );
+	},
+
+	Radio_Fragments_Received = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_radio_1" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_radio_1" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"FLAG_secret_documents",
+		});
+
+		Util.MapDebugPrint( "Radio_Fragments_Received" );
+	},
+
+	Uboat_ready = function()
+	{
+		Map.uboat = 1;
+		if (Map.docs){
+			Map.GoSub();
+		}
+		SetAvailableMapGoals( TEAM.ALLIES, true, "CAPPOINT_submarine" );
+
+		OnTriggerRegion(AABB(-4681.062,-4513.892,305.411,-3679.704,-1542.785,759.561), RegionTrigger.DisableCombatMovement);
+
+		Util.MapDebugPrint( "Uboat_ready" );
+	},
+
+	Axis_DeActivate_Radio = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_radio_1" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_radio_1" );
+
+		Util.MapDebugPrint( "Axis_DeActivate_Radio" );
+	},
+
+	Allies_Activate_V2_Radio = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_V2_radio" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_V2_radio" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_v2_axis" );
+
+		Util.MapDebugPrint( "Allies_Activate_V2_Radio" );
+	},
+
+	Obj_Anti_Tank_Gun = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ESCORT_tank" );
+
+		Util.MapDebugPrint( "Obj_Anti_Tank_Gun " );
+	},
+
+	Axis_DeActivate_V2_Radio = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_V2_radio" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_V2_radio" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_v2_axis" );
+
+		Util.MapDebugPrint( "Axis_DeActivate_V2_Radio" );
+	},
+
+	Railway_Courtyard_Captured = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_Barrier_[12345]",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Tank_Barrier",
+			"DEFEND_Barrier_[678]",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_Gun.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"DEFEND_Gun.*",
+			"ATTACK_Gun.*",
+			"BUILD_balcony_mg",
+			"MOUNTMG42_balcony_mg",
+			"REPAIRMG42_balcony_mg",
+		});
+
+		Util.MapDebugPrint( "Railway_Courtyard_Captured" );
+	},
+
+	V2_Deconstructed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_V2_radio" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_V2_radio" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_v2_allied" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_v2_axis" );
+
+		Util.MapDebugPrint( "V2_Deconstructed" );
+	},
+
+	V2_Constructed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_V2_radio" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_v2_allied" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_v2_axis" );
+
+		Util.MapDebugPrint( "V2_Constructed" );
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "The M8 Greyhound has been repaired!", Map.M8_Greyhound_Built );
+	OnTrigger( "Tank Barrier has been constructed.", Map.Tank_Barrier_Built );
+	OnTrigger( "Allied team has destroyed the Anti-Tank Gun!", Map.Anti_Tank_Gun_Destroyed );
+	OnTrigger( "Tank Barrier has been destroyed.", Map.Tank_Barrier_Destroyed );
+	OnTrigger( "Allies have stolen V2 Launch Code!", Map.secret_documents_Taken );
+	OnTrigger( "Axis have returned V2 Launch Code!", Map.secret_documents_Returned );
+	OnTrigger( "Allied team secured the V2 Launch Code into the U-boat!", Map.secret_documents_Secured );
+	OnTrigger( "Allied team passed the Tank Barrier!", Map.Tank_Passed_Barrier );
+	OnTrigger( "Allies have breached the Headquarter Entrance!", Map.Headquarter_Entrance_Breached );
+	OnTrigger( "Allies have started commanding the Axis U-boat to berth!", Map.Allies_Activate_Radio );
+	OnTrigger( "^1Both ^wcommand fragments received!", Map.Radio_Fragments_Received );
+	OnTrigger( "Axis have stopped Allies from transmitting code!", Map.Axis_DeActivate_Radio );
+	OnTrigger( "Allies have started preparing the V2 Rocket... 20 seconds remaining!", Map.Allies_Activate_V2_Radio );
+	OnTrigger( "Axis have prevented Allies from preparing the V2 Rocket!", Map.Axis_DeActivate_V2_Radio );
+	OnTrigger( "^1Allied Objective: ^3Destroy the Anti-Tank Gun!", Map.Obj_Anti_Tank_Gun );
+	OnTrigger( "Allied team has taken over the Railway Yard!", Map.Railway_Courtyard_Captured );
+	OnTrigger( "Axis have deconstructed the V2 Launch Hack.", Map.V2_Deconstructed );
+	OnTrigger( "V2 Launch Hack has been constructed.", Map.V2_Constructed );
+	OnTrigger( "The U-boat is at the Port!", Map.Uboat_ready );
+	OnTrigger( "The Tank is on the Bridge!", Map.Tank_on_bridge );
+	OnTrigger( "The Balcony MG Nest Kit has been delivered!", Map.MG_kit_available );
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal("AMMOCAB.*");
+	Util.EnableGoal("HEALTHCAB.*");
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"DEFEND_Gun.*",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_M8_Greyhound",
+		"ESCORT_tank",
+		"PLANT_Anti_Tank_Gun",
+		"ATTACK_gun.*",
+		"DEFEND_Gun_[145]",
+	});
+
+	SetGoalPriority( "BUILD_balcony_mg", 0.81, TEAM.ALLIES );
+
+	Util.AddUsePoint( "PLANT_Anti_Tank_Gun", { Vec3(4177,-31,452), Vec3(4258,43,452), Vec3(4292,-124,452) });
+	Util.AddUsePoint( "PLANT_Tank_Barrier", { Vec3(388,-1817,512), Vec3(378,-1677,497), Vec3(422,-1573,502), Vec3(350,-1423,494) });
+	Util.AddUsePoint( "BUILD_balcony_mg", { Vec3(1617.585, 1033.916, 816.125) });
+	Util.SetGoalOffset( -20, 20, -30, "MOUNTMG42_balcony_mg" );
+
+	Util.SetMaxUsersInProgress( 2, "MOUNT_tank_allied" );
+	Util.SetMaxUsers( 1, "ESCORT_tank" );
+	Util.SetMaxUsersInProgress( 10, "SWITCH_.*" );
+
+	Util.SetMaxUsers( 1, "BUILD_balcony_mg" );
+	Util.SetMaxUsersInProgress( 1, "MOUNTMG42_balcony_mg" );
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_Anti_Tank_Gun =
+		{
+			ROUTE_allied_spawn =
+			{
+				ROUTE_south_bridge = {},
+				ROUTE_north_bridge =
+				{
+					Weight = 1.5,
+				},
+			},
+		},
+	 	ATTACK_Gun_1 =
+		{
+			ROUTE_allied_spawn =
+			{
+				ROUTE_south_bridge = {},
+				ROUTE_north_bridge =
+				{
+					Weight = 2,
+				},
+			},
+		},
+		ATTACK_Gun_2 =
+		{
+			ROUTE_allied_spawn =
+			{
+				ROUTE_south_bridge = {},
+				ROUTE_north_bridge =
+				{
+					Weight = 3,
+				},
+			},
+		},
+
+		DEFEND_Gun_1 =
+		{
+			ROUTE_allied_spawn =
+			{
+				ROUTE_south_bridge = {},
+				ROUTE_uphill_side_route = {},
+				ROUTE_north_bridge = {},
+			},
+		},
+
+		PLANT_Tank_Barrier =
+		{
+			ROUTE_allied_2nd_spawn =
+			{
+				ROUTE_foot_bridge = {},
+				ROUTE_main_bridge = {},
+			},
+		},
+
+		DEFEND_Barrier_1 =
+		{
+			ROUTE_axis_2nd_spawn =
+			{
+				ROUTE_to_bridge_1 = {},
+				ROUTE_to_bridge_2 =
+				{
+				Weight = 4,
+					ROUTE_to_bridge_2a =
+					{
+						ROUTE_to_bridge_2b = {},
+					},
+				},
+			},
+
+			ROUTE_axis_2nd_spawn2 =
+			{
+				ROUTE_to_bridge_2a =
+				{
+					ROUTE_to_bridge_2b
+				},
+			},
+
+		},
+
+		DEFEND_radio_1 =
+		{
+			ROUTE_axis_3rd_spawn =
+			{
+				ROUTE_mansion_back = {},
+				ROUTE_mansion_back_2 =
+				{
+					ROUTE_hq_front = {},
+				},
+
+				ROUTE_mansion_front =
+				{
+					Weight = 1.2,
+					ROUTE_mansion_back_2 =
+					{
+						ROUTE_hq_front = {},
+					},
+					ROUTE_mansion_back_3 =
+					{
+						ROUTE_hq_road = {},
+					},
+				},
+			},
+		},
+
+		DEFEND_radio_4 =
+		{
+
+			ROUTE_church_front =
+			{
+				ROUTE_hq_road =
+				{
+					ROUTE_hq_front = {},
+					ROUTE_hq_house_side =
+					{
+						ROUTE_hq_house_back = {},
+					},
+				},
+				ROUTE_main_road_side =
+				{
+					Weight = 1.2,
+					ROUTE_hq_front = {},
+					ROUTE_hq_house_side =
+					{
+						ROUTE_hq_house_back = {},
+					},
+					ROUTE_hq_river_side =
+					{
+						Weight = 1.5,
+						ROUTE_hq_house_side =
+						{
+							ROUTE_hq_house_back = {},
+						},
+					},
+				},
+				ROUTE_hq_river =
+				{
+					ROUTE_hq_house_side =
+					{
+						ROUTE_hq_house_back = {},
+					},
+				},
+			},
+		},
+
+		SWITCH_radio_1 =
+		{
+			ROUTE_axis_3rd_spawn =
+			{
+				ROUTE_mansion_back = {},
+				ROUTE_mansion_back_2 =
+				{
+					ROUTE_hq_front = {},
+				},
+
+				ROUTE_mansion_front =
+				{
+					Weight = 1.2,
+					ROUTE_mansion_back_2 =
+					{
+						ROUTE_hq_front = {},
+					},
+					ROUTE_mansion_back_3 =
+					{
+						ROUTE_hq_road = {},
+					},
+				},
+			},
+
+			ROUTE_church_front =
+			{
+				ROUTE_hq_road =
+				{
+					Weight = 2,
+					ROUTE_hq_front = {},
+					ROUTE_hq_house_side =
+					{
+						ROUTE_hq_house_back = {},
+					},
+				},
+				ROUTE_main_road_side =
+				{
+					Weight = 2,
+					ROUTE_hq_front = {},
+					ROUTE_hq_house_side =
+					{
+						ROUTE_hq_house_back = {},
+					},
+				},
+
+				ROUTE_hq_river_side =
+				{
+					ROUTE_hq_house_side =
+					{
+						ROUTE_hq_house_back = {},
+					},
+				},
+
+				ROUTE_hq_river =
+				{
+					ROUTE_hq_house_side =
+					{
+						ROUTE_hq_house_back = {},
+					},
+				},
+			},
+		},
+
+		FLAG_secret_documents =
+		{
+			ROUTE_church_front =
+			{
+				ROUTE_hq_road =
+				{
+					ROUTE_hq_front = {},
+					ROUTE_hq_house_side =
+					{
+						ROUTE_hq_house_back = {},
+					},
+				},
+				ROUTE_main_road_side =
+				{
+					Weight = 1.5,
+					ROUTE_hq_front = {},
+					ROUTE_hq_house_side =
+					{
+						ROUTE_hq_house_back = {},
+					},
+					ROUTE_hq_river_side =
+					{
+						Weight = 1.5,
+						ROUTE_hq_house_side =
+						{
+							ROUTE_hq_house_back = {},
+						},
+					},
+				},
+				ROUTE_hq_river =
+				{
+					ROUTE_hq_house_side =
+					{
+						ROUTE_hq_house_back = {},
+					},
+				},
+			},
+		},
+
+		CAPPOINT_submarine =
+		{
+			ROUTE_carry_flag =
+			{
+				ROUTE_hq_front =
+				{
+					ROUTE_mansion_back_3 = {},
+					ROUTE_to_bridge_2a =
+					{
+						ROUTE_port_allied = {},
+					},
+					ROUTE_port_road_side =
+					{
+						ROUTE_port_allied = {},
+					},
+				},
+
+				ROUTE_hq_house_side =
+				{
+					ROUTE_mansion_back_3 = {},
+					ROUTE_to_bridge_2a =
+					{
+						ROUTE_port_allied = {},
+					},
+					ROUTE_port_road_side =
+					{
+						ROUTE_port_allied = {},
+					},
+					ROUTE_hq_river =
+					{
+						Weight = 2,
+						ROUTE_to_bridge_2b =
+						{
+							ROUTE_port_allied = {},
+						},
+					},
+				},
+			},
+		},
+
+		DEFEND_Sub_1 =
+		{
+			//ROUTE_church_back =
+			//{
+			//	ROUTE_port_allied =
+			//	{
+			//		ROUTE_sub_tower = {},
+			//		ROUTE_sub_door =
+			//		{
+			//			Weight = 2,
+			//		},
+			//	},
+			//},
+			ROUTE_axis_portside =
+			{
+				ROUTE_new_dock = {},
+				ROUTE_old_dock =
+				{
+					Weight = 2,
+				},
+			},
+		},
+
+		DEFEND_Sub_3 =
+		{
+			ROUTE_axis_portside =
+			{
+				ROUTE_new_dock = {},
+				ROUTE_old_dock =
+				{
+					Weight = 3,
+				},
+			},
+		},
+	};
+
+	MapRoutes.DEFEND_Gun_4 = MapRoutes.DEFEND_Gun_1;
+	MapRoutes.DEFEND_Gun_5 = MapRoutes.DEFEND_Gun_1;
+
+	MapRoutes.DEFEND_Barrier_6 = MapRoutes.PLANT_Tank_Barrier;
+	MapRoutes.DEFEND_Barrier_7 = MapRoutes.PLANT_Tank_Barrier;
+	MapRoutes.DEFEND_Barrier_8 = MapRoutes.PLANT_Tank_Barrier;
+
+	MapRoutes.DEFEND_Barrier_2 = MapRoutes.DEFEND_Barrier_1;
+	MapRoutes.DEFEND_Barrier_3 = MapRoutes.DEFEND_Barrier_1;
+	MapRoutes.DEFEND_Barrier_4 = MapRoutes.DEFEND_Barrier_1;
+	MapRoutes.DEFEND_Barrier_5 = MapRoutes.DEFEND_Barrier_1;
+
+	MapRoutes.DEFEND_radio_2 = MapRoutes.DEFEND_radio_1;
+	MapRoutes.DEFEND_radio_3 = MapRoutes.DEFEND_radio_1;
+
+	MapRoutes.DEFEND_radio_5 = MapRoutes.DEFEND_radio_4;
+	MapRoutes.DEFEND_radio_6 = MapRoutes.DEFEND_radio_4;
+
+	MapRoutes.DEFEND_Sub_2 = MapRoutes.DEFEND_Sub_1;
+	MapRoutes.BUILD_v2_allied = MapRoutes.DEFEND_Sub_1;
+	MapRoutes.Switch_v2_radio = MapRoutes.DEFEND_Sub_1;
+	MapRoutes.ATTACK_Sub_1 = MapRoutes.DEFEND_Sub_1;
+	MapRoutes.ATTACK_Sub_2 = MapRoutes.DEFEND_Sub_1;
+	MapRoutes.BUILD_v2_allied = MapRoutes.DEFEND_Sub_1;
+	MapRoutes.BUILD_v2_axis = MapRoutes.DEFEND_Sub_1;
+
+	Util.Routes(MapRoutes);
+};

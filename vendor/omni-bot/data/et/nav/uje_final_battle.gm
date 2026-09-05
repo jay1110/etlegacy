@@ -1,0 +1,1179 @@
+//==========================================================================================
+//
+//	uje_final_battle.gm
+//
+//	Who       	When		What
+//------------------------------------------------------------------------------------------
+//	^6BOTZ^3R^jUS	12.12.2020	Initial Script version 1.0 B3
+//
+//==========================================================================================
+//
+
+global Map =
+{
+      Tank_Damaged = true,
+      Tankatprison = false,
+      Bridge1built = false,
+      Bridge2built = false,
+      Bridge3built = false,
+      TankBarrier1Past = false,
+      TankBarrier2Past = false,
+      TankBridge2Past = false,
+      TankBridge3Past = false,
+      barrier1built = false,
+      barrier2built = false,
+      spawnflagchurch_Allies = true,
+      spawnflagchurch_Axis = false,
+
+      MOVER_tank = ESCORT_Tank,
+      ESCORT_Tank = MOVER_tank,
+/////////////////////////////////////////////////////////////////////////////
+
+// this seems to make bots give out health packs and ammo better than DEFAULT does
+	DispenseHealthTime = 10.0,
+	DispenseAmmoTime = 1.0,
+
+//////////////////////////////////////////////////////////////////////
+
+	Roles =
+	{
+		ALLIES =
+		{
+			AllBots = true, // each bot is considered for a role
+			DEFENDER =
+			{
+				spawnpt = 4,
+				numbots = 2,
+				crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER2 =
+			{
+				spawnpt = 2,
+				numbots = 2,
+				crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER3 =
+			{
+			        spawnpt = 3,
+				numbots = 2,
+				crucialClass = CLASS.COVERTOPS, CLASS.MEDIC,
+			},
+
+		},
+
+		AXIS =
+		{
+			AllBots = true, // each bot is considered for a role
+			ATTACKER =
+			{
+				spawnpt = 2,
+				numbots = 2,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER1 =
+			{
+				spawnpt = 4,
+				numbots = 2,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER2 =
+			{
+				spawnpt = 1,
+				numbots = 2,
+				crucialClass = CLASS.COVERTOPS, CLASS.MEDIC,
+			},
+		},
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Allied_Command_Post" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Allied_Command_Post" );
+		Util.MapDebugPrint( "^6Allied_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Command_Post" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Axis_Command_Post" );
+		Util.MapDebugPrint( "^6Axis_Command_Post_Built" );
+	},
+
+	Tank_Built = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Tank" );
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"ESCORT_Tank",
+		"MOUNT_Tank",
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"ESCORT_Tank",
+		"MOUNT_Tank",
+	});
+		Map.Tank_Damaged = false;
+		Util.MapDebugPrint( "^6Tank_Built" );
+	},
+
+	Tank_Damaged = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Tank" );
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+		"ESCORT_Tank",
+		"MOUNT_Tank",
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"ESCORT_Tank",
+		"MOUNT_Tank",
+	});
+		Map.Tank_Damaged = true;
+		Util.MapDebugPrint( "^6Tank_Damaged" );
+	},
+
+	bridge_1_Built = function()
+	{
+		if( Map.Tankatprison == true )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"FLAG_ammo",
+				"CAPPOINT_Tank",
+			});
+		}
+                else
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"FLAG_ammo",
+				"CAPPOINT_Tank",
+			});
+		}
+	//SetGoalPriority( "PLANT_bridge_1", 1.99, TEAM.ALLIES, 0 );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"DEFEND_bridge_1_1",
+		"DEFEND_bridge_1_2",
+		"BUILD_wooden_barrier",
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_bridge_1" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_bridge_1" );
+	//SetAvailableMapGoals( TEAM.ALLIES, true, "FLAG_ammo" );
+	//SetAvailableMapGoals( TEAM.AXIS, true, "CAPPOINT_Tank" );
+		Map.Bridge1built = true;
+		Util.MapDebugPrint( "^6bridge_1_Built" );
+	},
+
+	bridge_2_Built = function()
+	{
+    SetAvailableMapGoals( TEAM.ALLIES, false, "AIRSTRIKE_tankarea" );
+	SetGoalPriority( "PLANT_bridge_2", 1.4, TEAM.ALLIES, 0 );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_bridge_2" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_bridge_2" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_bridge_3" );
+		Map.Bridge2built = true;
+		Util.MapDebugPrint( "^6bridge_2_Built" );
+	},
+
+	bridge_3_Built = function()
+	{
+	SetGoalPriority( "PLANT_bridge_3", 1.3, TEAM.ALLIES, 0 );
+	SetGoalPriority( "CHECKPOINT_spawnflaglake", 1.4, TEAM.ALLIES, 0 );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_spawnflaglake" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_bridge_2" );
+	//SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_spawnflaglake" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_bridge_3" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_bridge_3" );
+		Map.Bridge3built = true;
+		Util.MapDebugPrint( "^6bridge_3_Built" );
+	},
+
+	stone_barrier_Built = function()
+	{
+		if( Map.TankBridge3Past == true )
+		{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_stone_barrier" );
+		}
+                else
+		{
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_stone_barrier" );
+		}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_stone_barrier" );
+                       Map.barrier2built = true;
+		Util.MapDebugPrint( "^6stone_barrier_Built" );
+	},
+
+	wooden_barrier_Built = function()
+	{
+	//SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_spawnflagchurch" );
+	//SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_spawnflagchurch" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_wooden_barrier" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_wooden_barrier" );
+                       Map.barrier1built = true;
+		Util.MapDebugPrint( "^6wooden_barrier_Built" );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_Command_Post" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Allied_Command_Post" );
+		Util.MapDebugPrint( "^6Allied_Command_Post_Destroyed" );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_Command_Post" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Command_Post" );
+		Util.MapDebugPrint( "^6Axis_Command_Post_Destroyed" );
+	},
+
+	bridge_1_Destroyed = function()
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"DEFEND_bridge_1_1",
+		"DEFEND_bridge_1_2",
+	});
+	SetAvailableMapGoals( TEAM.AXIS, false, "FLAG_ammo" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_bridge_1" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_bridge_1" );
+		Map.Bridge1built = false;
+		Util.MapDebugPrint( "^6bridge_1_Destroyed" );
+	},
+
+	bridge_2_Destroyed = function()
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_bridge_2" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_bridge_2" );
+		Map.Bridge2built = false;
+		Util.MapDebugPrint( "^6bridge_2_Destroyed" );
+	},
+
+	bridge_3_Destroyed = function()
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_bridge_3" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_bridge_3" );
+		Map.Bridge3built = false;
+		Util.MapDebugPrint( "^6bridge_3_Destroyed" );
+	},
+
+	stone_barrier_Destroyed = function()
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_stone_barrier" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_stone_barrier" );
+                       Map.barrier2built = false;
+		Util.MapDebugPrint( "^6stone_barrier_Destroyed" );
+	},
+
+	wooden_barrier_Destroyed = function()
+	{
+		if( Map.TankBarrier1Past == true )
+		{
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_wooden_barrier" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_wooden_barrier" );
+		}
+                else
+		{
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_wooden_barrier" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_wooden_barrier" );
+		}
+	//SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_spawnflagchurch" );
+	//SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_spawnflagchurch" );
+	//SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_bridge_1" );
+                       Map.barrier1built = false;
+		Util.MapDebugPrint( "^6wooden_barrier_Destroyed" );
+	},
+
+	ammo_Taken = function()
+	{
+    	SetAvailableMapGoals( TEAM.AXIS, true, "FLAG_ammo" );
+	    SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_ammo" );
+      	SetAvailableMapGoals( TEAM.AXIS, true, "CAPPOINT_Tank" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "CAPPOINT_Tank" );
+		Util.MapDebugPrint( "^6ammo_Taken" );
+	},
+  	ammo_Dropped = function()
+	{
+    	SetAvailableMapGoals( TEAM.AXIS, true, "FLAG_ammo" );
+	    SetAvailableMapGoals( TEAM.ALLIES, true, "FLAG_ammo" );
+		Util.MapDebugPrint( "^6ammo_Dropped" );
+	},
+
+	ammo_Returned = function()
+	{
+    		if( Map.Bridge1built == true )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "FLAG_ammo" );
+		}
+        else
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "FLAG_ammo" );
+		}
+
+	    SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_ammo" );
+      	SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT_Tank" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CAPPOINT_Tank" );
+		Util.MapDebugPrint( "^6ammo_Returned" );
+	},
+
+	ammo_Secured = function()
+	{
+		if( Map.Tank_Damaged == false )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "ESCORT_Tank" );
+		}
+    SetAvailableMapGoals( TEAM.ALLIES, false, "AIRSTRIKE_tankarea" );
+	SetGoalPriority( "DEFEND_bridge_1_3", 0.99, TEAM.ALLIES, 0 );
+	SetGoalPriority( "DEFEND_bridge_1_5", 0.99, TEAM.ALLIES, 0 );
+	SetGoalPriority( "DEFEND_bridge_1_6", 0.99, TEAM.ALLIES, 0 );
+	SetGoalPriority( "DEFEND_bridge_1_7", 0.99, TEAM.ALLIES, 0 );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"DEFEND_bridge_1_1",
+		"DEFEND_bridge_1_2",
+		"DEFEND_bridge_1_4",
+		"PLANT_bridge_1",
+	});
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_bridge_1" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_bridge_2" );
+  	SetAvailableMapGoals( TEAM.AXIS, false, "FLAG_ammo" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_ammo" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT_Tank" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CAPPOINT_Tank" );
+		Util.MapDebugPrint( "^6ammo_Secured" );
+	},
+
+	spawnflagchurch_Axis_Captured = function()
+	{
+		//if( Map.TankBarrier1Past == true )
+		//{
+	        //        SetGoalPriority( "CHECKPOINT_spawnflagchurch", 0.89, TEAM.ALLIES, 0 );
+		//	SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_spawnflagchurch" );
+		//}
+                //else
+		//{
+		//	SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_spawnflagchurch" );
+		//}
+	SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_spawnflagchurch" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_spawnflagchurch" );
+                                  Map.spawnflagchurch_Axis = true;
+		Util.MapDebugPrint( "^6spawnflagchurch_Axis_Captured" );
+	},
+
+	spawnflagchurch_Allies_Captured = function()
+	{
+		//if( Map.TankBarrier1Past == true )
+		//{
+		//	SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_spawnflagchurch" );
+		//}
+               // else
+		//{
+		//	SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_spawnflagchurch" );
+		//}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_spawnflagchurch" );
+        SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_spawnflagchurch" );
+                                  Map.spawnflagchurch_Allies = true;
+		Util.MapDebugPrint( "^6spawnflagchurch_Allies_Captured" );
+	},
+
+	spawnflaglake_Axis_Captured = function()
+	{
+        Util.ChangeSpawn( TEAM.ALLIES, 3 );
+       Util.ChangeSpawn( TEAM.AXIS, 4 );
+	SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_spawnflaglake" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_spawnflaglake" );
+		Util.MapDebugPrint( "^6spawnflaglake_Axis_Captured" );
+	},
+
+	spawnflaglake_Allies_Captured = function()
+	{
+        Util.ChangeSpawn( TEAM.ALLIES, 3 );
+       Util.ChangeSpawn( TEAM.AXIS, 4 );
+	SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_spawnflaglake" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_spawnflaglake" );
+		Util.MapDebugPrint( "^6spawnflaglake_Allies_Captured" );
+	},
+
+	spawnflagroad_Axis_Captured = function()
+	{
+		if( Map.TankBridge2Past == true )
+		{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"CHECKPOINT_spawnflagroad",
+			"CHECKPOINT_spawnflagchurch",
+		});
+		}
+                if( Map.TankBridge3Past == true )
+		{
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CHECKPOINT_spawnflagroad",
+			"CHECKPOINT_spawnflaglake",
+			"CHECKPOINT_spawnflagchurch",
+		});
+		}
+                else
+                  {
+                SetAvailableMapGoals( TEAM.ALLIES, false, {
+                	"CHECKPOINT_spawnflagroad",
+                	"CHECKPOINT_spawnflaglake",
+                });
+	        SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_spawnflagchurch" );
+                  }
+	SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_spawnflagroad" );
+		Util.MapDebugPrint( "^6spawnflagroad_Axis_Captured" );
+	},
+
+	spawnflagroad_Allies_Captured = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_spawnflagroad" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_spawnflagroad" );
+		Util.MapDebugPrint( "^6spawnflagroad_Allies_Captured" );
+	},
+
+	Tank_Past_Barrier_1 = function()
+	{
+                	SetGoalPriority( "CALLARTILLERY_tankarea", 1.0, TEAM.ALLIES, 0 );
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+        	"CALLARTILLERY_tankarea",
+        	"ARTILLERY_S_tankarea_1",
+        	"ARTILLERY_S_tankarea_2",
+        	"ARTILLERY_S_tankarea_3",
+        });
+    SetAvailableMapGoals( TEAM.ALLIES, false, "ARTILLERY_S_woodbarrier_2" );//wooden barrier defence
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_bridge_1_1" );//gas can defence
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_bridge_1_2" );//gas can defence
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_bridge_1_4" );//gas can defence
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_bridge_1_3" );//ammohut area defence
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_bridge_1_5" );//ammohut area defence
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_bridge_1_6" );//ammohut area defence
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_bridge_1_7" );//ammohut area defence
+	SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_barrier1_a" );//attack wooden barrier
+	SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_barrier1_b" );//attack wooden barrier
+	SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_barrier1_c" );//attack wooden barrier
+	SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_barrier1_d" );//attack wooden barrier
+	SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_barrier1_e" );//attack wooden barrier
+	SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_barrier1_f" );//attack wooden barrier
+	SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_part_1_a" );//alpsroad flag tunnel defence
+	SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_part_1_b" );//alpsroad flag tunnel defence
+	SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_part_1_c" );//alpsroad flag tunnel defence
+	SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_part_1_d" );//wooden barrier defence
+	SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_part_1_e" );//wooden barrier defence
+	SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_part_1_f" );//wooden barrier defence
+	SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_part_1_g" );//wooden barrier defence
+	SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_part_1_h" );//wooden barrier defence
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_stone_barrier" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_spawnflagchurch" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_spawnflagchurch" );
+	SetGoalPriority( "CHECKPOINT_spawnflagchurch", 0.91, TEAM.AXIS, 0 );
+	//SetGoalPriority( "CHECKPOINT_spawnflagchurch", 0.89, TEAM.ALLIES, 0 );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_wooden_barrier" );
+                          Map.TankBarrier1Past = true;
+		Util.MapDebugPrint( "^6FUCK_THE_Tank_IS_Past_Barrier_1" );
+	},
+
+	Tank_Past_Barrier_2 = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"ATTACK_end_4",
+		"ATTACK_end_5",
+		"ATTACK_end_6",
+	});
+	SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_end_3" );
+       Util.ChangeSpawn( TEAM.ALLIES, 3 );
+       Util.ChangeSpawn( TEAM.AXIS, 4 );
+	SetGoalPriority( "DEFEND_end_.*", 1.5, TEAM.ALLIES, 0 );
+  	SetGoalPriority( "ESCORT_Tank", 0.98, TEAM.AXIS, 0 );
+	SetGoalPriority( "MOUNT_Tank", 0.99, TEAM.AXIS, 0 );
+	SetGoalPriority( "BUILD_Tank", 1.0, TEAM.AXIS, 0 );
+        SetGoalPriority( "CHECKPOINT_spawnflaglake", 1.5, TEAM.AXIS, 0 );
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"AMMOCAB_uje5_ammocabinet",
+		"HEALTHCAB_uje5_healthcabinet",
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"DEFEND_stone_1",
+		"DEFEND_stone_2",
+		"DEFEND_stone_3",
+		"DEFEND_stone_4",
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"DEFEND_end_1",
+		"DEFEND_end_2",
+		"DEFEND_end_3",
+		"DEFEND_end_4",
+		"DEFEND_end_6",
+		"DEFEND_end_7",
+		"DEFEND_end_8",
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_stone_barrier" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_stone_barrier" );
+                          Map.TankBarrier2Past = true;
+		Util.MapDebugPrint( "^6FUCK_AXIS_IS_Past_Barrier_2" );
+	},
+
+	Bridge_2_PAST = function()
+	{
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+        	"CALLARTILLERY_tankarea",
+        	"ARTILLERY_S_tankarea_1",
+        	"ARTILLERY_S_tankarea_2",
+        	"ARTILLERY_S_tankarea_3",
+        	"AIRSTRIKE_tankarea",
+        	"CHECKPOINT_spawnflagchurch",
+        });
+	SetGoalPriority( "CHECKPOINT_spawnflagchurch", 0.0, TEAM.ALLIES, 0 );
+       Util.ChangeSpawn( TEAM.ALLIES, 4 );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"DEFEND_bridge_1_6",
+		"DEFEND_bridge_1_5",
+		"DEFEND_bridge_1_3",
+		"SNIPE_towersniper_2",
+	});
+	SetAvailableMapGoals( TEAM.AXIS, false, "SNIPE_towersniper_4" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"AMMOCAB_uje5_ammocabinet",
+		"HEALTHCAB_uje5_healthcabinet",
+	});
+	SetGoalPriority( "CHECKPOINT_spawnflagchurch", 0.7, TEAM.AXIS, 0 );
+	SetGoalPriority( "CHECKPOINT_spawnflagchurch", 0.7, TEAM.ALLIES, 0 );
+	SetGoalPriority( "CHECKPOINT_spawnflagroad", 0.9, TEAM.AXIS, 0 );
+	SetGoalPriority( "CHECKPOINT_spawnflagroad", 0.99, TEAM.ALLIES, 0 );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_bridge_2" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_bridge_2" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_stone_barrier" );
+                          Map.TankBridge2Past = true;
+		Util.MapDebugPrint( "^6TANK_IS_PAST_Bridge_2" );
+	},
+
+	Bridge_3_PAST = function()
+	{
+		if( Map.barrier2built == true )
+		{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_stone_barrier" );
+		}
+                else
+		{
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_stone_barrier" );
+		}
+        Util.ChangeSpawn( TEAM.ALLIES, 3 );
+       Util.ChangeSpawn( TEAM.AXIS, 4 );
+	SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_spawnflagroad" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_spawnflagchurch" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"CHECKPOINT_spawnflagchurch",
+		"CHECKPOINT_spawnflagroad",
+	});
+	SetGoalPriority( "CHECKPOINT_spawnflagroad", 0.0, TEAM.ALLIES, 0 );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_bridge_1_7" );
+	SetGoalPriority( "CHECKPOINT_spawnflaglake", 0.0, TEAM.ALLIES, 0 );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_spawnflaglake" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_spawnflaglake" );
+        SetGoalPriority( "CHECKPOINT_spawnflaglake", 0.0, TEAM.AXIS, 0 );
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"ATTACK_end_1",
+		"ATTACK_end_2",
+		"ATTACK_end_3",
+	});
+	SetGoalPriority( "DEFEND_stone.*", 1.0, TEAM.ALLIES, 0 );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_end_5" );
+	SetGoalPriority( "DEFEND_end_5", 1.5, TEAM.ALLIES, 0 );
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"DEFEND_stone_1",
+		"DEFEND_stone_2",
+		"DEFEND_stone_3",
+		"DEFEND_stone_4",
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_bridge_3" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_bridge_3" );
+                          Map.TankBridge3Past = true;
+		Util.MapDebugPrint( "^6TANK_IS_PAST_Bridge_3" );
+	},
+
+	prison = function()
+	{
+	if( Map.Bridge1built == true )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "FLAG_ammo" );
+		}
+    else
+		{
+	        SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_bridge_1" );
+		}
+		if( Map.spawnflagchurch_Allies == true )
+		{
+		    SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_spawnflagchurch" );
+		}
+    else
+		{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_spawnflagchurch" );
+		}
+    SetGoalPriority( "CALLARTILLERY_tankarea", 2.0, TEAM.ALLIES, 0 );
+    SetAvailableMapGoals( TEAM.ALLIES, false, "AIRSTRIKE_tankarea" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "ESCORT_Tank" );
+    SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_wooden_barrier" );
+  	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_wooden_barrier" );
+    SetAvailableMapGoals( TEAM.ALLIES, false, "CALLARTILLERY_woodbarrier" );//wooden barrier defence
+    SetAvailableMapGoals( TEAM.ALLIES, false, "CALLARTILLERY_barrier_1" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "ARTILLERY_S_woodbarrier_1" );//wooden barrier defence
+	SetAvailableMapGoals( TEAM.ALLIES, false, "ARTILLERY_S_woodbarrier_3" );//wooden barrier defence
+		Map.Tankatprison = true;
+		Util.MapDebugPrint( "^6PRISON_PRISON_PRISON_BUILD_BRIDGE" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "^7Build the bridge from the prison and get the Fuel to the tank", Map.prison );
+
+	OnTrigger( "UJE_final_battle_axis_tank_repaired", Map.Tank_Built );
+	OnTrigger( "UJE_final_battle_axis_tank_damaged", Map.Tank_Damaged );
+
+	OnTrigger( "^7The Rock barrier has been constructed.", Map.stone_barrier_Built );
+	OnTrigger( "^7The wooden Barrier has been constructed.", Map.wooden_barrier_Built );
+
+	OnTrigger( "^7The Rock barrier has been destroyed", Map.stone_barrier_Destroyed );
+	OnTrigger( "^7The Wooden Barrier has been destroyed", Map.wooden_barrier_Destroyed );
+
+	OnTrigger( "^7 The tank passed the Wooden barrier", Map.Tank_Past_Barrier_1 );
+	OnTrigger( "^7 the Tank passed the Stone barrier", Map.Tank_Past_Barrier_2 );
+	OnTrigger( "^7The Tank has passed the Church Bridge.", Map.Bridge_2_PAST );
+	OnTrigger( "^7The Tank has passed the Alps Bridge.", Map.Bridge_3_PAST );
+
+	OnTrigger( "Axis have stolen (null)!", Map.ammo_Taken );
+	OnTrigger( "Flag returned ammo!", Map.ammo_Returned );
+  	OnTrigger( "Flag dropped ammo!", Map.ammo_Dropped );
+
+	OnTrigger( "UJE_final_battle_allies_fuel_secured", Map.ammo_Secured );
+
+	OnTrigger( "Allies destroyed the bridge to the Fuel!", Map.bridge_1_Destroyed );
+	//OnTrigger( "bridge_1_track", Map.bridge_1_Destroyed );
+	OnTrigger( "^7Allied destroyed the Church bridge!", Map.bridge_2_Destroyed );
+	OnTrigger( "^7Allies destroyed the Alps bridge!", Map.bridge_3_Destroyed );
+
+	OnTrigger( "^7Axis Team built the bridge to the Fuel!", Map.bridge_1_Built );
+	OnTrigger( "^7Axis built the Church bridge!", Map.bridge_2_Built );
+	OnTrigger( "^7Axis built the Alps bridge!", Map.bridge_3_Built );
+
+	OnTrigger( "allies_hq_compost_damaged", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "axis_hq_compost_damaged", Map.Axis_Command_Post_Destroyed );
+
+	OnTrigger( "allies_hq_compost_constructed", Map.Allied_Command_Post_Built );
+	OnTrigger( "axis_hq_compost_constructed", Map.Axis_Command_Post_Built );
+
+	OnTrigger( "^7Church Spawn is captured by Axis", Map.spawnflagchurch_Axis_Captured );
+	OnTrigger( "^7Church Spawn is captured by Allied", Map.spawnflagchurch_Allies_Captured );
+	OnTrigger( "^7Lake Spawn is captured by Axis", Map.spawnflaglake_Axis_Captured );
+	OnTrigger( "^7Lake Spawn is captured by Allied", Map.spawnflaglake_Allies_Captured );
+	OnTrigger( "^7Alps Spawn is captured by Axis", Map.spawnflagroad_Axis_Captured );
+	OnTrigger( "^7Alps Spawn is captured by Allied", Map.spawnflagroad_Allies_Captured );
+
+
+        Util.ChangeSpawn( TEAM.ALLIES, 2 );
+
+	Util.AddUseWp( "PLANT_wooden_barrier", "wood_1" );
+	Util.AddUseWp( "PLANT_wooden_barrier", "wood_2" );
+	Util.AddUseWp( "PLANT_wooden_barrier", "wood_3" );
+
+	Util.AddUseWp( "BUILD_bridge_1", "ammo_gas" );
+	Util.AddUseWp( "BUILD_bridge_2", "bridge_2" );
+	Util.AddUseWp( "BUILD_bridge_3", "bridge_3" );
+
+	Util.AddUseWp( "CALLARTILLERY_woodbarrier", "artywood" );
+
+	Util.AddUseWp( "PLANT_stone_barrier", "stoneplant_1" );
+	Util.AddUseWp( "PLANT_stone_barrier", "stoneplant_2" );
+	Util.AddUseWp( "PLANT_stone_barrier", "stoneplant_3" );
+
+	Util.AddUseWp( "BUILD_stone_barrier", "stonebuild_1" );
+	Util.AddUseWp( "BUILD_stone_barrier", "stonebuild_2" );
+	Util.AddUseWp( "BUILD_stone_barrier", "stonebuild_3" );
+	Util.AddUseWp( "BUILD_stone_barrier", "stonebuild_4" );
+
+	Util.AddUseWp( "FLAG_ammo", "gas_1" );
+	Util.AddUseWp( "FLAG_ammo", "gas_2" );
+
+	Util.AddUseWp( "PLANT_bridge_1", "bridge1plant_1" );
+	Util.AddUseWp( "PLANT_bridge_1", "bridge1plant_2" );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+		"BUILD_bridge_1",
+		"BUILD_bridge_2",
+		"BUILD_bridge_3",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"PLANT_bridge_1",
+		"PLANT_bridge_2",
+		"PLANT_bridge_3",
+		"BUILD_stone_barrier",
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_wooden_barrier" );
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+		"PLANT_wooden_barrier",
+		"PLANT_stone_barrier",
+		"PLANT_Allied_Command_Post",
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"PLANT_Axis_Command_Post",
+		"AMMOCAB_uje5_ammocabinet",
+	});
+	SetAvailableMapGoals( TEAM.AXIS, false, "AMMOCAB_uje5_ammocabinet" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "AMMOCAB_uje3_ammocabinet" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "AMMOCAB_uje3_ammocabinet" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "HEALTHCAB_uje3_healthcabinet" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "HEALTHCAB_uje3_healthcabinet" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "HEALTHCAB_uje5_healthcabinet" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "HEALTHCAB_uje5_healthcabinet" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_spawnflagchurch" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_spawnflagchurch" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_spawnflaglake" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_spawnflaglake" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_spawnflagroad" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_spawnflagroad" );
+
+
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"ATTACK_barrier1_a",
+		"ATTACK_barrier1_b",
+		"ATTACK_barrier1_c",
+		"ATTACK_barrier1_d",
+		"ATTACK_barrier1_e",
+		"ATTACK_barrier1_f",
+	});
+
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+		"ATTACK_end_1",
+		"ATTACK_end_2",
+		"ATTACK_end_3",
+		"ATTACK_end_4",
+		"ATTACK_end_5",
+		"ATTACK_end_6",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"DEFEND_end_1",
+		"DEFEND_end_2",
+		"DEFEND_end_3",
+		"DEFEND_end_4",
+		"DEFEND_end_5",
+		"DEFEND_end_6",
+		"DEFEND_end_7",
+		"DEFEND_end_8",
+		"DEFEND_stone_1",
+		"DEFEND_stone_2",
+		"DEFEND_stone_3",
+		"DEFEND_stone_4",
+	});
+	SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT_Tank" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"DEFEND_part_1_d",
+		"DEFEND_part_1_e",
+		"DEFEND_part_1_f",
+		"DEFEND_part_1_g",
+		"DEFEND_part_1_h",
+	});
+//artillery
+	SetAvailableMapGoals( TEAM.ALLIES, false, "SNIPE_towersniper_2" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "SNIPE_towersniper_4" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "SNIPE_towersniper_2" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"SNIPE_towersniper_4",
+		"CALLARTILLERY_barrier_1",
+		"CALLARTILLERY_woodbarrier",
+		"ARTILLERY_S_woodbarrier_1",
+		"ARTILLERY_S_woodbarrier_2",
+		"ARTILLERY_S_woodbarrier_3",
+	});
+
+	SetAvailableMapGoals( TEAM.AXIS, false, "FLAG_ammo" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_ammo" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT_Tank" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"CAPPOINT_Tank",
+		"AIRSTRIKE_tankarea",
+		"DEFEND_bridge_1_1",
+		"DEFEND_bridge_1_2",
+		"DEFEND_bridge_1_3",
+		"DEFEND_bridge_1_4",
+		"DEFEND_bridge_1_5",
+		"DEFEND_bridge_1_6",
+		"DEFEND_bridge_1_7",
+		"CALLARTILLERY_tankarea",
+		"ARTILLERY_S_tankarea_1",
+		"ARTILLERY_S_tankarea_2",
+		"ARTILLERY_S_tankarea_3",
+	});
+
+
+	Util.LimitToClass("PLANT_Axis_Command_Post", 0, CLASS.COVERTOPS);
+	Util.LimitToClass("PLANT_Allied_Command_Post", 0, CLASS.COVERTOPS);
+	Util.LimitToClass("CHECKPOINT_spawnflagchurch", TEAM.AXIS, CLASS.COVERTOPS, CLASS.MEDIC, CLASS.SOLDIER, CLASS.FIELDOPS);
+	Util.LimitToClass("CHECKPOINT_spawnflagchurch", TEAM.ALLIES, CLASS.COVERTOPS, CLASS.MEDIC, CLASS.SOLDIER, CLASS.FIELDOPS);
+	Util.LimitToClass("CHECKPOINT_spawnflagroad", TEAM.ALLIES, CLASS.COVERTOPS, CLASS.MEDIC, CLASS.SOLDIER, CLASS.FIELDOPS);
+	Util.LimitToClass("CHECKPOINT_spawnflaglake", TEAM.ALLIES, CLASS.COVERTOPS, CLASS.MEDIC, CLASS.SOLDIER, CLASS.FIELDOPS);
+	Util.LimitToClass("CHECKPOINT_spawnflaglake", TEAM.AXIS, CLASS.COVERTOPS, CLASS.MEDIC, CLASS.SOLDIER, CLASS.FIELDOPS);
+
+	//Util.LimitToClass("DEFEND_part_1_.*", 0, CLASS.COVERTOPS, CLASS.MEDIC, CLASS.SOLDIER, CLASS.FIELDOPS);
+	//Util.LimitToClass("CHECKPOINT.*", 0, CLASS.COVERTOPS, CLASS.MEDIC, CLASS.SOLDIER, CLASS.FIELDOPS);
+
+	Util.LimitToClass("SNIPE_towersniper_2", TEAM.AXIS, CLASS.COVERTOPS);
+	Util.LimitToClass("SNIPE_towersniper_4", TEAM.ALLIES, CLASS.COVERTOPS);
+
+	//Util.ExcludeClass("CHECKPOINT.*", 0, CLASS.ENGINEER);
+	//Util.ExcludeClass("DEFEND_part_1_.*", 0, CLASS.ENGINEER);
+	//Util.ExcludeClass("DEFEND_stone_.*", 0, CLASS.ENGINEER);
+
+
+	SetGoalPriority( "AMMOCAB_uje3_ammocabinet", 0.75, TEAM.AXIS, 0 );
+	SetGoalPriority( "AMMOCAB_uje5_ammocabinet", 0.75, TEAM.ALLIES, 0 );
+	SetGoalPriority( "AMMOCAB_uje5_ammocabinet", 0.75, TEAM.AXIS, 0 );
+
+
+	SetGoalPriority( "DEFEND_bridge_1_1", 0.8, TEAM.ALLIES, 0 );
+	SetGoalPriority( "DEFEND_bridge_1_2", 0.8, TEAM.ALLIES, 0 );
+
+	SetGoalPriority( "DEFEND_bridge_1_3", 0.78, TEAM.ALLIES, 0 );
+	SetGoalPriority( "DEFEND_bridge_1_4", 0.77, TEAM.ALLIES, 0 );
+	SetGoalPriority( "DEFEND_bridge_1_5", 0.78, TEAM.ALLIES, 0 );
+	SetGoalPriority( "DEFEND_bridge_1_6", 0.77, TEAM.ALLIES, 0 );
+	SetGoalPriority( "DEFEND_bridge_1_7", 0.77, TEAM.ALLIES, 0 );
+
+
+
+
+	SetGoalPriority( "SNIPE_towersniper_4", 0.79, TEAM.ALLIES, 0 );
+	SetGoalPriority( "SNIPE_towersniper_2", 0.89, TEAM.AXIS, 0 );
+
+	SetGoalPriority( "ATTACK_barrier1_.*", 0.89, TEAM.AXIS, 0 );
+	SetGoalPriority( "ESCORT_Tank", 0.9, TEAM.AXIS, 0 );
+	SetGoalPriority( "MOUNT_Tank", 0.9, TEAM.AXIS, 0 );
+	SetGoalPriority( "BUILD_Tank", 0.91, TEAM.AXIS, 0 );
+	SetGoalPriority( "BUILD_stone_barrier", 1.5, TEAM.ALLIES, 0 );
+	SetGoalPriority( "CHECKPOINT_spawnflagroad", 0.9, TEAM.AXIS, 0 );
+	SetGoalPriority( "CHECKPOINT_spawnflagroad", 0.70, TEAM.ALLIES, 0 );
+	SetGoalPriority( "CHECKPOINT_spawnflagchurch", 0.89, TEAM.AXIS, 0 );
+	SetGoalPriority( "CHECKPOINT_spawnflagchurch", 1.3, TEAM.ALLIES, 0 );
+	SetGoalPriority( "BUILD_wooden_barrier", 1.5, TEAM.ALLIES, 0 );
+	SetGoalPriority( "PLANT_wooden_barrier", 0.91, TEAM.AXIS, 0 );
+
+	SetGoalPriority( "DEFEND_part_1_.*", 0.79, TEAM.ALLIES, 0 );
+
+	SetGoalPriority( "CALLARTILLERY_barrier_1", 1.4, TEAM.ALLIES, 0 );
+	SetGoalPriority( "CALLARTILLERY_woodbarrier", 1.5, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ARTILLERY_S_woodbarrier_1", 1.0, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ARTILLERY_S_woodbarrier_2", 0.98, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ARTILLERY_S_woodbarrier_3", 0.97, TEAM.ALLIES, 0 );
+
+	SetGoalPriority( "PLANT_stone_barrier", 0.91, TEAM.AXIS, 0 );
+	SetGoalPriority( "PLANT_bridge.*", 1.0, TEAM.ALLIES, 0 );
+	SetGoalPriority( "BUILD_bridge.*", 0.92, TEAM.AXIS, 0 );
+
+	// Max users per goal
+	//Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+	Util.SetMaxUsers( 1, "BUILD_Axis_Command_Post" );
+	Util.SetMaxUsers( 1, "BUILD_Allied_Command_Post" );
+	Util.SetMaxUsers( 1, "PLANT_Axis_Command_Post" );
+	Util.SetMaxUsers( 1, "PLANT_Allied_Command_Post" );
+	Util.SetMaxUsers( 2, "ESCORT_Tank" );
+	Util.SetMaxUsers( 2, "CHECKPOINT_.*" );
+
+	Util.SetMaxUsers( 3, "FLAG_ammo" );
+
+
+
+	// Camp times
+	SetMapGoalProperties( "DEFEND_bridge_1_1", {MinCampTime=35, MaxCampTime=190} );
+	SetMapGoalProperties( "DEFEND_bridge_1_2", {MinCampTime=65, MaxCampTime=190} );
+	SetMapGoalProperties( "DEFEND_bridge_1_3", {MinCampTime=15, MaxCampTime=190} );
+	SetMapGoalProperties( "DEFEND_bridge_1_4", {MinCampTime=15, MaxCampTime=190} );
+	SetMapGoalProperties( "DEFEND_bridge_1_5", {MinCampTime=65, MaxCampTime=190} );
+	SetMapGoalProperties( "DEFEND_bridge_1_6", {MinCampTime=15, MaxCampTime=190} );
+	SetMapGoalProperties( "DEFEND_bridge_1_7", {MinCampTime=65, MaxCampTime=190} );
+	SetMapGoalProperties( "SNIPE_towersniper_2", {MinCampTime=15, MaxCampTime=190} );
+	SetMapGoalProperties( "SNIPE_towersniper_4", {MinCampTime=15, MaxCampTime=190} );
+	//SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=190} );
+
+
+	Util.MapDebugPrint( "^6ETS^4| ^2Custom ^4- ^1C ^04 ^1W ^3Omni-bot map script ver. ^51.0 B3 ^3For map: ^7" + GetMapName() + " executed." );
+	print( "^6ETS^4| ^2Custom ^4- ^1C ^04 ^1W ^3Omni-bot map script ver. ^51.0 B3 ^3For map: ^7" + GetMapName() );
+
+	Util.BotChat( 0, "say", "^6ETS^4| ^2Custom ^4- ^1C ^04 ^1W ^3Omni-bot map script ver. ^51.0 B3 ^3For map: ^7" + GetMapName(), 1 );
+};
+
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		BUILD_wooden_barrier =
+		    {
+                    ROUTE_woodbarrier_1 = {},
+                    ROUTE_alliedhutspawn = {},
+                    ROUTE_lakespawn5 = {},
+		    },
+		PLANT_wooden_barrier =
+		    {
+                    ROUTE_woodbarrier_1 =
+                        {
+                        ROUTE_woodbarrier_2 =
+                            {
+                            ROUTE_woodbarrier_3 = {},
+                            },
+                        ROUTE_axis1stspawn2churchtunnel_1 =
+                            {
+                            ROUTE_axis1stspawn2churchtunnel_2 = {},
+                            },
+                        ROUTE_bakroad_1 =
+                            {
+                            ROUTE_bakroad_2 =
+                                {
+                                ROUTE_bakroad_3 =
+                                    {
+                                    ROUTE_woodbarrier_4 = {},
+                                    },
+                                },
+                            },
+                        },
+		},
+		BUILD_stone_barrier =
+		    {
+                    ROUTE_church_1 = {},
+                    ROUTE_woodbarrier_1 = {},
+                    ROUTE_alliedhutspawn = {},
+                    ROUTE_lakespawn5 = {},
+		    },
+		PLANT_stone_barrier =
+		    {
+                    ROUTE_woodbarrier_1 =
+                        {
+                        ROUTE_bakroad_1 =
+                            {
+                            ROUTE_newtunnelbegin =
+                                {
+                                ROUTE_newtunnelend =
+                                    {
+                                    ROUTE_stonebarrier_back = {},
+                                    },
+                                },
+                            ROUTE_bakroad_2 =
+                                {
+                                ROUTE_bak2hut_2 =
+                                     {
+                                     ROUTE_bak2hut_1 =
+                                         {
+                                         ROUTE_alliedhutspawn =
+                                             {
+                                             ROUTE_alliedhutspawn_endexit_1 =
+                                                 {
+                                                 ROUTE_alliedhutspawn_endexit_2 = {},
+                                                 ROUTE_alliedhutspawn_endexit_3 = {},
+                                                 },
+                                             },
+                                         },
+                                     },
+                                },
+                            ROUTE_stonebarrier_front = {},
+                            },
+                        },
+		    },
+		BUILD_bridge_1 =
+		{
+                 ROUTE_spawn1 =
+                     {
+                     ROUTE_axis1stspawn2churchtunnel_1 =
+                         {
+                         ROUTE_axis1stspawn2churchtunnel_2 =
+                             {
+                             ROUTE_bridgechurchtankpath =
+                                 {
+                                 ROUTE_church_2 = {},
+                                 },
+                             },
+                         },
+                     },
+                 ROUTE_woodbarrier_1 =
+                     {
+                     ROUTE_woodbarrier_2 =
+                         {
+                         ROUTE_axis1stspawn2churchtunnel_1 =
+                             {
+                             ROUTE_axis1stspawn2churchtunnel_2 =
+                                 {
+                                 ROUTE_church_front = {},
+                                 },
+                             },
+                          ROUTE_woodbarrier_3 =
+                              {
+                              ROUTE_woodbarrier_4 =
+                                  {
+                                  ROUTE_church_front = {},
+                                  },
+                              },
+                         },
+                     },
+                   ROUTE_bakroad_1 =
+                       {
+                       ROUTE_bakroad_2 =
+                           {
+                           ROUTE_church_front = {},
+                           },
+                       },
+		},
+		BUILD_bridge_2 =
+		{
+                 ROUTE_spawn1 =
+                     {
+                     ROUTE_axis1stspawn2churchtunnel_1 =
+                         {
+                         ROUTE_axis1stspawn2churchtunnel_2 = {},
+                         },
+                     },
+                 ROUTE_woodbarrier_1 =
+                     {
+                     ROUTE_woodbarrier_2 =
+                         {
+                         ROUTE_axis1stspawn2churchtunnel_1 =
+                             {
+                             ROUTE_axis1stspawn2churchtunnel_2 = {},
+                             },
+                          ROUTE_woodbarrier_3 =
+                              {
+                              ROUTE_woodbarrier_4 =
+                                  {
+                                  ROUTE_church_front = {},
+                                  },
+                              },
+                         },
+                     },
+                   ROUTE_bakroad_1 =
+                       {
+                       ROUTE_bakroad_2 =
+                           {
+                           ROUTE_church_front = {},
+                           },
+                       },
+		},
+		CHECKPOINT_spawnflagchurch =
+		{
+                 ROUTE_spawn1 =
+                     {
+                     ROUTE_axis1stspawn2churchtunnel_1 =
+                         {
+                         ROUTE_axis1stspawn2churchtunnel_2 =
+                             {
+                             ROUTE_bridgechurchtankpath =
+                                 {
+                                 ROUTE_church_2 = {},
+                                 },
+                             },
+                         },
+                     },
+                 ROUTE_woodbarrier_1 =
+                     {
+                     ROUTE_woodbarrier_2 =
+                         {
+                         ROUTE_axis1stspawn2churchtunnel_1 =
+                             {
+                             ROUTE_axis1stspawn2churchtunnel_2 =
+                                 {
+                                 ROUTE_church_front = {},
+                                 },
+                             },
+                          ROUTE_woodbarrier_3 =
+                              {
+                              ROUTE_woodbarrier_4 =
+                                  {
+                                  ROUTE_church_front = {},
+                                  },
+                              },
+                         },
+                     },
+                   ROUTE_bakroad_1 =
+                       {
+                       ROUTE_bakroad_2 =
+                           {
+                           ROUTE_church_front = {},
+                           },
+                       },
+		},
+		BUILD_Allied_Command_Post =
+		    {
+                     ROUTE_woodbarrier_1 =
+                         {
+                         ROUTE_woodbarrier_2 =
+                             {
+                             ROUTE_woodbarrier_3 =
+                                 {
+                                 ROUTE_woodbarrier_4 =
+                                     {
+                                     ROUTE_church_front =
+                                         {
+                                         ROUTE_hut2cp_3 = {},
+                                         },
+                                     },
+                                 },
+                        ROUTE_bakroad_1 =
+                            {
+                            ROUTE_bakroad_2 =
+                                {
+                                ROUTE_church_front =
+                                    {
+                                    ROUTE_hut2cp_3 = {},
+                                    },
+                                },
+                            },
+                             },
+                         },
+                     ROUTE_lakespawn5 =
+                         {
+                         ROUTE_lakespawn5_1 =
+                             {
+                             ROUTE_lakespawn5_2 =
+                                 {
+                                 ROUTE_alliedhutspawn_endexit_1 =
+                                     {
+                                     ROUTE_alliedhutspawn =
+                                         {
+                                         ROUTE_hut2cp_1 =
+                                             {
+                                             ROUTE_hut2cp_2 =
+                                                 {
+                                                 ROUTE_hut2cp_3 = {},
+                                                 },
+                                             },
+                                         },
+                                     },
+                                 },
+                             },
+                         },
+                     ROUTE_alliedhutspawn =
+                         {
+                         ROUTE_hut2cp_1 =
+                             {
+                             ROUTE_hut2cp_2 =
+                                 {
+                                 ROUTE_hut2cp_3 = {},
+                                 },
+                             },
+                         },
+                     ROUTE_church_1 =
+                         {
+                         ROUTE_church_front =
+                             {
+                             ROUTE_hut2cp_3 = {},
+                             },
+                         ROUTE_hut2cp_3 = {},
+                         },
+		    },
+	};
+	MapRoutes.BUILD_bridge_1 = MapRoutes.CHECKPOINT_spawnflagchurch;
+	MapRoutes.ATTACK_barrier1_a = MapRoutes.PLANT_wooden_barrier;
+	MapRoutes.ATTACK_barrier1_b = MapRoutes.PLANT_wooden_barrier;
+	MapRoutes.ATTACK_barrier1_c = MapRoutes.PLANT_wooden_barrier;
+	MapRoutes.ATTACK_barrier1_d = MapRoutes.PLANT_wooden_barrier;
+	MapRoutes.ATTACK_barrier1_e = MapRoutes.PLANT_wooden_barrier;
+	MapRoutes.ATTACK_barrier1_f = MapRoutes.PLANT_wooden_barrier;
+	MapRoutes.ATTACK_end_1 = MapRoutes.PLANT_stone_barrier;
+	MapRoutes.ATTACK_end_2 = MapRoutes.PLANT_stone_barrier;
+	MapRoutes.ATTACK_end_3 = MapRoutes.PLANT_stone_barrier;
+	Util.Routes(MapRoutes);
+};

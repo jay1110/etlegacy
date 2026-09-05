@@ -1,0 +1,187 @@
+//==========================================================================================
+//
+//	tides.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	21 March 2018	Initial Script
+//	palota	21 July 2025
+//==========================================================================================
+//
+
+global Map =
+{
+
+	//Allies
+	Net_Built = function()
+	{
+		Wp.SetWaypointFlag("Net", "closed", 0);
+		Util.MapDebugPrint("Net_Built");
+	},
+	Net_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("Net", "closed", 1);
+		Util.MapDebugPrint("Net_Destroyed");
+	},
+
+	//Axis
+	Net_1_Built = function()
+	{
+		Wp.SetWaypointFlag("Net_1", "closed", 0);
+		Util.MapDebugPrint("Net_1_Built");
+	},
+	Net_1_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("Net_1", "closed", 1);
+		Util.MapDebugPrint("Net_1_Destroyed");
+	},
+
+	Generator_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("Axis_Door.*", "axis", 0);
+
+		SetAvailableMapGoals(TEAM.ALLIES, 1, {
+			"PLANT_Secret_Door",
+			"ATTACK_Secret_.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, 0, {
+			"ATTACK_Gen_.*",
+			"BUILD_Net",
+			"PLANT_Net_1",
+			".*MG42_.*",
+		});
+
+		SetAvailableMapGoals(TEAM.AXIS, 0, {
+			"DEFEND_Gen_.*",
+			"PLANT_Net",
+			"BUILD_Net_1",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, 1, {
+			"DEFEND_Secret_.*",
+			"MOBILEMG42_DEFEND_Secret_.*",
+		});
+
+		Util.MapDebugPrint("Generator_Destroyed");
+	},
+
+	Sewer_entrance_Destroyed = function()
+	{
+		Util.MapDebugPrint("Sewer_entrance_Destroyed");
+	},
+
+	Secret_Door_Destroyed = function()
+	{
+		Util.MapDebugPrint("Secret_Door_Destroyed");
+	},
+
+	axis_mg_guy =
+	{
+		Name = "axis_mg_guy",
+		TriggerOnClass = CLASS.SOLDIER,
+		OnEnter = function(ent)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, 1, "GRENADE_axis_mg_guy");
+			Util.MapDebugPrint(GetEntName(ent) + "_at_axis_mg");
+	 	},
+	 	OnExit = function(ent)
+	 	{
+			SetAvailableMapGoals(TEAM.ALLIES, 0, "GRENADE_axis_mg_guy");
+	 		Util.MapDebugPrint(GetEntName(ent) + "_left_axis_mg");
+	 	},
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("The Allies have built the net!", Map.Net_Built);
+	OnTrigger("The Allied net has been destroyed!", Map.Net_Destroyed);
+	OnTrigger("The Axis have built the net!", Map.Net_1_Built);
+	OnTrigger("The Axis net has been destroyed!", Map.Net_1_Destroyed);
+
+	OnTrigger("The Allies have destroyed the Sewer wall!", Map.Sewer_entrance_Destroyed);
+	OnTrigger("The Allies have destroyed the Generator! Axis doors unlocked!", Map.Generator_Destroyed);
+	OnTrigger("The Allies have destroyed the Secret Door!", Map.Secret_Door_Destroyed);
+
+	//Grenade the mg guy
+	OnTriggerRegion(AABB(1907.667,119.720,36.125,1975.861,176.615,110.125), Map.axis_mg_guy);
+
+	Util.DisableGoal(".*", 1);
+	Util.EnableGoal({
+		".*CAB.*",
+		".*Command_Post",
+	});
+
+	//Allies Net Plant
+	Util.AddUsePoint("PLANT_Net", Vec3(1058, 2238, 388));
+
+	//Axis Net Plant
+	Util.AddUsePoint("PLANT_Net_1", Vec3(1389, 2261, 388));
+
+	//Allies
+	SetAvailableMapGoals(TEAM.ALLIES, 1, {
+		"ATTACK_Gen_.*",
+		"PLANT_Sewer_entrance",
+		"BUILD_Net",
+		"PLANT_Net_1",
+		"PLANT_Generator",
+		".*MG42_200.*",
+	});
+	SetGoalPriority("BUILD_Neutral_Command_Post", 0.8, TEAM.ALLIES);
+	SetGoalPriority("BUILD_Net", 0.81);
+
+	//Axis
+	SetAvailableMapGoals(TEAM.AXIS, 1, {
+		"DEFEND_Gen_.*",
+		"PLANT_Net",
+		"BUILD_Net_1",
+		".*MG42_169.*",
+	});
+
+	Util.LimitToClass("PLANT_Net_1", 2, 5);
+	Util.LimitToClass("PLANT_Net", 1, 5);
+	Util.LimitToClass("PLANT_Neutral_Command_Post", 0, 5);
+
+	// Max users per goal
+	Util.SetMaxUsers(1, "MOUNTMG42.*");
+
+	// Camp times
+	SetMapGoalProperties("MOUNTMG42.*", {MinCampTime=30, MaxCampTime=300});
+	SetMapGoalProperties("MOBILEMG42.*", {MinCampTime=60, MaxCampTime=300});
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=60, MaxCampTime=300});
+	SetMapGoalProperties("ATTACK.*", {MinCampTime=60, MaxCampTime=200});
+
+	Wp.SetWaypointFlag("Axis_Door.*", "axis", 1);
+	Wp.SetWaypointFlag("Net.*", "closed", 1);
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_Secret_Door =
+		{
+			ROUTE_AlSp =
+			{
+				ROUTE_Grate_2 =
+				{
+					ROUTE_Door =
+					{
+						ROUTE_Secret_1 =
+						{
+							Weight = 2
+						},
+						ROUTE_Secret_2 =
+						{
+						},
+					},
+				},
+			},
+		},
+	};
+
+	Util.Routes(MapRoutes);
+};

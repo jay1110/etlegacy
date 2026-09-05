@@ -1,0 +1,123 @@
+//==========================================================================================
+//
+//	trainyard.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	19 November 2017	Initial Script
+//	palota	5 August 2025
+//==========================================================================================
+//
+
+global Map =
+{
+	Navigation =
+	{
+		door = //some doors are not BREAKABLE, but have strange TANK hint icons
+		{
+			navigate = function()
+			{
+				sleep(0.8);
+				if(this.Bot.IsStuck(0.4)){
+					this.AddWeaponRequest(WEAPON.KNIFE);
+					sleep(0.1);
+					this.Bot.HoldButton(BTN.ATTACK1, 2);
+					for(i=0;i<4;++i){
+						this.Bot.ResetStuckTime();
+						sleep(0.5);
+					}
+				}
+				sleep(1);
+			},
+		},
+	},
+
+	Gate_Destroyed = function()
+	{
+		Util.EnableGoal("ROUTE_yard_building");
+		Util.MapDebugPrint("Gate_Destroyed");
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("Allies have breached the trainyard buildings gate!", Map.Gate_Destroyed);
+
+	Util.DisableGoal("ROUTE_yard_building");
+	Util.LimitToTeam(TEAM.AXIS, ".*_x.*");
+	Util.LimitToTeam(TEAM.ALLIES, ".*_l.*");
+
+	Util.AddUsePoint("PLANT_gas_tank", {Vec3(2943, -803, 0),Vec3(2921, -1061, 20)});
+	Util.AddUsePoint("PLANT_bridge", Vec3(2573,-5700,0));
+
+	SetMapGoalProperties({"ATTACK.*", "DEFEND.*"}, {MinCampTime=30, MaxCampTime=80});
+
+	Util.SetMaxUsersInProgress(4, "CHECKPOINT.*");
+	Util.SetMaxUsers(1, "MOUNTMG.*");
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.TargetBreakableDist = 90;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_bridge =
+		{
+			ROUTE_axis_spawn =
+			{
+				ROUTE_bridge_NE ={},
+				ROUTE_bridge_NW ={},
+				ROUTE_bridge_W ={},
+				ROUTE_bridge_water ={Weight=2},
+			},
+			ROUTE_forward_spawn =
+			{
+				ROUTE_bridge_NE ={},
+				ROUTE_bridge_NW ={},
+				ROUTE_bridge_W ={},
+				ROUTE_bridge_SW ={},
+			},
+		},
+		PLANT_gas_tank =
+		{
+			ROUTE_allied_spawn =
+			{
+				ROUTE_yard_building ={},
+				ROUTE_shaft ={},
+				ROUTE_yard_sewer ={},
+				ROUTE_yard2 ={},
+			},
+			ROUTE_forward_spawn =
+			{
+				ROUTE_yard2 ={},
+				ROUTE_yard3 ={},
+				ROUTE_shaft ={},
+				ROUTE_yard_sewer ={},
+			},
+		},
+		CHECKPOINT_oldcityflag =
+		{
+			ROUTE_axis_spawn =
+			{
+				ROUTE_yard1 ={},
+				ROUTE_yard2 ={},
+				ROUTE_yard3 ={},
+			},
+			ROUTE_allied_spawn =
+			{
+				ROUTE_bridge_W ={},
+				ROUTE_bridge_SW ={},
+				ROUTE_bridge_NE ={},
+			},
+		},
+	};
+	MapRoutes["ATTACK_x.*"] = MapRoutes.PLANT_bridge;
+	MapRoutes["ATTACK_l.*"] = MapRoutes.PLANT_gas_tank;
+	Util.Routes(MapRoutes);
+};

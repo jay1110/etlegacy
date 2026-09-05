@@ -1,0 +1,1230 @@
+//==========================================================================================
+//
+//  Dingenskirchen (Beta 2) - dingenskirchen_b2.gm
+//
+//  Who             When                What
+//------------------------------------------------------------------------------------------
+//  Mateos          4 February 2017     From Beta 1 waypoints
+//  Mateos          27 July 2014        Merge of d00d/palota and Loffy scripts
+//  palota          11 March 2014       Last Assembla commit (cappoints)
+//  d00d            1st March 2014      What I have so far
+//  ^1Loffy         26 February 2014    Initial Script
+//  KeMoN           25 February 2014    Initial submission on OB forums
+//
+//==========================================================================================
+
+/*
+ * TODO:
+ * - The 2nd bot affected to the ATTACKER Role doesn't follow the whole ROUTING table...
+ * - Allied bots with a Role still spawn at the beginning...
+ *   -> Fixed, but clearing roles keeps bot from auto-changing of spawn... FIXME
+ * - When Tunnel_Doors_Planted, have a GRENADE goal active?
+ * - Prioritize DEFUSE goals for Axis during the Castle part
+ * - Axis try to steal the _gold while not yet secured by Allies... TODO Check
+ * - Restrict FLAG goals per Team?
+ * - Gold taken doesn't always trigger the CAPPOINT_treasure activation?! TODO Check, not experienced again?
+ * - BUILD_Tank offset after the Tunnel Doors (left before Bridge, back, then left again once at the other side).
+ * - MOUNT_Tank enabled when an obj is stolen, for both teams? Excepted for FLAG__gold
+ * - More aggressive DEFEND_Delta spots (prioritize them).
+ * - See other TODO's in the rest of the file
+ *
+ * TODO: BETA 2 TOP PRIORITY
+ *  - New trigger(s):
+ *      * ^5The Allies have destroyed the Tunnel Grate!
+ *  - Restaure routing + Add some after Tunnel
+ *  - BUILD/PLANT_Bridge position/offset
+ */
+
+/****************************************************
+Path done and script updated by Mateos
+Correspondant WAY file size: -
+Last update: 1st March 2017
+****************************************************/
+
+/*
+ * Check Spawns List:
+ * 1: Western Lake
+ * 2: Eastern Lake
+ * 3: Village
+ * 4: Castle
+ * 5: Castle Hill (Disabled when Castle Gate get destroyed)
+ * 6: Allied CP
+ * 7: Road Hut (Axis Spawn when Village is owned by Allies, capturable, then Allied Permanent Spawn)
+ */
+
+global Map =
+{
+    Allied_Command_Post_Dyno = 0,
+    Axis_Command_Post_Dyno = 0,
+    Bergfried_Wall_Dyno = 0,
+    Bridge_Dyno = 0,
+    Conference_Room_Dyno = 0,
+    Tunnel_Doors_Dyno = 0,
+    Sewers_Gate_Dyno = 0,
+    Side_Wall_Dyno = 0,
+    Tank_Barrier_Dyno = 0,
+
+    CastleGateDestroyed = false,
+    RoadHutSecured = false,
+    SideWallDestroyed = false,
+    TankPassedBarrier = false,  // TODO Unused
+
+    // Castle objectives status
+    isAlliedGoldSecured = true, // Axis own it on map load
+    isAlliedGoldStolen = false,
+    isAxisGoldSecured = false,
+    isAxisGoldStolen = false,
+    isConferenceRoomDestroyed = false,
+    isMicrofilmSecured = false,
+    isMicrofilmStolen = false,
+
+    // *** PATH THROUGH MANAGEMENT ***
+    Navigation =
+    {
+        // Make Engineers jump through a window to reach the Tank initial position
+        window_jump =
+        {
+            navigate = function( _this )
+            {
+                _this.AddAimRequest(Priority.High, "facing", Vec3(0.5, -0.8, 0.3));
+                sleep(1);   // Stabilization on the rock
+                _this.Bot.HoldButton(BTN.JUMP, 1);
+                sleep(0.5);
+                _this.AddAimRequest(Priority.High, "facing", Vec3(0.0, -1.0, 0.0));
+                _this.Bot.HoldButton(BTN.CROUCH, 1);
+                sleep(1);
+            },
+        },
+    },
+
+    // *** ROLE MANAGEMENT ***
+    Roles =
+    {
+        ALLIES =
+        {
+            AllBots = false,    // Each bot is considered for a role
+            ATTACKER =          // Make 1 or 2 bots attack the flag on map load
+            {
+                voice = "attack",               // Signals voice chat to randomly announce
+                spawnpt = 2,                    // Users of this role will choose spawnpt 2 (Eastern Lake)
+                numbots = 2,                    // Maximum of 2 bots
+                crucialClass = CLASS.FIELDOPS,  // First bot (Medics are always going back to revive, can throw arty)
+            },
+
+            // ATTACKER2 =
+            // {
+                // voice = "attack",               // Signals voice chat to randomly announce
+                // spawnpt = 1,                    // Users of this role will choose spawnpt 1 (Western Lake)
+                // numbots = 3,                    // 3 engis should be enough
+                // crucialClass = CLASS.ENGINEER,  // First bot
+                // MinBotsForRole = 2,             // Only assign this role if there are already 2 bots in game
+            // },
+        },
+
+        AXIS =
+        {
+            AllBots = false,    // Each bot is considered for a role
+            ATTACKER =          // Make 1 or 2 bots attack the flag on map load
+            {
+                voice = "defend",               // Signals voice chat to randomly announce
+                numbots = 2,                    // Maximum of 2 bots
+                crucialClass = CLASS.MEDIC,     // First bot
+            },
+        },
+    },
+
+    // *** FUNCTIONS ***
+
+    /**
+     * Refresh the status of CAMP and DEFEND goals for both team
+     * during the Castle phase of the map.
+     * Allied gold is the one Axis steal to bring it back.
+     * Axis gold is the original gold Allies try to steal.
+     */
+    RefreshCampGoals = function()
+    {
+        isAnyObjectiveStolen = Map.isAlliedGoldStolen || Map.isAxisGoldStolen || Map.isMicrofilmStolen;
+
+        // Reset
+        Util.DisableGoal( "CAMP_.*" );
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Foxtrot.*" );
+
+        if ( isAnyObjectiveStolen )
+        {
+            Util.EnableGoal( "CAMP_Dropoff.*" );
+
+            // That's all
+            return;
+        }
+
+        // Here, there isn't any objective stolen
+        // We only check each objective status to know what to defend/camp
+
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Foxtrot.*" );
+
+        if ( !Map.isAlliedGoldSecured )
+        {
+            Util.EnableGoal( "CAMP_Dropoff.*" );
+        }
+        else
+        {
+            // No objective is being stolen,
+            // and Allies don't own gold...
+            // Only possibility is the gold is Axis
+            // No need to check Map.IsAxisGoldSecured
+            Util.EnableGoal( "CAMP_Gold.*" );
+        }
+
+        if ( !Map.isConferenceRoomDestroyed )
+        {
+            Util.EnableGoal( "CAMP_Conference.*" );
+        }
+
+        if ( !Map.isMicrofilmSecured )
+        {
+            Util.EnableGoal( "CAMP_Microfilm.*" );
+        }
+    },
+
+    // *** TRIGGER CALLBACKS ***
+    Allied_Command_Post_Built = function()
+    {
+        Util.MapDebugPrint( "Allied_Command_Post_Built", true );
+    },
+
+    Axis_Command_Post_Built = function()
+    {
+        Util.MapDebugPrint( "Axis_Command_Post_Built", true );
+    },
+
+    Bridge_Built = function()
+    {
+        Util.MapDebugPrint( "Bridge_Built", true );
+    },
+
+    Bridge_Destroyed = function()
+    {
+        Map.Bridge_Dyno = 0;
+
+        Util.MapDebugPrint( "Bridge_Destroyed", true );
+    },
+
+    Grate_Door_Built = function()
+    {
+        Util.MapDebugPrint( "Grate_Door_Built", true );
+    },
+
+    Grate_Door_Destroyed = function()
+    {
+        Util.MapDebugPrint( "Grate_Door_Destroyed", true );
+    },
+
+    Water_Pump_Built = function()
+    {
+        Util.MapDebugPrint( "Water_Pump_Built", true );
+
+        // Wait until water is almost drained
+        sleep( 30 );
+
+        if ( !Map.RoadHutSecured )
+        {
+            SetAvailableMapGoals( TEAM.AXIS, true, {
+                "BUILD_Grate_Door",
+                "PLANT_Allied_Command_Post",
+            });
+        }
+
+        if ( !Map.SideWallDestroyed )
+        {
+            SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_Command_Post" );
+
+            // If the Road Hut is permanently claimed, no need to re-enabled the Grate Door
+            // Shortest path to CP is through the upper tunnel
+            if ( !Map.RoadHutSecured )
+            {
+                SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Grate_Door" );
+            }
+        }
+
+        Util.MapDebugPrint( "Allied_Command_Post_Available" );
+    },
+
+    Water_Pump_Destroyed = function()
+    {
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+            "BUILD_Grate_Door",
+            "PLANT_Allied_Command_Post",
+        });
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+            "BUILD_Allied_Command_Post",
+            "PLANT_Grate_Door",
+        });
+
+        Util.MapDebugPrint( "Water_Pump_Destroyed", true );
+    },
+
+    Tank_Built = function()
+    {
+        Util.MapDebugPrint( "Tank_Built" );
+    },
+
+    Tank_Destroyed = function()
+    {
+        Util.MapDebugPrint( "Tank_Destroyed", true );
+    },
+
+    Tank_Barrier_Built = function()
+    {
+        Util.MapDebugPrint( "Tank_Barrier_Built" );
+    },
+
+    Allied_Command_Post_Planted = function()
+    {
+        Map.Allied_Command_Post_Dyno += 1;
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Allied_Command_Post" );
+
+        Util.MapDebugPrint( "Allied_Command_Post_Planted" );
+    },
+
+    Axis_Command_Post_Planted = function()
+    {
+        Map.Axis_Command_Post_Dyno += 1;
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_Command_Post" );
+
+        Util.MapDebugPrint( "Axis_Command_Post_Planted" );
+    },
+
+    Bergfried_Wall_Planted = function()
+    {
+        Map.Bergfried_Wall_Dyno += 1;
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Bergfried_Wall" );
+
+        Util.MapDebugPrint( "Bergfried_Wall_Planted" );
+    },
+
+    Bridge_Planted = function()
+    {
+        Map.Bridge_Dyno += 1;
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Bridge" );
+
+        Util.MapDebugPrint( "Bridge_Planted" );
+    },
+
+    Conference_Room_Planted = function()
+    {
+        Map.Conference_Room_Dyno += 1;
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Conference_Room" );
+
+        Util.MapDebugPrint( "Conference_Room_Planted" );
+    },
+
+    Tunnel_Doors_Planted = function()
+    {
+        Map.Tunnel_Doors_Dyno += 1;
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Tunnel_Doors" );
+
+        Util.MapDebugPrint( "Tunnel_Doors_Planted" );
+    },
+
+    Sewers_Gate_Planted = function()
+    {
+        Map.Sewers_Gate_Dyno += 1;
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Sewers_Gate" );
+
+        Util.MapDebugPrint( "Sewers_Gate_Planted" );
+    },
+
+    Side_Wall_Planted = function()
+    {
+        Map.Side_Wall_Dyno += 1;
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Side_Wall" );
+
+        Util.MapDebugPrint( "Side_Wall_Planted" );
+    },
+
+    Tank_Barrier_Planted = function()
+    {
+        Map.Tank_Barrier_Dyno += 1;
+
+        // Could bug if nothing printed
+        //SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Tank_Barrier" );
+
+        Util.MapDebugPrint( "Tank_Barrier_Planted", true );
+    },
+
+    Allied_Command_Post_Defused = function()
+    {
+        Map.Allied_Command_Post_Dyno -= 1;
+
+        if ( Map.Allied_Command_Post_Dyno < 1 )
+            { SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Allied_Command_Post" ); }
+
+        Util.MapDebugPrint( "Allied_Command_Post_Defused" );
+    },
+
+    Axis_Command_Post_Defused = function()
+    {
+        Map.Axis_Command_Post_Dyno -= 1;
+
+        if ( Map.Axis_Command_Post_Dyno < 1 )
+            { SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Command_Post" ); }
+
+        Util.MapDebugPrint( "Axis_Command_Post_Defused" );
+    },
+
+    Bridge_Defused = function()
+    {
+        Map.Bridge_Dyno -= 1;
+
+        if ( Map.Bridge_Dyno < 1 )
+            { SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Bridge" ); }
+
+        Util.MapDebugPrint( "Bridge_Defused" );
+    },
+
+    Bergfried_Wall_Defused = function()
+    {
+        Map.Bergfried_Wall_Dyno -= 1;
+
+        if ( Map.Bergfried_Wall_Dyno < 1 )
+            { SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Bergfried_Wall" ); }
+
+        Util.MapDebugPrint( "Bergfried_Wall_Defused" );
+    },
+
+    Conference_Room_Defused = function()
+    {
+        Map.Conference_Room_Dyno -= 1;
+
+        if ( Map.Conference_Room_Dyno < 1 )
+            { SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Conference_Room" ); }
+
+        Util.MapDebugPrint( "Conference_Room_Defused" );
+    },
+
+    Tunnel_Doors_Defused = function()
+    {
+        Map.Tunnel_Doors_Dyno -= 1;
+
+        if ( Map.Tunnel_Doors_Dyno < 1 )
+            { SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Tunnel_Doors" ); }
+
+        Util.MapDebugPrint( "Tunnel_Doors_Defused" );
+    },
+
+    Conference_Room_Defused = function()
+    {
+        Map.Conference_Room_Dyno -= 1;
+
+        if ( Map.Conference_Room_Dyno < 1 )
+            { SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Conference_Room" ); }
+
+        Util.MapDebugPrint( "Conference_Room_Defused" );
+    },
+
+    Sewers_Gate_Defused = function()
+    {
+        Map.Sewers_Gate_Dyno -= 1;
+
+        if ( Map.Sewers_Gate_Dyno < 1 )
+            { SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Sewers_Gate" ); }
+
+        Util.MapDebugPrint( "Sewers_Gate_Defused" );
+    },
+
+    Side_Wall_Defused = function()
+    {
+        Map.Side_Wall_Dyno -= 1;
+
+        if ( Map.Side_Wall_Dyno < 1 )
+            { SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Side_Wall" ); }
+
+        Util.MapDebugPrint( "Side_Wall_Defused" );
+    },
+
+    Tank_Barrier_Defused = function()
+    {
+        Map.Tank_Barrier_Dyno -= 1;
+
+        // Sometimes DEFUSE event isn't triggered... So the goal gets perma-disabled
+        //if ( Map.Tank_Barrier_Dyno < 1 )
+            //{ SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Tank_Barrier" ); }
+
+        Util.MapDebugPrint( "Tank_Barrier_Defused", true );
+    },
+
+    Allied_Command_Post_Destroyed = function()
+    {
+        Map.Allied_Command_Post_Dyno = 0;
+
+        Util.MapDebugPrint( "Allied_Command_Post_Destroyed", true );
+    },
+
+    Axis_Command_Post_Destroyed = function()
+    {
+        Map.Axis_Command_Post_Dyno = 0;
+
+        Util.MapDebugPrint( "Axis_Command_Post_Destroyed", true );
+    },
+
+    Bergfried_Wall_Destroyed = function()
+    {
+        Util.MapDebugPrint( "Bergfried_Wall_Destroyed", true );
+    },
+
+    Castle_Gate_Destroyed = function()
+    {
+        sleep( 2 );
+
+        Map.CastleGateDestroyed = true;
+
+        Util.DisableGoal( ".*", true );
+
+        Util.EnableGoal( "CAMP_.*" );
+        Util.DisableGoal( "CAMP_Dropoff.*" );
+
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+            "BUILD_Axis_Command_Post",
+            "CAPPOINT_treasure_axis",
+            "DEFEND_Foxtrot.*",
+        });
+
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            // TODO: "ATTACK_Delta.*", -> Delta between Road Hut secured and Castle Gate Destroyed, no Echo inside Castle -> CAMP
+            "BUILD_Bridge",
+            "BUILD_Water_Pump",
+            "CAPPOINT_microfilm",
+            "CAPPOINT_treasure",
+            "FLAG_gold",
+            "PLANT_Axis_Command_Post",
+            "PLANT_Bergfried_Wall",
+            "PLANT_Conference_Room",
+            "PLANT_Sewers_Gate",
+            "PLANT_Side_Wall",
+            "SWITCH_Shock_Treatment",
+        });
+
+        // TODO Enable Allied CP construction if reachable
+
+        Util.MapDebugPrint( "Castle_Gate_Destroyed" );
+    },
+
+    Conference_Room_Destroyed = function()
+    {
+        Map.Conference_Room_Dyno = 0;
+
+        Map.RefreshCampGoals();
+
+        Util.MapDebugPrint( "Conference_Room_Destroyed" );
+    },
+
+    Tunnel_Doors_Destroyed = function()
+    {
+        Map.Tunnel_Doors_Dyno = 0;
+
+        // TODO Required?
+        //SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Tunnel_Doors" );
+
+        // Be offensive; also handle human behaviour
+        Util.EnableGoal( "CHECKPOINT_river_flag" );
+
+        SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Bridge" );
+
+        Util.MapDebugPrint( "Tunnel_Doors_Destroyed" );
+    },
+
+    Sewers_Gate_Destroyed = function()
+    {
+        Map.Sewers_Gate_Dyno = 0;
+
+        Util.MapDebugPrint( "Sewers_Gate_Destroyed", true );
+    },
+
+    Side_Wall_Destroyed = function()
+    {
+        Map.SideWallDestroyed = true;
+        Map.Side_Wall_Dyno = 0;
+
+        // Leave these objectives behind
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+            "BUILD_Allied_Command_Post",
+            "BUILD_Bridge",
+            "BUILD_Water_Pump",
+        });
+
+        Util.MapDebugPrint( "Side_Wall_Destroyed", true );
+    },
+
+    Tank_Barrier_Destroyed = function()
+    {
+        Map.Tank_Barrier_Dyno = 0;
+
+        Util.MapDebugPrint( "Tank_Barrier_Destroyed" );
+    },
+
+    Shock_Treatment_Activated = function()
+    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Shock_Treatment" );
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Shock_Treatment" );
+
+        // No need to print active goals even though the goal table just got modified
+        Util.MapDebugPrint( "Shock_Treatment_Activated", true );
+    },
+
+    Shock_Treatment_Deactivated = function()
+    {
+        SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Shock_Treatment" );
+
+        SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_Shock_Treatment" );
+
+        // No need to print active goals even though the goal table just got modified
+        Util.MapDebugPrint( "Shock_Treatment_Deactivated", true );
+    },
+
+    Dead_Prisoner_Barbecued = function()
+    {
+        Util.DisableGoal( "SWITCH_Shock_Treatment" );
+
+        // Microfim is now... well... "accessible"
+        SetAvailableMapGoals( TEAM.ALLIES, true, "FLAG_microfilm" );
+
+        Util.MapDebugPrint( "Dead_Prisoner_Barbecued" );
+    },
+
+    gold_Taken = function()
+    {
+        Map.isAlliedGoldStolen = true;
+
+        Map.RefreshCampGoals();
+
+        Util.CappointForFlag( "FLAG_gold", "CAPPOINT_treasure" );
+
+        Util.MapDebugPrint( "gold_Taken" );
+    },
+
+    gold_Returned = function()
+    {
+        Map.isAlliedGoldStolen = false;
+
+        Map.RefreshCampGoals();
+
+        Util.MapDebugPrint( "gold_Returned" );
+    },
+
+    gold_Secured = function()
+    {
+        // Owned by Allies now
+        Map.isAlliedGoldSecured = false;
+        Map.isAlliedGoldStolen = false;
+        Map.isAxisGoldSecured = true;
+        Map.isAxisGoldStolen = false;
+
+        SetAvailableMapGoals( TEAM.AXIS, true, "FLAG__gold" );
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_gold" );
+
+        Map.RefreshCampGoals();
+
+        Util.MapDebugPrint( "gold_Secured" );
+    },
+
+    gold_axis_Taken = function()
+    {
+        Map.isAlliedGoldStolen = true;
+
+        Map.RefreshCampGoals();
+
+        Util.MapDebugPrint( "gold_axis_Taken" );
+    },
+
+    gold_axis_Returned = function()
+    {
+        Map.isAlliedGoldStolen = false;
+
+        Map.RefreshCampGoals();
+
+        Util.MapDebugPrint( "gold_axis_Returned" );
+    },
+
+    gold_axis_Secured = function()
+    {
+        // Owned by Axis again
+        Map.isAlliedGoldSecured = true;
+        Map.isAlliedGoldStolen = false;
+        Map.isAxisGoldSecured = false;
+        Map.isAlliedGoldStolen = false;
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "FLAG__gold" );
+
+        SetAvailableMapGoals( TEAM.ALLIES, true, "FLAG_gold" );
+
+        Map.RefreshCampGoals();
+
+        Util.MapDebugPrint( "gold_axis_Secured" );
+    },
+
+    microfilm_Taken = function()
+    {
+        Map.isMicrofilmStolen = true;
+
+        Map.RefreshCampGoals();
+
+        Util.CappointForFlag( "FLAG_microfilm", "CAPPOINT_microfilm" );
+
+        Util.MapDebugPrint( "microfilm_Taken" );
+    },
+
+    microfilm_Returned = function()
+    {
+        Map.isMicrofilmStolen = false;
+
+        Map.RefreshCampGoals();
+
+        Util.MapDebugPrint( "microfilm_Returned" );
+    },
+
+    microfilm_Secured = function()
+    {
+        Map.isMicrofilmSecured = true;
+        Map.isMicrofilmStolen = false;
+
+        Util.DisableGoal( "FLAG_microfilm" );
+        Util.DisableGoal( "CAPPOINT_microfilm" );
+
+        Map.RefreshCampGoals();
+
+        Util.MapDebugPrint( "microfilm_Secured" );
+    },
+
+    river_flag_Axis_Captured = function()
+    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            "AMMOCAB_village_cabinet_ammo_model",
+            "HEALTHCAB_village_cabinet_health_model",
+        });
+
+        Util.MapDebugPrint( "river_flag_Axis_Captured" );
+    },
+
+    river_flag_Allies_Captured = function()
+    {
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+            "AMMOCAB_village_cabinet_ammo_model",
+            "HEALTHCAB_village_cabinet_health_model",
+        });
+
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+            "DEFEND_Echo.*",
+        });
+
+        Util.MapDebugPrint( "river_flag_Allies_Captured" );
+    },
+
+    village_flag_Axis_Captured = function()
+    {
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+            "CHECKPOINT_river_flag",
+            "DEFEND_Echo.*",
+        });
+
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            "CHECKPOINT_village_flag",
+            "ATTACK_Alpha",
+            "SNIPE_AlliedSpawn",
+        });
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+            "ATTACK_Bravo",
+            "PLANT_Tunnel_Doors",
+        });
+
+        // If the Village got captured meanwhile by Allies at least once
+        // after the Tank got passed the first Barrier
+        // if (TankPassedBarrier )
+        // {
+            // SetGoalRole( "BUILD_Tank", ROLE.ATTACKER2 );
+        // }
+
+        Util.ChangeSpawnForRole( TEAM.ALLIES, ROLE.ATTACKER, 2 );   // Eastern Lake Spawn
+
+        Util.MapDebugPrint( "village_flag_Axis_Captured" );
+    },
+
+    village_flag_Allies_Captured = function()
+    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_village_flag" );
+
+        SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Bravo.*" );
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+            "CHECKPOINT_village_flag",
+            "ATTACK_Alpha.*",
+            "SNIPE_AlliedSpawn",
+        });
+
+        // Use build offsets instead of forced routing
+        Util.ForceRouting( "BUILD_Tank", false );
+
+        // Routing from Western Lake spawn is useless
+        // ClearGoalRole( "BUILD_Tank", ROLE.ATTACKER2);
+
+        Util.ChangeSpawnForRole( TEAM.ALLIES, ROLE.ATTACKER, 3 );   // Village Spawn
+
+        Util.MapDebugPrint( "village_flag_Allies_Captured" );
+    },
+
+    // ************************************************************************
+
+    Tank_Stolen = function()
+    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Bravo.*" );
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+            "AMMOCAB_village_cabinet_ammo_model",
+            "DEFEND_Alpha.*",
+            "HEALTHCAB_village_cabinet_health_model",
+        });
+
+        SetGoalPriority( "BUILD_Tank", 0.85);           // Was 0.9
+        SetGoalPriority( "PLANT_Tank_Barrier", 0.90);   // Was 0.81
+
+        ETUtil.SetStartIndex( "BUILD_Tank", 10 );       // Behind the Tank
+
+        Util.MapDebugPrint( "Tank_Stolen" );
+    },
+
+    Tank_Passed_First_Barrier = function()
+    {
+        Map.TankPassedBarrier = true;
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Tank_Barrier" );
+
+        // Handling BUILD_Tank until the Village get secured
+        Util.EnableGoal( "ROUTE_BuildTank.*Node" );
+        // SetGoalRole( "BUILD_Tank", ROLE.ATTACKER2 );
+        ETUtil.SetStartIndex( "BUILD_Tank", 8 );    // Right side of the Tank
+
+        Util.MapDebugPrint( "Tank_Passed_First_Barrier" );
+    },
+
+    Village_Secured = function()
+    {
+        Util.DisableGoal( "CHECKPOINT_village_flag" );
+
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+            "DEFEND_Charlie.*",
+            "MOUNTMG42_forward_gate_mg", // Name is a leftover from B1
+            "PLANT_Water_Pump",
+            "REPAIRMG42_forward_gate_mg",
+        });
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+            "DEFEND_Bravo.*",
+            "MOUNTMG42_village_mg",
+            "REPAIRMG42_village_mg",
+        });
+
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            "ATTACK_Bravo.*",
+            "BUILD_Water_Pump",
+            "PLANT_Tunnel_Doors",
+        });
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+            "ATTACK_Alpha.*",
+            "ATTACK_VillageFlag.*",
+            "SNIPE_AlliedSpawn",
+        });
+
+        // Dropping BUILD_Tank management
+        // ClearGoalRole( "BUILD_Tank", ROLE.ATTACKER2);
+
+        // Clearing the ATTACKER Role
+        foreach ( bot in BotTable )
+        {
+            if ( bot.HasRole( ROLE.ATTACKER ) )
+            {
+                bot.ClearRoles( ROLE.ATTACKER );
+            }
+        }
+
+        // Use build offsets instead of forced routing
+        Util.ForceRouting( "BUILD_Tank", false );
+
+        ETUtil.SetStartIndex( "BUILD_Tank", 10 );       // Behind the Tank
+
+        SetGoalPriority( "PLANT_Tunnel_Doors", 0.90 );  // Was 0.81
+
+        Util.MapDebugPrint( "Village_Secured" );
+    },
+
+    Tank_Passed_Second_Barrier = function()
+    {
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Delta.*" );
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+            "DEFEND_Charlie.*",
+            "MOUNTMG42_forward_gate_mg",
+            "REPAIRMG42_forward_gate_mg",
+        });
+
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            "ATTACK_Charlie.*",
+        	"ATTACK_RiverDepotFlag.*",
+            "BUILD_Bridge",
+        });
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Bravo.*" );
+
+        // This one is still well placed
+        SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Bravo2" );
+
+        SetGoalPriority( "ATTACK_RiverDepotFlag.*", 0.6 ); // Default is 0.5, rest is 0.7+
+
+        Util.MapDebugPrint( "Tank_Passed_Second_Barrier" );
+    },
+
+    Tunnel_Grate_Destroyed = function()
+    {
+        Util.MapDebugPrint( "Tunnel_Grate_Destroyed", true );
+    },
+
+    Road_Hut_Secured = function()
+    {
+        Map.RoadHutSecured = true;
+
+        // TODO: Since it is removed through script, might rise an error, check
+        Util.DisableGoal( "CHECKPOINT_river_flag" );
+
+        // At this moment, they better stay at the other side of the river
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+            "DEFEND_Echo.*",
+        });
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+            "BUILD_Grate_Door",
+            "DEFEND_Delta.*",
+            "PLANT_Allied_Command_Post",
+            "PLANT_Water_Pump",
+        });
+
+        // River Depot flag disappears
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+            "AMMOCAB_village_cabinet_ammo_model",
+            "ATTACK_Bravo2",
+            "ATTACK_Charlie.*",
+            "ATTACK_RiverDepotFlag.*",
+            "HEALTHCAB_village_cabinet_health_model",
+            "PLANT_Grate_Door", // Long way so no need to do this any more
+        });
+
+        Util.MapDebugPrint( "Road_Hut_Secured" );
+    },
+
+    // ************************************************************************
+
+    vehicle_at_location = function()
+    {
+        switch( Map.VehicleLocation )
+        {
+            case 1:
+            {
+                Map.Tank_Stolen();
+            }
+        }
+
+        //Util.MapDebugPrint("vehicle at location " + Map.VehicleLocation, true);
+    },
+};
+
+global OnMapLoad = function()
+{
+    // *** TRIGGERS ***
+    OnTrigger( "^5Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+    OnTrigger( "^1Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+    OnTrigger( "^1Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+    OnTrigger( "^5Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+
+    OnTrigger( "^5The Allies have constructed the Bridge!", Map.Bridge_Built );
+    OnTrigger( "^1The Axis have destroyed the Bridge!", Map.Bridge_Destroyed );
+
+    OnTrigger( "^1The Axis have constructed the Grate Door!", Map.Grate_Door_Built );
+    OnTrigger( "^5The Allies have destroyed the Grate Door!", Map.Grate_Door_Destroyed );
+
+    OnTrigger( "^5The Allies have repaired the Water Pump!", Map.Water_Pump_Built );
+    OnTrigger( "^1The Axis have destroyed the Water Pump!", Map.Water_Pump_Destroyed );
+
+    OnTrigger( "^5The Tank has been repaired!", Map.Tank_Built );
+    OnTrigger( "^1The Tank has been damaged!", Map.Tank_Destroyed );
+    OnTrigger( "^1The Axis have constructed the Tank Barrier!", Map.Tank_Barrier_Built );
+
+    OnTrigger( "Planted at the Allied Command Post.", Map.Allied_Command_Post_Planted );
+    OnTrigger( "Planted at the Axis Command Post.", Map.Axis_Command_Post_Planted );
+    OnTrigger( "Planted at the Bergfried Wall.", Map.Bergfried_Wall_Planted );
+    OnTrigger( "Planted at the Bridge.", Map.Bridge_Planted );
+    OnTrigger( "Planted at the Conference Room.", Map.Conference_Room_Planted );
+    OnTrigger( "Planted at the Tunnel Doors.", Map.Tunnel_Doors_Planted );
+    OnTrigger( "Planted at the Sewers Gate.", Map.Sewers_Gate_Planted );
+    OnTrigger( "Planted at the Side Wall.", Map.Side_Wall_Planted );
+    OnTrigger( "Planted at the Tank Barrier.", Map.Tank_Barrier_Planted );
+
+    OnTrigger( "Defused at the Allied Command Post.", Map.Allied_Command_Post_Defused );
+    OnTrigger( "Defused at the Axis Command Post.", Map.Axis_Command_Post_Defused );
+    OnTrigger( "Defused at the Bergfried Wall.", Map.Bergfried_Wall_Defused );
+    OnTrigger( "Defused at the Bridge.", Map.Bridge_Defused );
+    OnTrigger( "Defused at the Conference Room.", Map.Conference_Room_Defused );
+    OnTrigger( "Defused at the Tunnel Doors.", Map.Tunnel_Doors_Defused );
+    OnTrigger( "Defused at the Sewers Gate.", Map.Sewers_Gate_Defused );
+    OnTrigger( "Defused at the Side Wall.", Map.Side_Wall_Defused );
+    OnTrigger( "Defused at the Tank Barrier.", Map.Tank_Barrier_Defused );
+
+    OnTrigger( "^5The Allies have destroyed the Bergfried Wall!", Map.Bergfried_Wall_Destroyed );
+    OnTrigger( "^5The Allies have destroyed the Castle Gate!", Map.Castle_Gate_Destroyed );
+    OnTrigger( "^5The Allies have destroyed the Conference Room!", Map.Conference_Room_Destroyed );
+    OnTrigger( "^5The Allies have destroyed the Tunnel Doors!", Map.Tunnel_Doors_Destroyed );
+    OnTrigger( "^5The Allies have destroyed the Sewers Gate!", Map.Sewers_Gate_Destroyed );
+    OnTrigger( "^5The Allies have destroyed the Side Wall!", Map.Side_Wall_Destroyed );
+    OnTrigger( "^5The Allies have destroyed the Tank Barrier!", Map.Tank_Barrier_Destroyed );
+
+    OnTrigger( "^5Shock Treatment activated!", Map.Shock_Treatment_Activated );
+    OnTrigger( "^1Shock Treatment deactivated!", Map.Shock_Treatment_Deactivated );
+    OnTrigger( "^5The Allies have barbecued the Dead Prisoner!", Map.Dead_Prisoner_Barbecued );
+
+    OnTrigger( "Allies have stolen the Treasure!", Map.gold_Taken );
+    OnTrigger( "^1The Axis have returned the Treasure!", Map.gold_Returned );
+    OnTrigger( "^5The Allies have secured the Treasure!", Map.gold_Secured );
+    OnTrigger( "^1The Axis are attempting to take back the Treasure!", Map.gold_axis_Taken );
+    OnTrigger( "^5The Allies have returned the Treasure!", Map.gold_axis_Returned );
+    OnTrigger( "^1The Axis have taken back the Treasure!", Map.gold_axis_Secured );
+    OnTrigger( "Allies have stolen the Microfilm!", Map.microfilm_Taken );
+    OnTrigger( "^1The Axis have returned the Microfilm!", Map.microfilm_Returned );
+    OnTrigger( "^5The Allies have transmitted the Microfilm!", Map.microfilm_Secured );
+
+    OnTrigger( "^1The Axis have reclaimed the Road Hut!", Map.river_flag_Axis_Captured );
+    OnTrigger( "^5The Allies have captured the Road Hut!", Map.river_flag_Allies_Captured );
+    OnTrigger( "^1The Axis have reclaimed the Village!", Map.village_flag_Axis_Captured );
+    OnTrigger( "^5The Allies have captured the Village!", Map.village_flag_Allies_Captured );
+
+    // In order to follow Tank progress, some more triggers
+    OnTrigger( "^5The Tank has passed Tank Barrier #1!", Map.Tank_Passed_First_Barrier );
+    OnTrigger( "^5The Allies have secured the Village and can now capture the Road Hut!", Map.Village_Secured );
+    OnTrigger( "^5The Tank has passed the Tunnel Doors!", Map.Tank_Passed_Second_Barrier );
+    OnTrigger( "^5The Allies have destroyed the Tunnel Grate!", Map.Tunnel_Grate_Destroyed );
+    OnTrigger( "^5The Allies have secured the Road Hut!", Map.Road_Hut_Secured );
+
+    // *** VEHICLE TRIGGERS ***
+    OnTrigger( "tank at location", Map.vehicle_at_location );
+
+    Trigger1 = OnTriggerRegion(AABB(1772.368,3937.222,-382.747,1914.477,4111.901,-301.914), RegionTrigger.VehicleTrigger);
+
+    // *** CLEAR ALL GOALS FOR BOTH TEAMS ***
+    Util.DisableGoal( ".*", true ); // All but Routes
+    Util.DisableGoal( "ROUTE_BuildTank.*Node" );
+
+    Util.EnableGoal( "AMMOCAB_village_cabinet_ammo_model" );
+    Util.EnableGoal( "HEALTHCAB_village_cabinet_health_model" );
+
+    // So other bots going for the CHECKPOINT_village_flag can use them
+    // TODO : To be tested -> Doesn't seem to work
+    //Util.ExcludeClass( "ROUTE_BuildTank.*Node", TEAM.ALLIES, CLASS.ENGINEER );
+
+    // *** AXIS GOALS ***
+    SetAvailableMapGoals( TEAM.AXIS, true, {
+        "BUILD_Tank_Barrier",
+        "DEFEND_Alpha.*",
+        "MOUNTMG42_village_mg",
+        "REPAIRMG42_village_mg",
+    });
+
+    // *** ALLIED GOALS ***
+    SetAvailableMapGoals( TEAM.ALLIES, true, {
+        // "AMMOCAB_parachute_ammo"
+        "ATTACK_Alpha.*",
+        "ATTACK_VillageFlag.*",
+        "BUILD_Tank",
+        "CHECKPOINT_village_flag",
+        "ESCORT_Tank",
+        "MOUNT_Tank",
+        "MOVER_tank",
+        "PLANT_Tank_Barrier",
+        "SNIPE_AlliedSpawn",
+    });
+
+    // *** ROLES ***
+    SetGoalRole( "ATTACK_VillageFlag.*",       ROLE.ATTACKER );
+    // SetGoalRole( "CHECKPOINT_village_flag",    ROLE.ATTACKER );
+
+    // Max users per goal
+    Util.SetMaxUsers( 1, ".*" );
+    Util.SetMaxUsers( 2, "AMMOCAB_.*" );
+    Util.SetMaxUsers( 2, "HEALTHCAB_.*" );
+    Util.SetMaxUsers( 2, "CHECKPOINT_.*" );
+
+    // Camp times
+    SetMapGoalProperties( "MOUNTMG42_.*",   { MinCampTime = 10, MaxCampTime = 60 } );
+    SetMapGoalProperties( "SNIPE_.*",       { MinCampTime = 15, MaxCampTime = 60 } );
+
+    // Misc.
+    ETUtil.SetStartIndex( "BUILD_Tank", 3 );    // Left side of the Tank
+    ETUtil.SetStartIndex( "ESCORT_Tank", 0 );   // Behind the Tank
+
+    SetGoalPriority( "BUILD_Allied_Command_Post", 0.80 );   // Was 0.9
+    SetGoalPriority( "SWITCH_Shock_Treatment", 0.8 );
+
+    Util.SetGoalOffset( -32,   0, -32, "MOUNTMG42_forward_gate_mg" );   // To avoid pathfailed issue TODO Is this still something for B2? Should yeah, check if working
+    Util.SetGoalOffset( 275,   0,  10, "PLANT_Tank_Barrier" );          // Behind the wall
+    Util.SetGoalOffset(  32, -64, -64, "PLANT_Tunnel_Doors" );          // Was planting on Axis side, also easing covering
+
+    Util.MapDebugPrint( "Omni-Bot 0.84+ map script for Dingenskirchen (Beta 2) executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+    bot.MaxViewDistance = 2600;
+    bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+    // Force routing for the Tank build
+    Util.ForceRouting( "BUILD_Tank", true );
+
+    // Set up some routing
+    MapRoutes =
+    {
+
+
+
+        BUILD_Tank =
+        {
+            ROUTE_AlliedSpawn =
+            {
+                //ROUTE_AlliedVillageWindow =
+                //{
+                    ROUTE_BuildTankEastNode = {},
+                    ROUTE_BuildTankWestNode = {},
+                //},
+            },
+
+            ROUTE_AlliedSpawnBack =
+            {
+                //ROUTE_AlliedVillageWindow =
+                //{
+                    ROUTE_BuildTankEastNode = {},
+                    ROUTE_BuildTankWestNode = {},
+                //},
+            },
+        },
+
+
+        CHECKPOINT_river_flag =
+        {
+            /*ROUTE_VillageSpawn =
+            {
+                ROUTE_ForwardGateSouthNode1 =
+                {
+                    ROUTE_ForwardGateSouthNode2 =
+                    {
+                        ROUTE_ForwardGateSouthNode3 =
+                        {
+                            ROUTE_RiverDepotFlag = {},
+                        },
+                    },
+                },
+            },*/
+        },
+
+        CHECKPOINT_village_flag =
+        {
+            /*
+             * For the Western Lake Spawn
+             */
+            ROUTE_AlliedSpawn =
+            {
+                //ROUTE_AlliedVillageWindow =
+                //{
+                    ROUTE_BuildTankEastNode = {},
+                    ROUTE_BuildTankWestNode = {},
+                //},
+            },
+
+            ROUTE_AlliedSpawnBack =
+            {
+                //ROUTE_AlliedVillageWindow =
+                //{
+                    ROUTE_BuildTankEastNode = {},
+                    ROUTE_BuildTankWestNode = {},
+                //},
+            },
+
+            /*
+             * For the Eastern Lake Spawn
+             */
+            ROUTE_EasternLakeSpawn1 =
+            {
+                ROUTE_EasternLake1 =
+                {
+                    ROUTE_EasternLake2 =
+                    {
+                        ROUTE_EasternLake3 = {},
+                    },
+                },
+            },
+
+            ROUTE_EasternLakeSpawn2 =
+            {
+                ROUTE_EasternLake1 =
+                {
+                    ROUTE_EasternLake2 =
+                    {
+                        ROUTE_EasternLake3 = {},
+                    },
+                },
+            },
+        },
+
+
+
+
+
+
+
+
+
+        PLANT_Tunnel_Doors =
+        {
+            /*ROUTE_VillageSpawn =
+            {
+                ROUTE_ForwardGateNorthNode1 =
+                {
+                    ROUTE_ForwardGateNorthNode2 =
+                    {
+                        ROUTE_ForwardGateNorthNode3 = {},
+                    },
+                },
+
+                ROUTE_ForwardGateSouthNode1 =
+                {
+                    ROUTE_ForwardGateSouthNode2 =
+                    {
+                        ROUTE_ForwardGateSouthNode3 = {},
+                    },
+                },
+            },*/
+        },
+
+    };
+
+    // Copy some routes
+    MapRoutes.ATTACK_VillageFlag1 = MapRoutes.CHECKPOINT_village_flag;
+    MapRoutes.ATTACK_VillageFlag2 = MapRoutes.CHECKPOINT_village_flag;
+
+    MapRoutes.ATTACK_RiverDepotFlag1 = MapRoutes.CHECKPOINT_river_flag;
+    MapRoutes.ATTACK_RiverDepotFlag2 = MapRoutes.CHECKPOINT_river_flag;
+
+    Util.Routes( MapRoutes );
+};

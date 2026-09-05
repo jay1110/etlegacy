@@ -1,0 +1,338 @@
+//==========================================================================================
+//
+//  uje_death_water.gm
+//
+// Who   	When		What
+//------------------------------------------------------------------------------------------
+// palota	04 August 2025	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	op1Secured = 0,
+	op1Axis = 0,
+	op2Axis = 0,
+
+	FirstDefence_Built = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "BUILD_axis_1st_defence");
+		Util.MapDebugPrint("FirstDefence_Built");
+	},
+
+	FirstDefence_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, !Map.op1Secured, "BUILD_axis_1st_defence");
+		Util.MapDebugPrint("FirstDefence_Destroyed");
+	},
+
+	Ramp_Built = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.AXIS, false, "BUILD_ramp");
+		SetAvailableMapGoals(TEAM.AXIS, !Map.op1Secured, "SNIPE_x1");
+		Util.MapDebugPrint("Ramp_Built");
+	},
+
+	Gate_Built = function()
+	{
+		Wp.SetWaypointFlag("gate", "closed", 0);
+		Util.MapDebugPrint("Gate_Built");
+	},
+
+	Gate_Destroyed = function()
+	{
+		Util.MapDebugPrint("Gate_Destroyed");
+	},
+
+	mg42_Built = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "GRENADE_mg");
+		Util.MapDebugPrint("mg42_Built");
+	},
+
+	Cabinet_Built = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, false, "BUILD_mg");
+		Util.MapDebugPrint("Cabinet_Built");
+	},
+
+	spawnflag_Axis_Captured = function()
+	{
+		Map.op1Axis = 1;
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"ATTACK_1_.*",
+			"BUILD_OP1",
+		});
+		Util.MapDebugPrint("spawnflag_Axis_Captured");
+	},
+
+	spawnflag_Allies_Captured = function()
+	{
+		Map.op1Axis = 0;
+		Util.MapDebugPrint("spawnflag_Allies_Captured");
+
+		ETUtil.WaitForSpawn(TEAM.ALLIES);
+		if(!Map.op1Axis){
+			foreach (bot in BotTable){
+				if(bot.GetPosition().x > -5850){ //wall
+					bot.ExecCommand("kill");
+				}
+			}
+		}
+	},
+
+	OP1_Secured = function()
+	{
+		Map.op1Secured = 1;
+		Map.op1Axis = 1;
+		Util.DisableGoal(".*", true);
+		Util.EnableGoal("CHECKPOINT_OP2_Flag");
+
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"PLANT_OP2_wall",
+			"PLANT_allied_2nd_defence",
+			"BUILD_Axis_2nd_defence",
+		});
+
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"BUILD_ladder",
+			"BUILD_allied_2nd_defence",
+			"PLANT_Axis_2nd_defence",
+			"DEFEND_2_.*",
+		});
+
+		Util.MapDebugPrint("OP1_Secured");
+	},
+
+	OP2_wall_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_materials");
+		Util.MapDebugPrint("OP2_wall_Destroyed");
+	},
+
+	ladder_Built = function()
+	{
+		Wp.SetWaypointFlag("ladder", "closed", 0);
+		Util.MapDebugPrint("ladder_Built");
+	},
+
+	ladder_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("ladder", "closed", 1);
+		Util.MapDebugPrint("ladder_Destroyed");
+	},
+
+	OP2_Flag_Axis_Captured = function()
+	{
+		Map.op2Axis = 1;
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"PLANT_ladder",
+			"ATTACK_2_.*",
+		});
+		Util.MapDebugPrint("OP2_Flag_Axis_Captured");
+
+		ETUtil.WaitForSpawn(TEAM.AXIS);
+		if (Map.op2Axis){
+			foreach (bot in BotTable){
+				if (bot.GetPosition().y > 0 && bot.GetTeam()==TEAM.AXIS){
+					bot.ExecCommand("kill");
+				}
+			}
+		}
+	},
+
+	OP2_Flag_Allies_Captured = function()
+	{
+		Map.op2Axis = 0;
+		SetAvailableMapGoals(TEAM.AXIS, false, "PLANT_ladder");
+		Util.MapDebugPrint("OP2_Flag_Allies_Captured");
+	},
+
+	OP2_Secured = function()
+	{
+		Map.op2Axis = 1;
+		Util.DisableGoal(".*", true);
+		Util.DisableGoal("ROUTE_hidden_wall");
+
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"BUILD_CP",
+			"PLANT_Hidden_wall",
+			"ATTACK_3_.*",
+			"CAPPOINT_files",
+			"CALLARTILLERY_hill",
+			"ARTILLERY.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_3_.*");
+
+		Util.MapDebugPrint("OP2_Secured");
+	},
+
+	Command_Post_Built = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"PLANT_CP",
+			"DEFEND_f.*",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, true, "FLAG_The_Hidden_Files");
+		Util.MapDebugPrint("Command_Post_Built");
+	},
+
+	Command_Post_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"PLANT_CP",
+			"DEFEND_f.*",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, false, "FLAG_The_Hidden_Files");
+		SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_CP");
+		SetMapGoalProperties("PLANT_CP", {ExplosiveType=3});
+		Util.MapDebugPrint("Command_Post_Destroyed");
+	},
+
+	Command_Post_Wall_Built = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "BUILD_CP");
+		SetMapGoalProperties("PLANT_CP", {ExplosiveType=1});
+		Util.MapDebugPrint("Command_Post_Wall_Built");
+	},
+
+	Command_Post_Wall_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_CP");
+		SetMapGoalProperties("PLANT_CP", {ExplosiveType=3});
+		Util.MapDebugPrint("Command_Post_Wall_Destroyed");
+	},
+
+	Hidden_wall_Destroyed = function()
+	{
+		Util.EnableGoal("ROUTE_hidden_wall");
+		Util.MapDebugPrint("Hidden_wall_Destroyed");
+	},
+
+	The_Hidden_Files_Taken = function()
+	{
+		Util.MapDebugPrint("The_Hidden_Files_Taken");
+	},
+
+	The_Hidden_Files_Returned = function()
+	{
+		Util.MapDebugPrint("The_Hidden_Files_Returned");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("^1Axis upgraded their 1st defence.", Map.FirstDefence_Built);
+	OnTrigger("^1Allies destroyed axis their fortified defence.", Map.FirstDefence_Destroyed);
+	OnTrigger("^1Axis build a Ramp up the mountain.", Map.Ramp_Built);
+	OnTrigger("^2Allies made a MG42.", Map.mg42_Built);
+	OnTrigger("^2Allies made health and ammo cabinets.", Map.Cabinet_Built);
+	OnTrigger("^2Axis completed their wall.", Map.Gate_Built);
+	OnTrigger("^2Allies destroyed the fortified wall.", Map.Gate_Destroyed);
+	OnTrigger("^2The Axis captured OutPost 1.", Map.spawnflag_Axis_Captured);
+	OnTrigger("^2The Allies reclaimed OutPost 1.", Map.spawnflag_Allies_Captured);
+	OnTrigger("^2Axis secured their flag!!", Map.OP1_Secured);
+	OnTrigger("^3Axis have blown up the secure wall.", Map.OP2_wall_Destroyed);
+	OnTrigger("^3Allies made ropes.", Map.ladder_Built);
+	OnTrigger("^3Axis destroyed the ropes.", Map.ladder_Destroyed);
+	OnTrigger("^3The Axis captured OutPost 2.", Map.OP2_Flag_Axis_Captured);
+	OnTrigger("^3The Allies reclaimed Outpost 2.", Map.OP2_Flag_Allies_Captured);
+	OnTrigger("^3Axis secured Outpost 2!!!", Map.OP2_Secured);
+	OnTrigger("Axis build their command post, they know were the hidden files are.", Map.Command_Post_Built);
+	OnTrigger("Axis made a wall around the command post!", Map.Command_Post_Wall_Built);
+	OnTrigger("Allies destroyed axis command post, axis forgotten were hidden files wh", Map.Command_Post_Destroyed);
+	OnTrigger("Allies destroyed the command post surrounding wall!", Map.Command_Post_Wall_Destroyed);
+	OnTrigger("^8 Axis have blown up the hidden wall!", Map.Hidden_wall_Destroyed);
+	OnTrigger("Axis have stolen the hidden files!", Map.The_Hidden_Files_Taken);
+	OnTrigger("^8 The Allies have returned the Hidden Files.", Map.The_Hidden_Files_Returned);
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal("CHECKPOINT_spawnflag");
+
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"BUILD_axis_1st_defence",
+		"BUILD_ramp",
+	});
+
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"BUILD_mg",
+		"PLANT_axis_1st_defence",
+		"PLANT_Gate",
+		".*MG42_OP1_MG",
+		"DEFEND_1_.*",
+	});
+
+	SetGoalPriority("MOUNTMG42.*", 0.6);
+	SetGoalPriority("BUILD_mg", 0.69);
+	SetGoalPriority("PLANT_axis_1st_defence", 0.5);
+	SetGoalPriority("BUILD_axis_1st_defence", 0.7);
+	SetGoalPriority("BUILD_allied_2nd_defence", 0.5);
+	SetGoalPriority("SNIPE.*", 0.8);
+	Util.ExcludeClass("PLANT.*_defence", 0, CLASS.ENGINEER);
+
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=20, MaxCampTime=60});
+	SetMapGoalProperties("SNIPE.*", {MinCampTime=50, MaxCampTime=90});
+
+	Wp.SetWaypointFlag("ladder", "closed", 1);
+	Wp.SetWaypointFlag("gate", "closed", 1);
+
+	Util.AddUsePoint("PLANT_allied_2nd_defence", Vec3(-3020, -1181, 546));
+	Util.AddUsePoint("PLANT_Hidden_wall", Vec3(4609,-2188,471));
+
+	Util.SetMaxUsers(1, {
+		"GRENADE.*",
+		"PLANT_CP",
+	});
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.MaxViewDistance = 2500;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_spawnflag =
+		{
+			ROUTE_axis_spawn =
+			{
+				ROUTE_axis1 ={},
+				ROUTE_axis2 ={},
+			},
+		},
+		CHECKPOINT_OP2_Flag =
+		{
+			ROUTE_OP1 =
+			{
+				ROUTE_above ={},
+				ROUTE_below ={},
+			},
+		},
+		FLAG_The_Hidden_Files =
+		{
+			ROUTE_hill_spawn =
+			{
+				ROUTE_hidden_wall ={},
+				ROUTE_wall ={},
+			},
+		},
+		CAPPOINT_files =
+		{
+			ROUTE_files =
+			{
+				ROUTE_hidden_wall ={Weight=3},
+				ROUTE_wall ={},
+			}
+		},
+	};
+	MapRoutes.PLANT_OP2_wall = MapRoutes.CHECKPOINT_OP2_Flag;
+	Util.Routes(MapRoutes);
+};

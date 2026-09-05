@@ -1,0 +1,252 @@
+//==========================================================================================
+//
+//	ParisBastOCHE - parisbastoche.gm
+//
+//	Who			When				What
+//------------------------------------------------------------------------------------------
+//	Mateos		28 December 2023	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	deathWallEnt,
+
+	// In order to have the wpinfo working, each navigational path through has to have a different name... else ambiguation issue
+	// And the concerned waypoint has to be named after its path through, e. g. 'jump1'
+	jump = function( _this )
+	{
+		wpinfo = _this.navigation.wpinfo; // null the 1st time
+		if ( wpinfo == null )
+		{
+			// This only works if the waypoint has the same name as its path through!
+			// 'ToString( _this.CurrentNavigation )' returns the path through name, e. g. 'jump1'
+			wpinfo = Util.WpNameInfo( _this.CurrentNavigation );
+			_this.navigation.wpinfo = wpinfo;
+		}
+
+		// ---
+
+		_this.Goto( _this.Bot.GetPosition() ); // Make the bot halt, to remove inertia...
+		sleep( .5 ); // Steady...
+
+		// Aim at the next waypoint
+		// TODO GetNextWaypoint through connections
+		wpTable = {};
+		nextGuid = wpinfo.guid + 1; // Can it be more dirty?
+		Wp.GetWaypointByGUID( nextGuid, wpTable );
+
+		botEyePos = _this.Bot.GetEyePosition();
+		aimingPos = Vec3( wpTable.position.x, wpTable.position.y, botEyePos.z + 30 ); // Aim up compared to current bot eye pos
+		_this.AddAimRequest( Priority.High );
+		_this.AimVector = aimingPos;
+		DrawDebugLine( wpTable.position, aimingPos, COLOR.GREEN, 5 );
+
+		if ( block( EVENT.AIM_SUCCESS ) == EVENT.AIM_SUCCESS )
+		{
+			// Start to move a bit forward
+			_this.Bot.HoldButton( BTN.FORWARD, .1 );
+			sleep( .1 );
+
+			// Do the actual jump
+			_this.Bot.HoldButton( BTN.FORWARD, 1.5 );
+			_this.Bot.HoldButton( BTN.SPRINT,  1.5 );
+			_this.Bot.HoldButton( BTN.JUMP,    0.5 );
+
+			_this.Goto( wpTable.position ); // To avoid bots jumping like hell...
+		}
+	},
+
+	Navigation =
+	{
+		// /bot waypoint_setproperty paththrough Navigation_PT:jump1
+		jump1 =
+		{
+			navigate = function( _this ) { Map.jump( _this ); }
+		},
+		jump2 =
+		{
+			navigate = function( _this ) { Map.jump( _this ); }
+		},
+		jump3 =
+		{
+			navigate = function( _this ) { Map.jump( _this ); }
+		},
+		jump4 =
+		{
+			navigate = function( _this ) { Map.jump( _this ); } // TODO Perhaps different here
+		}
+	},
+
+	DetectDeathWall = function()
+	{
+		// func_bobbing, paba/ff0006
+		// 2.60b -> 194:ET_MOVER func_bobbing
+
+		// Does not always work...
+		// It moves and does not reset upon map_restart
+		// It can venture outside the map (height of 5000, map is roughly -4096/4096 on x axis)
+		// But!
+		// We just need to test when a bot is close to it to prone, so it's enough to find it when inside the playable area
+		start = Vec3( -3984, 3072, 512 );
+		end   = Vec3(  3776, 3072, 512 );
+		DrawDebugLine( start, end, COLOR.RED, 20 );
+
+		tr = {};
+		tr.fraction = 1;
+		while ( tr.fraction == 1 )
+		{
+			tr = TraceLine( start, end, null, TRACE.SOLID, 0, false );
+			if ( tr.fraction == 1 ) { sleep( 1 ); }
+		}
+
+		Map.deathWallEnt = tr.entity;
+
+		thread( Map.TrackDeathWall );
+
+		Util.MapDebugPrint( "Deathwall detected: '" + ToString( Map.deathWallEnt ) + "'", true );
+	},
+
+	// Runs in a thread
+	// TODO Proning at street level (see to force bots to get down stuff) when the entity is close enough until the entity is far enough (closest surface/bounding box) / stop moving
+	DEATH_WALL_SLEEP = 1.5,
+	ManageDeathWallForBot = function( bot )
+	{
+		while ( Map.deathWallEnt == null ) { sleep( 1 ); }
+
+		while ( bot )
+		{
+			if ( !Map.isDeathWallInsidePlayableArea )
+			{
+				sleep( 1 );
+				continue;
+			}
+
+			// 'Script Function on NULL object' happens on GetEyePosition,
+			// but we don't enter this if, even though the bot left several seconds ago...
+			if ( bot == null ) { Util.MapDebugPrint( "How is that possible?", true ); }
+
+			botEyePos = bot.GetEyePosition();
+			deathWallAABB = GetEntWorldAABB( Map.deathWallEnt );
+			closestPointOnDeathWall = Map.GetClosestPointOnAABB( botEyePos, deathWallAABB );
+			distance = DistanceBetween( botEyePos, closestPointOnDeathWall );
+			if ( distance <= 30 ) // TODO Could be a while?
+			{
+				bot.HoldButton( BTN.PRONE, Map.DEATH_WALL_SLEEP );
+				bot.StandStill = true;
+				thread( Map.MakeBotStandStill, bot );
+				sleep( Map.DEATH_WALL_SLEEP );
+				bot.StandStill = false;
+			}
+
+			//DrawDebugLine( botEyePos, closestPointOnDeathWall, COLOR.CYAN, .1 );
+
+			sleep( .1 ); // TODO Sleep depending on the distance (if far away, longer sleep) - or even calculate speed...
+		}
+	},
+
+	MakeBotStandStill = function( bot )
+	{
+		//Util.MapDebugPrint( "Entering with " + GetGameTimeLeft() + "s left", true );
+		while ( bot.StandStill )
+		{
+			bot.MoveTowards( bot.GetPosition() ); // TODO Does not work...
+			yield();
+		}
+
+		//Util.MapDebugPrint( "Exiting with " + GetGameTimeLeft() + "s left", true ); // About 1.5s between the 2 prints, so that works
+	},
+
+	isDeathWallInsidePlayableArea = false,
+	TrackDeathWall = function()
+	{
+		// Checks if whether the Death Wall is in the playable or not
+		// No need to check the correct face entering the area, entity position is enough
+		while ( true )
+		{
+			deathWallXPos = GetEntPosition( Map.deathWallEnt ).x;
+			newStatus = deathWallXPos >= -2800 && deathWallXPos <= -384; // TODO Buildings and not clips, to raise sleep to 3s? -3440 / 80
+			if ( Map.isDeathWallInsidePlayableArea != newStatus )
+			{
+				printMsg;
+				if ( Map.isDeathWallInsidePlayableArea )
+				{
+					printMsg = "Death Wall exited playable area";
+				}
+				else
+				{
+					printMsg = "Death Wall entered playable area";
+				}
+
+				Util.MapDebugPrint( printMsg, true );
+			}
+
+			Map.isDeathWallInsidePlayableArea = newStatus;
+
+			sleep( .5 ); // Has to be low, because basement spawn exit is close to a map clip
+		}
+	},
+
+	GetClosestPointOnAABB = function( vec, aabb )
+	{
+		tokens = ToString( aabb ).Tokenize( "," ); // TODO There's probably better...
+		min = Vec3( ToFloat( tokens[ 0 ] ), ToFloat( tokens[ 1 ] ), ToFloat( tokens[ 2 ] ) );
+		max = Vec3( ToFloat( tokens[ 3 ] ), ToFloat( tokens[ 4 ] ), ToFloat( tokens[ 5 ] ) );
+
+		x = Clamp( vec.x, min.x, max.x );
+		y = Clamp( vec.y, min.y, max.y );
+		z = Clamp( vec.z, min.z, max.z );
+
+		return Vec3( x, y, z );
+	},
+
+	oldcityflag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint( "oldcityflag_Axis_Captured", true );
+	},
+
+	oldcityflag_Allies_Captured = function()
+	{
+		Util.MapDebugPrint( "oldcityflag_Allies_Captured", true );
+	}
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "^s*^1Axis capture the City!^s*", Map.oldcityflag_Axis_Captured );
+	OnTrigger( "^S* ^TAllies reclaim the City! ^S*", Map.oldcityflag_Allies_Captured );
+
+	//~Util.DisableGoal( ".*", true ); // all but routes
+	//~SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_.*" );
+	//~SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_.*" );
+
+	// Max users per goal
+	//Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+
+	// Camp times
+	//SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+
+	thread( Map.DetectDeathWall );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+
+	// A thread per bot to track the DeathWall
+	thread( Map.ManageDeathWallForBot, bot );
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_oldcityflag = {}
+	};
+
+	Util.Routes( MapRoutes );
+};

@@ -1,0 +1,99 @@
+//==========================================================================================
+//
+//	door.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	26 January 2018	Initial Script
+//	palota	11 June 2025	routes, ATTACK_d, dont' shoot chairs
+//==========================================================================================
+//
+
+global Map =
+{
+	Door_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 0, "ATTACK.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "CAMP_b_.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, 1, {
+			"FLAG_the_gold",
+			"CAPPOINT_Gold",
+			"CAMP_r_.*",
+		});
+
+		//open water tunnel
+		Wp.SetWaypointFlag( "A._Tunnel_WP", "closed", 0);
+
+		Util.MapDebugPrint( "Door_Destroyed" );
+	},
+
+	the_gold_Taken = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 0, "CAMP_b_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "CAMP_bcap_.*" );
+		Util.MapDebugPrint( "the_gold_Taken" );
+	},
+	the_gold_Returned = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "CAMP_b_.*" );
+		Util.MapDebugPrint( "the_gold_Returned" );
+	},
+	the_gold_Secured = function()
+	{
+		Util.MapDebugPrint( "the_gold_Secured" );
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "the Door Destroyed.", Map.Door_Destroyed );
+	OnTrigger( "Axis have stolen Gold Box!", Map.the_gold_Taken );
+	OnTrigger( "Flag returned the_gold!", Map.the_gold_Returned );
+	OnTrigger( "Axis have secured the Gold Box!", Map.the_gold_Secured );
+
+	Util.DisableGoal( ".*", true );
+
+	Wp.SetWaypointFlag( "A._Tunnel_WP", "closed", 1);
+
+	SetAvailableMapGoals( TEAM.ALLIES, 1, {
+		"ATTACK_d.*",
+		"CAMP_bx_.*",
+	});
+
+	SetAvailableMapGoals( TEAM.AXIS, 1, {
+		"PLANT_Door",
+	});
+
+	SetGoalPriority("CAMP_b_.*", 0.51);
+
+	SetMapGoalProperties( "CAMP_.*", {MinCampTime=60, MaxCampTime=200} );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		FLAG_the_gold =
+		{
+			ROUTE_AxSp =
+			{
+				ROUTE_Fence = {},
+				ROUTE_Door = {},
+			},
+		},
+
+		CAPPOINT_Gold =
+		{
+			ROUTE_Gold =
+			{
+				ROUTE_Al_Ramp = {},
+				ROUTE_Door = {},
+				ROUTE_Al_Tunnel = {Weight=2},
+			},
+		},
+	};
+	Util.Routes(MapRoutes);
+};

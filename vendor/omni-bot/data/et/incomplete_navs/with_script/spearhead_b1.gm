@@ -1,0 +1,125 @@
+//==========================================================================================
+//
+//	spearhead_b1.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	11 March 2018	- waypoints, goals, script
+//	palota                  	17 March 2025
+//
+//==========================================================================================
+
+global Map =
+{
+	Main_Entrance_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, 0, {
+			"PLANT_Main_Entrance",
+			"SNIPE_b1_.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, 1, {
+			"BUILD_Command_Post",
+			"PLANT_Command_Post",
+			"PLANT_Depot_Gate",
+			"PLANT_Back_Door",
+		});
+
+		SetAvailableMapGoals(TEAM.AXIS, 1, "CAMP_r2_.*");
+
+		Util.MapDebugPrint("Main_Entrance_Destroyed");
+	},
+
+	Side_Entrance_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, 0, "PLANT_Side_Entrance");
+		Util.MapDebugPrint("Side_Entrance_Destroyed");
+	},
+
+	Depot_Gate_Planted = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, 1, "MOBILEMG42_r4_1");
+		Util.MapDebugPrint("Depot_Gate_Planted");
+	},
+	Depot_Gate_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, 1, "FLAG_.*");
+		SetAvailableMapGoals(TEAM.AXIS, 0, "CAMP_r2_.*");
+		Util.EnableGoal("CAMP_r3_.*"); //both
+
+		Util.MapDebugPrint("Depot_Gate_Destroyed");
+	},
+
+	Back_Door_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, 1, "FLAG_.*");
+		Util.MapDebugPrint("Back_Door_Destroyed");
+	},
+
+	Secret_Documents_Secured = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, 1, {
+			"BUILD_Truck",
+			"ESCORT_Truck",
+		});
+		Util.MapDebugPrint("Secret_Documents_Secured");
+	},
+
+	Truck_Built = function()
+	{
+		Util.MapDebugPrint("Truck_Built");
+	},
+	Truck_Damaged = function()
+	{
+		Util.MapDebugPrint("Truck_Damaged");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("The Truck has been repaired!", Map.Truck_Built);
+	OnTrigger("The Truck has been damaged!", Map.Truck_Damaged);
+
+	OnTrigger("Allies have breached the Main Entrance and secured the Forward Bunker", Map.Main_Entrance_Destroyed);
+	OnTrigger("Allies have breached the Side Entrance!", Map.Side_Entrance_Destroyed);
+
+	OnTrigger("Planted at the Depot Gate.", Map.Depot_Gate_Planted);
+	OnTrigger("Allies have Destroyed The Main Depot Gate", Map.Depot_Gate_Destroyed);
+	OnTrigger("Allies have Destroyed The Back Depot Gate", Map.Back_Door_Destroyed);
+
+	OnTrigger("Allied team is escaping with the Secret Doucuments!", Map.Secret_Documents_Secured);
+
+	Util.DisableGoal(".*", true);
+
+	Util.LimitToClass("PLANT_Command_Post", 0, 5);
+	
+	Util.AddUsePoint("PLANT_Back_Door", Vec3(-361,2228,-235));
+
+	SetAvailableMapGoals(TEAM.ALLIES, 1, {
+		"SNIPE_b1_.*",
+		"PLANT_Side_Entrance",
+		"PLANT_Main_Entrance",
+		"CAPPOINT.*",
+	});
+	SetGoalPriority("PLANT_Side_Entrance", 0.83);
+
+	SetAvailableMapGoals(TEAM.AXIS, 1, {
+		"TRIPMINE_r3_.*",
+		"CAMP_r1_.*",
+		"BUILD_Command_Post",
+		"PLANT_Command_Post",
+	});
+
+	SetGoalPriority("DEFUSE_Side_Entrance_.*", 0.0, TEAM.AXIS, CLASS.ENGINEER, 1);
+	SetGoalPriority("DEFUSE_Main_Entrance_.*", 0.0, TEAM.AXIS, CLASS.ENGINEER, 1);
+
+	// Max users per goal
+	Util.SetMaxUsers(1, "CAMP_.*");
+	Util.SetMaxUsers(1, "PLANT_.*");
+	Util.SetMaxUsers(1, "BUILD_Command_Post");
+
+	// Camp times
+	SetMapGoalProperties("CAMP_.*", {MinCampTime=60, MaxCampTime=900});
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};

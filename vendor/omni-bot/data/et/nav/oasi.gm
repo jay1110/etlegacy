@@ -1,0 +1,2204 @@
+//==========================================================================================
+//
+//	oasi.gm
+//
+//	Who				When				What
+//------------------------------------------------------------------------------------------
+//	o-0._.0-o		4 April    2024	Initial Script
+//  		       24 December 2024 Added keyhouse route + waypoints. 
+//  		       15 February 2025 Version 4, better routes and many fixes
+//  		        3 May      2025 Defend barrier and basin + some fixes
+//			        7 October  2025 Version 6, Added Key and Tank Trigger for better gameplay
+//			       14 May      2026 Version 7, Updates everywhere
+//					
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	count_allies_inside_temple = 0,  // Integer, not table
+	count_allies_inside_room = 0,    // Integer, not table
+
+	Side_Entrance_Built = function()
+	{
+		Util.DisableGoal("ROUTE_templesidein.*");
+		Util.MapDebugPrint( "Side_Entrance_Built" );
+	},
+
+	Tank_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_mg42_01" );
+
+		Util.MapDebugPrint( "Tank_Built" );
+	},
+
+	first_Tank_Barrier_Built = function()
+	{
+		Util.MapDebugPrint( "first_Tank_Barrier_Built" );
+	},
+
+	second_Tank_Barrier_Built = function()
+	{
+			
+		Util.MapDebugPrint( "second_Tank_Barrier_Built" );
+	},
+
+	Ancient_Anti_Gravity_Generator_Planted = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_Side_Entrance",
+			"MOUNTMG42_mg42_a",
+		});
+
+		Util.MapDebugPrint( "Ancient_Anti_Gravity_Generator_Planted" );
+	},
+
+	Main_Gate_Planted = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "MOBILEMORTAR_defend_city_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "MOBILEMORTAR_attack_city_.*" );
+
+		Util.MapDebugPrint( "Main_Gate_Planted" );
+	},
+
+	Side_Entrance_Planted = function()
+	{
+		Util.MapDebugPrint( "Side_Entrance_Planted" );
+	},
+
+	first_Tank_Barrier_Planted = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "GRENADE_mg42_02" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_barrier_.*" );
+
+		Util.MapDebugPrint( "first_Tank_Barrier_Planted" );
+	},
+
+	second_Tank_Barrier_Planted = function()
+	{
+		Util.MapDebugPrint( "second_Tank_Barrier_Planted" );
+	},
+
+	Ancient_Anti_Gravity_Generator_Defused = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"BUILD_Side_Entrance",
+			"MOUNTMG42_mg42_a",
+		});
+
+		Util.MapDebugPrint( "Ancient_Anti_Gravity_Generator_Defused" );
+	},
+
+	Main_Gate_Defused = function()
+	{
+		Util.MapDebugPrint( "Main_Gate_Defused" );
+	},
+
+	Side_Entrance_Defused = function()
+	{
+		Util.MapDebugPrint( "Side_Entrance_Defused" );
+	},
+
+	first_Tank_Barrier_Defused = function()
+	{
+		Util.MapDebugPrint( "first_Tank_Barrier_Defused" );
+	},
+
+	second_Tank_Barrier_Defused = function()
+	{
+		Util.MapDebugPrint( "second_Tank_Barrier_Defused" );
+	},
+
+	Ancient_Anti_Gravity_Generator_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_basin_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_generator_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_basin_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_generator_.*" );
+
+		sleep(1);
+		ETUtil.WinningChat( TEAM.ALLIES );
+		sleep(1.5);
+		ETUtil.LosingChat( TEAM.AXIS );
+
+		Util.MapDebugPrint( "Ancient_Anti_Gravity_Generator_Destroyed" );
+	},
+
+	Main_Gate_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"FLAG_tank_fuel",
+			"CAPPOINT_tank_fuel",
+			"ATTACK_garage_.*",
+			"SNIPE_attack_garage_.*",
+			"MOBILEMG42_garage_.*",
+			"SMOKEBOMB_alliesgarage_.*",
+			"CHECKPOINT_city2flag",
+			"SWITCH_piano_.*",
+			"MOBILEMORTAR_attack_garage_.*",
+			"AMMOCAB_1529",
+			"HEALTHCAB_466",
+			"CAMP_garage_.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"MOBILEMG42_garage_01",
+			"ATTACK_city_.*",
+			"SNIPE_attack_city_.*",
+			"MOBILEMG42_cityB_.*",
+			"SMOKEBOMB_alliescity_.*",
+			"CHECKPOINT_oldcityflag",
+			"HEALTHCAB_north_healthcabinet",
+			"AMMOCAB_north_ammocabinet",
+			"CAMP_city_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"SNIPE_defend_garage_.*",
+			"MOBILEMG42_garage_.*",
+			"DEFEND_garage_.*",
+			"PLANTMINE_axisgarage_.*",
+			"CHECKPOINT_city2flag",
+			"SWITCH_phone_2",
+			"SWITCH_piano_.*",
+			"MOBILEMORTAR_defend_garage_.*",
+			"AMMOCAB_1529",
+			"HEALTHCAB_466",
+			"CAMP_garage_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"SNIPE_defend_city_.*",
+			"MOBILEMG42_cityR_.*",
+			"DEFEND_city_.*",
+			"MOUNTMG42_mg42_a1",
+			"REPAIRMG42_mg42_a1",
+			"PLANTMINE_axiscity_.*",
+			"CHECKPOINT_oldcityflag",
+			"SWITCH_phone_1",
+			"HEALTHCAB_north_healthcabinet",
+			"AMMOCAB_north_ammocabinet",
+			"CAMP_city_.*",
+		});
+
+		Util.EnableGoal("ROUTE_maingate");
+		Util.MapDebugPrint( "Main_Gate_Destroyed" );
+
+		DeleteTriggerRegion("Sneakin");
+		DeleteTriggerRegion("Sneakin2");
+		
+		sleep(4);
+		Util.BotChat(TEAM.AXIS, "vsay", VOICE.DEFEND_OBJECTIVE, 1);
+		Util.BotChat(TEAM.ALLIES, "sayteam", "Steal the fuel and deliver it to the tank", 1);
+	},
+
+	Side_Entrance_Destroyed = function()
+	{
+		Util.EnableGoal("ROUTE_templesidein.*");
+		Util.MapDebugPrint( "Side_Entrance_Destroyed" );
+	},
+
+	first_Tank_Barrier_Destroyed = function()
+	{
+
+		Util.MapDebugPrint( "first_Tank_Barrier_Destroyed" );
+	},
+
+	second_Tank_Barrier_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"ESCORT_tank",
+					"BUILD_Tank",
+					"SWITCH_hookah_1",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, "HEALTHCAB_.*" );
+
+		Util.MapDebugPrint( "second_Tank_Barrier_Destroyed" );
+	},
+
+	axis_key_Taken = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_keyhouse_.*" );
+		
+		Util.MapDebugPrint( "axis_key_Taken" );
+	},
+
+	tank_fuel_Taken = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_tankgarage_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "MOBILEMORTAR_attack_garage_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_garage_.*",
+			"DEFEND_tankgarage_.*",
+			"SNIPE_defend_garage_.*",
+			"MOBILEMG42_garage_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_city_.*",
+			"SNIPE_defend_city_.*",
+			"MOBILEMG42_cityR_.*",
+			"MOBILEMORTAR_defend_garage_.*",
+		});
+
+		Util.MapDebugPrint( "tank_fuel_Taken" );
+	},
+
+	axis_key_Returned = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"CAMP_temple_.*",
+			"ATTACK_templeout_.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_templein_.*",
+			"DEFEND_basin_.*",
+		});	
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_temple_.*",
+			"DEFEND_keyhouse_.*",
+			"CAMP_temple_.*",
+			"PLANTMINE_axistemple_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_templein_.*",
+			"DEFEND_basin_.*",
+			"SNIPE_defend_templein_.*",
+		});
+
+		Util.MapDebugPrint( "axis_key_Returned" );
+	},
+
+	tank_fuel_Returned = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_tankgarage_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_tankgarage_.*" );
+
+		Util.MapDebugPrint( "tank_fuel_Returned" );
+	},
+
+	axis_key_Secured = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"MOBILEMG42_templein_.*",
+			"PLANT_Ancient_Anti_Gravity_Generator",
+			"SMOKEBOMB_alliestemple_03",
+			"ATTACK_templein_.*",
+			"ATTACK_generator_.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"MOBILEMG42_templein_01",
+			"MOBILEMG42_temple_.*",
+			"SMOKEBOMB_alliestempleout_.*",
+			"CAMP_temple_.*",
+			"DEFEND_basin_.*",
+			"SNIPE_attack_temple_05",
+			"SNIPE_attack_temple_06",
+			"SNIPE_attack_temple_08",
+			"SNIPE_attack_temple_11",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_templein_.*",
+			"MOBILEMG42_templein_.*",
+			"SNIPE_defend_templein_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_temple_.*",
+			"DEFEND_keyhouse_.*",
+			"DEFEND_basin_.*",
+			"MOBILEMG42_temple_.*",
+			"PLANTMINE_axistemple_.*",
+			"SWITCH_hookah_1",
+			"SNIPE_defend_temple_.*",
+			"CAMP_temple_.*",
+			"REPAIRMG42_mg42_a",
+		});
+
+		DeleteTriggerRegion("Sneakin");
+		DeleteTriggerRegion("Sneakin2");
+
+		// Create InsideTemple triggers ONLY after key is secured
+		OnTriggerRegion(AABB(-515.879,-7126.813,161.125,510.750,-3106.562,764.696), Map.InsideTemple);
+		OnTriggerRegion(AABB(545.114,-5577.349,161.125,1177.921,-4162.242,798.277), Map.InsideTemple);
+		GeneratorRoom = OnTriggerRegion(AABB(-2235.379,-6139.900,161.125,-523.006,-3105.226,813.455), Map.GeneratorRoom);
+		
+		Util.MapDebugPrint( "axis_key_Secured - InsideTemple triggers created" );		
+	},
+
+	tank_fuel_Secured = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Tank",
+			"ESCORT_tank",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CAPPOINT_tank_fuel",
+			"FLAG_tank_fuel",
+			"ATTACK_garage_28",
+			"ATTACK_garage_29",
+			"SMOKEBOMB_alliesgarage_03",
+			"CAMP_garage_11",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"CAMP_garage_11",
+			"DEFEND_garage_03",
+			"DEFEND_garage_04",
+			"DEFEND_garage_05",
+		});
+
+		Util.MapDebugPrint( "tank_fuel_Secured" );
+
+	},
+
+	oldcityflag_Axis_Captured = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_phone_1" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_phone_1" );
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"SWITCH_phone_2",
+			"SWITCH_piano_.*",
+		});
+
+		Util.MapDebugPrint( "oldcityflag_Axis_Captured" );
+	},
+
+	oldcityflag_Allies_Captured = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_phone_1" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "MOBILEMORTAR_attack_city_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"SWITCH_phone_2",
+			"SWITCH_piano_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"SWITCH_phone_1",
+			"MOBILEMORTAR_defend_city_.*",
+		});
+
+		Util.MapDebugPrint( "oldcityflag_Allies_Captured" );
+	},
+
+	city2flag_Allies_Captured = function()
+	{
+		Util.MapDebugPrint( "city2flag_Allies_Captured" );
+	},
+
+	city2flag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint( "city2flag_Axis_Captured" );
+	},
+
+	Tank_stolen = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_tankgarage_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_tankout_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"MOBILEMG42_garage_01",
+			"SNIPE_attack_garage_01",
+			"ATTACK_garage_.*",
+		});
+
+		Util.MapDebugPrint( "Tank_stolen" );
+	},
+
+	Tank_inside = function()
+	{
+		sleep(0.1);
+	
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_first_Tank_Barrier",
+			"ATTACK_tunnel_.*",
+			"MOBILEMG42_tunnelB_.*",
+			"SMOKEBOMB_alliestunnel_.*",
+			"SWITCH_phone_2",
+			"HEALTHCAB_1091",
+			"AMMOCAB_1092",
+			"CAMP_tunnel_.*",
+			"CAMP_tunnelhouse_.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_tankout_.*",
+			"DEFEND_tankgarage_.*",
+			"SNIPE_attack_garage_.*",
+			"MOBILEMG42_garage_.*",
+			"SMOKEBOMB_alliesgarage_.*",
+			"SWITCH_phone_1",
+			"HEALTHCAB_466",
+			"AMMOCAB_1529",
+			"CAMP_garage_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"MOBILEMG42_tunnelA_.*",
+			"DEFEND_tunnel_.*",
+			"DEFEND_tunnelin_.*",
+			"SNIPE_defend_tunnel_.*",
+			"SWITCH_phone_3",
+			"HEALTHCAB_1091",
+			"AMMOCAB_1092",
+			"CAMP_tunnel_.*",
+			"CAMP_tunnelhouse_.*",
+			"BUILD_first_Tank_Barrier",
+			"PLANTMINE_axistunnel_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"SNIPE_defend_garage_.*",
+			"MOBILEMG42_garage_.*",
+			"DEFEND_garage_.*",
+			"PLANTMINE_axisgarage_.*",
+			"SWITCH_phone_1",
+			"SWITCH_phone_2",
+			"SWITCH_piano_.*",
+			"HEALTHCAB_466",
+			"AMMOCAB_1529",
+			"CAMP_garage_.*",
+		});
+
+		Util.MapDebugPrint( "Tank_inside" );
+		
+		sleep(4);
+		Util.BotChat(TEAM.AXIS, "vsay", VOICE.DESTROY_VEHICLE, 1);
+		Util.BotChat(TEAM.ALLIES, "vsay", VOICE.ESCORT_VEHICLE, 1);
+	},
+
+	Tank_Past_Gate =
+	{
+		Name = "Tank_Past_Gate",
+		TriggerOnEntity = GetGoal("MOVER_tank").GetEntity(),
+		OnEnter = function(ent)
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"ATTACK_tankout_.*",
+				"DEFEND_tankgarage_.*",
+				"SNIPE_attack_garage_.*",
+				"MOBILEMG42_garage_.*",
+				"SMOKEBOMB_alliesgarage_.*",
+				"SWITCH_phone_1",
+				"HEALTHCAB_466",
+				"AMMOCAB_1529",
+				"CAMP_garage_.*",
+			});
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"SNIPE_defend_city_.*",
+				"MOBILEMG42_cityR_.*",
+				"DEFEND_city_.*",
+				"MOUNTMG42_mg42_a1",
+				"REPAIRMG42_mg42_a1",
+				"PLANTMINE_axiscity_.*",
+				"CHECKPOINT_oldcityflag",
+				"SWITCH_phone_1",
+				"HEALTHCAB_north_healthcabinet",
+				"AMMOCAB_north_ammocabinet",
+				"CAMP_city_.*",
+				"CAMP_garage_.*",
+			});
+			
+			Util.MapDebugPrint( "Tank_Past_Gate" );
+		},
+	},
+
+	Tank_outside = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ATTACK_templeout_.*",
+			"SNIPE_attack_temple_.*",
+			"SMOKEBOMB_alliestempleout_.*",
+			"MOBILEMG42_temple_.*",
+			"SWITCH_phone_3",
+			"MOBILEMORTAR_attack_temple_.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_tunnel_.*",
+			"SNIPE_attack_temple_04",
+			"SMOKEBOMB_alliestunnel_.*",
+			"MOBILEMG42_tunnelB_.*",
+			"SWITCH_phone_2",
+			"SWITCH_piano_.*",
+			"CAMP_tunnel_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"SNIPE_defend_temple_.*",
+			"BUILD_second_Tank_Barrier",
+			"MOBILEMORTAR_defend_temple_.*",
+			"DEFEND_barrier_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"SNIPE_defend_tunnel_.*",
+			"HEALTHCAB_.*",
+			"MOBILEMG42_tunnelA_.*",
+			"SWITCH_phone_.*",
+			"CAMP_tunnel_.*",
+			"CAMP_tunnelhouse_.*",
+			"DEFEND_tunnel_.*",
+			"DEFEND_tunnelin_.*",
+		});
+
+		Util.DisableGoal("ROUTE_templesidein.*");
+		Util.MapDebugPrint( "Tank_outside" );
+	},
+
+	Tank_end = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"FLAG_axis_key",
+			"CAPPOINT_keylock",
+			"PLANT_Side_Entrance",
+			"SMOKEBOMB_alliestemple_.*",
+			"AMMOCAB_538",
+			"SNIPE_attack_temple_04",
+			"AMMOCAB_1658",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ESCORT_tank",
+			"BUILD_Tank",
+			"SMOKEBOMB_alliestemple_03",
+			"SWITCH_phone_.*",
+			"MOBILEMORTAR_attack_temple_.*",
+			"CAMP_tunnelhouse_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_temple_.*",
+			"DEFEND_keyhouse_.*",
+			"BUILD_Side_Entrance",
+			"AMMOCAB_1658",
+			"MOBILEMORTAR_defend_templein_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_barrier_.*",
+			"MOBILEMORTAR_defend_temple_.*",
+		});
+
+		Util.MapDebugPrint( "Tank_end" );
+		sleep(4);
+		Util.BotChat(TEAM.AXIS, "vsay", VOICE.DEFEND_OBJECTIVE, 1);
+		Util.BotChat(TEAM.ALLIES, "sayteam", "Steal the key and unlock the sacred basin", 1);
+	},
+
+	City_gate = function()
+	{
+		Util.DisableGoal("ROUTE_maingate");
+		Util.MapDebugPrint( "City_gate" );
+		
+		sleep(4);
+		Util.BotChat(TEAM.AXIS, "vsay", VOICE.INCOMING, 1);
+		Util.BotChat(TEAM.ALLIES, "vsay", VOICE.LETS_GO, 1);
+	},
+
+	thirty_second = function()
+	{
+		Util.MapDebugPrint( "^5Thirty_second" );
+
+		sleep(31);
+
+		if ( !Map.Allies_Win )
+		{
+			ETUtil.WinningChat( TEAM.AXIS );
+			sleep(1.5);
+			ETUtil.LosingChat( TEAM.ALLIES );
+		}
+	},
+
+	Tank_Past_Barrier_1 =
+	{
+		Name = "Tank_Past_Barrier_1",
+		TriggerOnEntity = GetGoal("MOVER_tank").GetEntity(),
+		OnEnter = function(ent)
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"PLANTMINE_axistemple_.*",
+				"SNIPE_defend_temple_.*",
+				"MOUNTMG42_mg42_a",
+				"REPAIRMG42_mg42_a",
+				"MOBILEMG42_temple_.*",
+				"AMMOCAB_538",
+			});
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"MOBILEMG42_temple_01",
+				"PLANTMINE_axistunnel_.*",
+				"HEALTHCAB_1091",
+				"AMMOCAB_1092",
+			});
+			
+			Util.MapDebugPrint( "Tank_Past_Barrier_1" );
+		},
+	},
+
+	Tank_At_Barrier_2 =
+	{
+		Name = "Tank_At_Barrier_2",
+		TriggerOnEntity = GetGoal("MOVER_tank").GetEntity(),
+		OnEnter = function(ent)
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"PLANT_second_Tank_Barrier",
+				"CAMP_temple_.*",
+			});
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"ESCORT_tank",
+				"BUILD_Tank",
+			});
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"SWITCH_hookah_1",
+				"CAMP_temple_.*",
+			});
+			
+			Util.MapDebugPrint( "Tank_At_Barrier_2" );
+		},
+	},
+	
+	KeyTrigger1 =
+	{
+		Name = "KeyTrigger1",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"CAMP_temple_.*",
+					"ATTACK_templeout_.*",
+					"SNIPE_attack_temple_07",
+				});
+				SetAvailableMapGoals( TEAM.ALLIES, false, {
+					"ATTACK_templein_.*",
+					"DEFEND_basin_.*",
+					"MOBILEMG42_templein_.*",
+				});	
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"DEFEND_temple_.*",
+					"CAMP_temple_.*",
+					"PLANTMINE_axistemple_.*",
+					"SWITCH_hookah_1",
+				});
+				SetAvailableMapGoals( TEAM.AXIS, false, {
+					"DEFEND_templein_.*",
+					"DEFEND_basin_.*",
+					"SNIPE_defend_templein_.*",
+				});
+
+				Util.MapDebugPrint(GetEntName(ent) + "^8Is Still Outside With The Key!");
+			}
+		},
+		OnExit = function(ent)
+		{
+			if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"DEFEND_basin_.*",
+					"MOBILEMG42_templein_.*",
+					"ATTACK_templein_.*",
+				});
+				SetAvailableMapGoals( TEAM.ALLIES, false, {
+					"CAMP_temple_.*",
+					"MOBILEMG42_temple_.*",
+					"ATTACK_templeout_.*",
+					"SNIPE_attack_temple_07",
+					"DEFEND_basin_01",
+					"DEFEND_basin_02",
+				});
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"DEFEND_templein_.*",
+					"DEFEND_basin_.*",
+					"MOBILEMG42_templein_.*",
+					"SNIPE_defend_templein_.*",
+				});
+				SetAvailableMapGoals( TEAM.AXIS, false, {
+					"DEFEND_temple_.*",
+					"CAMP_temple_.*",
+					"MOBILEMG42_temple_.*",
+					"PLANTMINE_axistemple_.*",
+					"SWITCH_hookah_1",
+				});
+				
+				Util.MapDebugPrint(GetEntName(ent) + "^3Is Inside The Temple With The Key!");
+			}
+		},
+	},
+	
+	KeyTrigger2 =
+	{
+		Name = "KeyTrigger2",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_sideentrance_.*" );
+
+				Util.MapDebugPrint(GetEntName(ent) + "^8Key Is At The Side Entrance!");
+			}
+		},
+		OnExit = function(ent)
+		{
+			if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_sideentrance_.*" );
+				
+				Util.MapDebugPrint(GetEntName(ent) + "^8Key Is Not At The Side Entrance!");
+			}
+		},
+	},
+	
+	GeneratorPlant =
+	{
+		Name = "GeneratorPlant",
+		TriggerOnClass = CLASS.ENGINEER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				foreach ( bot in BotTable )
+				{
+					if ( bot.GetTeam() == TEAM.AXIS )
+					{
+						bot.SayTeam("Allies are planting at the Generator!");
+						break;
+					}
+				}
+			}
+		},
+
+	},
+
+	GeneratorRoom =
+	{
+		Name = "GeneratorRoom",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.ALLIES || GetEntFlags(ent, ENTFLAG.DISGUISED) )
+			{
+				Map.count_allies_inside_room += 1;
+				
+				if ( Map.count_allies_inside_room == 1 )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_generator_.*" );
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.ALLIES || GetEntFlags(ent, ENTFLAG.DISGUISED) )
+			{
+				if ( Map.count_allies_inside_room > 0 )
+				{
+					Map.count_allies_inside_room -= 1;
+				}
+				
+				if ( Map.count_allies_inside_room == 0 )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_generator_.*" );
+				}
+			}
+		},
+	},
+	
+	InsideTemple =
+	{
+		Name = "InsideTemple",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				Map.count_allies_inside_temple += 1;
+				
+				if ( Map.count_allies_inside_temple == 1 )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						"DEFEND_templein_.*",
+						"MOBILEMG42_templein_.*",
+						"SNIPE_defend_templein_.*",
+					});
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						"DEFEND_temple_.*",
+						"MOBILEMG42_temple_.*",
+						"PLANTMINE_axistemple_.*",
+						"SWITCH_hookah_1",
+						"SNIPE_defend_temple_.*",
+						"CAMP_temple_.*",
+						"REPAIRMG42_mg42_a",
+					});
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				if ( Map.count_allies_inside_temple > 0 )
+				{
+					Map.count_allies_inside_temple -= 1;
+				}
+				
+				if ( Map.count_allies_inside_temple == 0 )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						"DEFEND_templein_.*",
+						"MOBILEMG42_templein_.*",
+						"MOBILEMG42_temple_01",
+						"SNIPE_defend_templein_.*",
+					});
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						"DEFEND_temple_.*",
+						"MOBILEMG42_temple_.*",
+						"PLANTMINE_axistemple_.*",
+						"SWITCH_hookah_1",
+						"SNIPE_defend_temple_.*",
+						"CAMP_temple_.*",
+						"REPAIRMG42_mg42_a",
+					});
+				}
+			}
+		},
+	},
+		
+	CactusB =
+	{
+		Name = "CactusB",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				foreach ( bot in BotTable )
+				{
+					if ( bot.GetTeam() == TEAM.ALLIES )
+					{
+						bot.SayTeam("We have a cactus lover!");
+						break;
+					}
+				}
+			}
+		},
+	},
+
+	CactusR =
+	{
+		Name = "CactusR",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.AXIS )
+			{
+				foreach ( bot in BotTable )
+				{
+					if ( bot.GetTeam() == TEAM.AXIS )
+					{
+						bot.SayTeam("We have a cactus lover!");
+						break;
+					}
+				}
+			}
+		},
+	},
+		
+	FireB =
+	{
+		Name = "FireB",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				foreach ( bot in BotTable )
+				{
+					if ( bot.GetTeam() == TEAM.ALLIES )
+					{
+						bot.SayTeam("Fire is hot!");
+						break;
+					}
+				}
+			}
+		},
+	},
+
+	FireR =
+	{
+		Name = "FireR",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.AXIS )
+			{
+				foreach ( bot in BotTable )
+				{
+					if ( bot.GetTeam() == TEAM.AXIS )
+					{
+						bot.SayTeam("Fire is hot!");
+						break;
+					}
+				}
+			}
+		},
+	},
+	
+	Sneakin =
+	{
+		Name = "Sneakin",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				foreach ( bot in BotTable )
+				{
+					if ( bot.GetTeam() == TEAM.AXIS )
+					{
+						bot.SayTeam("Intruder goes to the Tank!");
+						break;
+					}
+				}
+			}
+		},
+	},
+
+	Sneakin2 =
+	{
+		Name = "Sneakin2",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				foreach ( bot in BotTable )
+				{
+					if ( bot.GetTeam() == TEAM.AXIS )
+					{
+						bot.SayTeam("Intruder goes to the Tank!");
+						break;
+					}
+				}
+			}
+		},
+	},
+};
+
+global OnMapLoad = function()
+{
+	// Reset counters
+	Map.count_allies_inside_temple = 0;
+	Map.count_allies_inside_room = 0;
+	
+	GeneratorPlant = OnTriggerRegion(AABB(-2223.323,-5293.706,169.125,-1649.562,-4436.242,590.074), Map.GeneratorPlant);
+	OnTriggerRegion(AABB(2767.402,-7030.861,-102.694,6142.660,-2339.798,431.367), Map.KeyTrigger1);
+	OnTriggerRegion(AABB(513.123,-5886.520,424.329,1279.578,-4159.092,771.788), Map.KeyTrigger2);
+	OnTriggerRegion(AABB(2768.768,-1382.728,1.125,3172.360,-916.838,117.591), Map.Tank_Past_Gate);
+	OnTriggerRegion(AABB(5139.247,-4233.770,1.125,5724.416,-3516.790,111.178), Map.Tank_Past_Barrier_1);
+	OnTriggerRegion(AABB(4249.995,-4434.054,1.125,4954.052,-3931.429,120.735), Map.Tank_At_Barrier_2);
+	Sneakin = OnTriggerRegion(AABB(-2349.045,1078.815,37.125,-2118.064,1498.566,155.450), Map.Sneakin);
+	Sneakin2 = OnTriggerRegion(AABB(-1529.906,1344.494,265.125,-1402.517,1477.915,381.016), Map.Sneakin2);
+	CactusB = OnTriggerRegion(AABB(851.576,-1091.632,40.134,912.530,-1076.383,189.313), Map.CactusB);
+	CactusR = OnTriggerRegion(AABB(851.576,-1091.632,40.134,912.530,-1076.383,189.313), Map.CactusR);
+	CactusB = OnTriggerRegion(AABB(5857.803,-4490.821,156.836,5911.862,-4477.878,308.595), Map.CactusB);
+	CactusR = OnTriggerRegion(AABB(5857.803,-4490.821,156.836,5911.862,-4477.878,308.595), Map.CactusR);
+	CactusB = OnTriggerRegion(AABB(5728.613,-3118.529,14.839,5736.997,-3094.345,115.201), Map.CactusB);
+	CactusR = OnTriggerRegion(AABB(5728.613,-3118.529,14.839,5736.997,-3094.345,115.201), Map.CactusR);
+	CactusB = OnTriggerRegion(AABB(2581.865,-3782.139,63.527,2617.784,-3770.275,197.106), Map.CactusB);
+	CactusR = OnTriggerRegion(AABB(2581.865,-3782.139,63.527,2617.784,-3770.275,197.106), Map.CactusR);
+	CactusB = OnTriggerRegion(AABB(-4114.656,-285.291,49.175,-4096.168,-249.008,185.725), Map.CactusB);
+	CactusR = OnTriggerRegion(AABB(-4114.656,-285.291,49.175,-4096.168,-249.008,185.725), Map.CactusR);
+	CactusB = OnTriggerRegion(AABB(-2746.073,-459.996,25.968,-2728.579,-440.737,135.246), Map.CactusB);
+	CactusR = OnTriggerRegion(AABB(-2746.073,-459.996,25.968,-2728.579,-440.737,135.246), Map.CactusR);
+	FireB = OnTriggerRegion(AABB(-1483.081,-5828.413,200.130,-1443.550,-5789.388,275.257), Map.FireB);
+	FireR = OnTriggerRegion(AABB(-1483.081,-5828.413,200.130,-1443.550,-5789.388,275.257), Map.FireR);
+
+	// Register callback functions
+	OnTrigger( "^oThe Side Entrance has been built.", Map.Side_Entrance_Built );
+	OnTrigger( "^oThe Tank has been repaired!", Map.Tank_Built );
+	OnTrigger( "^oThe first Tank Barrier has been constructed.", Map.first_Tank_Barrier_Built );
+	OnTrigger( "^oThe second Tank Barrier has been constructed.", Map.second_Tank_Barrier_Built );
+	OnTrigger( "Planted at the Ancient Anti-Gravity Generator.", Map.Ancient_Anti_Gravity_Generator_Planted );
+	OnTrigger( "Planted at the Main Gate.", Map.Main_Gate_Planted );
+	OnTrigger( "Planted at the Side Entrance.", Map.Side_Entrance_Planted );
+	OnTrigger( "Planted at the first Tank Barrier.", Map.first_Tank_Barrier_Planted );
+	OnTrigger( "Planted at the second Tank Barrier.", Map.second_Tank_Barrier_Planted );
+	OnTrigger( "Defused at the Ancient Anti-Gravity Generator.", Map.Ancient_Anti_Gravity_Generator_Defused );
+	OnTrigger( "Defused at the Main Gate.", Map.Main_Gate_Defused );
+	OnTrigger( "Defused at the Side Entrance.", Map.Side_Entrance_Defused );
+	OnTrigger( "Defused at the first Tank Barrier.", Map.first_Tank_Barrier_Defused );
+	OnTrigger( "Defused at the second Tank Barrier.", Map.second_Tank_Barrier_Defused );
+	OnTrigger( "^oAncient Anti-Gravity Generator destroyed!", Map.Ancient_Anti_Gravity_Generator_Destroyed );
+	OnTrigger( "^oThe Allies have destroyed the Main Gate!", Map.Main_Gate_Destroyed );
+	OnTrigger( "^oAllies have breached the Side Entrance!", Map.Side_Entrance_Destroyed );
+	OnTrigger( "^oAllies team has destroyed the first Tank Barrier!", Map.first_Tank_Barrier_Destroyed );
+	OnTrigger( "^oAllies team has destroyed the second Tank Barrier!", Map.second_Tank_Barrier_Destroyed );
+	OnTrigger( "^oThe Allies have stolen the Key!", Map.axis_key_Taken );
+	OnTrigger( "^oTank Fuel has been stolen!", Map.tank_fuel_Taken );
+	OnTrigger( "^oThe Axis have intercepted the stolen Key.", Map.axis_key_Returned );
+	OnTrigger( "^oTank Fuel has been returned.", Map.tank_fuel_Returned );
+	OnTrigger( "^oThe Allies have secured the Key to open the door.", Map.axis_key_Secured );
+	OnTrigger( "^oAllies have secured Tank Fuel.", Map.tank_fuel_Secured );
+	OnTrigger( "^oAxis reclaim the Old City!", Map.oldcityflag_Axis_Captured );
+	OnTrigger( "^oAxis reclaim the City!", Map.city2flag_Axis_Captured );
+	OnTrigger( "^oAllies capture the Old City!", Map.oldcityflag_Allies_Captured );
+	OnTrigger( "^oAllies capture the City!", Map.city2flag_Allies_Captured );
+	OnTrigger( "^oAllied team has stolen the Tank!", Map.Tank_stolen );
+	OnTrigger( "^oThe Tank has entered the Oasi Tunnel.", Map.Tank_inside );
+	OnTrigger( "^oAllies are near the Temple.", Map.Tank_outside );
+	OnTrigger( "^oAllied team has destroyed the Temple Door!", Map.Tank_end );
+	OnTrigger( "^oAllied team has destroyed the City Gate!", Map.City_gate );
+	OnTrigger( "thirty second warning.", Map.thirty_second );
+
+	Util.DisableGoal( ".*", true ); // all but routes
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"ATTACK_city_.*",
+		"CHECKPOINT_oldcityflag",
+		"PLANT_Main_Gate",
+		"SNIPE_attack_city_.*",
+		"MOBILEMG42_cityB_.*",
+		"MOBILEMORTAR_attack_city_.*",
+		"SMOKEBOMB_alliescity_.*",
+		"SWITCH_phone_1",
+		"HEALTHCAB_north_healthcabinet",
+		"AMMOCAB_north_ammocabinet",
+		"CAMP_city_.*",
+		"GRENADE_mg42_01",
+	});
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"DEFEND_city_.*",
+		"CHECKPOINT_oldcityflag",
+		"SNIPE_defend_city_.*",
+		"MOBILEMG42_cityR_.*",
+		"MOBILEMORTAR_defend_city_.*",
+		"PLANTMINE_axiscity_.*",
+		"HEALTHCAB_north_healthcabinet",
+		"AMMOCAB_north_ammocabinet",
+		"CAMP_city_.*",
+		"MOUNTMG42_mg42_a1",
+		"REPAIRMG42_mg42_a1",
+	});
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "ATTACK_.*" );
+	Util.SetMaxUsers( 1, "DEFEND_.*" );
+	Util.SetMaxUsers( 1, "CAMP_.*" );
+	Util.SetMaxUsers( 1, "GRENADE_.*" );
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+	Util.SetMaxUsers( 1, "PLANT_.*" );
+	Util.SetMaxUsers( 2, "ESCORT_tank" );
+	Util.SetMaxUsers( 1, "FLAG_tank_fuel" );
+	Util.SetMaxUsers( 1, "FLAG_axis_key" );
+	Util.SetMaxUsers( 2, "CHECKPOINT_oldcityflag" );
+	Util.SetMaxUsers( 2, "CHECKPOINT_city2flag" );
+	Util.SetMaxUsers( 1, "SWITCH_piano_.*" );
+	Util.SetMaxUsers( 1, "SWITCH_phone_.*" );
+	Util.SetMaxUsers( 1, "SWITCH_hookah_1" );
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=40} );
+	SetMapGoalProperties( "MOBILEMG42_.*", {MinCampTime=10, MaxCampTime=60} );
+
+	// Allies goals
+	SetGoalPriority( "PLANT_Ancient_Anti_Gravity_Generator", 1.11, TEAM.ALLIES );
+	SetGoalPriority( "PLANT_Side_Entrance", 0.52, TEAM.ALLIES, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Side_Entrance", 0.82, TEAM.ALLIES, CLASS.COVERTOPS );
+	SetGoalPriority( "PLANT_Main_Gate", 0.81, TEAM.ALLIES );
+	SetGoalPriority( "CHECKPOINT_oldcityflag", 0.80, TEAM.ALLIES );
+	SetGoalPriority( "CHECKPOINT_city2flag", 0.80, TEAM.ALLIES );
+	SetGoalPriority( "FLAG_tank_fuel", 0.85, TEAM.ALLIES );
+	SetGoalPriority( "FLAG_axis_key", 0.86, TEAM.ALLIES );
+	SetGoalPriority( "ESCORT_tank", 0.79, TEAM.ALLIES );
+	SetGoalPriority( "PLANT_first_Tank_Barrier", 0.84, TEAM.ALLIES );
+	SetGoalPriority( "PLANT_second_Tank_Barrier", 0.83, TEAM.ALLIES );
+	SetGoalPriority( "GRENADE_mg42_.*", 0.78, TEAM.ALLIES );
+
+	SetGoalPriority( "ATTACK_city_.*", 0.50, TEAM.ALLIES );
+	SetGoalPriority( "ATTACK_garage_.*", 0.51, TEAM.ALLIES );
+	SetGoalPriority( "ATTACK_tankout_.*", 0.78, TEAM.ALLIES );
+	SetGoalPriority( "ATTACK_tunnel_.*", 0.52, TEAM.ALLIES );
+	SetGoalPriority( "ATTACK_templeout_.*", 0.53, TEAM.ALLIES );
+	SetGoalPriority( "ATTACK_templein_.*", 0.54, TEAM.ALLIES );
+	SetGoalPriority( "ATTACK_generator_.*", 0.58, TEAM.ALLIES );
+
+	// Axis goals
+	SetGoalPriority( "BUILD_second_Tank_Barrier", 0.91, TEAM.AXIS );
+	SetGoalPriority( "BUILD_first_Tank_Barrier", 0.92, TEAM.AXIS );
+	SetGoalPriority( "BUILD_Side_Entrance", 0.90, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_city_.*", 0.50, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_garage_.*", 0.51, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_tunnel_.*", 0.54, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_tunnelin_.*", 0.55, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_barrier_.*", 0.53, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_temple_.*", 0.53, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_templein_.*", 0.54, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_keyhouse_.*", 0.59, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_sideentrance_.*", 0.69, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_generator_.*", 0.68, TEAM.AXIS );
+	SetGoalPriority( "DEFUSE_Ancient_Anti_Gravity_Generator", 1.90, TEAM.AXIS, CLASS.ENGINEER, true );
+	SetGoalPriority( "PLANTMINE_.*", 0.69, TEAM.AXIS );
+	SetGoalPriority( "MOUNTMG42_mg42_.*", 0.5, TEAM.AXIS );
+
+	// All
+	SetGoalPriority( "DEFEND_tankgarage_.*", 0.78 );
+	SetGoalPriority( "DEFEND_basin_.*", 0.68 );
+	SetGoalPriority( "SWITCH_piano_.*", 0.6 );
+	SetGoalPriority( "SWITCH_phone_.*", 0.6 );
+	SetGoalPriority( "SWITCH_hookah_1", 0.6 );
+	SetGoalPriority( "CAMP_city_.*", 0.51 );
+	SetGoalPriority( "CAMP_garage_.*", 0.51 );
+	SetGoalPriority( "CAMP_tunnel_.*", 0.54 );
+	SetGoalPriority( "CAMP_tunnelhouse_.*", 0.53 );
+	SetGoalPriority( "CAMP_temple_.*", 0.53 );
+	SetGoalPriority( "SNIPE_.*", 0.7 );
+	SetGoalPriority( "SMOKEBOMB_.*", 0.8 );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 110.0;
+};
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		BUILD_Tank =
+		{
+			ROUTE_cityspawn =
+				{
+				ROUTE_cityoutside =
+					{
+					ROUTE_maingate =
+						{
+						ROUTE_garageoutside = {},
+						ROUTE_garageshopout =
+							{
+							ROUTE_garageshop = {},
+							},
+						},
+					},
+				ROUTE_cityup =
+					{
+					ROUTE_cityup2 = {},
+					ROUTE_garageoutside = {},
+					ROUTE_garageshopout =
+						{
+						ROUTE_garageshop = {},
+						},
+					},
+				},
+			ROUTE_city2spawn =
+				{
+				ROUTE_garageoutside = {},
+				ROUTE_cityup2 = {},
+				ROUTE_cityup1 =
+					{
+					Weight = 2,
+					ROUTE_garageshopout =
+						{
+						ROUTE_garageshop = {},
+						},
+					},
+				},
+		},
+		BUILD_first_Tank_Barrier =
+		{
+			ROUTE_cavespawn =
+				{
+				ROUTE_hookah = {},
+				ROUTE_caveout2 = {},
+				ROUTE_tunnelin2 =
+					{
+					Weight = 2, 
+					ROUTE_tunnelout = {},
+					},
+				},
+		},
+		BUILD_second_Tank_Barrier =
+		{
+			ROUTE_cavespawn =
+				{
+				ROUTE_hookah = { Weight = 2 },
+				ROUTE_caveout2 = {},
+				},
+		},
+		PLANT_Main_Gate =
+		{
+			ROUTE_alliedbase =
+				{
+				ROUTE_alliedleft =
+					{
+					ROUTE_shopback =
+						{
+						ROUTE_cityshop = {},
+						},
+					},
+				},
+			ROUTE_alliedbase2 =
+				{
+				ROUTE_alliedright =
+					{
+					ROUTE_cityshop = {},
+					ROUTE_cityoutside = { Weight = 0.5 },
+					},
+				},
+			ROUTE_cityspawn =
+				{
+				ROUTE_cityoutside = {},
+				ROUTE_cityup3 = {},
+				},
+		},
+		PLANT_first_Tank_Barrier =
+		{
+			ROUTE_garagespawn =
+				{
+				ROUTE_tunnelhall = { Weight = 3 },
+				ROUTE_oasitunnel = {},
+				},
+			ROUTE_templehouse =
+				{
+				ROUTE_templehousegarage = {},
+				},
+		},
+		PLANT_second_Tank_Barrier =
+		{
+			ROUTE_templehouse =
+				{
+				ROUTE_templehousegarage =
+					{
+					ROUTE_bridge = {},
+					},
+				},
+		},				
+		PLANT_Side_Entrance =
+		{
+			ROUTE_templehouse =
+				{
+				ROUTE_sideentrance = {},
+				ROUTE_caveout =
+					{
+					ROUTE_sideentrance = {},
+					},
+				ROUTE_templehousegarage =
+					{
+					ROUTE_tunnelin =
+						{
+						ROUTE_sideentrance = {},
+						},
+					ROUTE_bridge =
+						{
+						ROUTE_sideentrance = {},
+						},
+					},
+				},
+			ROUTE_keyhouse =
+				{
+				ROUTE_sideentrance = {},
+				ROUTE_caveout =
+					{
+					ROUTE_sideentrance = {},
+					},
+				},
+		},
+		PLANT_Ancient_Anti_Gravity_Generator =
+		{
+			ROUTE_templemain =
+				{
+				ROUTE_templeleft =
+					{
+					ROUTE_templefire1 =
+						{
+						ROUTE_templefire2 = {},
+						},
+					},
+				ROUTE_templeright =
+					{
+					ROUTE_templebox1 =
+						{
+						ROUTE_templebox2 = {},
+						},
+					},
+				},
+			ROUTE_templehouse =
+				{
+				ROUTE_caveout =
+					{
+					ROUTE_templemain =
+						{
+						ROUTE_templeleft =
+							{
+							ROUTE_templefire1 =
+								{
+								ROUTE_templefire2 = {},
+								},
+							},
+						ROUTE_templeright =
+							{
+							ROUTE_templebox1 =
+								{
+								ROUTE_templebox2 = {},
+								},
+							},
+						},
+					ROUTE_sideentrance =
+						{
+						ROUTE_sideentrancein =
+							{
+							ROUTE_templeside = {},
+							ROUTE_templeside2 = {},
+							},
+						},
+					},
+				ROUTE_templehousegarage =
+					{
+					ROUTE_tunnelin =
+						{
+						ROUTE_tunneldark =
+							{
+							ROUTE_templeleft =
+								{
+								ROUTE_templefire1 =
+									{
+									ROUTE_templefire2 = {},
+									},
+								},
+							ROUTE_templeright =
+								{
+								ROUTE_templebox1 =
+									{
+									ROUTE_templebox2 = {},
+									},
+								},
+							},
+						},
+					ROUTE_bridge =
+						{
+						ROUTE_templemain =
+							{
+							ROUTE_templeright = {},
+							ROUTE_templeleft = {},
+							},
+						ROUTE_sideentrance =
+							{
+							ROUTE_sideentrancein =
+								{
+								ROUTE_templeside = {},
+								ROUTE_templeside2 = {},
+								},
+							},
+						},
+					},
+				ROUTE_bridge =
+					{
+					ROUTE_templemain =
+						{
+						ROUTE_templeright = {},
+						ROUTE_templeleft = {},
+						},
+					ROUTE_tunnelin2 =
+						{
+						ROUTE_tunneldark =
+							{
+							ROUTE_templeright = {},
+							ROUTE_templeleft = {},
+							},
+						},
+					},
+				ROUTE_sideentrance =
+						{
+						ROUTE_sideentrancein =
+							{
+							ROUTE_templeside = {},
+							ROUTE_templeside2 = {},
+							},
+						},
+				},
+			ROUTE_keyhouse =
+				{
+				ROUTE_caveout =
+					{
+					ROUTE_templemain =
+						{
+						ROUTE_templeright = {},
+						ROUTE_templeleft = {},
+						},
+					ROUTE_sideentrance =
+						{
+						Weight = 2,
+						ROUTE_templeside = {},
+						},
+					},
+				ROUTE_tunnelin =
+					{
+					ROUTE_tunneldark =
+						{
+						ROUTE_templeleft =
+							{
+							ROUTE_templefire1 =
+								{
+								ROUTE_templefire2 = {},
+								},
+							},
+						ROUTE_templeright =
+							{
+							ROUTE_templebox1 =
+								{
+								ROUTE_templebox2 = {},
+								},
+							},
+						},
+					},
+				ROUTE_bridge =
+					{
+					ROUTE_templemain =
+						{
+						ROUTE_templeright = {},
+						ROUTE_templeleft = {},
+						},
+					ROUTE_tunnelin2 =
+						{
+						ROUTE_tunneldark =
+							{
+							ROUTE_templeright = {},
+							ROUTE_templeleft = {},
+							},
+						},
+					},
+				ROUTE_sideentrance =
+					{
+					ROUTE_sideentrancein =
+						{
+						ROUTE_templeside = {},
+						ROUTE_templeside2 = {},
+						},
+					},
+				},
+		},
+		FLAG_tank_fuel =
+		{
+			ROUTE_cityspawn =
+				{
+				ROUTE_cityoutside =
+					{
+					ROUTE_maingate =
+						{
+						ROUTE_garageshopout =
+							{
+							ROUTE_garageshop =
+								{
+								ROUTE_garagephone = {},
+								},
+							},
+						ROUTE_garageoutside =
+							{
+							ROUTE_garagedoor = {},
+							ROUTE_garagein = {},
+							},
+						},
+					},
+				ROUTE_cityup =
+					{
+					ROUTE_garagedoor = {},
+					ROUTE_garagein = {},
+					},
+				},
+			ROUTE_city2spawn =
+				{
+				ROUTE_cityup2 = {},
+				ROUTE_garagedoor = {},
+				ROUTE_garagein = {},
+				},
+		},
+		CHECKPOINT_oldcityflag =
+		{
+			ROUTE_alliedbase =
+				{
+				ROUTE_alliedleft =
+					{
+					ROUTE_cityshop = {},
+					ROUTE_stairs_01 =
+						{
+						ROUTE_secrethall = {},
+						},
+					ROUTE_shopback =
+						{
+						ROUTE_cityshop = {},
+						},
+					},
+				},
+			ROUTE_alliedbase2 =
+				{
+				ROUTE_alliedright =
+					{
+					ROUTE_treeup =
+						{
+						ROUTE_tower =
+							{
+							ROUTE_towerdown =
+								{
+								ROUTE_cityup3 = {},
+								ROUTE_cityhall = {},
+								},
+							},
+						},
+					ROUTE_shopback =
+						{
+						ROUTE_cityshop = {},
+						},
+					ROUTE_stairs_02 =
+						{
+						ROUTE_tower =
+							{
+							ROUTE_towerdown =
+								{
+								ROUTE_cityup3 = {},
+								ROUTE_cityhall = {},
+								},
+							},
+						},
+					},
+				},
+			ROUTE_garagespawn =
+				{
+				ROUTE_garagedoor =
+					{
+					ROUTE_cityup =
+						{
+						ROUTE_cityhall = {},
+						ROUTE_cityup3 = {},
+						},
+					},
+				ROUTE_garagephone =
+					{
+					ROUTE_garageoutside = {},
+					},
+				},
+			ROUTE_city2spawn =
+				{
+				ROUTE_cityup =
+					{
+					ROUTE_cityhall = {},
+					ROUTE_cityup3 = {},
+					},
+				},
+		},
+		CHECKPOINT_city2flag =
+		{
+			ROUTE_garagespawn =
+				{
+				ROUTE_garagedoor = {},
+				},
+			ROUTE_cityspawn =
+				{
+				ROUTE_cityup = {},
+				ROUTE_cityoutside =
+					{
+					ROUTE_maingate =
+						{
+						ROUTE_cityup2 = {},
+						},
+					},
+				},
+		},
+		CAPPOINT_keylock =
+		{
+			ROUTE_key =
+				{
+				ROUTE_caveout =
+					{
+					ROUTE_sideentrance =
+						{
+						ROUTE_sideentrancein =
+							{
+							ROUTE_templeside = {},
+							ROUTE_templeside2 = {},
+							},
+						},
+					},
+				ROUTE_tunnelin =
+					{
+					ROUTE_tunneldark =
+						{
+						ROUTE_templeright = {},
+						ROUTE_templeleft = {},
+						},
+					},
+				ROUTE_bridge =
+					{
+					ROUTE_templemain =
+						{
+						ROUTE_templeright = {},
+						ROUTE_templeleft = {},
+						},
+					ROUTE_tunnelin2 =
+						{
+						ROUTE_tunneldark =
+							{
+							ROUTE_templeright = {},
+							ROUTE_templeleft = {},
+							},
+						},
+					},
+				ROUTE_sideentrance =
+						{
+						ROUTE_sideentrancein =
+							{
+							ROUTE_templeside = {},
+							ROUTE_templeside2 = {},
+							},
+						},
+				},
+		},
+		CAPPOINT_tank_fuel =
+		{
+			ROUTE_tank_fuel =
+				{
+				ROUTE_garage = {},
+				ROUTE_garagephone = {},
+				ROUTE_garagedoor =
+					{
+					Weight = 2, 
+					ROUTE_garageshopout =
+						{
+						ROUTE_garageshop = {},
+						},
+					},
+				ROUTE_garageoutside =
+					{
+					Weight = 3, 
+					ROUTE_cityup2 =
+						{
+						ROUTE_garageshopout =
+							{
+							ROUTE_garageshop = {},
+							},
+						},
+					},
+				},
+		},
+		DEFEND_city_01 =
+		{
+			ROUTE_cityspawn =
+				{
+				ROUTE_kitchen =
+					{
+					ROUTE_cityoutside = {},
+					ROUTE_cityhall = { Weight = 3 },
+					ROUTE_cityup3 = { Weight = 2 },
+					},
+				},
+		},
+		CAMP_city_01 =
+		{
+			ROUTE_cityspawn =
+				{
+				ROUTE_kitchen =
+					{
+					ROUTE_cityoutside = {},
+					ROUTE_cityhall = { Weight = 2 },
+					ROUTE_cityup3 = { Weight = 3 },
+					},
+				},
+			ROUTE_alliedbase =
+				{
+				ROUTE_alliedleft =
+					{
+					ROUTE_treeup = {},
+					ROUTE_stairs_01 = { Weight = 2 },
+					},
+				},
+			ROUTE_alliedbase2 =
+				{
+				ROUTE_alliedright =
+					{
+					ROUTE_treeup = { Weight = 2 },
+					ROUTE_stairs_02 = {},
+					},
+				},
+			ROUTE_garagespawn =
+				{
+				ROUTE_garagedoor =
+					{
+					ROUTE_cityup2 = {},
+					},
+				ROUTE_garagephone =
+					{
+					ROUTE_garageoutside = {},
+					},
+				},
+		},
+		DEFEND_temple_04 =
+		{
+			ROUTE_templespawn1 =
+				{
+				ROUTE_cavein = {},
+				},
+			ROUTE_templespawn2 =
+				{
+				ROUTE_cavein = {},
+				},
+			ROUTE_cavespawn =
+				{
+				ROUTE_hookah = {},
+				ROUTE_caveout2 = { Weight = 2 },
+				ROUTE_tunnelout = {},
+				},
+		},
+		DEFEND_tunnel_01 =
+		{
+			ROUTE_cavespawn =
+				{
+				ROUTE_hookah = {},
+				ROUTE_caveout2 = { Weight = 2 },
+				},
+		},
+		DEFEND_barrier_01 =
+		{
+			ROUTE_cavespawn =
+				{
+				ROUTE_hookah =
+					{
+					ROUTE_tunnelin2 =
+						{
+						ROUTE_tunnelout = { Weight = 3 },
+						ROUTE_bridge = {},
+						},
+					},
+				},
+		},
+		DEFEND_barrier_02 =
+		{
+			ROUTE_cavespawn =
+				{
+				ROUTE_caveout2 = { Weight = 3 },
+				ROUTE_bridge = {},
+				},
+		},
+		DEFEND_basin_01 = 
+		{
+			ROUTE_sideentrancein =
+				{
+				ROUTE_templeside2 = {},
+				},
+			ROUTE_sideentrance =
+				{
+				ROUTE_sideentrancein =
+					{
+					ROUTE_templeside2 = {},
+					},
+				},
+		},
+		ATTACK_city_02 =
+		{
+			ROUTE_alliedbase =
+				{
+				ROUTE_alliedleft =
+					{
+					ROUTE_stairs_01 = { Weight = 2 },
+					ROUTE_cityshop = {},
+					ROUTE_shopback = {},
+					},
+				},
+			ROUTE_alliedbase2 =
+				{
+				ROUTE_alliedright =
+					{
+					ROUTE_treeup = { Weight = 2 },
+					ROUTE_stairs_02 = {},
+					ROUTE_cityshop = {},
+					ROUTE_shopback = {},
+					},
+				},
+		},
+		ATTACK_city_17 =
+		{
+			ROUTE_alliedbase =
+				{
+				ROUTE_alliedleft =
+					{
+					ROUTE_stairs_01 =
+						{
+						ROUTE_tower = {},
+						},
+					},
+				},
+			ROUTE_alliedbase2 =
+				{
+				ROUTE_alliedright =
+					{
+					ROUTE_treeup =
+						{
+						ROUTE_tower = {},
+						},
+					},
+				},
+		},
+		ATTACK_garage_01 =
+		{
+			ROUTE_city2spawn =
+				{
+				ROUTE_cityup2 = {},
+				},
+			ROUTE_cityspawn =
+				{
+				ROUTE_cityoutside =
+					{
+					ROUTE_maingate = {},
+					ROUTE_cityup2 = {},
+					},
+				},
+		},
+		ATTACK_garage_08 =
+		{
+			ROUTE_cityspawn =
+				{
+				ROUTE_cityoutside =
+					{
+					ROUTE_maingate =
+						{
+						ROUTE_garageshopout =
+							{
+							ROUTE_garageshop = {},
+							},
+						},
+					},
+				},
+		},
+		CAMP_garage_01 =
+		{
+			ROUTE_cityspawn =
+				{
+				ROUTE_cityoutside =
+					{
+					ROUTE_maingate =
+						{
+						ROUTE_cityup2 = {},
+						ROUTE_garageoutside = {},
+						ROUTE_garageshopout =
+							{
+							ROUTE_garageshop = {},
+							},
+						},
+					},
+				},
+			ROUTE_city2spawn =
+				{
+				Weight = 2,
+				ROUTE_cityup1 =
+					{
+					ROUTE_garageshopout =
+						{
+						ROUTE_garageshop = {},
+						},
+					},
+				ROUTE_cityup2 = {},
+				},
+		},
+		ATTACK_tankout_01 =
+		{
+			ROUTE_cityspawn =
+				{
+				ROUTE_cityoutside =
+					{
+					ROUTE_maingate =
+						{
+						ROUTE_garageshopout =
+							{
+							ROUTE_garageshop = {},
+							},
+						},
+					},
+				},
+			ROUTE_city2spawn =
+				{
+				Weight = 2,
+				ROUTE_cityup1 =
+					{
+					ROUTE_garageshopout =
+						{
+						ROUTE_garageshop = {},
+						},
+					},
+				ROUTE_cityup2 = {},
+				},
+		},
+		ATTACK_templein_01 =
+		{
+			ROUTE_templemain =
+				{
+				ROUTE_templeleft =
+					{
+					ROUTE_templefire1 =
+						{
+						ROUTE_templefire2 = {},
+						},
+					},
+				ROUTE_templeright =
+					{
+					ROUTE_templebox1 =
+						{
+						ROUTE_templebox2 = {},
+						},
+					},
+				},
+			ROUTE_sideentrancein =
+				{
+				ROUTE_templeside = {},
+				ROUTE_templeside2 = {},
+				},
+			ROUTE_sideentrance =
+				{
+				ROUTE_sideentrancein =
+					{
+					ROUTE_templeside = {},
+					ROUTE_templeside2 = {},
+					},
+				},
+			ROUTE_templehouse =
+				{
+				ROUTE_caveout =
+					{
+					ROUTE_templemain = {},
+					ROUTE_sideentrance =
+						{
+						ROUTE_sideentrancein =
+							{
+							Weight = 2,
+							ROUTE_templeside = {},
+							},
+						},
+					},
+				ROUTE_bridge =
+					{
+					Weight = 2,
+					ROUTE_templemain = {},
+					},
+				},
+			ROUTE_keyhouse =
+				{
+				ROUTE_templemain = {},
+				ROUTE_sideentrance =
+					{
+					ROUTE_sideentrancein =
+						{
+						ROUTE_templeside = {},
+						ROUTE_templeside2 = {},
+						},
+					},
+				ROUTE_bridge =
+					{
+					ROUTE_templemain = {},
+					ROUTE_tunnelin2 =
+						{
+						ROUTE_tunneldark = {},
+						},
+					},
+				ROUTE_caveout =
+					{
+					ROUTE_templemain = {},
+					ROUTE_sideentrance =
+						{
+						ROUTE_sideentrancein =
+							{
+							Weight = 2,
+							ROUTE_templeside = {},
+							},
+						},
+					},
+				},
+		},
+		ATTACK_templein_06 =
+		{
+			ROUTE_templemain =
+				{
+				ROUTE_templeleft =
+					{
+					ROUTE_templefire1 =
+						{
+						ROUTE_templefire2 = {},
+						},
+					},
+				ROUTE_templeright =
+					{
+					ROUTE_templebox1 =
+						{
+						ROUTE_templebox2 = {},
+						},
+					},
+				},
+			ROUTE_keyhouse =
+				{
+				ROUTE_bridge = { Weight = 2 },
+				ROUTE_caveout =
+					{
+					ROUTE_templemain = {},
+					ROUTE_sideentrance =
+						{
+						ROUTE_sideentrancein =
+							{
+							Weight = 2,
+							ROUTE_templeside = {},
+							},
+						},
+					},
+				ROUTE_tunnelin =
+					{
+					ROUTE_tunneldark = {},
+					},
+				ROUTE_templemain =
+					{
+					ROUTE_templeleft =
+						{
+						ROUTE_templefire1 =
+							{
+							ROUTE_templefire2 = {},
+							},
+						},
+					ROUTE_templeright =
+						{
+						ROUTE_templebox1 =
+							{
+							ROUTE_templebox2 = {},
+							},
+						},
+					},
+				},
+			ROUTE_templehouse =
+				{
+				ROUTE_bridge = { Weight = 2 },
+				ROUTE_caveout =
+					{
+					ROUTE_templemain = {},
+					ROUTE_sideentrance =
+						{
+						ROUTE_sideentrancein =
+							{
+							ROUTE_templeside = {},
+							ROUTE_templeside2 = {},
+							},
+						},
+					},
+				ROUTE_tunnelin =
+					{
+					ROUTE_tunneldark = {},
+					},
+				ROUTE_templemain =
+					{
+					ROUTE_templeleft =
+						{
+						ROUTE_templefire1 =
+							{
+							ROUTE_templefire2 = {},
+							},
+						},
+					ROUTE_templeright =
+						{
+						ROUTE_templebox1 =
+							{
+							ROUTE_templebox2 = {},
+							},
+						},
+					},
+				},
+		},
+		ATTACK_templeout_01 =
+		{
+			ROUTE_keyhouse =
+				{
+				ROUTE_caveout = {},
+				ROUTE_tunnelin = {},
+				ROUTE_bridge = {},
+				},
+			ROUTE_templehouse =
+				{
+				ROUTE_templehousegarage =
+					{
+					ROUTE_tunnelin =
+						{
+						ROUTE_tunneldark =
+							{
+							ROUTE_templemain = {},
+							},
+						},
+					},
+				ROUTE_caveout = {},
+				ROUTE_tunnelin = {},
+				ROUTE_bridge = {},
+				},
+		},
+	};
+	
+	// Copy routes
+	MapRoutes["DEFEND_basin_02"] = MapRoutes.DEFEND_basin_01;
+	MapRoutes["DEFEND_basin_03"] = MapRoutes.DEFEND_basin_01;
+	MapRoutes["DEFEND_basin_04"] = MapRoutes.DEFEND_basin_01;
+	MapRoutes["DEFEND_basin_05"] = MapRoutes.DEFEND_basin_01;
+	MapRoutes["DEFEND_basin_06"] = MapRoutes.DEFEND_basin_01;
+	MapRoutes["DEFEND_basin_07"] = MapRoutes.DEFEND_basin_01;
+	MapRoutes["DEFEND_temple_01"] = MapRoutes.DEFEND_temple_04;
+	MapRoutes["DEFEND_temple_02"] = MapRoutes.DEFEND_temple_04;
+	MapRoutes["DEFEND_temple_03"] = MapRoutes.DEFEND_temple_04;
+	MapRoutes["DEFEND_temple_09"] = MapRoutes.DEFEND_temple_04;
+	MapRoutes["DEFEND_barrier_05"] = MapRoutes.DEFEND_barrier_01;
+	MapRoutes["DEFEND_barrier_06"] = MapRoutes.DEFEND_barrier_01;
+	MapRoutes["DEFEND_barrier_03"] = MapRoutes.DEFEND_barrier_02;
+	MapRoutes["DEFEND_barrier_04"] = MapRoutes.DEFEND_barrier_02;
+	MapRoutes["DEFEND_barrier_07"] = MapRoutes.DEFEND_barrier_02;
+	MapRoutes["DEFEND_barrier_08"] = MapRoutes.DEFEND_barrier_02;
+	MapRoutes["DEFEND_barrier_09"] = MapRoutes.DEFEND_barrier_02;
+	MapRoutes["DEFEND_barrier_10"] = MapRoutes.DEFEND_barrier_02;
+	MapRoutes["DEFEND_barrier_11"] = MapRoutes.DEFEND_barrier_02;
+	MapRoutes["DEFEND_barrier_12"] = MapRoutes.DEFEND_barrier_02;
+	MapRoutes["DEFEND_barrier_13"] = MapRoutes.DEFEND_barrier_02;
+	MapRoutes["DEFEND_tunnel_02"] = MapRoutes.DEFEND_tunnel_01;
+	MapRoutes["DEFEND_tunnel_03"] = MapRoutes.DEFEND_tunnel_01;
+	MapRoutes["DEFEND_tunnel_04"] = MapRoutes.DEFEND_tunnel_01;
+	MapRoutes["DEFEND_tunnel_05"] = MapRoutes.DEFEND_tunnel_01;
+	MapRoutes["DEFEND_tunnel_06"] = MapRoutes.DEFEND_tunnel_01;
+	MapRoutes["DEFEND_tunnel_07"] = MapRoutes.DEFEND_tunnel_01;
+	MapRoutes["DEFEND_tunnel_08"] = MapRoutes.DEFEND_tunnel_01;
+	MapRoutes["DEFEND_tunnel_09"] = MapRoutes.DEFEND_tunnel_01;
+	MapRoutes["DEFEND_tunnel_10"] = MapRoutes.DEFEND_tunnel_01;
+	MapRoutes["DEFEND_city_.*"] = MapRoutes.DEFEND_city_01;
+	MapRoutes["ATTACK_city_03"] = MapRoutes.ATTACK_city_02;
+	MapRoutes["ATTACK_city_11"] = MapRoutes.ATTACK_city_02;
+	MapRoutes["ATTACK_city_12"] = MapRoutes.ATTACK_city_02;
+	MapRoutes["ATTACK_city_14"] = MapRoutes.ATTACK_city_02;
+	MapRoutes["ATTACK_city_15"] = MapRoutes.ATTACK_city_02;
+	MapRoutes["ATTACK_city_16"] = MapRoutes.ATTACK_city_02;
+	MapRoutes["ATTACK_city_18"] = MapRoutes.ATTACK_city_17;
+	MapRoutes["ATTACK_city_19"] = MapRoutes.ATTACK_city_17;
+	MapRoutes["ATTACK_city_20"] = MapRoutes.ATTACK_city_17;
+	MapRoutes["ATTACK_city_21"] = MapRoutes.ATTACK_city_17;
+	MapRoutes["CAMP_city_.*"] = MapRoutes.CAMP_city_01;
+	MapRoutes["CAMP_garage_.*"] = MapRoutes.CAMP_garage_01;
+	MapRoutes["ATTACK_tankout_.*"] = MapRoutes.ATTACK_garage_01;
+	MapRoutes["ATTACK_garage_02"] = MapRoutes.ATTACK_garage_01;
+	MapRoutes["ATTACK_garage_03"] = MapRoutes.ATTACK_garage_01;
+	MapRoutes["ATTACK_garage_04"] = MapRoutes.ATTACK_garage_01;
+	MapRoutes["ATTACK_garage_05"] = MapRoutes.ATTACK_garage_01;
+	MapRoutes["ATTACK_garage_06"] = MapRoutes.ATTACK_garage_01;
+	MapRoutes["ATTACK_garage_07"] = MapRoutes.ATTACK_garage_01;
+	MapRoutes["ATTACK_templein_02"] = MapRoutes.ATTACK_templein_01;
+	MapRoutes["ATTACK_templein_03"] = MapRoutes.ATTACK_templein_01;
+	MapRoutes["ATTACK_templein_04"] = MapRoutes.ATTACK_templein_01;	
+	MapRoutes["ATTACK_templein_05"] = MapRoutes.ATTACK_templein_01;
+	MapRoutes["ATTACK_templein_07"] = MapRoutes.ATTACK_templein_06;
+	MapRoutes["ATTACK_templein_08"] = MapRoutes.ATTACK_templein_06;
+	MapRoutes["ATTACK_templein_09"] = MapRoutes.ATTACK_templein_06;
+	MapRoutes["ATTACK_templein_10"] = MapRoutes.ATTACK_templein_06;
+	MapRoutes["ATTACK_templein_11"] = MapRoutes.ATTACK_templein_06;
+	MapRoutes["ATTACK_templein_12"] = MapRoutes.ATTACK_templein_06;
+	MapRoutes["ATTACK_templein_13"] = MapRoutes.ATTACK_templein_06;
+	MapRoutes["ATTACK_templein_14"] = MapRoutes.ATTACK_templein_06;
+	MapRoutes["ATTACK_templein_15"] = MapRoutes.ATTACK_templein_06;
+	MapRoutes["ATTACK_templein_16"] = MapRoutes.ATTACK_templein_06;
+	MapRoutes["ATTACK_templein_17"] = MapRoutes.ATTACK_templein_06;
+	MapRoutes["ATTACK_generator_01"] = MapRoutes.PLANT_Ancient_Anti_Gravity_Generator;
+	MapRoutes["ATTACK_generator_02"] = MapRoutes.PLANT_Ancient_Anti_Gravity_Generator;
+	MapRoutes["ATTACK_generator_03"] = MapRoutes.PLANT_Ancient_Anti_Gravity_Generator;
+	MapRoutes["ATTACK_templeout_02"] = MapRoutes.ATTACK_templeout_01;
+	MapRoutes["ATTACK_templeout_03"] = MapRoutes.ATTACK_templeout_01;
+	MapRoutes["ATTACK_templeout_04"] = MapRoutes.ATTACK_templeout_01;
+	MapRoutes["ATTACK_templeout_05"] = MapRoutes.ATTACK_templeout_01;
+	MapRoutes["ATTACK_templeout_06"] = MapRoutes.ATTACK_templeout_01;
+	MapRoutes["ATTACK_templeout_07"] = MapRoutes.ATTACK_templeout_01;
+	MapRoutes["ATTACK_templeout_11"] = MapRoutes.ATTACK_templeout_01;
+	MapRoutes["ATTACK_templeout_12"] = MapRoutes.ATTACK_templeout_01;
+	MapRoutes["ATTACK_templeout_13"] = MapRoutes.ATTACK_templeout_01;
+	MapRoutes["ATTACK_templeout_16"] = MapRoutes.ATTACK_templeout_01;
+	MapRoutes["ATTACK_templeout_17"] = MapRoutes.ATTACK_templeout_01;
+	MapRoutes["ATTACK_templeout_18"] = MapRoutes.ATTACK_templeout_01;
+	Util.Routes(MapRoutes);
+};

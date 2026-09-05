@@ -1,0 +1,636 @@
+//==========================================================================================
+//
+//	vs_radar_camp_b4.gm
+//
+//	Who	When		What
+//------------------------------------------------------------------------------------------
+//	MickyP	27 January 2013	Initial Script
+//
+//==========================================================================================
+//
+// To Do
+// Routes
+// Replace or improve garage backdoor goal dection
+// Allow bots to exploit back door
+// Sort top garage entry/exit for axis bots
+//
+global Map =
+{
+	ShowMovers = true,
+
+	TankAtB1 = 0,
+	B1Built = 0,
+	TankAtB2 = 0,
+	B2Built = 0,
+	PlayersAtDoor = 0,
+	PlayersInGarage = 0,
+	Tank_Back_Door_Open = 0,
+	Tank_Stolen = 0,
+	grate1 = false,
+	grate2 = false,
+
+	Movers =
+	{
+	"MOVER_fence",
+	},
+
+	Navigation =
+	{
+		longjump =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.HoldButton(BTN.FORWARD, 1.2);
+				sleep(2);
+			},
+		},
+		grate1 =
+		{
+			navigate = function(_this)
+			{
+				if ( !Map.grate1 )
+				{
+					_this.AddWeaponRequest( WEAPON.KNIFE );
+					_this.BlockForWeaponChange( WEAPON.KNIFE );
+
+					while( !Map.grate1 )
+					{
+						_this.Bot.HoldButton(BTN.ATTACK1, 0.25);
+ 						yield();
+					}
+				}
+				sleep(1);
+			},
+		},
+
+		grate2 =
+		{
+			navigate = function(_this)
+			{
+				if ( !Map.grate2 )
+				{
+					_this.AddWeaponRequest( WEAPON.KNIFE );
+					_this.BlockForWeaponChange( WEAPON.KNIFE );
+					while( !Map.grate2 )
+					{
+						_this.AddAimRequest(Priority.High, "position", Vector3(-1925,-2886,432));
+						_this.Bot.HoldButton(BTN.ATTACK1, 0.25);
+						_this.Bot.HoldButton(BTN.CROUCH, 0.25);
+						yield();
+					}
+				}
+				sleep(1);
+			},
+		},
+	},
+
+	Lift_Trigger =
+	{
+
+		Name = "Door_Trigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			Map.Switches.lift.Enabled = false;
+		},
+		OnExit = function(ent)
+		{
+			Map.Switches.lift.Enabled = true;
+		},
+	},
+
+	Switches =
+	{
+		lift =
+		{
+			Enabled = true,
+			Priority = 0,
+			WaypointName = "liftswitch",
+			Timeout = 2000,
+			AimPosition = Vec3(-2031.875,-3850.664,340.540),
+		},
+	},
+
+	Door_Trigger =
+	{
+
+		Name = "Door_Trigger",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if( Map.PlayersAtDoor == 0 )
+				{
+				Map.DoorTraceLineThreadId = thread(Map.DoorTraceLineThread);
+				}
+			Map.PlayersAtDoor += 1;
+//			Util.MapDebugPrint( "Door_Trigger_Enter" );
+		},
+		OnExit = function(ent)
+		{
+			Map.PlayersAtDoor -= 1;
+			if( Map.PlayersAtDoor == 0 )
+				{
+				threadKill(Map.DoorTraceLineThreadId);
+				}
+//			Util.MapDebugPrint( "Door_Trigger_Exit" );
+		},
+	},
+
+	DoorTraceLineThread = function()
+	{
+	// two map coordinates:
+	start = Vector3(-2055.000, -1960.000, 195.000);
+	end = Vector3(-2060.000, -1960.000, 195.000);
+	while (1)
+		{
+		tr = TraceLine(start, end, null, TRACE.SHOT, 0, false);
+		// The tr.fraction value tells us of a collision or not.
+		// If it's 1, there was no  collision. If less than 1 there was a collision.
+		if(tr.fraction < 1)
+			{
+//			print("Door_Broken"); // For Debugging only
+			DrawDebugLine(start, end, COLOR.RED, 2);
+			Wp.SetWaypointFlag( "GarageDoor", "closed", true );
+			SetAvailableMapGoals( TEAM.AXIS, false, "GRENADE_Door.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank_Back_Door" );
+			}
+		else
+			{
+//			print("Door_Built");// For Debugging only
+			DrawDebugLine(start, end, COLOR.GREEN, 2);
+			Wp.SetWaypointFlag( "GarageDoor", "closed", false );
+			SetAvailableMapGoals( TEAM.AXIS, true, "GRENADE_Door.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Tank_Back_Door" );
+			}
+		sleep(2);
+		}
+	},
+
+	In_Garage =
+	{
+
+		Name = "In_Garage",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+		if( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				Map.PlayersInGarage += 1;
+				SetGoalRole("GRENADE_Door", ROLE.AMBUSHER); // Don't have Axis locking Allies inside
+//				Util.MapDebugPrint( "In_Garage_Enter" );
+			}
+		},
+		OnExit = function(ent)
+		{
+		if( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				Map.PlayersInGarage -= 1;
+					if( Map.PlayersAtDoor == 0 )
+					{
+						ClearGoalRole("GRENADE_Door", ROLE.AMBUSHER);
+					}
+			}
+//			Util.MapDebugPrint( "In_Garage_Exit" );
+		},
+	},
+
+	Tank_Depot_Gate_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"Build_Tank",
+			"MOUNT_Tank",
+		});
+		DeleteTriggerRegion("InGarage");
+		Map.PlayersInGarage = 0;
+
+		Util.MapDebugPrint( "Tank_Depot_Gate_Destroyed" );
+	},
+
+	vehicle_at_location = function()
+	{
+		switch(Map.VehicleLocation)
+		{
+			case 1:
+			{
+				Map.Tank_Stolen();
+			}
+			case 2:
+			{
+				Map.Tank_At_Barrier_1();
+			}
+			case 3:
+			{
+				Map.Tank_Past_Barrier_1();
+			}
+			case 4:
+			{
+				Map.Tank_At_Barrier_2();
+			}
+			case 5:
+			{
+				Map.Tank_Past_Barrier_2();
+			}
+		}
+	},
+
+	Tank_Built = function()
+	{
+		Util.MapDebugPrint( "Tank_Built" );
+	},
+
+	Tank_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Tank_Destroyed" );
+	},
+
+	Tank_Stolen = function()
+	{
+		Map.Tank_Stolen = 1;
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_Garage.*",
+			"GRENADE_Door.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Barrier_One.*" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"BUILD_Tank_Back_Door",
+			"ATTACK_Garage.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ATTACK_Barrier_One.*",
+			"MOUNTMG42_Barrier_One",
+			"REPAIRMG42_Barrier_One",
+			"PLANT_Tank_Barrier_1",
+		});
+
+		// Disable everyting todo with garage back door
+		Map.PlayersAtDoor = 0;
+		threadKill(Map.DoorTraceLineThreadId);
+		DeleteTriggerRegion("TankDoor");
+		Wp.SetWaypointFlag( "GarageDoor", "closed", true );
+		Util.SetRoleForGroup("Garage", ROLE.AMBUSHER); // role so bots will not use
+		SetAvailableMapGoals( TEAM.AXIS, false, "GRENADE_Door.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Tank_Back_Door" );
+
+		Util.MapDebugPrint( "Tank_Stolen" );
+	},
+
+	Tank_Barrier_1_Built  = function()
+	{
+		Map.B1Built = 1;
+
+		if ( Map.TankAtB1 == 1 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Tank" );
+			}
+
+		Util.MapDebugPrint( "Tank_Barrier_1_Built" );
+	},
+
+	Tank_Barrier_1_Destroyed = function()
+	{
+		Map.B1Built = 0;
+
+		if ( Map.TankAtB1 == 1 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank" );
+			}
+
+		Util.MapDebugPrint( "Tank_Barrier_1_Destroyed" );
+	},
+
+	Tank_At_Barrier_1 = function()
+	{
+		Map.TankAtB1 = 1;
+
+		if ( Map.B1Built == 1 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Tank" );
+			}
+
+		Util.MapDebugPrint( "Tank_At_Barrier_1" );
+	},
+
+	Tank_Past_Barrier_1 = function()
+	{
+		Map.TankAtB1 = 0;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"PLANT_Tank_Barrier_1",
+			"ATTACK_Barrier_One.*",
+			"MOUNTMG42_Barrier_One",
+			"REPAIRMG42_Barrier_One",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ATTACK_Barrier_Two.*",
+			"MOUNTMG42_Barrier_2",
+			"REPAIRMG42_Barrier_2",
+		});
+
+
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_Tank_Barrier_1",
+			"DEFEND_Barrier_One.*",
+			"PLANT_Marines_Command_Center",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_Barrier_Two.*",
+			"MOUNTMG42_Barrier_1",
+			"REPAIRMG42_Barrier_1",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Tank_Barrier_1" );
+
+		Util.MapDebugPrint( "Tank_Past_Barrier_1" );
+
+	},
+	Radar_Door_Destroyed= function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "CAPPOINT_Radar" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"MOUNTMG42_Barrier_1",
+			"REPAIRMG42_Barrier_1",
+		});
+
+		Util.MapDebugPrint( "Radar_Door_Destroyed" );
+	},
+
+	Tank_Barrier_2_Built = function()
+	{
+		Map.B2Built = 1;
+
+		if ( Map.TankAtB2 == 1 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Tank" );
+			}
+
+		Util.MapDebugPrint( "Tank_Barrier_2_Built" );
+	},
+
+	Tank_Barrier_2_Destroyed = function()
+	{
+		Map.B2Built = 0;
+
+		if ( Map.TankAtB2 == 1 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank" );
+			}
+
+		Util.MapDebugPrint( "Tank_Barrier_2_Destroyed" );
+	},
+
+	Tank_At_Barrier_2 = function()
+	{
+		Map.TankAtB2 = 1;
+
+		if ( Map.B2Built == 1 )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Tank" );
+			}
+
+		Util.MapDebugPrint( "Tank_At_Barrier_2" );
+	},
+
+	Tank_Past_Barrier_2 = function()
+	{
+		Map.TankAtB2 = 0;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_Barrier_Two.*",
+			"MOUNTMG42_Barrier_2",
+			"REPAIRMG42_Barrier_2",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_Tank_Barrier_2",
+			"DEFEND_Barrier_Two.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Entry.*" );
+
+		Util.MapDebugPrint( "Tank_Past_Barrier_2" );
+	},
+
+	Bunker_fence_Built = function()
+	{
+		Util.MapDebugPrint( "Bunker_fence_Built" );
+	},
+
+	Marines_Command_Center_Built = function()
+	{
+		Util.MapDebugPrint( "Marines_Command_Center_Built" );
+	},
+
+	Vietcongs_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Vietcongs_Command_Post_Built" );
+	},
+
+	Wood_Barrier_Built = function()
+	{
+		Util.MapDebugPrint( "Wood_Barrier_Built" );
+	},
+
+	Bunker_fence_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Bunker_fence_Destroyed" );
+	},
+
+	Marines_Command_Center_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Marines_Command_Center_Destroyed" );
+	},
+
+	Marines_Grappling_Hooks_Built = function()
+	{
+		Wp.SetWaypointFlag( "Hooks", "closed", false );
+
+		Util.MapDebugPrint( "Marines_Grappling_Hooks_Built" );
+	},
+
+	Marines_Grappling_Hooks_Destroyed = function()
+	{
+		Wp.SetWaypointFlag( "Hooks", "closed", true );
+
+		Util.MapDebugPrint( "Marines_Grappling_Hooks_Destroyed" );
+	},
+
+	Vietcongs_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Vietcongs_Command_Post_Destroyed" );
+	},
+
+	Vietcongs_Side_Wall_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Wood_Barrier" );
+		Util.MapDebugPrint( "Vietcongs_Side_Wall_Destroyed" );
+	},
+
+	Wood_Barrier_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Wood_Barrier_Destroyed" );
+	},
+
+	Coordinates_Door_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"Build_Tank",
+			"Mount_Tank",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, "FLAG_Vietcong_Base_Coordinates" );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Obj.*" );
+
+		Util.MapDebugPrint( "Coordinates_Door_Destroyed" );
+	},
+
+
+	Vietcong_Base_Coordinates_Taken = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"DEFEND_Radar.*",
+			"MOUNTMG42_Dropoff",
+			"REPAIRMG42_Dropoff",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_Radar.*",
+			"MOUNTMG42_Dropoff",
+			"REPAIRMG42_Dropoff",
+		});
+		Util.MapDebugPrint( "Vietcong_Base_Coordinates_Taken" );
+	},
+
+	Vietcong_Base_Coordinates_Returned = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"DEFEND_Radar.*",
+			"MOUNTMG42_Dropoff",
+			"REPAIRMG42_Dropoff",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_Radar.*",
+			"MOUNTMG42_Dropoff",
+			"REPAIRMG42_Dropoff",
+		});
+
+		Util.MapDebugPrint( "Vietcong_Base_Coordinates_Returned" );
+	},
+
+	Vietcong_Base_Coordinates_Secured = function()
+	{
+		Util.MapDebugPrint( "Vietcong_Base_Coordinates_Secured" );
+	},
+
+	Grate_1_Broken = function()
+	{
+		Map.grate1 = true;
+		Util.MapDebugPrint( "Grate_1_Broken" );
+	},
+
+	Grate_2_Broken = function()
+	{
+		Map.grate2 = true;
+		Util.MapDebugPrint( "Grate_1_Broken" );
+	},
+
+
+};
+
+global OnMapLoad = function()
+{
+	Lift = OnTriggerRegion(AABB(-2879.134,-2315.820,131.125,-2559.125,-2271.143,209.773), Map.Lift_Trigger);
+	TankDoor = OnTriggerRegion(AABB(-2277.477,-1959.875,138.125,-1847.125,-1644.014,212.125),Map.Door_Trigger);
+	Garage = OnTriggerRegion(AABB(-2944.875,-2240.875,131.125,-1994.087,-1799.125,450.874), Map.In_Garage);
+	OnTrigger( "Marines have destroyed the Tank Depot Gate!", Map.Tank_Depot_Gate_Destroyed );
+	OnTrigger( "The Tank has been repaired!", Map.Tank_Built );
+	OnTrigger( "The Tank has been damaged!", Map.Tank_Destroyed );
+	TankStolen = OnTriggerRegion(AABB(-2854.029,-2532.982,131.125,-2551.058,-2483.910,211.610), RegionTrigger.VehicleTrigger);
+	OnTrigger( "tank at location", Map.vehicle_at_location );
+	OnTrigger( "Tank Barrier #1 has been constructed.", Map.Tank_Barrier_1_Built );
+	AtB1	= OnTriggerRegion(AABB(-2204.771,-3616.917,129.125,-2144.033,-3261.990,217.769),RegionTrigger.VehicleTrigger);
+	OnTrigger( "Tank Barrier #1 has been destroyed.", Map.Tank_Barrier_1_Destroyed );
+	PastB1	= OnTriggerRegion(AABB(-2159.322,-3561.396,129.125,-2115.007,-3227.116,203.125),RegionTrigger.VehicleTrigger);
+	AtB2	= OnTriggerRegion(AABB(-382.374,-2114.458,129.125,-48.552,-2073.519,203.125),	RegionTrigger.VehicleTrigger);
+	OnTrigger( "Tank Barrier #2 has been constructed.", Map.Tank_Barrier_2_Built );
+	OnTrigger( "Tank Barrier #2 has been destroyed.", Map.Tank_Barrier_2_Destroyed );
+	PastB2	= OnTriggerRegion(AABB(-388.235,-2064.139,129.125,-55.955,-1987.753,248.962),	RegionTrigger.VehicleTrigger);
+	OnTrigger( "Marines shoted the Grappling Hooks!", Map.Marines_Grappling_Hooks_Built );
+	OnTrigger( "Marines Grappling Hooks have been destroyed!", Map.Marines_Grappling_Hooks_Destroyed );
+	OnTrigger( "Marines have destroyed the Vietcongs Side Wall!", Map.Vietcongs_Side_Wall_Destroyed );
+	OnTrigger( "Marines have destroyed the Radar Door!!", Map.Radar_Door_Destroyed );
+	OnTrigger( "Marines have breached the Coordinates Security Room!!", Map.Coordinates_Door_Destroyed );
+
+	OnTrigger( "The Wood Barrier has been constructed!", Map.Wood_Barrier_Built );
+	OnTrigger( "The Wood Barrier has been destroyed!", Map.Wood_Barrier_Destroyed );
+
+	OnTrigger( "The Bunker fence has been constructed!", Map.Bunker_fence_Built );
+	OnTrigger( "The Bunker fence has been destroyed!", Map.Bunker_fence_Destroyed );
+
+	OnTrigger( "Allies have stolen the Vietcong Base Coordinates!", Map.Vietcong_Base_Coordinates_Taken );
+	OnTrigger( "Flag returned Vietcong Base Coordinates!", Map.Vietcong_Base_Coordinates_Returned );
+	OnTrigger( "Marines team has transmitted the Vietcongs Base Coordinates!", Map.Vietcong_Base_Coordinates_Secured );
+
+	OnTrigger( "Marines have fortified the Command Center", Map.Marines_Command_Center_Built );
+	OnTrigger( "Vietcongs have destroyed the Marines Command Center", Map.Marines_Command_Center_Destroyed );
+	OnTrigger( "Vietcongs Command Post constructed. Charge speed increased!", Map.Vietcongs_Command_Post_Built );
+	OnTrigger( "Marines team has destroyed the Axis Command Post!", Map.Vietcongs_Command_Post_Destroyed );
+
+	OnTrigger( "GRENADE_Grate_1 Exploded.", Map.Grate_1_Broken );
+	OnTrigger( "GRENADE_Grate_2 Exploded.", Map.Grate_2_Broken );
+
+	Wp.SetWaypointFlag( "GarageDoor", "closed", true );
+	Wp.SetWaypointFlag( "Hooks", "closed", true );
+
+
+	Util.DisableGoal( ".*", true ); // all but routes
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_Tank_Back_Door",
+		"PLANT_Tank_Depot_Gate.*",
+		"BUILD_Marines_Command_Center",
+		"ATTACK_Garage.*",
+	});
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"DEFEND_Garage.*",
+		"BUILD_Tank_Barrier_1",
+		"BUILD_Tank_Barrier_2",
+		"BUILD_Vietcongs_Command_Post",
+		"PLANT_Marines_Command_Center",
+		"PLANT_Marines_Command_Center",
+	});
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "DEFEND_.*" );
+	Util.SetMaxUsers( 1, "GRENADE_.*" );
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+	Util.SetMaxUsers( 1, "BUILD_Marines_Command_Center" );
+	Util.SetMaxUsers( 1, "BUILD_Tank_Back_Door" );
+	Util.SetMaxUsers( 1, "PLANT_Marines_Command_Center" );
+
+	SetGoalPriority( "PLANT_Tank_Barrier_1", 0.82, TEAM.ALLIES );
+	SetGoalPriority( "BUILD_Tank_Barrier_1", 0.91, TEAM.AXIS );
+	SetGoalPriority( "BUILD_Marines_Command_Center", 0.79, TEAM.ALLIES );
+	SetGoalPriority( "BUILD_Bunker_fence", 0.7, TEAM.AXIS ); // Not a important goal
+	SetGoalPriority( "PLANT_Bunker_fence", 0.7, TEAM.ALLIES ); // Not a important goal
+	SetGoalPriority( "BUILD_Vietcongs_Command_Post", 0.80, TEAM.AXIS );
+	SetGoalPriority( "DEFEND_Radar", 0.52, 0, 0 ); // Higher to override other current goals
+	SetGoalPriority( "BUILD_Wood_Barrier", 0.92, 0, 0 ); // Higher incase of sneaky player
+	SetGoalPriority( "PLANT_Vietcongs_Command_Post", 0.80, TEAM.ALLIES, CLASS.ENGINEER, true );
+
+	Util.ClearRoleForGroup("Garage", ROLE.AMBUSHER);
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+	SetMapGoalProperties( "MOBILEMG42_.*", {MinCampTime=10, MaxCampTime=60} );
+
+	Util.UpdateSwitchData();
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.IgnoreTarget(Map.Movers);
+};

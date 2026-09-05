@@ -1,0 +1,148 @@
+//==========================================================================================
+//
+//	scpacman2.gm
+//
+//	Who	When		What
+//------------------------------------------------------------------------------------------
+//	palota	12 July 2025	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	monsterPos = 0,
+
+	//paththrough to avoid green monster
+	NavM = function(_this, x1,y1,z1, x2,y2,z2)
+	{
+		_this.Goto(Vec3(x1,y1,z1));
+		_this.Goto(Vec3(x2,y2,z2));
+	},
+
+	Navigation =
+	{
+		monster_sw = {
+			EvalFunc = function()
+			{
+				return Map.monsterPos>=4 && Map.monsterPos<=5;
+			},
+			navigate=function(){
+				Map.NavM(this, 1131, 1897, 24,
+					1576, 1823, 24);
+			}
+		},
+		monster_s = {
+			EvalFunc = function()
+			{
+				return Map.monsterPos>=3 && Map.monsterPos<=4;
+			},
+			navigate=function(){
+				Map.NavM(this, 1769, 1832, 24,
+				2209, 1899, 24);
+			}
+		},
+		monster_e = {
+			EvalFunc = function()
+			{
+				return Map.monsterPos>=2 && Map.monsterPos<=3;
+			},
+			navigate=function(){
+				Map.NavM(this, 1681, 1617, 24,
+				1988, 1913, 24);
+			}
+		},
+		monster_ne = {
+			EvalFunc = function()
+			{
+				return Map.monsterPos>=1 && Map.monsterPos<=2;
+			},
+			navigate=function(){
+				Map.NavM(this, 1963, 1922, 24,
+				1665, 2203, 24);
+			}
+		},
+		monster_nw = {
+			EvalFunc = function()
+			{
+				return Map.monsterPos>=6 && Map.monsterPos<=7;
+			},
+			navigate=function(){
+				Map.NavM(this, 1661, 2040, 28,
+				1137, 1915, 24);
+			}
+		},
+		monster_w = {
+			EvalFunc = function()
+			{
+				return Map.monsterPos>=5 && Map.monsterPos<=6;
+			},
+			navigate=function(){
+				Map.NavM(this, 1371, 1908, 24,
+				1664, 1712, 24);
+			}
+		},
+	},
+
+	monsterscript_goto = function(trigger)
+	{
+		v = ToVector(trigger.Action);
+		if(v.x>0){ sleep(1.5); Map.monsterPos=1; }
+		else if(v.y<0){ Map.monsterPos=2; sleep(2); Map.monsterPos=3; }
+		else if(v.x<0){ Map.monsterPos=4; sleep(3); Map.monsterPos=5; }
+		else if(v.y>0){ Map.monsterPos=6; sleep(1); Map.monsterPos=7; }
+		//Util.MapDebugPrint("monsterPos=" + Map.monsterPos);
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("monsterscript_goto", Map.monsterscript_goto);
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal({"CHECKPOINT.*", "HEALTH.*"});
+	SetAvailableMapGoals(TEAM.ALLIES, true, ".*_l.*");
+	SetAvailableMapGoals(TEAM.AXIS, true, ".*_x.*");
+
+	SetGoalPriority("SNIPE.*",0.8);
+
+	Util.AddUsePoint( "CHECKPOINT_the_flag", {Vec3(1661,1889,24), Vec3(1705,1831,24), Vec3(1665,1784,28), Vec3(1618,1834,24)} );
+
+	WeaponTable.SetWeaponAvailability(CLASS.SOLDIER, WEAPON.PANZERFAUST, false);
+
+	MapRoutes =
+	{
+		CHECKPOINT_the_flag = {
+			ROUTE_allied_spawn = {
+				ROUTE_a1 = {
+					ROUTE_e1 = {},
+					ROUTE_s3 = {},
+					ROUTE_c4 = {},
+				},
+				ROUTE_a2 = {
+					ROUTE_e1 = {},
+					ROUTE_c4 = {},
+				},
+				ROUTE_a3 = { Weight=2,
+					ROUTE_s1 = {
+						ROUTE_s3 = {},
+						ROUTE_w2 = {},
+					},
+					ROUTE_s2 = {
+						ROUTE_s3 = {},
+						ROUTE_s4 = {},
+					},
+					ROUTE_w1 = { ROUTE_wcab = {}},
+				},
+			},
+			ROUTE_axis_spawn = {
+				ROUTE_w3 = {},
+				ROUTE_n1 = {},
+				ROUTE_n3 = {},
+			}
+		},
+	};
+	Util.Routes(MapRoutes);
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};

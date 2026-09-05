@@ -1,0 +1,99 @@
+//==========================================================================================
+//
+//	night_fight_2.gm
+//
+//	Who              	When		What
+//------------------------------------------------------------------------------------------
+//	^1W^4OLF ^1E^4NSTEIN	07 July 2019	Initial Script
+//	palota	6 July 2025
+//==========================================================================================
+//
+
+global Map =
+{
+	Cannon_Supply_Doors_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Radio_Bunker_Door",
+			"PLANT_Main_Cannon",
+			"FLAG_War_Documents",
+			"DEFEND_Ambush.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"DEFEND_Gate_Assault.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_bunker.*",
+		});
+		Util.SetMaxUsers(2, "BUILD.*");
+		Util.MapDebugPrint( "Cannon_Supply_Doors_Destroyed" );
+	},
+
+	Radio_Bunker_Door_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "CAPPOINT_Radio" );
+		Util.MapDebugPrint( "Radio_Bunker_Door_Built" );
+	},
+
+	Radio_Bunker_Door_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		SetAvailableMapGoals( TEAM.ALLIES, true, "CAPPOINT_Radio" );
+		Util.MapDebugPrint( "Radio_Bunker_Door_Destroyed" );
+	},
+
+	main_Cannon_Destroyed = function()
+	{
+		Util.MapDebugPrint( "main_Cannon_Destroyed" );
+	},
+
+	War_Documents_Taken = function()
+	{
+		Util.MapDebugPrint( "War_Documents_Taken" );
+	},
+
+	War_Documents_Returned = function()
+	{
+		Util.MapDebugPrint( "War_Documents_Returned" );
+	},
+
+	War_Documents_Secured = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_War_Documents" );
+		Util.MapDebugPrint( "War_Documents_Secured" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "The Radio Bunker Door has been constructed!", Map.Radio_Bunker_Door_Built );
+	OnTrigger( "Allies have breached the Cannon Supply Doors!", Map.Cannon_Supply_Doors_Destroyed );
+	OnTrigger( "The Radio Bunker Door has been destroyed!", Map.Radio_Bunker_Door_Destroyed );
+	OnTrigger( "Allies have destroyed the Cannon!", Map.main_Cannon_Destroyed );
+	OnTrigger( "Allies have stolen the War Documents!", Map.War_Documents_Taken );
+	OnTrigger( "Axis have returned the War Documents!", Map.War_Documents_Returned );
+	OnTrigger( "Allied team has transmitted the war documents!", Map.War_Documents_Secured );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"FLAG_War_Documents",
+		"PLANT_Radio_Bunker_Door",
+		"PLANT_main_Cannon.*",
+	});
+	Util.DisableGoal({"DEFEND_bunker.*", "DEFEND_Ambush.*"});
+
+	SetGoalPriority("MOUNTMG42.*", 0.5);
+	SetGoalPriority("REPAIRMG42.*", 0.4);
+
+	Util.AddUsePoint( "PLANT_main_Cannon", {Vec3(-1353,-231,696), Vec3(-1089, -215, 688)} );
+
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=30, MaxCampTime=40});
+	SetMapGoalProperties("MOUNTMG.*", {MaxCampTime=50});
+
+	Util.SetMaxUsers(1, {"MOUNTMG.*", "BUILD.*"});
+	
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};

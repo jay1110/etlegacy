@@ -1,0 +1,185 @@
+//==========================================================================================
+//
+//	complex_b3.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	01 August 2018	Initial Script
+//	palota	9 June 2025
+//==========================================================================================
+//
+
+global Map =
+{
+	Wall_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		Util.EnableGoal("CHECKPOINT.*");
+		SetAvailableMapGoals( TEAM.AXIS, 1, {
+			"BUILD_Side_Wood_Wall",
+			"BUILD_Axis_CP",
+		});
+	},
+
+	//Side Wall
+	Side_Wall_Destroyed = function()
+	{
+		Map.Wall_Destroyed();
+		Util.MapDebugPrint( "Side_Wall_Destroyed" );
+	},
+
+	//Main Gate
+	Main_Gate_Destroyed = function()
+	{
+		Map.Wall_Destroyed();
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"BUILD_Killing_Mg42",
+			".*MG42_Killing_Mg42",
+			"PLANT_Garage_Door",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, 0, "CAMP_r1_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, 0, "MOUNTMG42_307" );
+
+		Util.MapDebugPrint( "Main_Gate_Destroyed" );
+	},
+
+	//Garage Door
+	Garage_Door_Destroyed = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"BUILD_Allies_CP",
+			"PLANT_Axis_CP",
+			"PLANT_Side_Wood_Wall",
+			"FLAG_docs",
+		});
+		Util.MapDebugPrint( "Garage_Door_Destroyed" );
+	},
+
+	//Axis Construction
+	Side_Wood_Wall_Built = function()
+	{
+		Util.MapDebugPrint( "Side_Wood_Wall_Built" );
+	},
+	Side_Wood_Wall_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Side_Wood_Wall_Destroyed" );
+	},
+
+	//Main Objective
+	docs_Taken = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, 1, "DEFEND_cap.*");
+		Util.MapDebugPrint( "docs_Taken" );
+	},
+	docs_Returned = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, 0, "DEFEND_cap.*");
+		Util.MapDebugPrint( "docs_Returned" );
+	},
+	docs_Secured = function()
+	{
+		Util.MapDebugPrint( "docs_Secured" );
+	},
+
+	//Forward Spawn
+	forwardspawn_flag_Axis_Captured = function()
+	{
+		SetGoalPriority("FLAG_.*", 0.7);
+		Util.MapDebugPrint( "forwardspawn_flag_Axis_Captured" );
+	},
+	forwardspawn_flag_Allies_Captured = function()
+	{
+		SetGoalPriority("FLAG_.*", 0.5);
+		Util.MapDebugPrint( "forwardspawn_flag_Allies_Captured" );
+	},
+
+	//Allied CP
+	Allied_CP_Built = function()
+	{
+		Util.MapDebugPrint( "Allied_CP_Built" );
+	},
+	Allied_CP_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Allied_CP_Destroyed" );
+	},
+
+	//Axis CP
+	Axis_CP_Built = function()
+	{
+		Util.MapDebugPrint( "Axis_CP_Built" );
+	},
+	Axis_CP_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Axis_CP_Destroyed" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+
+	OnTrigger( "Allies have breached the Garage Door", Map.Garage_Door_Destroyed );
+	OnTrigger( "Allies have breached the Main Gate", Map.Main_Gate_Destroyed );
+	OnTrigger( "Allies have breached the Side Entrance!", Map.Side_Wall_Destroyed );
+
+	OnTrigger( "Axis team has built the construction!", Map.Side_Wood_Wall_Built );
+	OnTrigger( "Allies have breached the Side Wood Wall!", Map.Side_Wood_Wall_Destroyed );
+
+	OnTrigger( "Allies have stolen (null)!", Map.docs_Taken );
+	OnTrigger( "Flag returned docs!", Map.docs_Returned );
+	OnTrigger( "Allies Have transmitted the Documments", Map.docs_Secured );
+
+	OnTrigger( "axis_reclaims_forwardspawn_flag", Map.forwardspawn_flag_Axis_Captured );
+	OnTrigger( "radar_allies_bunker_capture", Map.forwardspawn_flag_Allies_Captured );
+
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_CP_Built );
+	OnTrigger( "Axis team has destroyed the Allied CP!", Map.Allied_CP_Destroyed );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_CP_Built );
+	OnTrigger( "Allied team has destroyed the Axis CP!", Map.Axis_CP_Destroyed );
+
+
+	Util.DisableGoal( ".*", true );
+	Util.EnableGoal( ".*CAB.*" );
+
+	//Util.LimitToClass("PLANT_Side_Wood_Wall", 2, 5 );
+	Util.LimitToClass("PLANT_Killing_Mg42", 1, 5 );
+	Util.LimitToClass("PLANT_Axis_CP", 2, 5 );
+	Util.LimitToClass("PLANT_Allies_CP", 1, 5 );
+
+	Util.AddUsePoint( "PLANT_Main_Gate", Vec3(-2676,254,46) );
+
+	//Allies
+	SetAvailableMapGoals( TEAM.ALLIES, 1, {
+		//"CAMP_b1_.*",
+		"PLANT_Side_Wall",
+		"PLANT_Main_Gate",
+		//"MOUNTMG42_307",
+		"CAPPOINT_.*",
+	});
+
+	//Axis
+	SetAvailableMapGoals( TEAM.AXIS, 1, {
+		"CAMP_r1_.*",
+		"PLANT_Allies_CP",
+	});
+
+	SetGoalPriority("FLAG_.*", 0.7);
+
+	Util.SetMaxUsers( 1, "CAMP_.*" );
+	Util.SetMaxUsers( 1, "BUILD.*" );
+	Util.SetMaxUsers( 1, "PLANT_Side_Wood_Wall" );
+
+	SetMapGoalProperties( "CAMP_.*", {MinCampTime=60, MaxCampTime=600} );
+	SetMapGoalProperties( "DEFEND_.*", {MinCampTime=30, MaxCampTime=100} );
+
+	Util.AddUsePoint( "PLANT_Side_Wood_Wall", { Vec3(-888,-1653,-63), Vec3(-1010,-1647,-50) });
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};

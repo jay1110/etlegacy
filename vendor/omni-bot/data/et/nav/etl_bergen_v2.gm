@@ -1,0 +1,665 @@
+//=============================================================================
+//
+//  ETL Bergen v2 - etl_bergen_v2.gm
+//
+//  Who         When                What
+//-----------------------------------------------------------------------------
+//  Mateos      13 October 2018     Adapted from ETL Bergen v1 waypoints
+//
+//=============================================================================
+
+/****************************************************
+Path mapping and script both updated by Mateos
+Correspondant WAY file size: 36,3 Ko (37 179 octets)
+Last update: 13th October 2018
+****************************************************/
+
+global Map =
+{
+    main_goals_accessible = false,
+    backdoor_destroyed = false,
+    generator_status = 0,
+    footbridgeisbuilt = false,
+    door1_open = false,
+    door2_open = false,
+    door2_count = 0,
+    door1_count = 0,
+    ignore_doors = true,
+    ignore_flag = false,
+    isForwardDoorOpened = false,
+    Talk = true,
+    DefendingTeam = TEAM.AXIS,
+
+    ac1 = 0,
+    iw1 = 0,
+    iw2 = 0,
+    iw3 = 0,
+    iw4 = 0,
+
+    Side_Entrance_Destroyed = function()
+    {
+        Map.backdoor_destroyed = true;
+        Map.main_goals_accessible = true;
+        DynamicPathsUpdated( TEAM.ALLIES );
+        SetAvailableMapGoals( TEAM.AXIS, false, "PLANTMINE_backdoor" );
+
+        // Note: in the original Bergen script, Axis are instructed to build the Allied MG...
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+            "DEFEND_backdoor.*",
+            "MOUNTMG42_Axis_MG",
+            "BUILD_Axis_MG",
+        });
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, "SMOKEBOMB_allies_mg3" );
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            "BUILD_generator",
+            "BUILD_Command_Post",
+            "PLANT_Command_Post",
+        });
+
+        if ( Map.footbridgeisbuilt )
+        {
+            SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_back_door" );
+        }
+
+        if ( Map.generator_status == 0 )
+        {
+            SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_generator.*" );
+        }
+        else
+        {
+            SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_door.*" );
+            SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_generator.*" );
+        }
+
+        Util.MapDebugPrint( "Side_Entrance_Destroyed" );
+    },
+
+    allied_genny_belt_Built = function()
+    {
+        Map.generator_status = 1;
+        Map.door1_open = false;
+        Map.door2_open = false;
+        Map.door2_count = 1;
+        Map.door1_count = 1;
+        Map.ignore_doors = false;
+
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+            "MOUNTMG42_Axis_MG",
+            "BUILD_Axis_MG",
+            "REPAIRMG42_Axis_MG",
+            "DEFEND_door.*",
+        });
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_generator.*" );
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            "DEFEND_generator.*",
+            "SWITCH_.*",
+        });
+
+        Util.MapDebugPrint( "allied_genny_belt_Built" );
+    },
+
+    allied_genny_belt_Destroyed = function()
+    {
+        Map.generator_status = 0;
+        Map.ignore_doors = true;
+        Map.door2_count = 1;
+        Map.door1_count = 1;
+        Map.door1_open = false;
+        Map.door2_open = false;
+
+        Util.MapDebugPrint( "door1_count:" + Map.door1_count, true );
+        Util.MapDebugPrint( "door2_count:" + Map.door2_count, true );
+
+        Util.DisableGoal( "SWITCH_.*" );
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_transmitter.*" );
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_generator.*" );
+        SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_generator.*" );
+
+        Util.MapDebugPrint( "allied_genny_belt_Destroyed" );
+    },
+
+    Transmitter_Area_Breached = function()
+    {
+        // Note: never called in the original script!
+        Map.iw3 = OnTriggerRegion( AABB(5749.500,104.583,-106.193,5815.824,395.715,82.366), RegionTrigger.IntrusionWarning );
+        Map.iw4 = OnTriggerRegion( AABB(5847.185,486.354,-106.625,6233.347,650.084,50.560), RegionTrigger.IntrusionWarning );
+        Map.ac1 = OnTriggerRegion( AABB(5947.959,374.042,-115.043,6010.202,566.491,28.068), RegionTrigger.AllClear );
+        DeleteTriggerRegion( Map.iw1 );
+        DeleteTriggerRegion( Map.iw2 );
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_allies_bridge.*" );
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            "ATTACK_transmitter.*",
+            "PLANT_Transmitter_Controls",
+        });
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+            "CALLARTILLERY_axis_start.*",
+            "MOUNTMG42_forward_bunker_mg2",
+            "MOUNTMG42_forward_bunker_mg",
+            "MOUNTMG42_side_entrance_mg",
+            "DEFEND_backdoor.*",
+        });
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+            "DEFEND_transmitter.*",
+            "BUILD_Axis_MG",
+            "MOUNTMG42_Axis_MG",
+        });
+
+        Util.MapDebugPrint( "Transmitter_Area_Breached" );
+    },
+
+    Transmitter_Area_Closed = function()
+    {
+        DeleteTriggerRegion( Map.iw3 );
+        DeleteTriggerRegion( Map.iw4 );
+        DeleteTriggerRegion( Map.ac1 );
+
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_transmitter.*" );
+        if ( Map.main_goals_accessible && Map.generator_status == 0 )
+        {
+            SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_generator.*" );
+        }
+        else if ( Map.main_goals_accessible )
+        {
+            SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_door.*" );
+            SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_generator.*" );
+        }
+
+        Util.MapDebugPrint("Transmitter_Area_Closed");
+    },
+
+    Allies_Capture_Flag = function()
+    {
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+            "MOUNTMG42_Allied_MG",
+            "REPAIRMG42_Allied_MG",
+            "BUILD_Allied_MG",
+            "GRENADE_mg_1",
+            "GRENADE_mg_2",
+            "GRENADE_backdoor_mg",
+            "SMOKEBOMB_allies_mg1",
+            "SMOKEBOMB_allies_mg2",
+            "SMOKEBOMB_allies_mg3",
+            "BUILD_footbridge",
+            "CHECKPOINT_forward_bunker",
+        });
+        SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_checkpoint.*" );
+
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+            "DEFEND_checkpoint.*",
+            "DEFEND_axis_start.*",
+            "PLANT_footbridge",
+            "MOUNTMG42_side_entrance_mg",
+            "REPAIRMG42_side_entrance_mg",
+            "MOUNTMG42_forward_bunker_mg",
+            "REPAIRMG42_forward_bunker_mg",
+            "MOUNTMG42_forward_bunker_mg2",
+            "REPAIRMG42_forward_bunker_mg2",
+        });
+        // Note: in the original Bergen script, Axis are instructed to build the Allied MG...
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+            "BUILD_Axis_MG",
+            "MOUNTMG42_Axis_MG",
+        });
+
+        if ( Map.ignore_flag )
+        {
+            return;
+        }
+
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+            "ATTACK_flag",
+            "CHECKPOINT_forward_bunker",
+        });
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+            "MOBILEMG42_axis_start.*",
+            "CALLARTILLERY_axis_start.*",
+        });
+
+        if ( Map.generator_status == 0 )
+        {
+            SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_generator.*" );
+        }
+        else
+        {
+            SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_door.*" );
+            SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_generator.*" );
+        }
+
+        Util.MapDebugPrint( "Allies_Capture_Flag" );
+    },
+
+    Axis_Capture_Flag = function()
+    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            "MOUNTMG42_Allied_MG",
+            "REPAIRMG42_Allied_MG",
+            "BUILD_Allied_MG",
+            "BUILD_footbridge",
+            "CHECKPOINT_forward_bunker",
+        });
+        SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_checkpoint.*");
+
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+            "DEFEND_checkpoint.*",
+            "DEFEND_axis_start.*",
+            "MOBILEMG42_axis_start.*",
+            "MOUNTMG42_side_entrance_mg",
+            "REPAIRMG42_side_entrance_mg",
+            "MOUNTMG42_forward_bunker_mg",
+            "REPAIRMG42_forward_bunker_mg",
+            "MOUNTMG42_forward_bunker_mg2",
+            "REPAIRMG42_forward_bunker_mg2",
+            "PLANT_footbridge",
+        });
+
+        if ( Map.generator_status == 0 )
+        {
+            SetAvailableMapGoals( TEAM.AXIS, false, {
+                "DEFEND_generator.*",
+                "DEFEND_transmitter.*",
+                "DEFEND_door.*",
+            });
+        }
+
+        Util.MapDebugPrint( "Axis_Capture_Flag" );
+    },
+
+    transmitter_door_1 = function()
+    {
+        Util.MapDebugPrint( "transmitter_door_1 called", true );
+        if ( Map.ignore_doors )
+        {
+            return;
+        }
+
+        Map.door1_count += 1;
+        if ( Map.door1_count % 2 == 0 )
+        {
+            Map.door1_open = true;
+            SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_door1_switch_.*" );
+            SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_door1_switch_.*" );
+
+            // TODO: add this in bergen.gm as well
+            TriggerInfo =
+            {
+                Entity = null,
+                Activator = null,
+                TagName = "The Transmitter area has been breached!",
+                Action = "A test of the SendTrigger function",
+            };
+            SendTrigger( TriggerInfo );
+        }
+        else
+        {
+            Map.door1_open = false;
+            SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_door1_switch_.*" );
+            SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_door1_switch_.*" );
+            if ( !Map.door2_open )
+            {
+                TriggerInfo =
+                {
+                    Entity = null,
+                    Activator = null,
+                    TagName = "The Transmitter area has been closed!",
+                    Action = "A test of the SendTrigger function",
+                };
+                SendTrigger( TriggerInfo );
+            }
+        }
+
+        Util.MapDebugPrint( "door1_count: " + Map.door1_count + "; door1_open: " + Map.door1_open );
+    },
+
+    transmitter_door_2 = function()
+    {
+        // This checks if the Allied bots should try to open the door,
+        // based on an even/odd test
+        Util.MapDebugPrint( "transmitter_door_2 called", true );
+        if ( Map.ignore_doors )
+        {
+            return;
+        }
+
+        Map.door2_count += 1;
+        if ( Map.door2_count % 2 == 0 )
+        {
+            Map.door2_open = true;
+            SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_door2_switch_.*" );
+            SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_door2_switch_.*" );
+
+            // TODO: add this in bergen.gm as well
+            TriggerInfo =
+            {
+                Entity = null,
+                Activator = null,
+                TagName = "The Transmitter area has been breached!",
+                Action = "A test of the SendTrigger function",
+            };
+            SendTrigger( TriggerInfo );
+        }
+        else
+        {
+            Map.door2_open = false;
+            SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_door2_switch_.*" );
+            SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_door2_switch_.*" );
+            if ( !Map.door1_open )
+            {
+                TriggerInfo =
+                {
+                    Entity = null,
+                    Activator = null,
+                    TagName = "The Transmitter area has been closed!",
+                    Action = "A test of the SendTrigger function",
+                };
+                SendTrigger( TriggerInfo );
+            }
+        }
+
+        Util.MapDebugPrint( "door2_count: " + Map.door2_count + "; door2_open: " + Map.door2_open );
+    },
+
+    forward_door = function()
+    {
+        Util.MapDebugPrint( "forward_door called", true );
+        if ( Map.ignore_doors )
+        {
+            return;
+        }
+
+        Map.isForwardDoorOpened = !Map.isForwardDoorOpened;
+        SetAvailableMapGoals( TEAM.ALLIES, !Map.isForwardDoorOpened, "SWITCH_forward_door" );
+        SetAvailableMapGoals( TEAM.AXIS, Map.isForwardDoorOpened, "SWITCH_forward_door" );
+
+        Util.MapDebugPrint( "isForwardDoorOpened: " + Map.isForwardDoorOpened );
+    },
+
+    MainDoor_Destroyed = function()
+    {
+        Map.main_goals_accessible = true;
+        DynamicPathsUpdated( TEAM.ALLIES );
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+            "SNIPE_allies_start.*",
+            "ATTACK_allies_start.*",
+            "BUILD_Tank",
+            "MOUNTMG42_Allied_MG",
+            "ESCORT_tank",
+            "AIRSTRIKE_allies_start.*",
+        });
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            "MOUNTMG42_Axis_MG",
+            "BUILD_generator",
+            "BUILD_Command_Post",
+            "PLANT_Command_Post",
+            "PLANT_Side_Entrance",
+            "CHECKPOINT_forward_bunker",
+            "ROUTE_main_door",
+        });
+
+        SetAvailableMapGoals( TEAM.AXIS, false, {
+            "SNIPE_axis_start.*",
+            "MOBILEMORTAR_axis_start.*",
+        });
+        SetAvailableMapGoals( TEAM.AXIS, true, {
+            "BUILD_Axis_MG",
+            "MOUNTMG42_Axis_MG",
+            "REPAIRMG42_Axis_MG",
+            "DEFEND_door.*",
+        });
+
+        if ( Map.generator_status == 0 )
+        {
+            SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_generator.*" );
+        }
+        else
+        {
+            SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_generator.*" );
+        }
+
+        Util.MapDebugPrint( "MainDoor_Destroyed" );
+    },
+
+    FootBridge_Built = function()
+    {
+        DynamicPathsUpdated( TEAM.ALLIES );
+        SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Side_Entrance" );
+        Map.footbridgeisbuilt = true;
+        if ( Map.backdoor_destroyed )
+        {
+            SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_back_door" );
+        }
+
+        Util.MapDebugPrint( "FootBridge_Built" );
+    },
+
+    FootBridge_Destroyed = function()
+    {
+        Map.footbridgeisbuilt = false;
+        DynamicPathsUpdated( TEAM.ALLIES );
+        if ( !Map.main_goals_accessible )
+        {
+            SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Side_Entrance" );
+        }
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ROUTE_back_door" );
+
+        Util.MapDebugPrint( "FootBridge_Destroyed" );
+    },
+};
+
+global OnMapLoad = function()
+{
+    OnTrigger( "west_door_goto", Map.transmitter_door_1 );
+    OnTrigger( "south_door_goto", Map.transmitter_door_2 );
+    OnTrigger( "forward_door_goto", Map.forward_door );
+    OnTrigger( "^5The Allied team has destroyed the Side Entrance!", Map.Side_Entrance_Destroyed );
+    OnTrigger( "^5The Allied team has destroyed the Main Entrance!", Map.MainDoor_Destroyed );
+    OnTrigger( "^5The Allied team has repaired the Generator!", Map.allied_genny_belt_Built );
+    OnTrigger( "^1The Axis team has destroyed the Generator!", Map.allied_genny_belt_Destroyed );
+    OnTrigger( "The Transmitter area has been breached!", Map.Transmitter_Area_Breached );
+    OnTrigger( "The Transmitter area has been closed!", Map.Transmitter_Area_Closed );
+    OnTrigger( "^5The Allied team has captured the Forward Bunker!", Map.Allies_Capture_Flag );
+    OnTrigger( "^1The Axis team has reclaimed the Forward Bunker!", Map.Axis_Capture_Flag );
+    OnTrigger( "^5The Allied team has constructed the Foot Bridge!", Map.FootBridge_Built );
+    OnTrigger( "^1The Axis team has destroyed the Foot Bridge!", Map.FootBridge_Destroyed );
+
+    Util.DisableGoal( "SWITCH_.*" );
+
+    // Disable unreachable engineer goals
+    SetAvailableMapGoals( TEAM.ALLIES, false, {
+        "PLANT_Side_Entrance",
+        "BUILD_generator",
+        "BUILD_Command_Post",
+        "PLANT_Command_Post",
+        "PLANT_Transmitter_Controls",
+        "CHECKPOINT_forward_bunker",
+        "SNIPE_axis.*",
+        "CALLARTILLERY.*",
+        "PLANTMINE_backdoor.*",
+        "ATTACK_.*",
+        "DEFEND_.*",
+        "MOBILEMG42_axis.*",
+        "MOBILEMORTAR_.*",
+        "MOUNTMG42_forward_bunker_mg2",
+        "REPAIRMG42_forward_bunker_mg2",
+        "MOUNTMG42_side_entrance_mg",
+        "REPAIRMG42_side_entrance_mg",
+        "MOUNTMG42_forward_bunker_mg",
+        "REPAIRMG42_forward_bunker_mg",
+    });
+    SetAvailableMapGoals( TEAM.ALLIES, true, {
+        "ESCORT_tank",
+        "ATTACK_allies_start.*",
+        "AIRSTRIKE_allies_start.*",
+    });
+
+    SetAvailableMapGoals( TEAM.AXIS, false, {
+        "ESCORT_tank",
+        "CHECKPOINT_forward_bunker",
+        "SNIPE_allies.*",
+        "BUILD_Axis_MG",
+        "REPAIRMG42_Allied_MG",
+        "MOUNTMG42_Allied_MG",
+        "MOUNTMG42_Axis_MG",
+        "BUILD_Allied_MG",
+        "CHECKPOINT_forward_bunker",
+        "DEFEND_.*",
+        "ATTACK_.*",
+        "PLANTMINE_backdoor.*",
+        "AIRSTRIKE_allies_.*",
+    });
+    SetAvailableMapGoals(TEAM.AXIS, true, {
+        "DEFEND_axis_start.*",
+        "MOBILEMG42_axis_start.*",
+        "MOBILEMORTAR_axis_start.*",
+    });
+
+    SetGoalPriority( "BUILD_Command_Post", 0.8, TEAM.ALLIES, CLASS.ENGINEER );
+    SetGoalPriority( "PLANT_Command_Post", 0.5, TEAM.ALLIES, CLASS.ENGINEER );
+    SetGoalPriority( "PLANT_Command_Post", 0.5, TEAM.AXIS, CLASS.ENGINEER );
+    SetGoalPriority( "PLANT_Axis_MG", 0.5, TEAM.AXIS, CLASS.ENGINEER );
+    SetGoalPriority( "PLANT_Side_Entrance", 0.91 );
+    SetGoalPriority( "PLANT_Transmitter_Controls", 0.91 );
+    SetGoalPriority( "BUILD_footbridge", 0.9 );
+    SetGoalPriority( "BUILD_Tank", 0.84 );
+    SetGoalPriority( "BUILD_Axis_MG", 0.9 );
+    SetGoalPriority( "PLANT_Tank_Barrier", 0.85 );
+    SetGoalPriority( "GRENADE_mg_1", 0.51 );
+    SetGoalPriority( "GRENADE_mg_2", 0.51 );
+    SetGoalPriority( "CHECKPOINT_forward_bunker", 0.8 );
+    SetGoalPriority( "SWITCH_.*", 0.8 );
+
+    Util.SetMaxUsers( 1, "GRENADE_.*" );
+    Util.SetMaxUsers( 1, "PLANT_.*" );
+    Util.SetMaxUsers( 1, "BUILD_.*" );
+    Util.SetMaxUsers( 1, "DEFEND_.*" );
+    Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+    Util.SetMaxUsers( 1, "ESCORT_.*" );
+    Util.SetMaxUsers( 1, "SWITCH_.*" );
+    Util.SetMaxUsersInProgress( 2, "CHECKPOINT_.*" );
+    Util.SetMaxUsersInProgress( 3, "PLANT_Transmitter_Controls" );
+    Util.SetMaxUsersInUse( 1, "PLANT_Transmitter_Controls" );
+    Util.SetMaxUsersInProgress( 2, "ATTACK_.*" );
+
+    SetMapGoalProperties( "ATTACK_.*",      { MinCampTime =  1, MaxCampTime =  30 } );
+    SetMapGoalProperties( "MOBILEMG42_.*",  { MinCampTime = 15, MaxCampTime =  90 } );
+    SetMapGoalProperties( "DEFEND_.*",      { MinCampTime =  5, MaxCampTime =  40 } );
+    SetMapGoalProperties( "SNIPE_.*",       { MinCampTime = 15, MaxCampTime =  40 } );
+    SetMapGoalProperties( "MOUNTMG42_.*",   { MinCampTime = 10, MaxCampTime = 300 } );
+
+    // Build and escort it from the back if possible for more cover
+    ETUtil.SetStartIndex( "BUILD_Tank", 0 );
+    ETUtil.SetStartIndex( "ESCORT_tank", 0 );
+
+    // Some usepoints for the side entrance
+    Util.AddUsePoint( "PLANT_Side_Entrance", { Vector3( 2160, -3530, 80), Vector3( 2220, -3530, 80) } );
+
+    // Region triggers
+    Map.iw1 = OnTriggerRegion( AABB( 2496.673, -538.475,  4.231, 2618.712, -373.223, 163.242 ), RegionTrigger.IntrusionWarning );
+    Map.iw2 = OnTriggerRegion( AABB( 2153.691, -719.669, 10.958, 2477.526, -360.558, 108.556 ), RegionTrigger.IntrusionWarning );
+
+    SetAvailableMapGoals( TEAM.ALLIES, false, {
+        "ROUTE_back_door",
+        "ROUTE_main_door",
+    });
+
+    Util.MapDebugPrint( "Omni-bot map script etl_bergen_v2.gm loaded." );
+};
+
+
+global InitializeRoutes = function()
+{
+    MapRoutes =
+    {
+        PLANT_generator =
+        {
+            ROUTE_forward_spawn  =
+            {
+                ROUTE_generator_door  =
+                {
+                },
+                ROUTE_generator_stairs  =
+                {
+                    ROUTE_generator_stairs1  =
+                    {
+                    },
+                    ROUTE_generator_stairs2  =
+                    {
+                    },
+                },
+            },
+            ROUTE_allied_spawn  =
+            {
+                ROUTE_back_door  =
+                {
+                    ROUTE_generator_stairs1  =
+                    {
+                    },
+                    ROUTE_generator_stairs2  =
+                    {
+                    },
+                    ROUTE_generator_door  =
+                    {
+                    },
+                },
+                ROUTE_main_door  =
+                {
+                    ROUTE_generator_door  =
+                    {
+                    },
+                    ROUTE_generator_stairs  =
+                    {
+                        ROUTE_generator_stairs1  =
+                        {
+                        },
+                        ROUTE_generator_stairs2  =
+                        {
+                        },
+                    },
+                },
+            },
+        },
+        PLANT_Transmitter_Controls =
+        {
+            ROUTE_allied_spawn  =
+            {
+                ROUTE_back_door  =
+                {
+                },
+                ROUTE_main_door  =
+                {
+                },
+            },
+        },
+        CHECKPOINT_forward_bunker =
+        {
+            ROUTE_allied_spawn  =
+            {
+                ROUTE_back_door  =
+                {
+                    ROUTE_south_door = {},
+                    ROUTE_east_door = {}
+                },
+                ROUTE_main_door  =
+                {
+                    ROUTE_south_door = {},
+                    ROUTE_east_door = {}
+                },
+            },
+        },
+    };
+
+    MapRoutes.BUILD_generator = MapRoutes.PLANT_generator;
+    MapRoutes.DEFEND_generator1 = MapRoutes.PLANT_generator;
+    MapRoutes.DEFEND_generator2 = MapRoutes.PLANT_generator;
+    MapRoutes.DEFEND_generator3 = MapRoutes.PLANT_generator;
+    MapRoutes.DEFEND_generator4 = MapRoutes.PLANT_generator;
+    MapRoutes.ATTACK_transmitter1 = MapRoutes.PLANT_Transmitter_Controls;
+    MapRoutes.DEFEND_checkpoint1 = MapRoutes.CHECKPOINT_forward_bunker;
+    MapRoutes.DEFEND_checkpoint2 = MapRoutes.CHECKPOINT_forward_bunker;
+    MapRoutes.DEFEND_checkpoint3 = MapRoutes.CHECKPOINT_forward_bunker;
+
+    Util.Routes(MapRoutes);
+};

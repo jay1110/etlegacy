@@ -1,0 +1,259 @@
+//==========================================================================================
+//
+//	villagun_b1.gm
+//
+//	Who	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	05 October 2017	Initial Script
+//	palota	07 August 2025
+//==========================================================================================
+//
+
+global Map =
+{
+	SaveRoles = 0,
+
+	Roles =
+	{
+		ALLIES =
+		{
+			AllBots = true,
+			ATTACKER1 = //garden
+			{
+				numbots = 9,
+				spawnpt = 1, //city
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER2 = //roof
+			{
+				numbots = 7,
+				spawnpt = 3, //desert
+				crucialClass = CLASS.ENGINEER,
+			},
+		},
+
+		AXIS =
+		{
+			AllBots = true,
+			ATTACKER1 = //garden
+			{
+				numbots = 8,
+				crucialClass = {CLASS.ENGINEER, CLASS.FIELDOPS},
+			},
+			ATTACKER2 = //roof
+			{
+				numbots = 9,
+				crucialClass = CLASS.COVERTOPS,
+			},
+		},
+	},
+
+	Allied_CP_Built = function()
+	{
+		Util.MapDebugPrint("Allied_CP_Built");
+	},
+	Axis_CP_Built = function()
+	{
+		Util.MapDebugPrint("Axis_CP_Built");
+	},
+	Allied_CP_Destroyed = function()
+	{
+		Util.MapDebugPrint("Allied_CP_Destroyed");
+	},
+	Axis_CP_Destroyed = function()
+	{
+		Util.MapDebugPrint("Axis_CP_Destroyed");
+	},
+	Villa_Gate_Built = function()
+	{
+		Util.MapDebugPrint("Villa_Gate_Built");
+	},
+	Villa_Gate_Destroyed = function()
+	{
+		Wp.CheckBlockable();
+		Util.MapDebugPrint("Villa_Gate_Destroyed");
+	},
+
+	Villa_Ladder_Built = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_ladder.*");
+		Util.MapDebugPrint("Villa_Ladder_Built");
+	},
+	Villa_Ladder_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, true, "ATTACK_ladder.*");
+		Util.MapDebugPrint("Villa_Ladder_Destroyed");
+	},
+
+	Garden_Gun_Destroyed = function()
+	{
+		ClearGoalRole("", ROLE.ATTACKER2);
+		Util.DisableGoal(".*_garden.*");
+		Util.MapDebugPrint("Garden_Gun_Destroyed");
+	},
+
+	Roof_Gun_Destroyed = function()
+	{
+		ClearGoalRole("", ROLE.ATTACKER1);
+		Util.DisableGoal(".*_roof.*");
+		SetGoalPriority("ATTACK_ladder.*", 0.5);
+		Util.MapDebugPrint("Roof_Gun_Destroyed");
+	},
+
+	Side_Warehouse_Entrance_Destroyed = function()
+	{
+		Wp.CheckBlockable();
+		Util.MapDebugPrint("Side_Warehouse_Entrance_Destroyed");
+	},
+
+	desertspawn_Axis_Captured = function()
+	{
+		Util.MapDebugPrint("desertspawn_Axis_Captured");
+	},
+	desertspawn_Allies_Captured = function()
+	{
+		Util.MapDebugPrint("desertspawn_Allies_Captured");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	//Command Post
+	OnTrigger("Allied Command Post constructed. Charge speed increased!", Map.Allied_CP_Built);
+	OnTrigger("Axis Command Post constructed. Charge speed increased!", Map.Axis_CP_Built);
+	OnTrigger("Axis team has destroyed the Allied Command Post!", Map.Allied_CP_Destroyed);
+	OnTrigger("Allied team has destroyed the Axis Command Post!", Map.Axis_CP_Destroyed);
+
+	//Villa Gate
+	OnTrigger("Axis Team have built the Villa Gate!", Map.Villa_Gate_Built);
+	OnTrigger("The Allies have destroyed the Villa Gate!", Map.Villa_Gate_Destroyed);
+
+	//Ladder
+	OnTrigger("Allied Team have built the Ladder!", Map.Villa_Ladder_Built);
+	OnTrigger("Axis Team have destroyed the Ladder!", Map.Villa_Ladder_Destroyed);
+
+	//Gun1 garden
+	OnTrigger("Allies have destroyed the Garden Anti-Aircraft Gun!", Map.Garden_Gun_Destroyed);
+
+	//Gun2 roof
+	OnTrigger("Allies have destroyed the Roof Anti-Aircraft Gun!", Map.Roof_Gun_Destroyed);
+
+	//Warehouse
+	OnTrigger("Allies have destroyed the Side Warehouse Entrance!", Map.Side_Warehouse_Entrance_Destroyed);
+
+	//Desert area
+	OnTrigger("Allies lost the desert spawn!", Map.desertspawn_Axis_Captured);
+	OnTrigger("Allies captured the Desert!", Map.desertspawn_Allies_Captured);
+
+	OnTriggerRegion(Vec3(-1003,3022,208), 270, RegionTrigger.DisableCombatMovement); //ladder
+	OnTriggerRegion(Vec3(-295,797,65), 250, RegionTrigger.DisableCombatMovement); //path to command post
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal({
+		"AMMOCAB.*",
+		"HEALTHCAB.*",
+		"CHECKPOINT.*",
+		".*Command_Post",
+	});
+
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"ATTACK.*",
+		"BUILD_Villa_Ladder",
+		"PLANT_Anti_Aircraft_Roof_Gun",
+		"PLANT_Garden_Anti_Aircraft_Gun",
+		"PLANT_Side_Warehouse_Entrance",
+		"PLANT_Villa_Gate",
+	});
+
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"DEFEND.*",
+		".*MG42.*",
+		"CALLARTILLERY.*",
+		"ARTILLERY.*",
+		"PLANTMINE.*",
+		"BUILD_Villa_Gate",
+		"PLANT_Villa_Ladder",
+	});
+
+	SetGoalRole({
+		".*_garden.*",
+		"PLANT_Villa_Gate",
+		"MOUNTMG42.*",
+	}, ROLE.ATTACKER1);
+
+	SetGoalRole({
+		".*_roof.*",
+		"ATTACK_ladder.*",
+		"CHECKPOINT.*",
+		"BUILD_Villa_Ladder",
+		"PLANT_Side_Warehouse_Entrance",
+	}, ROLE.ATTACKER2);
+
+	foreach (g in Util.GetGoals()) {
+		g.RolePriorityBonus = 0;
+	}
+
+	SetGoalPriority("BUILD_Command_Post", 0.81);
+	SetGoalPriority({"PLANT_Command_Post", "PLANT_Villa_Ladder"}, 0.79, 0, CLASS.ENGINEER);
+	SetGoalPriority("ATTACK_ladder.*", 0.6);
+	SetGoalPriority("PLANT_Side_Warehouse_Entrance.*", 0.9);
+	SetGoalPriority("DEFUSE_Side_Warehouse_Entrance.*", 0, 0, 0, true);
+	SetGoalPriority("DEFUSE_Command_Post.*", 0.81, 0, 0, true);
+
+	//Adjustments
+	Util.AddUsePoint("PLANT_Garden_Anti_Aircraft_Gun", {Vec3(-707, 1751, 92), Vec3(-594, 1850, 72), Vec3(-543, 1608, 92)});
+	Util.AddUsePoint("PLANT_Anti_Aircraft_Roof_Gun", {Vec3(-1276, 2613, 575), Vec3(-1449, 2575, 592)});
+	Util.AddUsePoint("PLANT_Side_Warehouse_Entrance", Vec3(-1966, -443, 68));
+	Util.AddUsePoint("PLANT_Villa_Gate", Vec3(-286, 1448, 58));
+
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=20, MaxCampTime=70});
+	SetMapGoalProperties({"MOUNTMG42_.*", "MOBILEMG42_.*"}, {MinCampTime=30, MaxCampTime=90});
+
+	Util.SetMaxUsers(1, {
+		"CHECKPOINT.*",
+		".*Command_Post",
+		"MOUNTMG42.*",
+	});
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.TargetBreakableDist = 200;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_Garden_Anti_Aircraft_Gun =
+		{
+			ROUTE_allied_spawn =
+			{
+				ROUTE_side ={},
+				ROUTE_center ={},
+			},
+		},
+		BUILD_Villa_Ladder =
+		{
+			ROUTE_desert_spawn =
+			{
+				ROUTE_desert_S ={Weight=2},
+				ROUTE_desert_N ={},
+				ROUTE_pool ={},
+			},
+			ROUTE_allied_spawn =
+			{
+				ROUTE_desert_spawn ={},
+				ROUTE_pool ={},
+			},
+		},
+	};
+	MapRoutes.PLANT_Villa_Gate = MapRoutes.PLANT_Garden_Anti_Aircraft_Gun;
+	MapRoutes["ATTACK_garden.*"] = MapRoutes.PLANT_Garden_Anti_Aircraft_Gun;
+	MapRoutes["ATTACK_ladder.*"] = MapRoutes.BUILD_Villa_Ladder;
+	Util.Routes(MapRoutes);
+};

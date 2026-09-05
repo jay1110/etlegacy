@@ -1,0 +1,906 @@
+//==========================================================================================
+//
+//	teuthonia_final.gm
+//
+//	Who         	When			What
+//------------------------------------------------------------------------------------------
+//	d00d        	29 September 2014	Added some missing trigger strings
+//	<=TM=>Micha!	02 September 2014	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	Command_Post_Dyno = 0,
+	Tank_Barrier_1_Dyno = 0,
+	Tank_Barrier_2_Dyno = 0,
+	Truck_Barrier_Dyno = 0,
+	secretdoorStatus = 0, //door is closed initially
+	cavedoorStatus = 0, //door is closed initially
+
+	Switches =
+ 	{
+ 		secretdoor =
+ 		{
+ 			Enabled = true,
+ 			Priority = 0, //always set to 0 when using path through
+ 			WaypointName = "secretdoor",
+ 			Timeout = 2000,
+			LimitTeam = (1<<TEAM.ALLIES),
+ 			AimPosition = Vec3(-1028.125, 1056.278, 110.672),
+ 			Wait = function() // optional. used to have the bot wait a bit for slow moving doors / elevators
+ 			{
+ 				if ( Map.secretdoorStatus == 1 )
+ 				{
+ 					//wait 0.5 secs while the door opens
+ 					sleep(0.5);
+ 					return true;
+ 				}
+ 				//always return false unless the door is open:
+ 				return false;
+ 			},
+ 		},
+		cavedoor =
+ 		{
+ 			Enabled = true,
+ 			Priority = 0, //always set to 0 when using path through
+ 			WaypointName = "cavedoor",
+ 			Timeout = 2000,
+			LimitTeam = (1<<TEAM.ALLIES),
+ 			AimPosition = Vec3(1475.875, 2140.127, -215.736),
+ 			Wait = function() // optional. used to have the bot wait a bit for slow moving doors / elevators
+ 			{
+ 				if ( Map.cavedoorStatus == 1 )
+ 				{
+ 					//wait 0.5 secs while the door opens
+ 					sleep(0.5);
+ 					return true;
+ 				}
+ 				//always return false unless the door is open:
+ 				return false;
+ 			},
+ 		},
+ 	},
+
+	tank_passed_barrier1 = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Barrier1_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Barrier2_.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_Bridge_.*",
+			"MOUNTMG42_151",
+			"REPAIRMG42_151",
+			"BUILD_Tank_Barrier_2",
+			"DEFEND_Barrier2_.*",
+			"SNIPE_Balcon1",
+			"SNIPE_Balcon2",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Barrier1_.*" );
+		Util.MapDebugPrint("tank_passed_barrier1");
+	},
+
+	tank_passed_barrier2 = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Barrier2_.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Truck_Barrier" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Barrier2_.*" );
+
+		Util.MapDebugPrint("tank_passed_barrier2");
+	},
+
+	truck_passed_barrier = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_TruckBarrier_.*",
+			"ATTACK_Barrier2_2",
+			"ATTACK_Barrier2_3",
+			"ATTACK_Barrier2_4",
+			"ATTACK_Barrier2_6",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_Barrier2_1",
+			"DEFEND_Barrier2_2",
+			"DEFEND_Barrier2_7",
+			"DEFEND_TruckBarrier_.*",
+		});
+
+		Util.MapDebugPrint("truck_passed_barrier");
+	},
+
+	vehicle_at_location = function()
+	{
+		switch(Map.VehicleLocation)
+		{
+			case 1:
+			{
+				Map.tank_passed_barrier1();
+			}
+			case 2:
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"SNIPE_Barrier2",
+					"MOBILEMG42_Barrier2",
+				});
+			}
+			case 3:
+			{
+				Map.tank_passed_barrier2();
+			}
+			case 4:
+			{
+				Map.truck_passed_barrier();
+			}
+			case 5:
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, {
+					"ATTACK_Barrier2_.*",
+					"ATTACK_Bank_.*",
+				});
+
+				SetAvailableMapGoals( TEAM.AXIS, false, {
+					"MOBILEMG42_BankMG42_outside",
+					"DEFEND_Bank_.*",
+					"DEFEND_Barrier2_.*",
+				});
+				SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Barrier1_.*" );
+
+				Map.truck_passed_barrier();
+			}
+		}
+		Util.MapDebugPrint("vehicle at location " + Map.VehicleLocation, true);
+	},
+
+	Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Command_Post_Built" );
+	},
+
+	Tank_Built = function()
+	{
+		Util.MapDebugPrint( "Tank_Built" );
+	},
+
+	Tank_Stolen = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"ROUTE_tankspawn",
+			"ROUTE_allies_door_way",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Tank_Barrier_2" );
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"MOBILEMG42_Tankview",
+			"DEFEND_Tank_.*",
+			"PLANTMINE_MainGate_.*",
+			"CALLARTILLERY_Arty_to_Gate",
+			"ARTILLERY_S_Gate",
+			"SNIPE_MainGate",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Barrier1_.*" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Barrier1_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "AIRSTRIKE_Gate_to_Tank" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_tankspawn" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ROUTE_alliesspawn" );
+
+		SetGoalPriority( "BUILD_Command_Post", 0.8, TEAM.ALLIES);
+		SetGoalPriority( "BUILD_Tank_Barrier_2", 0.9, TEAM.AXIS);
+
+		Util.MapDebugPrint( "Tank_Stolen" );
+	},
+
+	Tank_Barrier_1_Built = function()
+	{
+		SetGoalPriority( "PLANT_Tank_Barrier_1", 0.91, TEAM.ALLIES);
+
+		Util.MapDebugPrint( "Tank_Barrier_1_Built" );
+	},
+
+	Tank_Barrier_2_Built = function()
+	{
+		SetGoalPriority( "PLANT_Tank_Barrier_2", 0.91, TEAM.ALLIES);
+
+		Util.MapDebugPrint( "Tank_Barrier_2_Built" );
+	},
+
+	Truck_Built = function()
+	{
+		Util.MapDebugPrint( "Truck_Built" );
+	},
+
+	Truck_Barrier_Built = function()
+	{
+		Util.MapDebugPrint( "Truck_Barrier_Built" );
+	},
+
+	Command_Post_Planted = function()
+	{
+		Map.Command_Post_Dyno += 1;
+		Util.MapDebugPrint( "Command_Post_Planted" );
+	},
+
+	Tank_Barrier_1_Planted = function()
+	{
+		Map.Tank_Barrier_1_Dyno += 1;
+		Util.MapDebugPrint( "Tank_Barrier_1_Planted" );
+	},
+
+	Tank_Barrier_2_Planted = function()
+	{
+		Map.Tank_Barrier_2_Dyno += 1;
+		Util.MapDebugPrint( "Tank_Barrier_2_Planted" );
+	},
+
+	Truck_Barrier_Planted = function()
+	{
+		Map.Truck_Barrier_Dyno += 1;
+		Util.MapDebugPrint( "Truck_Barrier_Planted" );
+	},
+
+	Command_Post_Defused = function()
+	{
+		Map.Command_Post_Dyno -= 1;
+		Util.MapDebugPrint( "Command_Post_Defused" );
+	},
+
+	Tank_Barrier_1_Defused = function()
+	{
+		Map.Tank_Barrier_1_Dyno -= 1;
+		Util.MapDebugPrint( "Tank_Barrier_1_Defused" );
+	},
+
+	Tank_Barrier_2_Defused = function()
+	{
+		Map.Tank_Barrier_2_Dyno -= 1;
+		Util.MapDebugPrint( "Tank_Barrier_2_Defused" );
+	},
+
+	Truck_Barrier_Defused = function()
+	{
+		Map.Truck_Barrier_Dyno -= 1;
+		Util.MapDebugPrint( "Truck_Barrier_Defused" );
+	},
+
+	Command_Post_Destroyed = function()
+	{
+		Map.Command_Post_Dyno = 0;
+
+		Util.MapDebugPrint( "Command_Post_Destroyed" );
+	},
+
+	Tank_Barrier_1_Destroyed = function()
+	{
+		Map.Tank_Barrier_1_Dyno = 0;
+
+		Util.MapDebugPrint( "Tank_Barrier_1_Destroyed" );
+	},
+
+	Tank_Barrier_2_Destroyed = function()
+	{
+		Map.Tank_Barrier_2_Dyno = 0;
+
+		Util.MapDebugPrint( "Tank_Barrier_2_Destroyed" );
+	},
+
+	Truck_Barrier_Destroyed = function()
+	{
+		Map.Truck_Barrier_Dyno = 0;
+
+		Util.MapDebugPrint( "Truck_Barrier_Destroyed" );
+	},
+
+	gold_crate_Taken = function()
+	{
+		Util.MapDebugPrint( "gold_crate_Taken" );
+	},
+
+	gold_crate_Returned = function()
+	{
+		Util.MapDebugPrint( "gold_crate_Returned" );
+	},
+
+	gold_crate_Secured = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ESCORT_Truck",
+			"MOVER_Truck",
+		});
+		SetGoalPriority( "ESCORT_truck", 0.9, TEAM.ALLIES );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"FLAG_gold_crate",
+			"CAPPOINT_goldtruck",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"FLAG_gold_crate",
+			"CAPPOINT_goldtruck",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ATTACK_TruckBarrier_.*",
+			"ATTACK_Barrier2_2",
+			"ATTACK_Barrier2_3",
+			"ATTACK_Barrier2_4",
+			"ATTACK_Barrier2_6",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_Bank_1",
+			"ATTACK_Bank_2",
+			"ATTACK_Bank_3",
+			"ATTACK_Bank_5",
+			"ATTACK_Bank_6",
+			"SMOKEBOMB_SmokeBank1",
+			"SNIPE_Barrier2",
+			"MOBILEMG42_Barrier2",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_Bank_1",
+			"DEFEND_Bank_3",
+			"DEFEND_Bank_5",
+			"DEFEND_Bank_6",
+			"MOBILEMG42_Bank",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_Barrier2_1",
+			"DEFEND_Barrier2_2",
+			"DEFEND_Barrier2_3",
+			"DEFEND_Barrier2_7",
+			"DEFEND_TruckBarrier_.*",
+		});
+
+		Util.MapDebugPrint( "gold_crate_Secured" );
+	},
+
+	blow_doors = function()
+	{
+		sleep( 2 );
+
+		// Neutral goals
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ROUTE_bank",
+			"ROUTE_bank_inside",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"ROUTE_bank",
+			"ROUTE_bank_inside",
+		});
+
+		// Allied goals
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"SWITCH_cavedoor",
+			"SMOKEBOMB_SmokeBank1",
+			"ATTACK_Bank_.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_Barrier2_.*",
+			"MOBILEMG42_Barrier2",
+			"MOUNT_Tank_Allies",
+			"ESCORT_tank",
+			"MOVER_tank",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Truck",
+			"CAPPOINT_goldtruck",
+			"FLAG_gold_crate",
+		});
+
+		// Axis goals
+		SetGoalPriority( "DEFEND_Bank_.*", 0.90, TEAM.AXIS );
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_Bank_.*",
+			"MOBILEMG42_Bank",
+			"MOBILEMG42_BankMG42_outside",
+			"BUILD_Truck_Barrier",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_Barrier2_.*",
+			"BUILD_Command_Post",
+			"PLANT_Command_Post",
+		});
+		SetGoalPriority( "MOUNT_Tank_Axis", 0.3, TEAM.AXIS );
+
+		Util.MapDebugPrint( "blow_doors" );
+	},
+
+	Switch_SecretPassage = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_secretpassage" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_secret_passage" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_secret_passage" );
+
+		Util.MapDebugPrint( "Switch_SecretPassage" );
+	},
+
+	Switch_CaveDoor = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_cavedoor" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_cave_passage" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_cave_passage" );
+
+		Util.MapDebugPrint( "Switch_CaveDoor" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+
+	// Register callback functions
+	OnTrigger( "MISSING_STRING", Map.Command_Post_Built );
+	OnTrigger( "goldrush_allies_tank_stolen", Map.Tank_Stolen );
+	OnTrigger( "tank at location", Map.vehicle_at_location );
+	OnTrigger( "truck at location", Map.vehicle_at_location );
+	OnTrigger( "Allied team has destroyed the Bank Doors!", Map.blow_doors );
+	OnTrigger( "The Tank has been repaired!", Map.Tank_Built );
+	OnTrigger( "Tank Barrier #1 has been constructed.", Map.Tank_Barrier_1_Built );
+	OnTrigger( "Tank Barrier #2 has been constructed.", Map.Tank_Barrier_2_Built );
+	OnTrigger( "The Truck has been repaired!", Map.Truck_Built );
+	OnTrigger( "Truck Barrier #1 has been constructed.", Map.Truck_Barrier_Built );
+	OnTrigger( "Planted at the MISSING_STRING.", Map.Command_Post_Planted );
+	OnTrigger( "Planted at the MISSING_STRING.", Map.Tank_Barrier_1_Planted );
+	OnTrigger( "Planted at the MISSING_STRING.", Map.Tank_Barrier_2_Planted );
+	OnTrigger( "Planted at the MISSING_STRING.", Map.Truck_Barrier_Planted );
+	OnTrigger( "Defused at the MISSING_STRING.", Map.Command_Post_Defused );
+	OnTrigger( "Defused at the MISSING_STRING.", Map.Tank_Barrier_1_Defused );
+	OnTrigger( "Defused at the MISSING_STRING.", Map.Tank_Barrier_2_Defused );
+	OnTrigger( "Defused at the MISSING_STRING.", Map.Truck_Barrier_Defused );
+	OnTrigger( "MISSING_STRING", Map.Command_Post_Destroyed );
+	OnTrigger( "Tank Barrier #1 has been destroyed.", Map.Tank_Barrier_1_Destroyed );
+	OnTrigger( "Tank Barrier #2 has been destroyed.", Map.Tank_Barrier_2_Destroyed );
+	OnTrigger( "Truck Barrier #1 has been destroyed.", Map.Truck_Barrier_Destroyed );
+	OnTrigger( "goldrush_axis_gold1_taken", Map.gold_crate_Taken );
+	OnTrigger( "goldrush_axis_gold2_taken", Map.gold_crate_Taken );
+	OnTrigger( "goldrush_axis_gold1_returned", Map.gold_crate_Returned );
+	OnTrigger( "goldrush_axis_gold2_returned", Map.gold_crate_Returned );
+	OnTrigger( "goldrush_allies_truck_stolen", Map.gold_crate_Secured );
+
+	OnTrigger( "t3 activated", Map.Switch_SecretPassage );
+	OnTrigger( "t2 activated", Map.Switch_CaveDoor );
+
+	//~Util.DisableGoal( ".*", true ); // all but routes
+	//~SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_.*" );
+	//~SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_.*" );
+
+	// Max users per goal
+	//Util.SetMaxUsers( 1, "DEFEND_.*" );
+	//Util.SetMaxUsers( 1, "GRENADE_.*" );
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+	Util.SetMaxUsers( 1, "ESCORT_.*" );
+	Util.SetMaxUsers( 1, "SWITCH_.*" );
+	Util.SetMaxUsers( 1, ".*_Command_Post" );
+
+	// Usepoints
+	Util.AddUsePoint( "PLANT_Tank_Barrier_1", { Vec3(875,929,27), Vec3(1109,988,24) } );
+	Util.AddUsePoint( "PLANT_Tank_Barrier_2", { Vec3(1785,4466,-183), Vec3(1669,4469,-183), Vec3(1671,4264,-187) } );
+	Util.AddUsePoint( "PLANT_Truck_Barrier", { Vec3(1872,5008,-183), Vec3(1859,4906,-183) } );
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42_.*", { MinCampTime=15, MaxCampTime=90 } );
+	SetMapGoalProperties( "MOBILEMG42_.*", { MinCampTime=10, MaxCampTime=60 } );
+
+	// Priority
+	SetGoalPriority( "CAPPOINT_goldtruck", 1.1 );
+	SetGoalPriority( "FLAG_gold_crate", 1.2 );
+	SetGoalPriority( "BUILD_Tank", 0.91, TEAM.ALLIES);
+	SetGoalPriority( "BUILD_Command_Post", 0.5, TEAM.ALLIES);
+	SetGoalPriority( "SWITCH_cavedoor", 0.75, TEAM.ALLIES);
+	SetGoalPriority( "SWITCH_secretdoor", 0.75, TEAM.ALLIES);
+
+	SetGoalPriority( "BUILD_Tank_Barrier_2", 0.4, TEAM.AXIS);
+	SetGoalPriority( "BUILD_Command_Post", 0.4, TEAM.AXIS);
+	SetGoalPriority( "PLANTMINES_MAINGATE_.*", 0.80, TEAM.AXIS, CLASS.ENGINEER, true);
+
+	// Disable Allies Goals
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"ROUTE_axisspawn",
+		"ROUTE_axisbank",
+		"ROUTE_underground_way",
+		"ROUTE_stair_way",
+		"ROUTE_tankspawn",
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"ROUTE_bank",
+		"ROUTE_bank_inside",
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"PLANTMINE_MainGate_.*",
+		"PLANTMINE_Cabinet_.*",
+		"MOBILEMG42_Tankview",
+		"MOBILEMG42_Bank",
+		"MOBILEMG42_BankMG42_outside",
+		"CALLARTILLERY_Arty_to_Gate",
+		"ARTILLERY_S_Gate",
+		"MOUNTMG42_151",
+		"REPAIRMG42_151",
+		"SMOKEBOMB_SmokeBank1",
+		"SNIPE_Balcon.*",
+		"SNIPE_MainGate",
+		"SNIPE_Barrier2",
+		"MOBILEMG42_Barrier2",
+		"FLAG_gold_crate",
+		"CAPPOINT_goldtruck",
+		"BUILD_Truck",
+		"ESCORT_Truck",
+		"MOVER_Truck",
+		"MOUNT_Tank_Axis",
+		"ATTACK_Barrier1_.*",
+		"ATTACK_Barrier2_.*",
+		"ATTACK_TruckBarrier_.*",
+		"ATTACK_Bank_.*",
+		"DEFEND_Tank_.*",
+		"DEFEND_Bank_.*",
+		"DEFEND_Bridge_.*",
+		"DEFEND_Barrier1_.*",
+		"DEFEND_Barrier2_.*",
+		"DEFEND_TruckBarrier_.*",
+		"SWITCH_cavedoor",
+		"ROUTE_cave_passage",
+		"ROUTE_secret_passage",
+	});
+
+	// Disable Axis Goals
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"ROUTE_bank",
+		"ROUTE_bank_inside",
+	});
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+		"MOBILEMG42_Bank",
+		"MOBILEMG42_BankMG42_outside",
+		"AIRSTRIKE_Gate_to_Tank",
+		"SMOKEBOMB_SmokeBank1",
+		"SNIPE_Balcon.*",
+		"MOUNTMG42_151",
+		"REPAIRMG42_151",
+		"SNIPE_Barrier2",
+		"MOBILEMG42_Barrier2",
+		"FLAG_gold_crate",
+		"CAPPOINT_goldtruck",
+		"BUILD_Truck",
+		"ESCORT_Truck",
+		"MOVER_Truck",
+		"BUILD_tank",
+		"ESCORT_tank",
+		"MOVER_tank",
+		"MOUNT_Tank_Allies",
+		"BUILD_Tank_Barrier_2",
+		"BUILD_Truck_Barrier",
+		"ATTACK_Barrier1_.*",
+		"ATTACK_Barrier2_.*",
+		"ATTACK_TruckBarrier_.*",
+		"ATTACK_Bank_.*",
+		"DEFEND_Bank_.*",
+		"DEFEND_Bridge_.*",
+		"DEFEND_Barrier1_.*",
+		"DEFEND_Barrier2_.*",
+		"DEFEND_TruckBarrier_.*",
+		"SWITCH_cavedoor",
+		"SWITCH_secretpassage",
+		"ROUTE_cave_passage",
+		"ROUTE_secret_passage",
+	});
+
+	// Barriers
+	barrier1 = OnTriggerRegion( AABB(845.748,1080.757,1.125,977.921,1228.038,75.125), RegionTrigger.VehicleTrigger );
+	barrier2 = OnTriggerRegion( AABB(1660.082,4223.405,-214.140,1827.254,4382.875,-78.650), RegionTrigger.VehicleTrigger );
+	truckbarrier = OnTriggerRegion( AABB(2042.443,4899.557,-206.875,2100.876,5044.85,-132.875), RegionTrigger.VehicleTrigger );
+	truckway = OnTriggerRegion( AABB(162.735,4395.694,-94.875,288.941,4482.583,-20.875), RegionTrigger.VehicleTrigger );
+
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		BUILD_Command_Post =
+		{
+			ROUTE_alliesspawn =
+			{
+				ROUTE_allies_first_route1 =
+				{
+					ROUTE_cpway ={},
+				},
+			},
+			ROUTE_tankspawn =
+			{
+				ROUTE_tankbarrier1 = {},
+				ROUTE_cabinetway = {},
+			},
+			ROUTE_axisspawn =
+			{
+				ROUTE_axisbank =
+				{
+					Weight = 2,
+					ROUTE_mainway = {},
+				},
+				ROUTE_underground_way =
+				{
+					ROUTE_bridge = {Weight = 2,},
+					ROUTE_cpway = {},
+				},
+			},
+		},
+		PLANT_Command_Post =
+		{
+			ROUTE_alliesspawn =
+			{
+				ROUTE_allies_first_route1 =
+				{
+					ROUTE_cpway ={},
+				},
+			},
+			ROUTE_tankspawn =
+			{
+				ROUTE_tankbarrier1 = {},
+				ROUTE_cabinetway = {},
+			},
+			ROUTE_axisspawn =
+			{
+				ROUTE_axisbank =
+				{
+					Weight = 2,
+					ROUTE_mainway = {},
+				},
+				ROUTE_underground_way =
+				{
+					ROUTE_bridge = {Weight = 2,},
+					ROUTE_cpway = {},
+				},
+			},
+		},
+		BUILD_Tank_Barrier_1 =
+		{
+			ROUTE_tankspawn =
+			{
+				ROUTE_tankbarrier1 = {},
+				ROUTE_cabinetway = {},
+			},
+			ROUTE_axisspawn =
+			{
+				ROUTE_axisbank =
+				{
+					Weight = 2,
+					ROUTE_mainway = {},
+				},
+				ROUTE_underground_way =
+				{
+					ROUTE_bridge = {Weight = 2,},
+					ROUTE_cpway = {},
+				},
+			},
+		},
+		PLANT_Tank_Barrier_1 =
+		{
+			ROUTE_alliesspawn =
+			{
+				ROUTE_allies_first_route1 =
+				{
+					ROUTE_cpway =
+					{
+						ROUTE_tankbarrier1 = {},
+					},
+				},
+			},
+			ROUTE_tankspawn =
+			{
+				ROUTE_tankbarrier1 = {Weight = 2,},
+				ROUTE_allies_door_way =
+				{
+					ROUTE_cpway =
+					{
+						ROUTE_tankbarrier1 = {},
+					},
+				},
+				ROUTE_cabinetway =
+				{
+					Weight = 2,
+					ROUTE_tankbarrier1 = {},
+				},
+			},
+		},
+		BUILD_Tank_Barrier_2 =
+		{
+			ROUTE_axisspawn =
+			{
+				ROUTE_stair_way =
+				{
+					ROUTE_tankbarrier2 = {},
+				},
+				ROUTE_axisbank =
+				{
+					ROUTE_tankbarrier2 = {},
+				},
+			},
+		},
+		PLANT_Tank_Barrier_2 =
+		{
+			ROUTE_tankspawn =
+			{
+				ROUTE_tankbarrier1 =
+				{
+					Weight = 2,
+					ROUTE_mainway =
+					{
+						Weight = 3,
+						ROUTE_tankbarrier2 = {},
+					},
+					ROUTE_bridge =
+					{
+						Weight = 2,
+						ROUTE_cpway =
+						{
+							ROUTE_long_way = {
+								ROUTE_cabinet2 = {},
+							},
+						},
+						ROUTE_cabinet2 = {Weight = 3,},
+					}
+				},
+				ROUTE_allies_door_way =
+				{
+					ROUTE_long_way =
+					{
+						ROUTE_cabinet2 = {},
+					},
+				},
+				ROUTE_cabinetway =
+				{
+					Weight = 2,
+					ROUTE_mainway =
+					{
+						ROUTE_tankbarrier2 = {},
+					},
+				},
+			},
+		},
+		BUILD_Tank =
+		{
+			ROUTE_alliesspawn =
+			{
+				ROUTE_allies_first_route1 =
+				{
+					ROUTE_allies_door_way = {},
+				},
+
+				ROUTE_allies_first_route2 =
+				{
+					ROUTE_allies_door_way = {},
+					ROUTE_secret_passage = {Weight = 2,},
+				},
+				ROUTE_cpway = {},
+			},
+		},
+		FLAG_gold_crate =
+		{
+			ROUTE_tankspawn =
+			{
+				ROUTE_tankbarrier1 = {
+					ROUTE_bridge =
+					{
+						Weight = 2,
+						ROUTE_bank_cave1 =
+						{
+							ROUTE_bank_inside = {},
+						},
+						ROUTE_bank =
+						{
+							ROUTE_bank_inside = {},
+						},
+					},
+					ROUTE_mainway =
+					{
+						ROUTE_bank_cave2 =
+						{
+							ROUTE_bank_inside = {},
+						},
+						ROUTE_bank =
+						{
+							ROUTE_bank_inside = {},
+						},
+					},
+				},
+				ROUTE_cabinetway = {
+					Weight = 2,
+					ROUTE_mainway =
+					{
+						ROUTE_bank_cave2 =
+						{
+							ROUTE_bank_inside = {},
+						},
+						ROUTE_bank =
+						{
+							ROUTE_bank_inside = {},
+						},
+					},
+				},
+			},
+		},
+		BUILD_Truck =
+		{
+			ROUTE_tankspawn =
+			{
+				ROUTE_tankbarrier1 =
+				{
+					Weight = 2,
+					ROUTE_bridge = {Weight = 2,},
+					ROUTE_cpway =
+					{
+						ROUTE_long_way = {},
+					},
+				},
+				ROUTE_cabinetway =
+				{
+					Weight = 3,
+					ROUTE_cave_passage = {},
+					ROUTE_mainway = {},
+				},
+			},
+		},
+		BUILD_Truck_Barrier =
+		{
+			ROUTE_axisspawn =
+			{
+				ROUTE_stair_way =
+				{
+					Weight = 2,
+					ROUTE_tankbarrier2 = {},
+				},
+				ROUTE_axisbank =
+				{
+					ROUTE_tankbarrier2 = {},
+				},
+			},
+		},
+		PLANT_Truck_Barrier =
+		{
+			ROUTE_tankspawn =
+			{
+				ROUTE_tankbarrier1 =
+				{
+					Weight = 2,
+					ROUTE_mainway =
+					{
+						Weight = 3,
+						ROUTE_tankbarrier2 = {},
+					},
+					ROUTE_bridge =
+					{
+						ROUTE_cpway =
+						{
+							ROUTE_long_way = {
+								ROUTE_cabinet2 = {},
+							},
+						},
+						ROUTE_cabinet2 = {Weight = 3,},
+					}
+				},
+				ROUTE_allies_door_way =
+				{
+					ROUTE_long_way =
+					{
+						ROUTE_cabinet2 = {},
+					},
+				},
+				ROUTE_cabinetway =
+				{
+					Weight = 2,
+					ROUTE_mainway =
+					{
+						ROUTE_tankbarrier2 = {},
+					},
+					ROUTE_cave_passage = {Weight = 3,},
+				},
+			},
+		},
+	};
+
+	Util.Routes(MapRoutes);
+};

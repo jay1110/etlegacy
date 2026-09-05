@@ -1,0 +1,180 @@
+//==========================================================================================
+//
+//	the_gauntlet_b1.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	14 February 2018	Initial Script
+//	palota	21 July 2025
+//==========================================================================================
+//
+
+global Map =
+{
+	SaveRoles = 0,
+
+	Roles =
+	{
+		AXIS =
+		{
+			DEFENDER =
+			{
+				crucialClass = CLASS.ENGINEER,
+				numbots = 1,
+				spawnpt = 1,
+			},
+		},
+	},
+
+	AXIS_RADIO_Planted = function()
+	{
+		SetGoalPriority("DEFEND_radio[12]", 0.9);
+		Util.MapDebugPrint("AXIS_RADIO_Planted");
+	},
+
+	AXIS_RADIO_Defused = function()
+	{
+		SetGoalPriority("DEFEND_radio.*", 0.5);
+		Util.MapDebugPrint("AXIS_RADIO_Defused");
+	},
+
+	AXIS_RADIO_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, 0, {
+			"DEFEND_radio.*",
+			"DEFEND_bunker.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, 0, "ATTACK_radio.*");
+		Util.MapDebugPrint("AXIS_RADIO_Destroyed");
+	},
+
+	NORTH_FLAK_88_GUN_Destroyed = function()
+	{
+		Util.MapDebugPrint("NORTH_FLAK_88_GUN_Destroyed");
+	},
+
+	SOUTH_FLAK_88_GUN_Destroyed = function()
+	{
+		Util.MapDebugPrint("SOUTH_FLAK_88_GUN_Destroyed");
+	},
+
+	forwardspawn1_flag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint("forwardspawn1_flag_Axis_Captured");
+	},
+
+	forwardspawn1_flag_Allies_Captured = function()
+	{
+		SetGoalPriority("DEFEND_bunker.*", 0.5);
+		Util.MapDebugPrint("forwardspawn1_flag_Allies_Captured");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("Planted at THE AXIS RADIO.", Map.AXIS_RADIO_Planted);
+	OnTrigger("Defused at THE AXIS RADIO.", Map.AXIS_RADIO_Defused);
+	OnTrigger("^3ALLIES HAVE DESTROYED THE AXIS RADIO!!!", Map.AXIS_RADIO_Destroyed);
+	OnTrigger("^3ALLIES HAVE DESTROYED THE NORTH FLAK 88 GUN!!!", Map.NORTH_FLAK_88_GUN_Destroyed);
+	OnTrigger("^3ALLIES HAVE DESTROYED THE SOUTH FLAK 88 GUN!!!", Map.SOUTH_FLAK_88_GUN_Destroyed);
+	OnTrigger("^3AXIS HAVE CAPTURED THE FORWARD SPAWN!!!", Map.forwardspawn1_flag_Axis_Captured);
+	OnTrigger("^3ALLIES HAVE CAPTURED THE FORWARD SPAWN!!!", Map.forwardspawn1_flag_Allies_Captured);
+
+	Util.DisableGoal(".*", 1);
+
+	Util.EnableGoal({
+		"CHECKPOINT_forwardspawn1_flag",
+		".*Command_Post",
+		"AMMOCAB.*",
+		"HEALTHCAB.*",
+	});
+
+	SetAvailableMapGoals(TEAM.ALLIES, 1, {
+		"ATTACK.*",
+		"BUILD_Allied_MG.*",
+		"PLANT_Axis_MG_.*",
+		"PLANT_AXIS_RADIO",
+		"PLANT__NORTH_FLAK_88_GUN",
+		"PLANT__SOUTH_FLAK_88_GUN",
+	});
+
+	SetAvailableMapGoals(TEAM.AXIS, 1, {
+		"DEFEND.*",
+		"BUILD_Axis_MG.*",
+		"PLANTMINE.*",
+		".*MG42_Axis.*",
+	});
+
+	Util.LimitToClass("PLANT_Axis_MG_.*", 2, 5);
+	Util.LimitToClass("PLANT_Command_Post", 0, 5);
+
+	SetGoalPriority("DEFEND_bunker.*", 0.6);
+	SetGoalPriority("DEFEND_flak.*", 0.4);
+	SetGoalPriority("BUILD_Axis_.*", 0.8);
+	SetGoalPriority("BUILD_Command_Post", 0.81);
+
+	SetGoalRole({"BUILD_Axis_MG.*", "REPAIRMG42_Axis.*"}, ROLE.DEFENDER);
+
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=20, MaxCampTime=80});
+	SetMapGoalProperties("MOUNTMG42_.*", {MinCampTime=30, MaxCampTime=90});
+
+	Util.SetMaxUsers(1, {
+		"BUILD.*",
+		"MOUNTMG42.*",
+	});
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_forwardspawn1_flag =
+		{
+			ROUTE_allied_spawn =
+			{
+				ROUTE_allied_1l ={},
+				ROUTE_allied_1r ={},
+				ROUTE_allied_2l ={},
+				ROUTE_allied_2r ={},
+			},
+			ROUTE_axis_spawn =
+			{
+				ROUTE_axis_1l ={
+					ROUTE_radio1 = {},
+					ROUTE_radio2 = {},
+				},
+				ROUTE_axis_2l ={
+					ROUTE_radio2 = {},
+					ROUTE_radio3 = {},
+				},
+				ROUTE_axis_1r ={},
+				ROUTE_axis_2r ={},
+			},
+		},
+		PLANT__NORTH_FLAK_88_GUN =
+		{
+			ROUTE_forward_spawn =
+			{
+				ROUTE_flak1 ={},
+				ROUTE_flak2 ={},
+				ROUTE_flak3 ={},
+				ROUTE_flak4 ={},
+				ROUTE_flak5 ={},
+			},
+		},
+		PLANT_Command_Post =
+		{
+			ROUTE_axis_spawn =
+			{
+				ROUTE_axis_2r ={},
+			},
+		},
+	};
+	MapRoutes.PLANT__SOUTH_FLAK_88_GUN = MapRoutes.PLANT__NORTH_FLAK_88_GUN;
+	MapRoutes["ATTACK_flak.*"] = MapRoutes.PLANT__NORTH_FLAK_88_GUN;
+	Util.Routes(MapRoutes);
+};

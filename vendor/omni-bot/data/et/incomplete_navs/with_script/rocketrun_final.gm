@@ -1,0 +1,191 @@
+//==========================================================================================
+//
+//	rocketrun_final.gm
+//
+//	Who                      	When		What
+//------------------------------------------------------------------------------------------
+//	MickyP	24 January 2013	Initial Script
+// palota	22 September 2015	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	oldcityflag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint( "oldcityflag_Axis_Captured" );
+	},
+
+	oldcityflag_Allies_Captured = function()
+	{
+		Util.MapDebugPrint( "oldcityflag_Allies_Captured" );
+	},
+
+	Tank_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_Command_Center");
+		Util.MapDebugPrint( "Tank_Built" );
+	},
+
+	Tank_Damaged = function()
+	{
+		Util.MapDebugPrint( "Tank_Damaged" );
+	},
+
+	Tank_Barrier_1_Built  = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_1_Built" );
+	},
+
+	Tank_Barrier_1_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_1_Destroyed" );
+	},
+
+	Tank_At_Barrier_1 = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ESCORT_Tank");
+		SetGoalPriority( "PLANT_Tank_Barrier", 0.95 );
+		Util.MapDebugPrint( "Tank_At_Barrier_1" );
+	},
+
+	Tank_Past_Barrier_1 = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Tank_Barrier_1",
+			"ESCORT_Tank",
+		});
+
+		Util.OnTriggerPosition("MOVER_tank", Vec3(5500,2700,50), 250.0, Map.Tank_At_Barrier_2);
+
+		Util.MapDebugPrint( "Tank_Past_Barrier_1" );
+	},
+
+	Tank_Barrier_2_Built = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_2_Built" );
+	},
+
+	Tank_Barrier_2_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_2_Destroyed" );
+	},
+
+	Tank_At_Barrier_2 = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ESCORT_Tank");
+		SetGoalPriority( "PLANT_Tank_Barrier_1", 0.95 );
+		Util.MapDebugPrint( "Tank_At_Barrier_2" );
+	},
+
+	Tank_Past_Barrier_2 = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ESCORT_Tank");
+		Util.MapDebugPrint( "Tank_Past_Barrier_2" );
+	},
+
+	Gate_Destroyed = function()
+	{
+		sleep(2);
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_barrier.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_rocket.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"BUILD_Tank",
+			"MOUNT_Tank",
+			"ESCORT_Tank",
+			"ATTACK_barrier.*",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_rocket_fence.*",
+			"PLANT_Axis_Command_Post",
+			"ATTACK_rocket.*",
+		});
+		Util.MapDebugPrint( "Gate_Destroyed" );
+	},
+
+	rocket_fence_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Rockets");
+		Util.MapDebugPrint( "rocket_fence_Destroyed" );
+	},
+
+	Axis_Rockets_Destroyed = function()
+	{
+		ETUtil.WinningChat( TEAM.ALLIES );
+		ETUtil.LosingChat( TEAM.AXIS );
+		Util.MapDebugPrint( "Axis_Rockets_Destroyed" );
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "Axis reclaim the Forward Spawn!", Map.oldcityflag_Axis_Captured );
+	OnTrigger( "Allies capture the Forward Spawn!", Map.oldcityflag_Allies_Captured );
+	OnTrigger( "The Tank has been repaired!", Map.Tank_Built );
+	OnTrigger( "The Tank has been damaged!", Map.Tank_Damaged );
+	OnTrigger( "Tank Barrier #1 has been constructed.", Map.Tank_Barrier_1_Built );
+	OnTrigger( "Tank Barrier #1 has been destroyed.", Map.Tank_Barrier_1_Destroyed );
+	OnTrigger( "the tank has passed the first barrier", Map.Tank_Past_Barrier_1 );
+	OnTrigger( "Tank Barrier #2 has been constructed.", Map.Tank_Barrier_2_Built );
+	OnTrigger( "Tank Barrier #2 has been destroyed.", Map.Tank_Barrier_2_Destroyed );
+	OnTrigger( "the tank has passed the second barrier", Map.Tank_Past_Barrier_2 );
+	OnTrigger( "The tank has destroyed the entrance gate", Map.Gate_Destroyed );
+	OnTrigger( "^1The Allies have destroyed a part of the Rocket protection Fence!", Map.rocket_fence_Destroyed );
+	OnTrigger( "The Allies have destroyed the axis_rockets!", Map.Axis_Rockets_Destroyed );
+	//OnTrigger( "The Allies have built the field command post!", Map.Allied_Command_Center_Built );
+	//OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	//OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Center_Destroyed );
+	//OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+
+	Util.OnTriggerPosition("MOVER_tank", Vec3(4700,1300,50), 200.0, Map.Tank_At_Barrier_1);
+
+	Util.DisableGoal( ".*", true );
+	Util.EnableGoal("AMMOCAB.*");
+	Util.EnableGoal("HEALTHCAB.*");
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"BUILD_Axis_Command_Post",
+		"BUILD_Tank_Barrier",
+		"BUILD_Tank_Barrier_1",
+		"CHECKPOINT_oldcityflag",
+		"PLANT_Allied_Command_Center",
+		"DEFEND_barrier.*",
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_Tank",
+		"MOUNT_Tank",
+		"ESCORT_Tank",
+		"CHECKPOINT_oldcityflag",
+		"PLANT_Tank_Barrier",
+		"ATTACK_barrier.*",
+	});
+
+	SetGoalPriority( "BUILD_Tank_Barrier", 0.92 );
+	SetGoalPriority( "BUILD_Tank_Barrier_1", 0.91 );
+	SetGoalPriority( "BUILD_Allied_Command_Center", 0.81 );
+	SetGoalPriority( "PLANT_Axis_Rockets", 0.9 );
+
+	Util.SetMaxUsers( 1, "BUILD_Axis_Command_Post" );
+	Util.SetMaxUsers( 1, "BUILD_Allied_Command_Center" );
+
+	SetMapGoalProperties( "DEFEND_.*", {MinCampTime=10, MaxCampTime=40} );
+
+	for(i=0; i<9; i+=1)
+	{
+		g = "PLANT_rocket_fence";
+		if(i>0){ g+= "_" + i; }
+		Util.SetGoalOffset(0,0,-80, g);
+	}
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};

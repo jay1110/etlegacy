@@ -1,0 +1,1052 @@
+//==========================================================================================
+//
+// Rjuken Dam - rjuken.gm
+//
+// Who		When			What
+//------------------------------------------------------------------------------------------
+// Mateos	08 August 2025	Initial Script
+//
+//==========================================================================================
+//
+
+/*
+ * TODO:
+ * - Realised I've disabled the routing... without explanation (part of the commit with the lift closed flag management)
+ * - Beyond Electric Fence handling:
+ *		* Missing case only Allies capable of finishing the map, would need to make Axis use buttons to temp disable electricity to get through etc.
+ * - When both caches built + Fence disabled, CHECKPOINT_topdamflag priority could be raised? + When players beyond Fence when electrified
+ */
+
+/*
+ * Objective
+ * Build both Explosive Caches (cannot be planted; 8s after => Top Dam flag is forced on Axis)
+ * Blow up Electric Fence Controls
+ * Built Explosive Trigger Primer
+ * 1 min 10s cooldown - Axis can destroy it with either satchel or dynamite ONTOP-ONLY of it...
+ * Trigger the explosion
+ */
+
+/*
+ * Grates (pipes in water)
+ * #1 (North-East) => Leads to the ladder after Explosives #2 room
+ * #2 (North-West) => Dead end?
+ * #3 (South-East) => Leads to between Axis Spawn front and Explosives #2 room
+ * #4 (South-West) => Some ladders leading to turbines room ceiling
+ */
+
+/*
+ * Other notes
+ * (1) Fixed MG42's are not handled, because the nav to get back down is annoying (even as a real player)
+ * (2) If Grate #4 way is opened, the elevator top-to-bottom way is closed,
+ *     in order to force bots to go through the water pipe leading to the turbines room ceiling
+ *     => Routing thus disabled (commented-out)
+ */
+
+global Spawn =
+{
+	TOP_OF_DAM				= 1,
+	ALLIED_SPAWN			= 2,
+	AXIS_SPAWN				= 3,
+	ALLIED_TRIGGER_SPAWN	= 4 // Commented-out in script
+};
+
+global Map =
+{
+	areBothExplosiveCachesBuilt = false,
+	areElectricFenceControlsDestroyed = false,
+	isExplosiveTriggerBuilt = false,
+	isExplosiveTriggerPrimed = false,
+
+	topDamFlagOwner = TEAM.AXIS,
+
+	liftEntity,
+	liftStatus,
+
+	LiftStatus =
+	{
+		TOP			= 0,
+		MOVING_DOWN	= 1,
+		BOTTOM		= 2,
+		MOVING_UP	= 3
+	},
+
+	Navigation =
+	{
+		// /bot waypoint_setproperty paththrough Navigation_PT:cabinets_ladder
+		cabinets_ladder =
+		{
+			navigate = function()
+			{
+				wpTable = {};
+				Wp.GetWaypointByName( "cabinets_ladder_bottom", wpTable );
+				if ( this.Goto( wpTable.position ) == EVENT.PATH_SUCCESS )
+				{
+					// Look up the ladder
+					this.AddAimRequest( Priority.High, "facing", Vec3( 0, 0, 1 ) );
+
+					// Get at the middle of that ladder
+					this.Bot.HoldButton( BTN.FORWARD, 2 );
+					sleep( 2 );
+
+					// While maintaining the facing,
+					// strafe left to get off the ladder,
+					// and land on the cabinets floor
+					this.Bot.HoldButton( BTN.STRAFE_L, 1 );
+					sleep( 1 );
+
+					this.ReleaseAimRequest();
+				}
+			}
+		},
+
+		// /bot waypoint_setproperty paththrough Navigation_PT:look_down
+		look_down =
+		{
+			navigate = function()
+			{
+				// Face opposite to the ladder to snap out of it
+				this.AddAimRequest( Priority.High, "facing", Vec3( 0, -1, 0 ) );
+				sleep( .5 );
+				// Look down
+				this.AddAimRequest( Priority.High, "facing", Vec3( 0, 0, -1 ) );
+				sleep( 2 );
+				this.ReleaseAimRequest();
+			}
+		}
+	},
+
+	Roles =
+	{
+		AXIS =
+		{
+			AllBots = true,
+
+			// Dam Top
+			DEFENDER =
+			{
+				crucialClass = CLASS.ENGINEER, // Entry Door + CP
+				numbots = 3
+			},
+
+			// Dam Bottom
+			DEFENDER1 =
+			{
+				AllBots = true,
+				crucialClass = CLASS.ENGINEER, // Explosive Caches
+				numbots = 3,
+				spawnpt = Spawn.AXIS_SPAWN
+			}
+		},
+
+		ALLIES =
+		{
+			AllBots = true,
+
+			// Dam Top
+			ATTACKER =
+			{
+				crucialClass = { CLASS.ENGINEER, CLASS.COVERTOPS }, // Entry Door + CP + Grates
+				numbots = 3
+			},
+
+			// Dam Bottom
+			ATTACKER1 =
+			{
+				AllBots = true,
+				crucialClass = CLASS.ENGINEER, // Explosive Caches (Electric Fence Controls can be focused after)
+				numbots = 3
+			}
+		}
+	},
+
+	Switches =
+	{
+		// /bot waypoint_setproperty paththrough UseSwitch_PT:lift_top_outside
+		lift_top_outside =
+		{
+			AimPosition = Vec3( -145, 190, 230 ), // /bot aim_pos
+			Enabled = false,
+			Priority = 0,
+			Timeout = 22000, // 20s movement + 2s door opening
+			WaypointName = "lift_top_outside",
+
+			ExitConditions = // press the button only when the lift is at bottom position
+			{
+				f = function()
+				{
+					if (Map.liftStatus == Map.LiftStatus.MOVING_DOWN)
+					{
+						if(this){ this.ReleaseAimRequest(); }
+						dowhile (Map.liftStatus == Map.LiftStatus.MOVING_DOWN)
+						{
+							yield();
+						}
+						sleep(5); //wait so that others can enter or exit
+						if(this){ this.AddAimRequest(Priority.High, "position", Map.Switches.lift_top_outside.AimPosition); }
+					}
+					return Map.liftStatus != Map.LiftStatus.BOTTOM; // Return true to stop pressing the button
+				}
+			},
+
+			Wait = function() // wait for slow moving lift
+			{
+				return Map.liftStatus == Map.LiftStatus.TOP; // Return true to finish the paththrough and go through the door
+			}
+		},
+
+		// /bot waypoint_setproperty paththrough UseSwitch_PT:lift_top_inside
+		lift_top_inside =
+		{
+			AimPosition = Vec3( -350, -50, 200 ), // /bot aim_pos
+			Enabled = true,
+			Priority = 0,
+			Timeout = 20000, // 20s movement
+			WaypointName = "lift_top_inside",
+
+			Wait = function()
+			{
+				return Map.liftStatus == Map.LiftStatus.BOTTOM;
+			}
+		},
+
+		// /bot waypoint_setproperty paththrough UseSwitch_PT:lift_bottom_outside
+		lift_bottom_outside =
+		{
+			AimPosition = Vec3( -580, 190, -955 ), // /bot aim_pos
+			Enabled = true,
+			Priority = 0,
+			Timeout = 22000, // 20s movement + 2s door opening
+			WaypointName = "lift_bottom_outside",
+
+			ExitConditions = // press the button only when the lift is at top position
+			{
+				f = function()
+				{
+					if (Map.liftStatus == Map.LiftStatus.MOVING_UP)
+					{
+						if(this){ this.ReleaseAimRequest(); }
+						dowhile (Map.liftStatus == Map.LiftStatus.MOVING_UP)
+						{
+							yield();
+						}
+						sleep(5); //wait so that others can enter or exit
+						if(this){ this.AddAimRequest(Priority.High, "position", Map.Switches.lift_bottom_outside.AimPosition); }
+					}
+					return Map.liftStatus != Map.LiftStatus.TOP; // Return true to stop pressing the button
+				}
+			},
+
+			Wait = function() // wait for slow moving lift
+			{
+				return Map.liftStatus == Map.LiftStatus.BOTTOM; // Return true to finish the paththrough and go through the door
+			}
+		},
+
+		// /bot waypoint_setproperty paththrough UseSwitch_PT:lift_bottom_inside
+		lift_bottom_inside =
+		{
+			AimPosition = Vec3( -350, -50, -935 ), // /bot aim_pos
+			Enabled = false,
+			Priority = 0,
+			Timeout = 20000, // 20s movement
+			WaypointName = "lift_bottom_inside",
+
+			Wait = function()
+			{
+				return Map.liftStatus == Map.LiftStatus.TOP;
+			}
+		}
+	},
+
+	allied_spawn =
+	{
+		Name = "allied_spawn",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function( ent )
+		{
+			Map.Clear_Final_Area_Role_For_Ent( ent );
+		}
+	},
+
+	top_of_dam_spawn =
+	{
+		Name = "top_of_dam_spawn",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function( ent )
+		{
+			Map.Clear_Final_Area_Role_For_Ent( ent );
+		}
+	},
+
+	axis_spawn =
+	{
+		Name = "axis_spawn",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function( ent )
+		{
+			Map.Clear_Final_Area_Role_For_Ent( ent );
+		}
+	},
+
+	Clear_Final_Area_Role_For_Ent = function( ent )
+	{
+		bot = Util.IsBot( ent );
+		if ( !bot ) { return; }
+		Map.Clear_Final_Area_Role_For_Bot( bot );
+	},
+
+	Clear_Final_Area_Role_For_Bot = function( bot )
+	{
+		if ( bot.GetTeam() == TEAM.AXIS && bot.HasRole( ROLE.DEFENDER2 ) )
+		{
+			bot.ClearRoles( ROLE.DEFENDER2);
+			Util.MapDebugPrint( "DEFENDER2 role cleared for " + bot.Name, true );
+			return;
+
+		}
+
+		if ( bot.GetTeam() == TEAM.ALLIES && bot.HasRole( ROLE.ATTACKER2 ) )
+		{
+			bot.ClearRoles( ROLE.ATTACKER2);
+			Util.MapDebugPrint( "ATTACKER2 role cleared for " + bot.Name, true );
+		}
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Built", true );
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Built", true );
+	},
+
+	Explosives_Cache_Built = function( trigger )
+	{
+		entName = GetEntityName( trigger.Entity );
+		if ( entName == "explosives1" )
+		{
+			Util.DisableGoal( "CAMP_Dam_Explosives_South.*" );
+			Util.MapDebugPrint( "South_Explosives_Cache_Built" );
+		}
+		else // explosives2
+		{
+			Util.DisableGoal( "CAMP_Dam_Explosives_North.*" );
+			Util.MapDebugPrint( "North_Explosives_Cache_Built" );
+		}
+	},
+
+	Both_Explosive_Caches_Built = function()
+	{
+		Map.areBothExplosiveCachesBuilt = true;
+
+		Map.Manage_Fence_Way();
+
+		Util.MapDebugPrint( "Both_Explosive_Caches_Built" );
+
+		// Scripted, but does not work...
+		/*sleep( 8 ); // From rjuken.script
+
+		Map.Change_Top_Dam_Flag_Owner( TEAM.AXIS );
+
+		Util.MapDebugPrint( "Top Dam Flag forced to AXIS", true );*/
+	},
+
+	Electric_Fence_Controls_Built = function()
+	{
+		Map.areElectricFenceControlsDestroyed = false;
+
+		Map.Manage_Fence_Way();
+
+		Util.MapDebugPrint( "Electric_Fence_Controls_Built" );
+	},
+
+	Explosive_Trigger_Primer_Built = function()
+	{
+		Map.isExplosiveTriggerBuilt = true;
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Explosive_Trigger_Primer" );
+
+		SetGoalPriority( "CAMP_Explosive_Trigger.*", 0.91 ); // Above PLANT (0.90)
+
+		Util.MapDebugPrint( "Explosive_Trigger_Primer_Built" );
+	},
+
+	Entry_Door_Built = function()
+	{
+		Util.DisableGoal( "ROUTE_Allied_Spawn" );
+
+		Util.MapDebugPrint( "Entry_Door_Built", true );
+	},
+
+	Grate_1_Repair_Built = function()
+	{
+		Util.MapDebugPrint( "Grate_1_Repair_Built", true );
+	},
+
+	Grate_3__Repair_Built = function()
+	{
+		Util.MapDebugPrint( "Grate_3__Repair_Built", true );
+	},
+
+	Grate_4__Repair_Built = function()
+	{
+		Util.DisableGoal( "ROUTE_Grate_4_Pipe_Exit" );
+
+		Wp.SetWaypointFlag( "lift_top_closed_toggle", "closed", false );
+		sleep( .1 );
+		Wp.CheckBlockable();
+
+		Util.MapDebugPrint( "Grate_4__Repair_Built", true );
+	},
+
+	Grate__2_Repair_Built = function()
+	{
+		Util.MapDebugPrint( "Grate__2_Repair_Built", true );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed", true );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed", true );
+	},
+
+	Electric_Fence_Controls_Destroyed = function()
+	{
+		Map.areElectricFenceControlsDestroyed = true;
+
+		Map.Manage_Fence_Way();
+
+		Util.MapDebugPrint( "Electric_Fence_Controls_Destroyed" );
+	},
+
+	Explosive_Trigger_Primer_Destroyed = function()
+	{
+		Map.isExplosiveTriggerBuilt = false;
+		Map.isExplosiveTriggerPrimed = false;
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Explosive_Trigger_Primer" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Explosive_Trigger" );
+
+		if ( !Map.finalAreaTriggerRegionId ) { SetGoalPriority( "CAMP_Explosive_Trigger.*", .51 ); }
+
+		Util.MapDebugPrint( "Explosive_Trigger_Primer_Destroyed" );
+	},
+
+	Entry_Door_Destroyed = function()
+	{
+		Util.EnableGoal( "ROUTE_Allied_Spawn" );
+
+		Util.MapDebugPrint( "Entry_Door_Destroyed", true );
+	},
+
+	Grate_1_Repair_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Grate_1_Repair_Destroyed", true );
+	},
+
+	Grate_3__Repair_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Grate_3__Repair_Destroyed", true );
+	},
+
+	Grate_4__Repair_Destroyed = function()
+	{
+		Wp.SetWaypointFlag( "lift_top_closed_toggle", "closed", true );
+		sleep( .1 );
+		Wp.CheckBlockable();
+
+		Util.EnableGoal( "ROUTE_Grate_4_Pipe_Exit" );
+
+		Util.MapDebugPrint( "Grate_4__Repair_Destroyed" );
+	},
+
+	Grate__2_Repair_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Grate__2_Repair_Destroyed", true );
+	},
+
+	// ---
+
+	topdamflag_Axis_Captured = function()
+	{
+		Map.Change_Top_Dam_Flag_Owner( TEAM.AXIS );
+
+		Util.MapDebugPrint( "topdamflag_Axis_Captured", true );
+	},
+
+	topdamflag_Allies_Captured = function()
+	{
+		Map.Change_Top_Dam_Flag_Owner( TEAM.ALLIES );
+
+		Util.MapDebugPrint( "topdamflag_Allies_Captured", true );
+	},
+
+	Change_Top_Dam_Flag_Owner = function( newOwner )
+	{
+		Map.topDamFlagOwner = newOwner;
+		Map.Manage_Entry_Door_Use_Points();
+	},
+
+	ENTRY_DOOR_USE_POINT_ALLIED_SPAWN_SIDE = Vec3( 95, -1360, 230 ),
+	ENTRY_DOOR_USE_POINT_TOP_DAM_SIDE      = Vec3( 95, -1250, 230 ),
+	ENTRY_DOOR_MAPGOAL = Util.GetGoal( "PLANT_Entry_Door" ),
+
+	Manage_Entry_Door_Use_Points = function()
+	{
+		if ( Map.topDamFlagOwner == TEAM.AXIS )
+		{
+			usePts = Map.ENTRY_DOOR_USE_POINT_ALLIED_SPAWN_SIDE;
+		}
+		else
+		{
+			usePts = Map.ENTRY_DOOR_USE_POINT_TOP_DAM_SIDE;
+		}
+
+		Map.ENTRY_DOOR_MAPGOAL.ClearUsePoints();
+		Map.ENTRY_DOOR_MAPGOAL.AddUsePoint( usePts );
+	},
+
+	// ---
+
+	Entry_Door_Planted = function( trigger )
+	{
+		foreach ( mg in Util.GoalTable( "DEFUSE_Entry_Door_Construction.*" ) )
+		{
+			if ( mg.GetPosition().y < Map.ENTRY_DOOR_MAPGOAL.GetPosition().y )
+			{
+				mg.SetAvailable( TEAM.AXIS, false );
+				Util.MapDebugPrint( mg.GetName() + " disabled because on the Allied side", true );
+			}
+		}
+	},
+
+	Explosive_Trigger_Primed = function()
+	{
+		Map.isExplosiveTriggerPrimed = true;
+
+		Map.Manage_Fence_Way();
+
+		Util.MapDebugPrint( "Explosive_Trigger_Primed" );
+	},
+
+	// ---
+
+	Manage_Fence_Way = function()
+	{
+		isFenceWayClear = Map.areBothExplosiveCachesBuilt && Map.areElectricFenceControlsDestroyed;
+
+		Wp.SetWaypointFlag( "electric_fence", "closed", !isFenceWayClear );
+		sleep( .1 );
+		Wp.CheckBlockable();
+
+		// First, creating/deleting the region trigger
+		if ( Map.areBothExplosiveCachesBuilt && !Map.areElectricFenceControlsDestroyed )
+		{
+			Map.Create_FinalAreaTriggerRegion();
+		}
+		else if ( Map.finalAreaTriggerRegionId )
+		{
+			Map.Delete_FinalAreaTriggerRegion();
+		}
+
+		// Only manage goals here if no final area trigger region...
+		if ( !Map.finalAreaTriggerRegionId )
+		{
+			if ( isFenceWayClear )
+			{
+				Util.EnableGoal( "CAMP_Explosive_Trigger.*" );
+			}
+			else
+			{
+				Util.DisableGoal( "CAMP_Explosive_Trigger.*" );
+			}
+
+			SetAvailableMapGoals( TEAM.ALLIES, isFenceWayClear && !Map.isExplosiveTriggerPrimed, "BUILD_Explosive_Trigger_Primer" );
+			SetAvailableMapGoals( TEAM.ALLIES, isFenceWayClear &&  Map.isExplosiveTriggerPrimed, "SWITCH_Explosive_Trigger"       );
+			SetAvailableMapGoals( TEAM.AXIS  , isFenceWayClear &&  Map.isExplosiveTriggerPrimed, "PLANT_Explosive_Trigger_Primer" );
+		}
+		else if ( Map.isExplosiveTriggerPrimed && Map.FinalAreaTriggerRegion.teamCount[ TEAM.ALLIES ] > 0 )
+		{
+			// ... excepted if Explosive Trigger primed
+			SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_Explosive_Trigger" );
+		}
+	},
+
+	Create_FinalAreaTriggerRegion = function()
+	{
+		if ( !Map.finalAreaTriggerRegionId )
+		{
+			Map.counter = 0;
+			Map.FinalAreaTriggerRegion.counter = 0;
+			Map.FinalAreaTriggerRegion.botList = {};
+			Map.FinalAreaTriggerRegion.teamCount = Map.Init_Trigger_Region_Team_Count();
+			Map.FinalAreaTriggerRegion.teamClassCount = Map.Init_Trigger_Region_Team_Class_Count();
+
+			// Priorities (before region trigger creation & above PLANT [0.90])
+			SetGoalPriority( "BUILD_Explosive_Trigger_Primer", .92 );
+			SetGoalPriority( "CAMP_Explosive_Trigger.*"      , .91 );
+			SetGoalPriority( "PLANT_Explosive_Trigger_Primer", .92 );
+			SetGoalPriority( "SWITCH_Explosive_Trigger"      , .92 );
+
+			Map.finalAreaTriggerRegionId =
+				OnTriggerRegion( AABB( -838.714, 1527.126, 209.125, 3200.875, 3097.082, 507.375 ), Map.FinalAreaTriggerRegion );
+		}
+	},
+
+	Init_Trigger_Region_Team_Count = function()
+	{
+		t = {};
+		t[ TEAM.AXIS ] = 0;
+		t[ TEAM.ALLIES ] = 0;
+
+		return t;
+	},
+
+	Init_Trigger_Region_Team_Class_Count = function()
+	{
+		t = {};
+		foreach ( team in { TEAM.AXIS, TEAM.ALLIES } )
+		{
+			t[ team ] = {};
+			foreach ( class in Util.PlayerClassTable )
+			{
+				t[ team ][ class ] = 0;
+			}
+		}
+
+		return t;
+	},
+
+	Delete_FinalAreaTriggerRegion = function()
+	{
+		DeleteTriggerRegion( Map.finalAreaTriggerRegionId );
+		Map.finalAreaTriggerRegionId = null;
+		foreach ( bot in BotTable ) { Map.Clear_Final_Area_Role_For_Bot( bot ); }
+		ClearGoalRole( { "CAMP_Explosive_Trigger.*", "PLANT_Explosive_Trigger_Primer" }, ROLE.DEFENDER2 );
+		ClearGoalRole( { "CAMP_Explosive_Trigger.*", "BUILD_Explosive_Trigger_Primer", "SWITCH_Explosive_Trigger" }, ROLE.ATTACKER2 );
+
+		// Restoring default priorities...
+		SetGoalPriority( "BUILD_Explosive_Trigger_Primer", .90 );
+		SetGoalPriority( "CAMP_Explosive_Trigger.*"      , .51 ); // ... excepted this one (+.01)
+		SetGoalPriority( "PLANT_Explosive_Trigger_Primer", .81 );
+		SetGoalPriority( "SWITCH_Explosive_Trigger"      , .70 );
+	},
+
+	FinalAreaTriggerRegion =
+	{
+		Name = "FinalAreaTriggerRegion",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function( ent )
+		{
+			Util.MapDebugPrint( GetEntName( ent ) + Util.DebugColorString + " entered aabb trigger", true);
+
+			Map.FinalAreaTriggerRegion.counter += 1;
+			Map.FinalAreaTriggerRegion.teamCount[ GetEntTeam( ent ) ] += 1;
+			Map.FinalAreaTriggerRegion.teamClassCount[ GetEntTeam( ent ) ][ GetEntClass( ent ) ] += 1;
+
+			yield(); // Have Map.FinalAreaTriggerRegion.counter count all ents before calling Process_Final_Area_Trigger_Ent
+
+			Map.Process_Final_Area_Trigger_Ent( ent );
+		},
+		OnExit = function( ent )
+		{
+			Util.MapDebugPrint( GetEntName( ent ) + Util.DebugColorString + " exited aabb trigger", true);
+		}
+	},
+
+	Process_Final_Area_Trigger_Ent = function( ent )
+	{
+		while ( Map.mutex ) { sleep( 1 ); }
+
+		Map.mutex = true;
+
+		Util.MapDebugPrint( "Entering mutex-protected section for " + GetEntName( ent ), true);
+
+		Map.counter += 1;
+		bot = Util.IsBot( ent );
+		if ( bot )
+		{
+			Map.FinalAreaTriggerRegion.botList[ tableCount( Map.FinalAreaTriggerRegion.botList ) ] = bot;
+		}
+
+		if ( Map.FinalAreaTriggerRegion.counter == Map.counter )
+		{
+			Util.MapDebugPrint( "Last ent", true);
+			Map.Print_Final_Area_Trigger_Stats();
+			Map.Manage_Players_Beyond_Active_Electric_Fence();
+		}
+
+		Util.MapDebugPrint( "Exiting mutex-protected section for " + GetEntName( ent ), true);
+
+		Map.mutex = false;
+	},
+
+	// In short: determine what goals are available for what team
+	// If no bot or no goal available, exit or selfkill
+	// ---
+	// If the Explosive Trigger Primer isn't built, leave Allied Engis alive and give them the goal
+	// If it is built, leave any Allied bot alive, to press the trigger
+	// If any Axis bot, stay alive if any Allied bot/player there
+	// If Explosive Trigger Primer built and Axis Engi/Covi, stay alive to destroy it
+	// TODO: Update counters in OnExit (may then selfkill team, etc.) - Later... Perhaps.
+	Manage_Players_Beyond_Active_Electric_Fence = function()
+	{
+		// In all cases, goals beyond it get their role
+		SetGoalRole( { "CAMP_Explosive_Trigger.*", "PLANT_Explosive_Trigger_Primer" }, ROLE.DEFENDER2 );
+		SetGoalRole( { "CAMP_Explosive_Trigger.*", "BUILD_Explosive_Trigger_Primer", "SWITCH_Explosive_Trigger" }, ROLE.ATTACKER2 );
+
+		// If the goals are on and the Electric Fence Controls get built, goals beyond the Fence are on
+		// If there's no bot in the trigger, goals remained untouched here
+		// (roles were also managed further below thus making these enabled goals role-less...)
+		// Since the region trigger is created, they're not managed by Manage_Fence_Way either
+		// Resulting in them being on, with a high priority and unreachable (at least for Allies)
+		// Handle that in this if
+		if ( tableCount( Map.FinalAreaTriggerRegion.botList ) == 0 )
+		{
+			// TODO: When/If the Axis will/get be scripted to temp disable the Fence, don't forget here
+			Util.DisableGoal( "CAMP_Explosive_Trigger.*" );
+			SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Explosive_Trigger_Primer" );
+			SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Explosive_Trigger_Primer" );
+			SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Explosive_Trigger" );
+
+			return;
+		}
+
+		// Local pointers to shorten expressions
+		botList        = Map.FinalAreaTriggerRegion.botList;
+		teamCount      = Map.FinalAreaTriggerRegion.teamCount;
+		teamClassCount = Map.FinalAreaTriggerRegion.teamClassCount;
+
+		axisPresence   = teamCount[ TEAM.AXIS   ] > 0;
+		alliedPresence = teamCount[ TEAM.ALLIES ] > 0;
+
+		bothTeamsThere = axisPresence && alliedPresence;
+		isBuildAvailable = !Map.isExplosiveTriggerBuilt && teamClassCount[ TEAM.ALLIES ][ CLASS.ENGINEER ] > 0;
+		isPlantAvailable = Map.isExplosiveTriggerBuilt && teamClassCount[ TEAM.AXIS ][ CLASS.ENGINEER ] + teamClassCount[ TEAM.AXIS ][ CLASS.COVERTOPS ] > 0;
+
+		if ( !bothTeamsThere )
+		{
+			// If no Plant, Axis selfkill
+			// If no Build nor button, Allies selfkill
+			if ( axisPresence )
+			{
+				if ( !isPlantAvailable )
+				{
+					foreach ( bot in botList )
+					{
+						if ( bot.GetTeam() == TEAM.AXIS )
+						{
+							bot.ExecCommand( "kill" );
+						}
+					}
+					return;
+				}
+			}
+			else if ( !Map.isExplosiveTriggerBuilt && teamClassCount[ TEAM.ALLIES ][ CLASS.ENGINEER ] == 0 )
+			{
+				foreach ( bot in botList )
+				{
+					if ( bot.GetTeam() == TEAM.ALLIES )
+					{
+						bot.ExecCommand( "kill" );
+					}
+				}
+				return;
+			}
+
+			// Fall-through if no selfkill
+		}
+
+		// Manage goals
+		Util.EnableGoal( "CAMP_Explosive_Trigger.*" );
+		SetAvailableMapGoals( TEAM.AXIS, isPlantAvailable, "PLANT_Explosive_Trigger_Primer" );
+		SetAvailableMapGoals( TEAM.ALLIES, isBuildAvailable, "BUILD_Explosive_Trigger_Primer" );
+		SetAvailableMapGoals( TEAM.ALLIES, Map.isExplosiveTriggerPrimed, "SWITCH_Explosive_Trigger" );
+
+		// Manage bots
+		foreach ( bot in botList )
+		{
+			if ( bot.GetTeam() == TEAM.AXIS )
+			{
+				bot.SetRoles( ROLE.DEFENDER2 );
+			}
+			else if ( bot.GetTeam() == TEAM.ALLIES )
+			{
+				bot.SetRoles( ROLE.ATTACKER2 );
+			}
+		}
+	},
+
+	Print_Final_Area_Trigger_Stats = function()
+	{
+		Util.MapDebugPrint( "AXIS count: " + Map.FinalAreaTriggerRegion.teamCount[ TEAM.AXIS ], true);
+		Util.MapDebugPrint( "ALLIES count: " + Map.FinalAreaTriggerRegion.teamCount[ TEAM.ALLIES ], true);
+		Util.MapDebugPrint( "Bot count: " + tableCount( Map.FinalAreaTriggerRegion.botList ), true );
+		foreach ( bot in Map.FinalAreaTriggerRegion.botList )
+		{
+			Util.MapDebugPrint( "-> " + bot.Name, true );
+		}
+	},
+
+	// Top pos:    (-376, 67,  248)
+	// Bottom pos: (-376, 67, -920)
+	// Travel time: almost 20 seconds...
+	Lift_Moving = function( trigger )
+	{
+		// Triggered twice (2 different entities): filter
+		if ( trigger.Entity != Map.liftEntity ) { return; }
+
+		vel = ToVector( trigger.Action );
+		if ( vel.z < 0 )
+		{
+			Util.MapDebugPrint( "Lift goes down", true );
+
+			Map.liftStatus = Map.LiftStatus.MOVING_DOWN;
+			Map.Switches.lift_top_outside.Enabled = true;
+			Map.Switches.lift_top_inside.Enabled = false;
+
+			sleep( 20 );
+
+			if (Map.liftStatus == Map.LiftStatus.MOVING_UP) { return; }
+			Util.MapDebugPrint( "^6Bottom", true );
+
+			Map.liftStatus = Map.LiftStatus.BOTTOM;
+
+			sleep( 2 ); // Wait for bots to exit lift
+
+			if (Map.liftStatus == Map.LiftStatus.MOVING_UP) { return; }
+			Map.Switches.lift_bottom_outside.Enabled = false;
+			Map.Switches.lift_bottom_inside.Enabled = true;
+		}
+		else
+		{
+			Util.MapDebugPrint( "Lift goes up", true );
+
+			Map.liftStatus = Map.LiftStatus.MOVING_UP;
+			Map.Switches.lift_bottom_outside.Enabled = true;
+			Map.Switches.lift_bottom_inside.Enabled = false;
+
+			sleep( 20 );
+
+			if (Map.liftStatus == Map.LiftStatus.MOVING_DOWN) { return; }
+			Util.MapDebugPrint( "^6Top", true );
+
+			Map.liftStatus = Map.LiftStatus.TOP;
+
+			sleep( 2 ); // Wait for bots to exit lift
+
+			if (Map.liftStatus == Map.LiftStatus.MOVING_DOWN) { return; }
+			Map.Switches.lift_top_outside.Enabled = false;
+			Map.Switches.lift_top_inside.Enabled = true;
+		}
+	}
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "The Allies have built an explosives cache!", Map.Explosives_Cache_Built );
+	OnTrigger( "Allies have built both explosive caches!", Map.Both_Explosive_Caches_Built );
+	OnTrigger( "Electric fence controls have been built!", Map.Electric_Fence_Controls_Built );
+	OnTrigger( "The Allies have started the explosive trigger primer!", Map.Explosive_Trigger_Primer_Built );
+	OnTrigger( "Axis team has built the entry door!", Map.Entry_Door_Built );
+	OnTrigger( "Grate #1 has been rebuilt!", Map.Grate_1_Repair_Built );
+	OnTrigger( "Grate #3 has been rebuilt!", Map.Grate_3__Repair_Built );
+	OnTrigger( "Grate #4 has been rebuilt!", Map.Grate_4__Repair_Built );
+	OnTrigger( "Grate #2 has been rebuilt!", Map.Grate__2_Repair_Built );
+
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "Electric fence controls have been destroyed!", Map.Electric_Fence_Controls_Destroyed );
+	OnTrigger( "The trigger primer has been damaged!", Map.Explosive_Trigger_Primer_Destroyed );
+	OnTrigger( "Allied team has destroyed the entry doors!", Map.Entry_Door_Destroyed );
+	OnTrigger( "Grate #1 has been damaged!", Map.Grate_1_Repair_Destroyed );
+	OnTrigger( "Grate #3 has been damaged!", Map.Grate_3__Repair_Destroyed );
+	OnTrigger( "Grate #4 has been damaged!", Map.Grate_4__Repair_Destroyed );
+	OnTrigger( "Grate #2 has been damaged!", Map.Grate__2_Repair_Destroyed );
+
+	OnTrigger( "Axis reclaim the top of the dam!", Map.topdamflag_Axis_Captured );
+	OnTrigger( "Allies capture the the top of the dam!", Map.topdamflag_Allies_Captured );
+
+	OnTrigger( "Planted at Entry Door Construction.", Map.Entry_Door_Planted );
+	OnTrigger( "The Allies have primed the trigger and are ready to blow the dam!", Map.Explosive_Trigger_Primed );
+
+	OnTrigger( "lift_goto", Map.Lift_Moving );
+
+	OnTriggerRegion( AABB( -3858.545, -2037.198,  1141.886, -3621.406, -1357.202,  1396.560), Map.allied_spawn);
+	OnTriggerRegion( AABB(  -764.563,  -431.484,   209.125,  -580.276,   -91.969,   283.125), Map.top_of_dam_spawn);
+	OnTriggerRegion( AABB(   626.934,   125.363, -1334.875,   817.956,   596.465, -1260.875), Map.axis_spawn);
+
+	// Final area numerous unescapable holes
+	OnTriggerRegion( AABB(  1254.407,  3045.168, -139.777,  1292.539, 3083.401, -65.015 ), RegionTrigger.KillTrigger );
+	OnTriggerRegion( AABB(  2902.937,  1969.661, -174.347,  3200.875, 2391.197, 144.117 ), RegionTrigger.KillTrigger );
+	OnTriggerRegion( AABB(  2241.200,  1807.380, -166.875,  2547.936, 1981.146, -84.330 ), RegionTrigger.KillTrigger );
+	OnTriggerRegion( AABB(  2785.729,  1911.683,  125.797,  2823.887, 1949.875, 200.283 ), RegionTrigger.KillTrigger );
+	OnTriggerRegion( AABB(   361.366,  2548.087,   86.396,   399.764, 2586.197, 160.666 ), RegionTrigger.KillTrigger );
+	OnTriggerRegion( AABB(   227.445,  2111.185,   81.879,   268.100, 2469.673, 206.153 ), RegionTrigger.KillTrigger );
+	OnTriggerRegion( AABB( -4864.875, -3200.875,   81.663, -4162.875,   39.470, 794.247 ), RegionTrigger.KillTrigger );
+
+	// ---
+
+	// Remove duplicates
+	Util.RemoveGoal( "BUILD_Entry_Door" );
+	Util.RemoveGoal( "PLANT_Entry_Door_Construction" );
+
+	// Cannot be planted
+	Util.RemoveGoal( "PLANT_Explosive_1" );
+	Util.RemoveGoal( "PLANT_Dam_Explosives_2" );
+
+	// ---
+
+	Util.AddUsePoint( "AMMOCAB_south_ammocabinet", Vec3( -40, -430, 175 ) );
+	Util.AddUsePoint( "HEALTHCAB_south_healthcabinet", Vec3( -40, -360, 175 ) );
+	Util.AddUsePoint( "BUILD_Explosive_1", Vec3( -715, -1325, -1310 ) );
+	Map.Manage_Entry_Door_Use_Points();
+
+	// All these above the Electric Fence Controls
+	// Not PLANT_Grate_4__Repair, or else Covis keep taking the elevator... and finding a balanced range value, meh
+	SetGoalPriority( "BUILD_Explosive_1"     , .82, TEAM.ALLIES, CLASS.ENGINEER  );
+	SetGoalPriority( "BUILD_Dam_Explosives_2", .82, TEAM.ALLIES, CLASS.ENGINEER  );
+
+	// ---
+
+	ClearGoalRole( ".*", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.DEFENDER, ROLE.DEFENDER1 } );
+
+	SetGoalRole(
+		{
+			".*_Command_Post",
+			".*_Grate_.*",
+			".*MG42_.*", // Note: Beware if adding MOBILEMG42 someday
+			"ATTACK_Dam.*",
+			"BUILD_Entry_Door_Construction",
+			"CHECKPOINT_topdamflag",
+			"DEFEND_Dam.*",
+			"PLANT_Entry_Door"
+		},
+		{ ROLE.ATTACKER, ROLE.DEFENDER }
+	);
+
+	SetGoalRole(
+		{
+			".*_Electric_Fence_Controls",
+			"CAMP_Dam_Explosives_.*",
+			"CAMP_Electric_Fence_Controls.*"
+		},
+		{ ROLE.ATTACKER1, ROLE.DEFENDER1 }
+	);
+
+	SetGoalRole(
+		{
+			"BUILD_Explosive_1",
+			"BUILD_Dam_Explosives_2"
+		},
+		{ ROLE.ATTACKER, ROLE.ATTACKER1 }
+	);
+
+	// ---
+
+	// There's just a few goals to disable on map start
+	Util.DisableGoal({
+		".*MG42_.*", // Note: Beware if adding MOBILEMG42 someday
+		"BUILD_Explosive_Trigger_Primer",
+		"CAMP_Explosive_Trigger.*",
+		"PLANT_Explosive_Trigger_Primer",
+		"PLANT_Grate_.*",
+		"ROUTE_Grate_4_Pipe_Exit",
+		"SWITCH_Explosive_Trigger"
+	});
+
+	SetAvailableMapGoals( TEAM.AXIS  , false, "ATTACK_Dam.*" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, { ".*CAB_south_.*cabinet_2", "DEFEND_Dam.*" } );
+	SetAvailableMapGoals( TEAM.ALLIES,  true, "PLANT_Grate_4__Repair" );
+
+	// ---
+
+	// We run a trace because ETLegacy has a different way to order entities...
+	start = Vec3( -375, 70, 375 );
+	end   = Vec3( -375, 70,  90 );
+	tr    = TraceLine( start, end, null, TRACE.SHOT, 0, false );
+	if ( tr.fraction < 1 )
+	{
+		Map.liftEntity = tr.entity;
+		Util.MapDebugPrint( "Lift entity found, ID: " + GetGameIdFromEntity( Map.liftEntity ), true );
+	}
+	else
+	{
+		Util.MapDebugPrint( "Lift entity not found!", 2 );
+	}
+
+	Map.liftStatus = Map.LiftStatus.TOP;
+
+	// ---
+
+	// Grate #4: start detonating the satchel once dropped then immediately jump away in water
+	GetGoal( "PLANT_Grate_4__Repair" ).SatchelFunction = function( _this )
+	{
+		// Select and drop the satchel, then select the detonator
+		_this.AddAimRequest( Priority.High, "facing", Vec3( 0, 0, -1 ) );
+		sleep( .1 );
+		_this.AddWeaponRequest( Priority.High, WEAPON.SATCHEL );
+		sleep( .6 );
+		_this.Bot.PressButton( BTN.ATTACK1 );
+		sleep( .2 );
+		_this.AddWeaponRequest( Priority.High, WEAPON.SATCHEL_DET );
+		sleep( .2 );
+
+		// Look away, jump off the grate while detonating the satchel
+		_this.AddAimRequest( Priority.VeryHigh, "facing", Vec3( 1, 0, 0 ) );
+		sleep( .3 );
+		_this.Bot.HoldButton( BTN.SPRINT, BTN.FORWARD, 1.5 );
+		sleep( .2 );
+		_this.Bot.PressButton( BTN.ATTACK1 );
+		_this.Bot.HoldButton( BTN.JUMP, 1 );
+	};
+
+	// Too much TK, especially around the elevator...
+	WeaponTable.SetWeaponAvailability( CLASS.ENGINEER, WEAPON.CARBINE, false );
+	WeaponTable.SetWeaponAvailability( CLASS.ENGINEER, WEAPON.GPG40  , false );
+
+	Wp.SetWaypointFlag( "electric_fence"        , "closed", true  );
+	Wp.SetWaypointFlag( "lift_top_closed_toggle", "closed", false );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+/*global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		// Dam Bottom goals routing
+		PLANT_Electric_Fence_Controls =
+		{
+			ROUTE_Allied_Spawn =
+			{
+				ROUTE_Grate_4_Pipe_Exit = { Weight = 4 }, // West way
+				ROUTE_Command_Post = {}, // Elevator way
+				ROUTE_Command_Post =
+				{
+					Weight = 2,
+					ROUTE_Grate_4_Pipe_Exit = {} // Dam then Pipe way
+				}
+			}
+		}
+	};
+
+	// Copy Allied Spawn to Dam Top Spawn
+	MapRoutes.PLANT_Electric_Fence_Controls.ROUTE_Dam_Top_Spawn = MapRoutes.PLANT_Electric_Fence_Controls.ROUTE_Allied_Spawn;
+
+	// Copy for all Dam bottom goals
+	MapRoutes[ "CAMP_Dam_Explosives_.*" ] = MapRoutes.PLANT_Electric_Fence_Controls;
+	MapRoutes[ "CAMP_Electric_Fence_Controls.*" ] = MapRoutes.PLANT_Electric_Fence_Controls;
+	MapRoutes.BUILD_Explosive_1 = MapRoutes.PLANT_Electric_Fence_Controls;
+	MapRoutes.BUILD_Dam_Explosives_2 = MapRoutes.PLANT_Electric_Fence_Controls;
+
+	Util.Routes( MapRoutes );
+};*/

@@ -1,0 +1,730 @@
+//==========================================================================================
+//
+//	Prisoner Of War - pow.gm - mp_pow.pk3
+//
+//	Who			When				What
+//------------------------------------------------------------------------------------------
+//	Mateos		02 December 2023	Initial Script
+//
+//==========================================================================================
+//
+
+/****************************************************
+Path mapping and script by Mateos
+Correspondant WAY file hash: -
+Last update: 8th December 2023
+****************************************************/
+
+// Note: Allies will spawn at the Bunker when they own the flag, not the Axis...
+
+/*
+ * TODO:
+ * - More cover spots
+ * - Path through for jumping off from the Bunker to the Steel Bridge area
+ */
+
+global DoorStatus =
+{
+	CLOSED	= 0,
+	OPENING	= 1,
+	OPENED	= 2
+};
+
+global Map =
+{
+	PLANT_WEST_FENCE = "PLANT_Fence",
+	PLANT_EAST_FENCE = "PLANT_Fence_1",
+
+	// ---
+
+	isCampDoorUnlocked	= false,
+	isFilmReturned		= true,
+
+	// Note:
+	// Not going to waypoint the underground jail/mine passage below east bunker/camp,
+	// which makes obj reachable as soon as that very bunker is reachable
+	isCampReachableByAllies = false,
+
+	// All the flags involved in isCampReachableByAllies calculation
+
+	// East front
+	isMainEntranceDestroyed = false,
+	isAnyEastCampEntranceDestroyed = false,
+
+	// West front
+	isSteelBridgeBuilt = false,
+	isWoodenBridgeBuilt = false,
+	isAnyWestCampEntranceDestroyed = false,
+
+	// ---
+
+	Navigation =
+	{
+		// /bot waypoint_setproperty paththrough Navigation_PT:jump
+		jump =
+		{
+			navigate = function( _this )
+			{
+				_this.Bot.HoldButton( BTN.JUMP, 0.5 );
+			}
+		},
+
+		// /bot waypoint_setproperty paththrough Navigation_PT:pick_up_obj
+		pick_up_obj =
+		{
+			EvalFunc = function() // If EvalFunc returns false, navigation and OnExit will not run
+			{
+				// Do nothing if the Film is being taken
+				return Map.isFilmReturned;
+			},
+			navigate = function( _this )
+			{
+				_this.Bot.HoldButton( BTN.CROUCH, 1.0 );
+				_this.AddAimRequest( Priority.High, "facing", Vec3( -0.531, 0.002, -0.847 ) );
+				_this.Bot.PressButton( BTN.USE );
+				sleep( 0.5 );
+				_this.Bot.PressButton( BTN.USE );
+			}
+		}
+	},
+
+	isRear_LagerdoorDoorLocked	= true,
+	isStalaggateDoorLocked		= true,
+	BunkerDoorStatus			= DoorStatus.CLOSED,
+	TunnelEntranceDoorStatus	= DoorStatus.CLOSED,
+	TunnelExitDoorStatus		= DoorStatus.CLOSED,
+	Switches =
+	{
+		// /bot waypoint_setproperty paththrough UseSwitch_PT:bunker_door_inside
+		bunker_door_inside =
+		{
+			Enabled = true,
+			Priority = 0, // Always set to 0 when using path through
+			WaypointName = "bunker_door_inner_switch",
+			Timeout = 3000,
+			AimPosition = Vec3( 5378, 567, -171 ), // Use /bot aim_pos to get aim vector; replaces the unreliable waypoint facing
+			ExitConditions = // Optional; used to continue to press the button until exit conditions are true
+			{
+				f = function( bot )
+				{
+					// Return true to stop pressing the button
+					return Map.BunkerDoorStatus > DoorStatus.CLOSED;
+				}
+			},
+			Wait = function() // Optional; used to have the bot wait a bit for slow moving doors/elevators
+			{
+				// Return true to finish the path through and go through the door
+				return Map.BunkerDoorStatus == DoorStatus.OPENED;
+			}
+		},
+
+		// /bot waypoint_setproperty paththrough UseSwitch_PT:bunker_door_outside
+		bunker_door_outside =
+		{
+			Enabled = true,
+			Priority = 0, // Always set to 0 when using path through
+			WaypointName = "bunker_door_outer_switch",
+			Timeout = 3000,
+			AimPosition = Vec3( 5350, 852, -171 ), // Use /bot aim_pos to get aim vector; replaces the unreliable waypoint facing
+			ExitConditions = // Optional; used to continue to press the button until exit conditions are true
+			{
+				f = function( bot )
+				{
+					// Return true to stop pressing the button
+					return Map.BunkerDoorStatus > DoorStatus.CLOSED;
+				}
+			},
+			Wait = function() // Optional; used to have the bot wait a bit for slow moving doors/elevators
+			{
+				// Return true to finish the path through and go through the door
+				return Map.BunkerDoorStatus == DoorStatus.OPENED;
+			}
+		},
+
+		// /bot waypoint_setproperty paththrough UseSwitch_PT:rear_lagerdoor_door
+		rear_lagerdoor_door =
+		{
+			Enabled = true,
+			Priority = 0, // Always set to 0 when using path through
+			WaypointName = "rear_lagerdoor_switch",
+			Timeout = 3000,
+			AimPosition = Vec3( 1834, -3506, -437 ), // Use /bot aim_pos to get aim vector; replaces the unreliable waypoint facing
+			ExitConditions = // Optional; used to continue to press the button until exit conditions are true
+			{
+				f = function( bot )
+				{
+					// Return true to stop pressing the button
+					return !Map.isRear_LagerdoorDoorLocked;
+				}
+			},
+			Wait = function() // Optional; used to have the bot wait a bit for slow moving doors/elevators
+			{
+				// Return true to finish the path through and go through the door
+				return !Map.isRear_LagerdoorDoorLocked;
+			}
+		},
+
+		// /bot waypoint_setproperty paththrough UseSwitch_PT:stalaggate_door
+		stalaggate_door =
+		{
+			Enabled = true,
+			Priority = 0, // Always set to 0 when using path through
+			WaypointName = "stalaggate_switch",
+			Timeout = 3000,
+			AimPosition = Vec3( -1880, -3664, -430 ), // Use /bot aim_pos to get aim vector; replaces the unreliable waypoint facing
+			ExitConditions = // Optional; used to continue to press the button until exit conditions are true
+			{
+				f = function( bot )
+				{
+					// Return true to stop pressing the button
+					return !Map.isStalaggateDoorLocked;
+				}
+			},
+			Wait = function() // Optional; used to have the bot wait a bit for slow moving doors/elevators
+			{
+				// Return true to finish the path through and go through the door
+				return !Map.isStalaggateDoorLocked;
+			}
+		},
+
+		// /bot waypoint_setproperty paththrough UseSwitch_PT:tunnel_entrance_door
+		tunnel_entrance_door =
+		{
+			Enabled = true,
+			Priority = 0, // Always set to 0 when using path through
+			WaypointName = "tunnel_entrance_switch",
+			Timeout = 3000,
+			AimPosition = Vec3( -1042, 4477, -440 ), // Use /bot aim_pos to get aim vector; replaces the unreliable waypoint facing
+			ExitConditions = // Optional; used to continue to press the button until exit conditions are true
+			{
+				f = function( bot )
+				{
+					// Return true to stop pressing the button
+					return Map.TunnelEntranceDoorStatus > DoorStatus.CLOSED;
+				}
+			},
+			Wait = function() // Optional; used to have the bot wait a bit for slow moving doors/elevators
+			{
+				// Return true to finish the path through and go through the door
+				return Map.TunnelEntranceDoorStatus == DoorStatus.OPENED;
+			}
+		},
+
+		// /bot waypoint_setproperty paththrough UseSwitch_PT:tunnel_exit_door
+		tunnel_exit_door =
+		{
+			Enabled = true,
+			Priority = 0, // Always set to 0 when using path through
+			WaypointName = "tunnel_exit_switch",
+			Timeout = 3000,
+			AimPosition = Vec3( 454, 4822, -256 ), // Use /bot aim_pos to get aim vector; replaces the unreliable waypoint facing
+			ExitConditions = // Optional; used to continue to press the button until exit conditions are true
+			{
+				f = function( bot )
+				{
+					// Return true to stop pressing the button
+					return Map.TunnelExitDoorStatus > DoorStatus.CLOSED;
+				}
+			},
+			Wait = function() // Optional; used to have the bot wait a bit for slow moving doors/elevators
+			{
+				// Return true to finish the path through and go through the door
+				return Map.TunnelExitDoorStatus == DoorStatus.OPENED;
+			}
+		}
+	},
+
+	Axis_Command_Post_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Built", true );
+	},
+
+	Allied_Command_Post_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Built", true );
+	},
+
+	Left_Watchtower_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Left_Watchtower_Built", true );
+	},
+
+	Right_Watchtower_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Right_Watchtower_Built", true );
+	},
+
+	Steelbrigde_Built = function( trigger )
+	{
+		Map.isSteelBridgeBuilt = true;
+
+		Map.CheckCampReachability();
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Woodbrigde" );
+
+		Util.MapDebugPrint( "Steelbrigde_Built" );
+	},
+
+	Woodbrigde_Built = function( trigger )
+	{
+		Map.isWoodenBridgeBuilt = true;
+
+		Map.CheckCampReachability();
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"BUILD_Left_Watchtower",
+			"BUILD_Right_Watchtower",
+			"PLANT_Steelbrigde" // If for some reason the Street doesn't get built
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			Map.PLANT_WEST_FENCE,
+			"PLANT_Stalaggate"
+		});
+
+		Util.MapDebugPrint( "Woodbrigde_Built" );
+	},
+
+	broken_Street_Built = function( trigger )
+	{
+		sleep( 0.1 );
+		Wp.CheckBlockable();
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"BUILD_Command_Post",
+			"CHECKPOINT_tunnel_flag",
+			"PLANT_Command_Post",
+			"PLANT_Steelbrigde"
+		});
+
+		Util.MapDebugPrint( "broken_Street_Built" );
+	},
+
+	Axis_Command_Post_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed", true );
+	},
+
+	Allied_Command_Post_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed", true );
+	},
+
+	// Same wm_announce for both
+	// TODO Disambiguation here as well, for Map flags... No trigger at all in the end
+	Fence_Destroyed = function( trigger )
+	{
+		entName = GetEntityName( trigger.Entity );
+		Util.MapDebugPrint( entName, true );
+
+		Util.MapDebugPrint( "Fence_Destroyed", true );
+	},
+
+	Rear_Lagerdoor_Destroyed = function( trigger )
+	{
+		Map.isAnyEastCampEntranceDestroyed = true;
+
+		Map.CheckCampReachability();
+
+		Util.MapDebugPrint( "Rear_Lagerdoor_Destroyed", true );
+	},
+
+	Secretentrance_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Secretentrance_Destroyed", true );
+	},
+
+	Stalaggate_Destroyed = function( trigger )
+	{
+		Map.isAnyWestCampEntranceDestroyed = true;
+
+		Map.CheckCampReachability();
+
+		Util.MapDebugPrint( "Stalaggate_Destroyed", true );
+	},
+
+	Steelbrigde_Destroyed = function( trigger )
+	{
+		Map.isSteelBridgeBuilt = false;
+
+		Map.CheckCampReachability();
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Woodbrigde" );
+
+		Util.MapDebugPrint( "Steelbrigde_Destroyed" );
+	},
+
+	Tunnelentrance_Destroyed = function( trigger )
+	{
+		Map.isMainEntranceDestroyed = true;
+
+		Map.CheckCampReachability();
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Command_Post",
+			"CHECKPOINT_tunnel_flag",
+			"PLANT_Command_Post",
+			Map.PLANT_EAST_FENCE,
+			"PLANT_Rear_Lagerdoor",
+			//"PLANT_Secretentrance"
+		});
+
+		Util.MapDebugPrint( "Tunnelentrance_Destroyed" );
+	},
+
+	Watchtower_Destroyed = function( trigger )
+	{
+		// Same wm_announce: disambiguation
+		entName = GetEntityName( trigger.Entity );
+		if ( entName == "wachturm1" )
+		{
+			Util.MapDebugPrint( "Left_Watchtower_Destroyed", true );
+		}
+		else if ( entName == "wachturm2" )
+		{
+			Util.MapDebugPrint( "Right_Watchtower_Destroyed", true );
+		}
+		else
+		{
+			Util.MapDebugPrint( format( "Unknown Watch Tower entity name: %s", entName ), 2 );
+		}
+	},
+
+	Woodbrigde_Destroyed = function( trigger )
+	{
+		Map.isWoodenBridgeBuilt = false;
+
+		Map.CheckCampReachability();
+
+		Util.MapDebugPrint( "Woodbrigde_Destroyed", true );
+	},
+
+	broken_Street_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "broken_Street_Destroyed", true );
+	},
+
+	film_Taken = function( trigger )
+	{
+		Map.isFilmReturned = false;
+
+		Maschinengewehr42.ATGunMG( true );
+
+		Util.MapDebugPrint( "film_Taken" );
+	},
+
+	film_Returned = function( trigger )
+	{
+		Map.isFilmReturned = true;
+
+		Maschinengewehr42.ATGunMG( false );
+
+		Util.MapDebugPrint( "film_Returned" );
+	},
+
+	film_Secured = function( trigger )
+	{
+		Util.MapDebugPrint( "film_Secured", true );
+	},
+
+	tunnel_flag_Axis_Captured = function( trigger )
+	{
+		Maschinengewehr42.AxisBunkerNorthMG( true );
+		Maschinengewehr42.AlliedBunkerSouthMG( false );
+
+		Util.MapDebugPrint( "tunnel_flag_Axis_Captured" );
+	},
+
+	tunnel_flag_Allies_Captured = function( trigger )
+	{
+		Maschinengewehr42.AxisBunkerNorthMG( false );
+		Maschinengewehr42.AlliedBunkerSouthMG( true );
+
+		Util.MapDebugPrint( "tunnel_flag_Allies_Captured" );
+	},
+
+	// ---
+
+	CheckCampReachability = function()
+	{
+		Map.isCampReachableByAllies =
+			Map.isMainEntranceDestroyed && Map.isAnyEastCampEntranceDestroyed
+			||
+			Map.isSteelBridgeBuilt && Map.isWoodenBridgeBuilt && Map.isAnyWestCampEntranceDestroyed;
+
+		if ( Map.isCampReachableByAllies )
+		{
+			sleep( 0.1);
+			Wp.CheckBlockable();
+
+			// In case some Allied player sneaked in, or some Axis player pressed the button...
+			SetAvailableMapGoals( TEAM.ALLIES, !Map.isCampDoorUnlocked, "SWITCH_CampTeamDoor" );
+
+			SetAvailableMapGoals( TEAM.ALLIES, Map.isCampDoorUnlocked, {
+				"CAPPOINT_Wooden_Box",
+				"FLAG_film"
+			});
+		}
+	},
+
+	TunnelEntranceDoor_Moving = function ( trigger )
+	{
+		if ( trigger.Action == "opening" )
+		{
+			Map.TunnelEntranceDoorStatus = DoorStatus.OPENING;
+			sleep( 1.25 ); // Wait 1.5 seconds while the door is opening
+			Map.TunnelEntranceDoorStatus = DoorStatus.OPENED;
+			Map.Switches.tunnel_entrance_door.Enabled = false;
+		}
+		else
+		{
+			Map.TunnelEntranceDoorStatus = DoorStatus.CLOSED;
+			Map.Switches.tunnel_entrance_door.Enabled = true;
+		}
+	},
+
+	TunnelExitDoor_Moving = function ( trigger )
+	{
+		if ( trigger.Action == "opening" )
+		{
+			Map.TunnelExitDoorStatus = DoorStatus.OPENING;
+			sleep( 1.25 ); // Wait 1.25 seconds while the door is opening
+			Map.TunnelExitDoorStatus = DoorStatus.OPENED;
+			Map.Switches.tunnel_exit_door.Enabled = false;
+		}
+		else
+		{
+			Map.TunnelExitDoorStatus = DoorStatus.CLOSED;
+			Map.Switches.tunnel_exit_door.Enabled = true;
+		}
+	},
+
+	BunkerDoor_Moving = function ( trigger )
+	{
+		if ( trigger.Action == "opening" )
+		{
+			Map.BunkerDoorStatus = DoorStatus.OPENING;
+			sleep( 1.25 ); // Wait 1.25 seconds while the door is opening
+			Map.BunkerDoorStatus = DoorStatus.OPENED;
+			Map.Switches.bunker_door_inside.Enabled = false;
+			Map.Switches.bunker_door_outside.Enabled = false;
+		}
+		else
+		{
+			Map.BunkerDoorStatus = DoorStatus.CLOSED;
+			Map.Switches.bunker_door_inside.Enabled = true;
+			Map.Switches.bunker_door_outside.Enabled = true;
+		}
+	},
+
+	Rear_LagerdoorDoor_Unlocked = function( trigger )
+	{
+		Map.isRear_LagerdoorDoorLocked = false;
+	},
+
+	Rear_LagerdoorDoor_Locked = function( trigger )
+	{
+		sleep( 5 );
+		Map.isRear_LagerdoorDoorLocked = true;
+	},
+
+	StalaggateDoor_Unlocked = function( trigger )
+	{
+		Map.isStalaggateDoorLocked = false;
+	},
+
+	StalaggateDoor_Locked = function( trigger )
+	{
+		sleep( 5 );
+		Map.isStalaggateDoorLocked = true;
+	},
+
+	// Note: Can be pressed by any team, it will unlock... and no re-lock possible afterward
+	Camp_Door_Unlocked = function( trigger )
+	{
+		if ( Map.isCampDoorUnlocked ) { return; }
+
+		// Disable related SWITCH goal
+		SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_CampTeamDoor" );
+
+		// Remove Axis-only flags for the related camp door
+		Wp.SetWaypointFlag( "camp_team_door", "axis", false );
+
+		Map.isCampDoorUnlocked = true;
+		Map.CheckCampReachability();
+
+		Util.MapDebugPrint( "Camp_Door_Unlocked", true );
+	}
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "The left Watchtower has been constructed.", Map.Left_Watchtower_Built );
+	OnTrigger( "The right Watchtower has been constructed.", Map.Right_Watchtower_Built );
+	OnTrigger( "The Steelbrigde has been constructed.", Map.Steelbrigde_Built );
+	OnTrigger( "The Woodbrigde has been constructed.", Map.Woodbrigde_Built );
+	OnTrigger( "The Street has been constructed.", Map.broken_Street_Built );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "The Fence Entrance has been breached!", Map.Fence_Destroyed ); // Same wm_announce for both
+	OnTrigger( "The Rear-Gate has been breached!", Map.Rear_Lagerdoor_Destroyed );
+	OnTrigger( "The Secret Entrance has been breached!", Map.Secretentrance_Destroyed );
+	OnTrigger( "The Stalaggate has been breached!", Map.Stalaggate_Destroyed );
+	OnTrigger( "Axis have destroyed the Steelbrigde.", Map.Steelbrigde_Destroyed );
+	OnTrigger( "The Main Entrance has been breached!", Map.Tunnelentrance_Destroyed );
+	OnTrigger( "Allied have destroyed the left Watchtower.", Map.Watchtower_Destroyed ); // Yep, map author copy/paste mistake...
+	OnTrigger( "Axis have destroyed the Woodbrigde.", Map.Woodbrigde_Destroyed );
+	OnTrigger( "Allied have destroyed the Street.", Map.broken_Street_Destroyed );
+	OnTrigger( "Allies have stolen Filmpatrone!", Map.film_Taken );
+	OnTrigger( "Flag returned film!", Map.film_Returned );
+	OnTrigger( "Allies captured film_ende", Map.film_Secured ); // Related wm_announce is printed twice
+	OnTrigger( "Axis captured the Flag!", Map.tunnel_flag_Axis_Captured );
+	OnTrigger( "Allies captured the Flag!", Map.tunnel_flag_Allies_Captured );
+
+	// ---
+
+	// Various buttons unlocking doors...
+
+	OnTrigger( "skyport1_Moving", Map.TunnelEntranceDoor_Moving );
+	OnTrigger( "t1279_Moving", Map.TunnelExitDoor_Moving );
+
+	OnTrigger( "t1255_Moving", Map.BunkerDoor_Moving );
+
+	// 0.5s to unlock on func_button
+	// 5.0s to relock on func_door_rotating
+
+	// t1108_Moving opened/closed
+	OnTrigger( "t1106 activated", Map.Rear_LagerdoorDoor_Unlocked );
+	OnTrigger( "t1109 activated", Map.Rear_LagerdoorDoor_Locked );
+
+	// t1267_Moving opened/closed
+	OnTrigger( "t1266 activated", Map.StalaggateDoor_Unlocked );
+	OnTrigger( "t1265 activated", Map.StalaggateDoor_Locked );
+
+	OnTrigger( "t334 activated", Map.Camp_Door_Unlocked );
+
+	// ---
+
+	Util.DisableGoal( ".*", true ); // All but routes
+
+	Cabinets.Init();
+	Cabinets.SetAvailable( TEAM.AXIS, true, Cabinets.CAMP );
+	Cabinets.SetAvailable( TEAM.AXIS, true, Cabinets.EAST_BUNKER );
+	Cabinets.SetAvailable( TEAM.ALLIES, true, Cabinets.ALLIED );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"BUILD_broken_Street",
+		"PLANT_Woodbrigde"
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_Steelbrigde",
+		"PLANT_Tunnelentrance"
+	});
+
+	Util.AddUsePoint( "PLANT_Rear_Lagerdoor", Vec3( 1888, -3385, -458 ) );
+	Util.AddUsePoint( "PLANT_Tunnelentrance", Vec3( 5117, 1407, -207 ) );
+
+	Wp.SetWaypointFlag( "camp_team_door", "axis", true );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+	};
+
+	Util.Routes( MapRoutes );
+};
+
+global Cabinets =
+{
+	ALLIED		= 0,
+	EAST_BUNKER	= 1,
+	CAMP		= 2,
+
+	lookupTable,
+
+	Init = function()
+	{
+		Cabinets.lookupTable = {};
+		Cabinets.lookupTable[ Cabinets.ALLIED		] = { "AMMOCAB_north_ammocabinet_2",	"HEALTHCAB_north_healthcabinet_2"	};
+		Cabinets.lookupTable[ Cabinets.EAST_BUNKER	] = { "AMMOCAB_north_ammocabinet",		"HEALTHCAB_north_healthcabinet"		};
+		Cabinets.lookupTable[ Cabinets.CAMP			] = { "AMMOCAB_north_ammocabinet_1",	"HEALTHCAB_north_healthcabinet_1"	};
+	},
+
+	SetAvailable = function( team, availability, id )
+	{
+		SetAvailableMapGoals( team, availability, Cabinets.lookupTable[ id ] );
+	}
+};
+
+// MOUNTMG42_Allied_Bunker_East_MG42
+// MOUNTMG42_Allied_Bunker_West_MG42
+// MOUNTMG42_Allied_MG42
+// MOUNTMG42_Bunker_North_MG42
+// MOUNTMG42_Bunker_South_MG42
+// MOUNTMG42_Prison_MG42
+// MOUNTMG42_mg42_bank
+global Maschinengewehr42 =
+{
+	AlliedBunkerMGs = function( bAvailability )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, bAvailability, {
+			"MOUNTMG42_Allied_Bunker_East_MG42",
+			"MOUNTMG42_Allied_Bunker_West_MG42",
+			"REPAIRMG42_Allied_Bunker_East_MG42",
+			"REPAIRMG42_Allied_Bunker_West_MG42"
+		});
+	},
+
+	AlliedMG = function( bAvailability )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, bAvailability, {
+			"MOUNTMG42_Allied_MG42",
+			"REPAIRMG42_Allied_MG42"
+		});
+	},
+
+	AxisBunkerNorthMG = function( bAvailability )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, bAvailability, {
+			"MOUNTMG42_Bunker_North_MG42",
+			"REPAIRMG42_Bunker_North_MG42"
+		});
+	},
+
+	AlliedBunkerSouthMG = function( bAvailability )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, bAvailability, {
+			"MOUNTMG42_Bunker_South_MG42",
+			"REPAIRMG42_Bunker_South_MG42"
+		});
+	},
+
+	AxisPrisonMG = function( bAvailability )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, bAvailability, {
+			"MOUNTMG42_Prison_MG42",
+			"REPAIRMG42_Prison_MG42"
+		});
+	},
+
+	ATGunMG = function( bAvailability )
+	{
+		SetAvailableMapGoals( 0, bAvailability, {
+			"MOUNTMG42_mg42_bank",
+			"REPAIRMG42_mg42_bank"
+		});
+	}
+};

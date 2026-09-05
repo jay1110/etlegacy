@@ -1,0 +1,238 @@
+//==========================================================================================
+//
+//  energie.gm
+//
+// Who   	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	20 October 2017	waypoints without script
+//	palota	12 June 2025	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	spawns = {0, {2,3}, {1,4}},
+	doorStatus = {},
+	flagPos = {0, Vec3(-96, -190, -135), Vec3(-210, -45, -135)}, //FLAG_Energie_Crystal position
+	atDoorAABB = {0, AABB(159.125,-439.613,-158.875,240.875,-247.126,54.227), AABB(-239.750,247.125,-158.875,-159.125,469.074,60.387)},
+
+	Wait_At_Door = function(d, vIn, vOut)
+	{
+		this.Goto(this.Bot.GetPosition());
+		for (i=0; i<100; ++i)
+		{
+			if (Map.doorStatus[d])
+			{
+				for (i=0; i<50; ++i)
+				{
+					//go through the door
+					if (this.Bot.MoveTowards(vIn))
+					{
+						//go to the energie crystal
+						this.Goto(Map.flagPos[this.Bot.GetTeam()], 15);
+						return;
+					}
+					sleep(0.1);
+				}
+				break;
+			}
+			sleep(0.5);
+		}
+		Util.MapDebugPrint("Wait_At_Door " + d + " timeout ", 1);
+		this.Goto(vOut);
+	},
+
+	Wait_At_Switch = function(d, v)
+	{
+		this.Goto(v);
+		team = this.Bot.GetTeam();
+		Util.MapDebugPrint("Wait_At_Switch " + d + " " + Util.TeamName(team), 1);
+		aabb = Map.atDoorAABB[d];
+		name = "SWITCH_Crawl_" + d;
+		dowhile (this.Bot.GetMapGoalName() == name)
+		{
+			for(e=0; e<64; ++e)
+			{
+				if (EntityIsValid(e) && GetEntTeam(e) == team && aabb.Contains(GetEntPosition(e)))
+				{
+					if (Map.doorStatus[d])
+					{
+						//already opened
+						sleep(5);
+						break;
+					}
+					//press the switch
+					return;
+				}
+			}
+			sleep(1);
+		}
+	},
+
+	Navigation =
+	{
+		door1 =
+		{
+			navigate = function() { f=Map.Wait_At_Door; this:f(1, Vec3(180, -180, -135), Vec3(0, -1240, 24)); },
+		},
+		door2 =
+		{
+			navigate = function() { f=Map.Wait_At_Door; this:f(2, Vec3(-180, 180, -135), Vec3(0, 1240, 24)); },
+		},
+		switch1 =
+		{
+			EvalFunc = function()
+			{
+				return this.Bot.GetMapGoalName() == "SWITCH_Crawl_1";
+			},
+			navigate = function() { f=Map.Wait_At_Switch; this:f(1, Vec3(89, -290, 176)); },
+		},
+		switch2 =
+		{
+			EvalFunc = function()
+			{
+				return this.Bot.GetMapGoalName() == "SWITCH_Crawl_2";
+			},
+			navigate = function() { f=Map.Wait_At_Switch; this:f(2, Vec3(-89, 290, 176)); },
+		},
+	},
+
+	Switches =
+	{
+		//one switch inside the lab, it opens both doors
+		door1 =
+		{
+			Enabled = true,
+			Priority = 0, //paththrough
+			WaypointName = "switch",
+			Timeout = 3000,
+			AimPosition = Vec3(128.005, 235.875, -121.132),
+		},
+		door2 =
+		{
+			Enabled = true,
+			Priority = 0, //paththrough
+			WaypointName = "switch",
+			Timeout = 3000,
+			AimPosition = Vec3(128.005, 235.875, -121.132),
+		},
+	},
+
+	Door_Open = function(d)
+	{
+		if (Map.doorStatus[d]) {
+			return;
+		}
+		Util.MapDebugPrint("Door_Open " + d, 1);
+		Map.doorStatus[d] = 1;
+		s = Map.Switches["door" + d];
+		s.Enabled = false;
+		sleep(4);
+		s.Enabled = true;
+		sleep(1);
+		Map.doorStatus[d] = 0;
+		Util.MapDebugPrint("Door_Closed " + d, 1);
+	},
+
+	Captured = function(x)
+	{
+		Util.DisableGoal("CAPPOINT_" + x);
+		Util.MapDebugPrint("Captured_" + x);
+	},
+
+	Axis_Ready = function()
+	{
+		Util.EnableGoal("CAMP_transmit.*");
+		SetAvailableMapGoals(TEAM.AXIS, false, "SWITCH.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Axis_Generator");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "MOBILEMG42.*");
+		Util.MapDebugPrint("Axis_Ready");
+	},
+
+	Allies_Ready = function()
+	{
+		Util.EnableGoal("CAMP_transmit.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "SWITCH.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "BUILD_Allied_Generator");
+		SetAvailableMapGoals(TEAM.AXIS, false, "MOBILEMG42.*");
+		Util.MapDebugPrint("Allies_Ready");
+	},
+
+	Axis_Generator = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "BUILD_Axis_Generator");
+		SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Axis_Transmitter");
+		SetGoalPriority("CAMP_transmit.*", 0.85, TEAM.ALLIES);
+		Util.MapDebugPrint("Axis_Generator");
+	},
+
+	Allies_Generator = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, false, "BUILD_Allied_Generator");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "BUILD_Allied_Transmitter");
+		SetGoalPriority("CAMP_transmit.*", 0.85, TEAM.AXIS);
+		Util.MapDebugPrint("Allies_Generator");
+	},
+
+	Axis_Online = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "BUILD_Axis_Transmitter");
+		Util.MapDebugPrint("Axis_Online");
+	},
+
+	Allies_Online = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, false, "BUILD_Allied_Transmitter");
+		Util.MapDebugPrint("Allies_Online");
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("^iAxis have increase her Energie!", function(){ Map.Captured("x4"); });
+	OnTrigger("^iAxis have found new Energie!", function(){ Map.Captured("x5"); });
+	OnTrigger("^iAxis powered her Energie!", function(){ Map.Captured("x6"); });
+	OnTrigger("^iAxis became new Energie!", function(){ Map.Captured("x3"); });
+	OnTrigger("^iAxis fill her Energie!", function(){ Map.Captured("x2"); });
+	OnTrigger("^iAxis grow her Energie!", function(){ Map.Captured("x1"); });
+	OnTrigger("^iAllies have increase her Energie!", function(){ Map.Captured("l3"); });
+	OnTrigger("^iAllies have found new Energie!", function(){ Map.Captured("l2"); });
+	OnTrigger("^iAllies powered her Energie!", function(){ Map.Captured("l1"); });
+	OnTrigger("^iAllies became new Energie!", function(){ Map.Captured("l4"); });
+	OnTrigger("^iAllies fill her Energie!", function(){ Map.Captured("l5"); });
+	OnTrigger("^iAllies grow her Energie!", function(){ Map.Captured("l6"); });
+	OnTrigger("^iAxis have enough Energie and is ready to build the Transmittersystem!", Map.Axis_Ready);
+	OnTrigger("^iAllies have enough Energie and is ready to build the Transmittersyste", Map.Allies_Ready);
+	OnTrigger("^iAxis team has build the Generator!", Map.Axis_Generator);
+	OnTrigger("^iAllied team has build the Generator!", Map.Allies_Generator);
+	OnTrigger("^iAxis team has build the Transmitter and is Online!", Map.Axis_Online);
+	OnTrigger("^iAllied team has build the Transmitter and is Online!", Map.Allies_Online);
+	OnTrigger("door01_start", function(){ Map.Door_Open(1); }); //south door
+	OnTrigger("door02_start", function(){ Map.Door_Open(2); }); //north door
+
+
+	Util.DisableGoal({ "BUILD.*_Transmitter", "BUILD.*_Generator", "CAMP.*" });
+	Util.LimitToTeam(TEAM.AXIS, { "CAPPOINT_x.*", "MOUNTMG42_mg_l.*" });
+	Util.LimitToTeam(TEAM.ALLIES, { "CAPPOINT_l.*", "MOUNTMG42_mg_x.*" });
+
+	SetGoalPriority("SWITCH.*", 0.85);
+
+	Util.LimitToClass( "PLANT_Allied_Command_Post", TEAM.AXIS, CLASS.COVERTOPS );
+	Util.LimitToClass( "PLANT_Axis_Command_Post", TEAM.ALLIES, CLASS.COVERTOPS );
+
+	Util.SetMaxUsers(1, "SWITCH.*");
+	Util.SetMaxUsers(1, "MOUNTMG42.*");
+	Util.SetMaxUsers(1, ".*_Command_Post");
+	Util.SetMaxUsersInProgress(4, "FLAG.*");
+
+	SetMapGoalProperties("CAMP.*", {MinCampTime=20, MaxCampTime=60});
+	SetMapGoalProperties("MOUNTMG42.*", {MinCampTime=30, MaxCampTime=200});
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.ChangeSpawnPoint(Map.spawns[bot.GetTeam()][RandInt(0, 1)]);
+};

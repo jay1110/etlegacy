@@ -1,0 +1,967 @@
+//==========================================================================================
+//
+//  Gold Finger - Snow (Final) - goldfinger.gm
+//
+//  Who         When            What
+//------------------------------------------------------------------------------------------
+//  Mateos      26 August 2017  Initial script.
+//
+//==========================================================================================
+//
+
+/****************************************************
+Path mapping and script by Mateos
+Correspondant WAY file hash: -
+Last update: 30th July 2025
+****************************************************/
+
+global Map =
+{
+    // ************************************************************************
+
+    // Counters to define which goal got destroyed (same wm_announce)
+    stairCounter = 0,
+    goldLadderCounter = 0,
+
+    // Variables to know if the Gold is reachable
+    isEntryToGoldRoomBuilt = false,
+    isEntryToTowerWallBuilt = false,
+    isStairNearGoldBuilt = false,
+    isGoldLadderBuilt = false,
+
+    iStolenGoldInProgress = 0,
+
+    // Defined at Map level so it's reachable by the elevator's bottom switch
+    // Used to check if a bot is stuck inside the shaft (while not being in the elevator itself)
+    // If below, handled by the switch to exit the shaft (and stop spamming the call button)
+    // If above, the bot will selfkill; handled by the ManageElevatorStuckage thread
+    elevatorEntity,
+
+    // Just to avoid entering multiple times in Elevator_Moving
+    // when the movement can't finish due to stuff being in the shaft...
+    elevatorMovingMutex = false,
+
+    // Elevator status: Bottom, Moving Up, Top or Moving Down
+    elevatorStatus = "Bottom",
+
+    // Hatch entity, to track its position during a path through
+    hatchEntity,
+
+    // Goal name disambiguation
+    BUILD_Gold_Ladder = "BUILD_gold_stair",
+    PLANT_Gold_Ladder = "PLANT_gold_stair",
+
+    // Table containing landmine entities to ignore for Axis
+    Mines = table(),
+
+	// ************************************************************************
+
+    /**
+     * Completes IsGoldReachable()
+     * The only way to get out of that room is to have the inner ladder built,
+     * and either the door leading to it being a normal door (not reinforced by Axis)
+     * or the entry to Gold Room isn't built (goes through Axis spawn though)
+     * Used for Gold Room goals: BUILD/PLANT_Stair_near_Gold and FLAG_escape_with_Gold_to_truck
+     */
+    CanEscapeGoldRoom = function()
+    {
+        return Map.isGoldLadderBuilt && (!Map.isEntryToGoldRoomBuilt || !Map.isEntryToTowerWallBuilt);
+    },
+
+    /**
+     * Checks if the bot is either in the elevator or not
+     * Returns true if so, false otherwise
+     */
+    IsBotInsideElevator = function( bot )
+    {
+        elevatorEntityAABB = GetEntWorldAABB( Map.elevatorEntity );
+        botEyePosition = GetEntEyePosition( bot.GetGameEntity() );
+        return elevatorEntityAABB.Contains( botEyePosition );
+    },
+
+    /**
+     * Checks if the Gold is reachable
+     * Returns true if so, false otherwise
+     */
+    IsGoldReachable = function()
+    {
+        // Stair near Gold isn't built
+        if ( !Map.isStairNearGoldBuilt )
+        {
+           return false;
+        }
+
+        // Room is totally closed
+        if ( Map.isEntryToGoldRoomBuilt && Map.isEntryToTowerWallBuilt )
+        {
+            return false;
+        }
+
+        // At this point, either the bottom way or the top way
+        return !Map.isEntryToGoldRoomBuilt || Map.isGoldLadderBuilt;
+    },
+
+    /**
+     * Manages CAMP goals availability for both teams
+     * Also tower cabinets... but shush.
+     */
+    ManageCampGoals = function()
+    {
+        //Util.MapDebugPrint( "Map.iStolenGoldInProgress = " + Map.iStolenGoldInProgress, true );
+
+        Util.DisableGoal( "CAMP_.*" );
+        Util.EnableGoal( "CAMP_GetOutOfHereStalker" );
+
+        Cabinets.Tower( !Map.isEntryToTowerWallBuilt );
+
+        if ( Map.iStolenGoldInProgress > 0 )
+        {
+            Util.EnableGoal( "CAMP_Truck.*" );
+        }
+        else
+        {
+            Util.EnableGoal( "CAMP_InsideBottom.*" );
+            Util.EnableGoal( "CAMP_Tower.*" );
+
+            if ( !Map.isEntryToTowerWallBuilt )
+            {
+                Util.EnableGoal( "CAMP_InsideTop.*" );
+            }
+        }
+    },
+
+    /**
+     * Makes the Allies focus on the in-progress FLAG goal(s)
+     * Manages the FLAG goals so the bots only steal one gold,
+     * but can still take the dropped ones,
+     * since they're enabled upon dropping them
+     */
+    ManageFlagGoals = function()
+    {
+        isGoldBeingStolen = Map.iStolenGoldInProgress > 0;
+        SetAvailableMapGoals( TEAM.ALLIES, !isGoldBeingStolen, "FLAG_escape_with_Gold_to_truck" );
+    },
+
+    /**
+     * Either enables or disables the Gold room goals depending on its reachability
+     */
+    SetGoldRoomAvailability = function()
+    {
+        // blockwall/blockbridge flags refresh
+        sleep( 1 );
+
+        SetAvailableMapGoals( TEAM.AXIS, !Map.isEntryToTowerWallBuilt || !Map.isEntryToGoldRoomBuilt, Map.PLANT_Gold_Ladder );
+        SetAvailableMapGoals( TEAM.AXIS, Map.CanEscapeGoldRoom(), "PLANT_Stair_near_Gold" );
+
+        SetAvailableMapGoals( TEAM.ALLIES, Map.CanEscapeGoldRoom(), "BUILD_Stair_near_Gold" );
+        SetAvailableMapGoals( TEAM.ALLIES, Map.CanEscapeGoldRoom() && Map.IsGoldReachable() && Map.iStolenGoldInProgress == 0, "FLAG_escape_with_Gold_to_truck" );
+    },
+
+    /**
+     * Opens or closes the waypoints at the bottom and at the top of the inner ladder
+     */
+    SetInnerLadderReachability = function( bReachability )
+    {
+        Wp.SetWaypointFlag( "InnerLadder", "closed", !bReachability );
+    },
+
+    /**
+     * Opens or closes the waypoints at the bottom and at the top of the outer ladder
+     */
+    SetOuterLadderReachability = function( bReachability )
+    {
+        Wp.SetWaypointFlag( "OuterLadderBottom", "closed", !bReachability );
+        Wp.SetWaypointFlag( "OuterLadderTop", "closed", !bReachability );
+    },
+
+    /**
+     * Manages the waypoints before and after the Entry to Tower Wall
+     * At map start, it's a simple door (door flags);
+     * If Axis builds it, it turns into a destructible (blockwall flags)
+     */
+    SetEntryToTowerWallFlags = function( bAvailable )
+    {
+        Wp.SetWaypointFlag( "EntryToTowerWallInside", "door", bAvailable );
+        Wp.SetWaypointFlag( "EntryToTowerWallOutside", "door", bAvailable );
+
+        Wp.SetWaypointFlag( "EntryToTowerWallInside", "blockwall", !bAvailable );
+        Wp.SetWaypointFlag( "EntryToTowerWallOutside", "blockwall", !bAvailable );
+    },
+
+    /**
+     * Indicates if a Medic bot should exit a paththrough to revive a mate
+     * Returns true if so, false otherwise or if not a bot (for Switches tables)
+     */
+    ShouldBotExitPathThrough = function( bot )
+    {
+        if ( !bot ) { return false; }
+
+        // TODO: For someday... other goals (tested, often dangerous)
+        if ( bot.GetClass() == CLASS.MEDIC && bot.GetHighLevelGoalName() == "REVIVE" )
+        {
+            goalName = bot.GetMapGoalName();
+            heightDifference = Abs( bot.GetPosition().z - GetGoal( goalName ).GetPosition().z );
+            if ( heightDifference < 550 )
+            {
+                Util.MapDebugPrint( bot.Name + "^b exits the paththrough to revive " + goalName + "^b (height diff: " + heightDifference + ")", true );
+                return true;
+            }
+
+            Util.MapDebugPrint( bot.Name + "^b will not exit the paththrough to revive " + goalName + "^b (height diff: " + heightDifference + ")", true );
+        }
+
+        return false;
+    },
+
+    // ************************************************************************
+
+    Navigation =
+    {
+        elevator_top =
+        {
+            navigate = function( _this )
+            {
+                // The bot is inside the elevator, wait until it is a the bottom
+				_this.Goto( _this.Bot.GetPosition() );
+				while ( Map.elevatorStatus != "Bottom" )
+                {
+					// Let Medics do their job
+                    if ( Map.ShouldBotExitPathThrough( _this.Bot ) )
+                    {
+                        return;
+                    }
+
+                    _this.Bot.MoveTowards( _this.Bot.GetPosition() );
+					yield();
+				}
+            },
+        },
+
+        elevator_bottom =
+        {
+            navigate = function( _this )
+            {
+            	if ( Map.elevatorStatus != "Bottom" )
+            	{
+	                // The bot is in front of door, wait until the elevator is a the bottom
+                    _this.Goto( _this.Bot.GetPosition() );
+					while ( Map.elevatorStatus != "Bottom" )
+                    {
+                        // Let Medics do their job
+                        if ( Map.ShouldBotExitPathThrough( _this.Bot ) )
+                        {
+                            return;
+                        }
+
+						yield();
+					}
+				}
+
+                // Open the door
+                _this.AddAimRequest( Priority.High, "facing", Vec3( 0, 1, 0 ) );
+                _this.Bot.PressButton( BTN.USE );
+                _this.Bot.ResetStuckTime(); // Don't jump
+            },
+        },
+
+        // When exiting the elevator at ground level
+        getoutofherestalker =
+        {
+            navigate = function( _this )
+            {
+                if ( !_this.Bot.HasRole( ROLE.AMBUSHER ) )
+                {
+                    //Util.MapDebugPrint( _this.Bot.Name + "^b doesn't have ROLE.AMBUSHER, exiting path through", true );
+                    return;
+                }
+
+                _this.Bot.ClearRoles( ROLE.AMBUSHER );
+                //Util.MapDebugPrint( _this.Bot.Name + "^b got his role removed", true );
+            },
+        },
+
+        jump =
+        {
+            navigate = function( _this )
+            {
+                // Since this kind of navigation doesn't work well with waypoints
+                wpTable = {};
+				Wp.GetWaypointByName( "top", wpTable );
+
+                // With a good jump while going forward to pass the big step
+                _this.AddAimRequest( Priority.High, "facing", wpTable.facing );
+ 				_this.Bot.HoldButton( BTN.FORWARD, 1 );
+
+                _this.Bot.HoldButton( BTN.JUMP, .5 );
+            },
+        },
+
+        // /bot waypoint_setproperty paththrough Navigation_PT:ladder
+        ladder =
+        {
+            navigate = function( _this )
+            {
+                // Fall a bit
+                sleep( 1 );
+
+                // Get on the ladder
+                _this.AddAimRequest( Priority.High, "facing", Vec3( 0, -1, 0 ) );
+                _this.Bot.HoldButton( BTN.FORWARD, .5 );
+                sleep( .5 );
+
+                // Get to the bottom
+                _this.ReleaseAimRequest();
+                _this.AddAimRequest( Priority.High, "movedirection" );
+
+                checkInterval = .5;
+                while ( _this.Bot.GetPosition().z > 100 )
+                {
+                    _this.Bot.HoldButton( BTN.FORWARD, checkInterval );
+                    sleep( checkInterval );
+                }
+
+                // Get off the ladder, by looking the other way
+                _this.ReleaseAimRequest();
+                _this.AddAimRequest( Priority.High, "facing", Vec3( 0, 1, 0 ) );
+            },
+        },
+
+        // The hatch at the top of the main tower
+        // /bot waypoint_setproperty paththrough Navigation_PT:entry_to_tower_wall_inside
+        entry_to_tower_wall_inside =
+        {
+            navigate = function( _this )
+            {
+                // Stay at the entrance
+                wpTable = {};
+				Wp.GetWaypointByName( "EntryToTowerWallInside", wpTable );
+                _this.Goto( wpTable.position );
+
+                // Wait a bit until the hatch opens
+                hatchCenterPointX = .0;
+                while ( hatchCenterPointX != 65 )
+                {
+                    sleep( .25 );
+                    hatchCenterPointX = GetEntWorldAABB( Map.hatchEntity ).CenterPoint().x;
+
+                    // If the hatch is closed
+                    // Happens in 2 cases:
+                    // - When the bot failed to get down it;
+                    // - When a bot enters the path through while it starts closing
+                    // Get back to the entrance then exit the path through...
+                    if ( hatchCenterPointX == -7 )
+                    {
+                        _this.Goto( wpTable.position );
+                        return;
+                    }
+                }
+
+                // Move towards the next waypoint, named 'down'
+                wpTable = {};
+				Wp.GetWaypointByName( "down", wpTable );
+                _this.Goto( wpTable.position );
+            },
+        },
+    },
+
+    // ************************************************************************
+
+    Switches =
+ 	{
+        // /bot waypoint_setproperty paththrough UseSwitch_PT:elevator_bottom
+ 		elevator_bottom =
+ 		{
+ 			Enabled = true,
+ 			Priority = 0,
+ 			WaypointName = "elevator_bottom",
+ 			AimPosition = Vec3( -12, -250, 67 ),
+			ExitConditions =
+			{
+				f = function( bot )
+                {
+                    return
+                        Map.elevatorStatus == "Moving up"
+                        || !Map.IsBotInsideElevator( bot )
+                        || Map.elevatorStatus == "Bottom" && Map.ShouldBotExitPathThrough( bot );
+				}
+			},
+ 			Wait = function()
+ 			{
+                // No ShouldBotExitPathThrough here, because it's the wait during the elevator movement...
+                return Map.elevatorStatus == "Top";
+ 			},
+ 		},
+
+        // /bot waypoint_setproperty paththrough UseSwitch_PT:elevator_top_button
+ 		elevator_top_button =
+ 		{
+ 			Enabled = true,
+ 			Priority = 0,
+ 			WaypointName = "elevator_top_button",
+ 			Timeout = 15000, // Wait while the elevator is moving down
+ 			AimPosition = Vec3( -80, -235, 1385 ),
+			ExitConditions =
+			{
+				f = function( bot )
+                {
+					return
+                        Map.elevatorStatus == "Top"
+                        || Map.elevatorStatus == "Moving up"
+                        || Map.ShouldBotExitPathThrough( bot );
+				}
+			},
+ 			Wait = function()
+ 			{
+                return Map.elevatorStatus == "Top" && !Map.ShouldBotExitPathThrough( bot );
+ 			},
+ 		},
+ 	},
+
+    // ************************************************************************
+
+    /**
+     * Updates the elevator status.
+     * Handles switches as well.
+     */
+    Elevator_Moving = function( trigger )
+    {
+        if ( Map.elevatorMovingMutex )
+        {
+            Util.MapDebugPrint( "Already running an instance, updating 'moving' status then exiting", true );
+
+            if ( Map.elevatorStatus == "Moving down" )
+            {
+                Map.elevatorStatus = "Moving up";
+            }
+            else
+            {
+                Map.Switches.elevator_top_button.Enabled = true;
+                Map.elevatorStatus = "Moving down";
+            }
+
+            return;
+        }
+
+        // At this point, the movement started either from top or bottom
+        Map.elevatorMovingMutex = true;
+
+        // Disable the bottom switch while the elevator is moving
+        Map.Switches.elevator_bottom.Enabled = false;
+
+        if ( Map.elevatorStatus == "Bottom" )
+        {
+        	Map.elevatorStatus = "Moving up";
+            Util.MapDebugPrint( "Elevator moving up", true );
+		}
+        else
+        {
+        	Map.elevatorStatus = "Moving down";
+			Map.Switches.elevator_top_button.Enabled = true;
+            Util.MapDebugPrint( "Elevator moving down", true );
+		}
+
+        // Let the movement finish
+        elevatorCenterPointZ = .0;
+        while ( elevatorCenterPointZ != 73 && elevatorCenterPointZ != 1391 )
+        {
+            sleep( .5 );
+            elevatorCenterPointZ = GetEntWorldAABB( Map.elevatorEntity ).CenterPoint().z;
+            yield();
+        }
+
+        if ( elevatorCenterPointZ == 1391 )
+        {
+            Map.elevatorStatus = "Top";
+			Map.Switches.elevator_top_button.Enabled = false;
+            Util.MapDebugPrint( "Elevator at top", true );
+        }
+        else
+        {
+            Map.elevatorStatus = "Bottom";
+            Util.MapDebugPrint( "Elevator at bottom", true );
+        }
+
+        // Re-enable the bottom switch if the elevator is actually at the bottom
+        Map.Switches.elevator_bottom.Enabled = Map.elevatorStatus == "Bottom";
+
+        Map.elevatorMovingMutex = false;
+    },
+
+    /**
+     * When the elevator is at the bottom and several bots try to get inside at once,
+     * it can happen that one bot or more couldn't get in before the elevator goes to the top.
+     * Since these bots were past the path through supposed to make them wait,
+     * they were trapped, standing below the elevator forever, spamming the call button.
+     * This function makes these bots get outside the bottom in this particular case.
+     */
+    Below_Elevator =
+    {
+        Name = "Below_Elevator",
+        TriggerOnClass = CLASS.ANYPLAYER,
+        OnEnter = function( ent )
+        {
+            bot = Util.IsBot( ent );
+
+            // If real player...
+            if ( !bot ) { return; }
+
+            if ( !Map.IsBotInsideElevator( bot ) )
+            {
+                bot.SetRoles( ROLE.AMBUSHER );
+                //Util.MapDebugPrint( bot.Name + "^b was trapped below the elevator and was given a role", true );
+            }
+        },
+    },
+
+    // ************************************************************************
+
+    // *** TRIGGER CALLBACKS ***
+    Allied_Command_Post_Built = function( trigger )
+    {
+        Util.MapDebugPrint( "Allied_Command_Post_Built", true );
+    },
+
+    Axis_Command_Post_Built = function( trigger )
+    {
+        Util.MapDebugPrint( "Axis_Command_Post_Built", true );
+    },
+
+    Entry_to_Gold_Room_Built = function( trigger )
+    {
+        Map.isEntryToGoldRoomBuilt = true;
+        Map.SetGoldRoomAvailability();
+
+        Util.MapDebugPrint( "Entry_to_Gold_Room_Built" );
+    },
+
+    Entry_to_Tower_wall_Built = function( trigger )
+    {
+        Map.isEntryToTowerWallBuilt = true;
+
+        Map.ManageCampGoals();
+        Map.SetGoldRoomAvailability();
+
+        Map.SetEntryToTowerWallFlags( false );
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, Map.BUILD_Gold_Ladder );
+
+        Util.MapDebugPrint( "Entry_to_Tower_wall_Built" );
+    },
+
+    Ladder_Built = function( trigger )
+    {
+        Map.SetOuterLadderReachability( true );
+
+        Util.MapDebugPrint( "Ladder_Built", true );
+    },
+
+    Stair_near_Gold_Built = function( trigger )
+    {
+        Map.isStairNearGoldBuilt = true;
+        Map.stairCounter = 0;
+
+        Map.SetGoldRoomAvailability();
+
+        Util.MapDebugPrint( "Stair_near_Gold_Built" );
+    },
+
+    gold_stair_Built = function( trigger )
+    {
+        Map.goldLadderCounter = 0;
+        Map.isGoldLadderBuilt = true;
+
+        Map.SetInnerLadderReachability( true );
+        Map.SetGoldRoomAvailability();
+
+        Util.MapDebugPrint( "gold_stair_Built" );
+    },
+
+    mg42_Built = function( trigger )
+    {
+        Util.EnableGoal( "MOUNTMG42_mg42" );
+
+        Util.MapDebugPrint( "mg42_Built" );
+    },
+
+    Allied_Command_Post_Destroyed = function( trigger )
+    {
+        Util.MapDebugPrint( "Allied_Command_Post_Destroyed", true );
+    },
+
+    Axis_Command_Post_Destroyed = function( trigger )
+    {
+        Util.MapDebugPrint( "Axis_Command_Post_Destroyed", true );
+    },
+
+    Entry_to_Gold_Room_Destroyed = function( trigger )
+    {
+        Map.isEntryToGoldRoomBuilt = false;
+        Map.SetGoldRoomAvailability();
+
+        Util.MapDebugPrint( "Entry_to_Gold_Room_Destroyed" );
+    },
+
+    Entry_to_Tower_wall_Destroyed = function( trigger )
+    {
+        Map.isEntryToTowerWallBuilt = false;
+
+        Map.ManageCampGoals();
+        Map.SetGoldRoomAvailability();
+
+        Map.SetEntryToTowerWallFlags( true );
+
+        SetAvailableMapGoals( TEAM.ALLIES, true, Map.BUILD_Gold_Ladder );
+
+        Util.MapDebugPrint( "Entry_to_Tower_wall_Destroyed" );
+    },
+
+    Ladder_Destroyed = function( trigger )
+    {
+        Map.SetOuterLadderReachability( false );
+
+        Util.MapDebugPrint( "Ladder_Destroyed", true );
+    },
+
+    Stair_near_Gold_Destroyed = function( trigger )
+    {
+        Map.stairCounter += 1;
+        if ( Map.stairCounter < 3 )
+        {
+            return;
+        }
+
+        Map.isStairNearGoldBuilt = false;
+        Map.goldLadderCounter = 0;
+        Map.stairCounter = 0;
+
+        Map.SetGoldRoomAvailability();
+
+        Util.MapDebugPrint( "Stair_near_Gold_Destroyed" );
+    },
+
+    gold_stair_Destroyed = function( trigger )
+    {
+        Map.goldLadderCounter += 1;
+        if ( Map.goldLadderCounter < 3 )
+        {
+            return;
+        }
+
+        Map.goldLadderCounter = 0;
+        Map.stairCounter = 0;
+        Map.isGoldLadderBuilt = false;
+
+        Map.SetGoldRoomAvailability();
+        Map.SetInnerLadderReachability( false );
+
+        Util.MapDebugPrint( "gold_stair_Destroyed" );
+    },
+
+    mg42_Destroyed = function( trigger )
+    {
+        Util.DisableGoal( "MOUNTMG42_mg42" );
+
+        Util.MapDebugPrint( "mg42_Destroyed" );
+    },
+
+    escape_with_Gold_to_truck_Taken = function( trigger )
+    {
+        // Outputs null when taken from dropped one
+        if ( GetEntityName( trigger.Entity ) != null )
+        {
+            Map.iStolenGoldInProgress += 1;
+        }
+
+        Map.ManageFlagGoals();
+
+        Map.ManageCampGoals();
+
+        Util.MapDebugPrint( "escape_with_Gold_to_truck_Taken" );
+    },
+
+    escape_with_Gold_to_truck_Returned = function( trigger )
+    {
+        Map.iStolenGoldInProgress -= 1;
+
+        Map.ManageFlagGoals();
+
+        Map.ManageCampGoals();
+
+        Util.MapDebugPrint( "escape_with_Gold_to_truck_Returned" );
+    },
+
+    escape_with_Gold_to_truck_Secured = function( trigger )
+    {
+        Map.iStolenGoldInProgress -= 1;
+
+        Map.ManageFlagGoals();
+
+        Map.ManageCampGoals();
+
+        Util.MapDebugPrint( "escape_with_Gold_to_truck_Secured" );
+    },
+
+    Truck_Gate_Exploded = function( trigger )
+    {
+        SetAvailableMapGoals( TEAM.ALLIES, true, "GRENADE_TruckMines" );
+
+        Util.MapDebugPrint( "Truck_Gate_Exploded", true );
+    },
+
+    ManageElevatorStuckage = function()
+    {
+        sleepTime = 1;
+
+        Map.elevatorEntity = GetEntityByName( "t92" );
+        elevatorShaft =  AABB( -65, -366, 8, 38, -250, 1442 );
+
+        while ( 1 )
+        {
+            // Some drawing to see what's going on, and if it's going well...
+            DrawEntityAABB( Map.elevatorEntity, sleepTime, COLOR.YELLOW );
+            DrawDebugAABB( elevatorShaft, COLOR.CYAN, sleepTime );
+
+            elevatorEntityAABB = GetEntWorldAABB( Map.elevatorEntity );
+
+            foreach ( id and bot in BotTable )
+            {
+                // If the bot is at ground level, exit
+                if ( bot.GetPosition().z < 100. )
+                {
+                    continue;
+                }
+
+                // Get the bot eye position for intersection checks
+                botEyePosition = GetEntEyePosition( bot.GetGameEntity() );
+                if ( !botEyePosition )
+                {
+                    Util.MapDebugPrint( bot.Name + "^b hasn't eyes...", true );
+                    continue;
+                }
+
+                // If this position is inside the shaft but not inside the elevator,
+                // Simply kill the bot... Enough of this
+                if ( elevatorShaft.Contains( botEyePosition ) && !elevatorEntityAABB.Contains( botEyePosition ) )
+                {
+                    bot.ExecCommand( "kill" );
+                    Util.MapDebugPrint( bot.Name + "^b was in the elevator shaft but above the elevator itself...", true );
+                }
+            }
+
+            // This is an infinite loop...
+            sleep( sleepTime );
+        }
+    },
+
+    ManageMineField = function()
+    {
+        while ( 1 )
+        {
+            if ( Map.GetMineFieldHealth() == 0 )
+            {
+                SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_TruckMines" );
+                SetAvailableMapGoals( TEAM.ALLIES, true, "CAPPOINT_Truck" );
+
+                Util.MapDebugPrint( "Minefield cleared!", true );
+
+                break;
+            }
+
+            sleep( 3 );
+        }
+    },
+
+    /**
+     * Gets the minefield health
+     * @return Minefield health
+     */
+    GetMineFieldHealth = function()
+    {
+        mineFieldHpCount = 0;
+        foreach ( ent in Map.Mines )
+        {
+            mineFieldHpCount += Util.GetEntHealth( ent );
+        }
+
+        return mineFieldHpCount;
+    },
+};
+
+global OnMapLoad = function()
+{
+    // *** TRIGGERS ***
+    OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+    OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+    OnTrigger( "The Guard Wall to Gold has been constructed!", Map.Entry_to_Gold_Room_Built );
+    OnTrigger( "The Wall has been constructed!", Map.Entry_to_Tower_wall_Built );
+    OnTrigger( "The ladder to Gold has been constructed!", Map.Ladder_Built );
+    OnTrigger( "The Stair to Gold has been constructed!", Map.Stair_near_Gold_Built );
+    OnTrigger( "The Stair has been constructed!", Map.gold_stair_Built );
+    OnTrigger( "Axis team has built the MG42!", Map.mg42_Built );
+
+    OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+    OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+    OnTrigger( "Allies team has destroyed the Guard Wall to Gold!", Map.Entry_to_Gold_Room_Destroyed );
+    OnTrigger( "Allies team has destroyed the Wall!", Map.Entry_to_Tower_wall_Destroyed );
+    OnTrigger( "Axis team has destroyed the ladder!", Map.Ladder_Destroyed );
+
+    // These two have the same wm_announce: "Axis team has destroyed the Stair!"
+    // Only the TagName differs: use it do find which is which
+    OnTrigger( "stair", Map.Stair_near_Gold_Destroyed );
+    OnTrigger( "Axis team has destroyed the Stair!", Map.Stair_near_Gold_Destroyed );
+    OnTrigger( "Gold ladder", Map.gold_stair_Destroyed );
+    OnTrigger( "Axis team has destroyed the Stair!", Map.gold_stair_Destroyed );
+
+    OnTrigger( "Allies team has destroyed the MG42!", Map.mg42_Destroyed );
+
+    OnTrigger( "Allies have stolen escape with Gold to truck!", Map.escape_with_Gold_to_truck_Taken );
+    OnTrigger( "Flag returned escape with Gold to truck!", Map.escape_with_Gold_to_truck_Returned );
+
+    // Manage in the same function
+    OnTrigger( "Allied team has secured the first Gold Crate!", Map.escape_with_Gold_to_truck_Secured );
+    OnTrigger( "Allied team has secured the second Gold Crate!", Map.escape_with_Gold_to_truck_Secured );
+
+    OnTrigger( "GRENADE_TruckGate Exploded.", Map.Truck_Gate_Exploded );
+
+    // Elevator triggers
+    OnTrigger( "t92_Moving", Map.Elevator_Moving );
+
+    // For bots trapped below the elevator
+    OnTriggerRegion( AABB( -15.470, -306.544, 11.397, 38.875, -245.125, 87.523), Map.Below_Elevator );
+
+    // *** CLEAR ALL GOALS FOR BOTH TEAMS ***
+    Util.DisableGoal( ".*", true ); // All but routes
+
+    Util.EnableGoal( ".*CAB.*" );
+    Util.EnableGoal( "BUILD_Command_Post" );
+    Util.EnableGoal( "CAMP_Inside.*" );
+    Util.EnableGoal( "CAMP_Tower.*" );
+    Util.EnableGoal( "PLANT_Command_Post" );
+
+    // *** AXIS GOALS ***
+    SetAvailableMapGoals( TEAM.AXIS, true, {
+        "BUILD_Entry_to_Gold_Room",
+        "BUILD_Entry_to_Tower_wall",
+        "BUILD_mg42",
+        "PLANT_Ladder",
+        Map.PLANT_Gold_Ladder,
+        "REPAIRMG42_mg42",
+    });
+
+    // *** ALLIED GOALS ***
+    SetAvailableMapGoals( TEAM.ALLIES, true, {
+        "BUILD_Ladder",
+        Map.BUILD_Gold_Ladder,
+        "GRENADE_TruckGate",
+        "PLANT_Entry_to_Gold_Room",
+        "PLANT_Entry_to_Tower_wall",
+        "PLANT_mg42",
+    });
+
+    // *** GOAL PROPERTIES ***
+    SetGoalPriority( "MOUNTMG42_mg42", 0.4 ); // 0.7 originally, set below CAMP
+    SetGoalPriority( "CAMP_Tower.*", 0.51 );
+    SetGoalPriority( "CAMP_InsideBottom.*", 0.52 ); // Short exit protection
+    SetGoalPriority( "PLANT_Entry_to_Gold_Room", 0.82 ); // Short exit
+    SetGoalPriority( "PLANT_Entry_to_Tower_wall", 0.83 ); // Required to reach the "short exit" constructible
+
+    // BUILD_Stair_near_Gold has a priority of 0.9
+    SetGoalPriority( Map.BUILD_Gold_Ladder, 0.91 );
+    SetGoalPriority( "BUILD_Ladder", 0.92 );
+    SetGoalPriority( "BUILD_Command_Post", 0.93, TEAM.ALLIES );
+
+    SetMapGoalProperties( "CAMP_.*", { mincamptime = 15, maxcamptime = 30 } );
+
+    // To avoid bots trying to build it from the elevator...
+    Util.AddUsePoint( "BUILD_Entry_to_Tower_wall", Vec3( -50, -350, 1485 ) );
+
+    // Using 2 use points with CoverSplit
+    Util.AddUsePoint( "PLANT_Entry_to_Gold_Room", Vec3( 375, -270, 460 ) ); // Aside
+    Util.AddUsePoint( "PLANT_Entry_to_Gold_Room", Vec3( 375, -170, 470 ) ); // Inside
+
+    Util.AddUsePoint( "PLANT_Entry_to_Tower_wall", Vec3( -75, -200, 1370 ) ); // Outside
+    Util.AddUsePoint( "PLANT_Entry_to_Tower_wall", Vec3( -60,  -90, 1370 ) ); // Inside
+
+    Util.AddUsePoint( Map.PLANT_Gold_Ladder, Vec3( 0, 20, 825 ) );
+
+    Util.SetGoalOffset( 10, 10, -10, "MOUNTMG42_mg42" );
+    Util.SetGoalPosition( -115, 105, 60, "PLANT_Ladder" );
+    Util.SetGoalPosition( -150, -205, 1372, "PLANT_Entry_to_Tower_wall" );
+
+    Map.SetEntryToTowerWallFlags( true );
+    Map.SetInnerLadderReachability( false );
+    Map.SetOuterLadderReachability( false );
+
+    // Instructions specific to the elevator escape
+    SetGoalPriority( "CAMP_GetOutOfHereStalker", 1.11 );
+    SetGoalRole( "CAMP_GetOutOfHereStalker", ROLE.AMBUSHER );
+    SetMapGoalProperties( "CAMP_GetOutOfHereStalker", { mincamptime = 0, maxcamptime = 0 } );
+    Util.EnableGoal( "CAMP_GetOutOfHereStalker" );
+    Util.SetMaxUsers( 5, "CAMP_GetOutOfHereStalker" );
+
+    // We run a trace because ETLegacy has a different way to order entities...
+    start = Vec3( -20, -90, 1380 );
+    end   = Vec3( -20, -90, 1250 );
+    tr    = TraceLine( start, end, null, TRACE.SHOT, 0, false );
+    if ( tr.fraction < 1 )
+    {
+        Map.hatchEntity = tr.entity;
+        Util.MapDebugPrint( "Hatch entity found, ID: " +  GetGameIdFromEntity( Map.hatchEntity ), true );
+    }
+    else
+    {
+        Util.MapDebugPrint( "Hatch entity not found!", 2 );
+    }
+
+    // Landmine entities list initialization
+    Map.Mines =
+    {
+        GetEntityByName( "t1087" ), // 219
+        GetEntityByName( "t1095" ), // 221
+        GetEntityByName( "t1088" ), // 223
+        GetEntityByName( "t1090" ), // 225
+        GetEntityByName( "t1091" ), // 227
+        GetEntityByName( "t1092" ), // 229
+        GetEntityByName( "t1093" ), // 231
+        GetEntityByName( "t1094" ), // 233
+    };
+
+    // Threads
+    thread( Map.ManageElevatorStuckage );
+    thread( Map.ManageMineField );
+
+    Util.MapDebugPrint( "Omni-Bot 0.87+ map script for Gold Finger - Snow (Final) by Mateos executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+    bot.TargetBreakableDist = 90.0;
+
+    if ( bot.GetTeam() == TEAM.AXIS )
+    {
+        foreach ( ent in Map.Mines )
+        {
+            bot.IgnoreTarget( ent, 9999 );
+        }
+    }
+};
+
+global Cabinets =
+{
+    AMMOCAB_Tower = "AMMOCAB_t1078",
+    HEALTHCAB_Tower = "HEALTHCAB_t1079",
+
+    Tower = function( bAvailability )
+    {
+        if ( bAvailability )
+        {
+            Util.EnableGoal( Cabinets.AMMOCAB_Tower );
+            Util.EnableGoal( Cabinets.HEALTHCAB_Tower );
+        }
+        else
+        {
+            Util.DisableGoal( Cabinets.AMMOCAB_Tower );
+            Util.DisableGoal( Cabinets.HEALTHCAB_Tower );
+        }
+    },
+};

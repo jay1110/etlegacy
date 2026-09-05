@@ -1,0 +1,741 @@
+//==========================================================================================
+//
+//	Sands of Time Beta 2 - sot_b2.gm
+//
+//	Who			When					What
+//------------------------------------------------------------------------------------------
+//	Mateos		11th January 2011		Initial Script
+//
+//==========================================================================================
+
+/****************************************************
+Path mapping updated and script by Mateos
+Correspondant WAY file hash: -
+Last update: 10th September 2023
+****************************************************/
+
+/*
+ * TODO:
+ * - Review the rope ladder navigation-wise, especially going up
+ *
+ * - If the obj is being stolen and any event occurs (any wall destruction, ...), don't mess up Allied defence
+ * - Improve Old Town flag reachability for Allies coming from the Temple - Routing?
+ * - Side_Wall_Destroyed: suicide spawn for DEFENDER1 bots, perhaps give up the Old Town - IN PROGRESS (one TO-DO left)
+ * - If the Old Town Flag is claimed by Axis and almost to none Allies are there, just forget about it (and CP) from then on (handle real players messing with it)
+ * - Landmines in front of the Basement Wall and west of Old Town
+ * - Move Allies to the Basement spawn when the Mirror has been fixed, it's plain middle of the 3 entrances to the Gold
+ * - Rename CAPPOINT_GoldDropoff to CAPPOINT_Truck
+ * - Routing to BUILD_Broken_Mirror (at least from the Old Town, handle Assault Ramp status)
+ * - During the 1st phase, if Axis capture the Old Town, Allies spawn at the Temple,
+ *   but then the Old Town is reclaimed, perhaps a suicide spawn, if the Allies have not yet reached the Old Town? - Yes, 1s respawn time
+ * - Allies are now quickly around the Assault Ramp after Side Wall destruction... but they don't defend much the crates -> arty?
+ * - Routing for DEFEND_Foxtrot from Temple/Basement (by the back)
+ * - Routing for FLAG_Gold_Bars? Would split attack, but less exposed
+ * - Spawn management (MoveAlliedMainSpawn)
+ * - Rename NATO alphabet goals to something more explicit...
+ * - EXTRA: handle the 2 traps?
+ */
+
+global Spawns =
+{
+	FORWARD_SPAWN			= 1,
+	RUIN_SPAWN				= 2,
+	TEMPLE_SPAWN			= 3,
+	BASEMENT_TEMPLE_SPAWN	= 4,
+
+	AlliedMainSpawn, // Has to be initialized in OnMapLoad, else getdot failed
+
+	SetSpawn = function()
+	{
+		foreach( bot in BotTable )
+		{
+			Spawns.SetSpawnForBot( bot );
+		}
+	},
+
+	SetSpawnForBot = function( bot )
+	{
+		if ( bot.GetTeam() == TEAM.ALLIES )
+		{
+			bot.ChangeSpawnPoint( Spawns.AlliedMainSpawn );
+		}
+	},
+};
+
+global Map =
+{
+	FlagStatus			= 0,	// Allies captured the Old Town Flag
+	MirrorStatus		= 0,	// Not built
+	SideWallStatus		= 0,	// Not destroyed
+	BasementWallStatus	= 0,	// Not destroyed
+
+	GiveUpOldTown		= false,// Make Allies give up on the Old Town, when their focus should be put on the Temple
+	IsGoldBeingStolen	= false,// Used to override the GiveUpOldTown behaviour
+
+	// *************************************************************************
+
+	Navigation =
+	{
+		jump_edge =
+		{
+			navigate = function( _this )
+			{
+				// Since this kind of navigation doesn't work well with waypoints
+				// and since it is made this way in several locations...
+				// Let's have a common name for the next waypoint of each
+				wpTable = {};
+				Wp.GetWaypointByName( "edge", wpTable );
+
+				// With a good jump while going forward to pass through
+				_this.AddAimRequest( Priority.High, "facing", wpTable.facing );
+				_this.Bot.HoldButton( BTN.JUMP, 1 );
+				sleep( 0.2 );
+				_this.Bot.HoldButton( BTN.FORWARD, 0.8 );
+			}
+		}
+	},
+
+	// *************************************************************************
+
+	Roles =
+	{
+		ALLIES = // Team
+		{
+			AllBots = true, // Each bot is considered for a role
+			DEFENDER = // The Old Town defence, then Temple level during Gold defence phase
+			{
+				voice			= "defend",				// (Optional) Signals voice chat to randomly announce ("attack" and "defend" are the two valid values)
+				spawnpt			= Spawns.FORWARD_SPAWN,	// (Optional) Bots with this role will choose the Forward Spawn (spawnpt 1)
+				numbots			= 6,					// The number of bots the role manager will attempt to keep assigned the role at all times
+				crucialClass	= CLASS.FIELDOPS		// (Optional) The first bot assigned the role will switch to this class
+				// MinBotsForRole - (Optional) Set the number of bots required to be in game before assigning the role
+			},
+			DEFENDER1 = // The Side Wall defence, then Gold room
+			{
+				voice			= "defend",
+				spawnpt			= Spawns.FORWARD_SPAWN,
+				numbots			= 2,
+				crucialClass	= CLASS.ENGINEER
+			},
+			DEFENDER2 = // The Basement Wall defence
+			{
+				voice			= "defend",
+				spawnpt			= Spawns.FORWARD_SPAWN,
+				numbots			= 3,
+				crucialClass	= CLASS.ENGINEER
+			},
+		},
+
+		AXIS =
+		{
+			AllBots = true,
+			ATTACKER = // The Old Town attack
+			{
+				numbots			= 7,
+			},
+			ATTACKER1 = // The Side Wall attack
+			{
+				numbots			= 3,
+				crucialClass	= CLASS.ENGINEER
+			}
+		}
+	},
+
+	// *************************************************************************
+
+	Assault_Ramp_Built = function()
+	{
+		Map.MoveAlliedDefence();
+
+		Util.MapDebugPrint( "Assault_Ramp_Built" );
+	},
+
+	Broken_Mirror_Built = function()
+	{
+		Map.MirrorStatus = 1;	// Built
+
+		Wp.CheckBlockable(); // Gold reachability
+		Map.MoveAlliedDefence();
+
+		// Split top and bottom DEFEND spots
+		Map.Roles.ALLIES.DEFENDER1.numbots = 3; // From 2 to 3
+		SetGoalRole( "DEFEND_Delta[6-8]" , ROLE.DEFENDER1 );
+		Util.ChangeSpawnForRole( TEAM.ALLIES, ROLE.DEFENDER, Spawns.TEMPLE_SPAWN );
+		Util.ChangeSpawnForRole( TEAM.ALLIES, ROLE.DEFENDER1, Spawns.BASEMENT_TEMPLE_SPAWN );
+		SetGoalRole( { "DEFEND_Delta[1-5]", "MOUNTMG42_TempleMG42" }, ROLE.DEFENDER );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, Groups.Temple.AXIS );
+		SetAvailableMapGoals( TEAM.AXIS, true, Groups.Gold.AXIS );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, ".*" ); // Handles any case this way
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			Groups.BasementWall.ALLIES,
+			Groups.Gold.ALLIES,
+		});
+
+		// Make Allies be quickly around the Gold area
+		// The spawn has been moved to the Basement Temple Spawn, which is very near the Gold room entrances
+		// It takes 5 seconds sprinting from Temple entrance corridor to the wooden room above the Gold room,
+		// which is a special case where Axis can be first there
+		// So Allies should suicide if spawn time <= 5 seconds
+		ETUtil.KillTeam(TEAM.ALLIES, 5);
+
+		Util.MapDebugPrint( "Broken_Mirror_Built" );
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Built", true );
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Built", true );
+	},
+
+	// *************************************************************************
+
+	Assault_Ramp_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Assault_Ramp" );
+
+		Util.MapDebugPrint( "Assault_Ramp_Destroyed" );
+	},
+
+	Basement_Wall_Destroyed = function()
+	{
+		Map.BasementWallStatus = 1;	// Destroyed
+
+		//Map.MoveAlliedDefence();
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_BasementWallWay.*" );
+
+		Util.ChangeSpawnForRole( TEAM.ALLIES, ROLE.DEFENDER2, Spawns.BASEMENT_TEMPLE_SPAWN );
+		Map.AlliesFallBackFromOldTownToBasementWall();
+
+		Util.MapDebugPrint( "Basement_Wall_Destroyed" );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed", true );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed", true );
+	},
+
+	Side_Wall_Destroyed = function()
+	{
+		Map.SideWallStatus = 1;	// Destroyed
+
+		Wp.CheckBlockable();
+		Map.MoveAlliedDefence();
+
+		SetAvailableMapGoals( TEAM.AXIS, true, Groups.Temple.AXIS );
+
+		// Move the Allied bots defending the Side Wall to the Assault Ramp/Broken Mirror defence
+		Util.ChangeSpawnForRole( TEAM.ALLIES, ROLE.DEFENDER1, Spawns.TEMPLE_SPAWN );
+		SetAvailableMapGoals( TEAM.ALLIES, true, Groups.Temple.ALLIES );
+		Functions.SuicideSpawnForRole( ROLE.DEFENDER1 );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, Groups.BasementWall.ALLIES );
+
+		Util.MapDebugPrint( "Side_Wall_Destroyed" );
+	},
+
+	// *************************************************************************
+
+	Gold_Bars_Taken = function()
+	{
+		Map.IsGoldBeingStolen = true;
+		Map.ManageAlliedMainSpawn();
+
+		ClearGoalRole( "CHECKPOINT_roadbunker", ROLE.DEFENDER2 ); // Can be still on at this point
+
+		// Split the DEFEND_Obj with roles
+		// MOUNTMG42_TempleMG42 keeps the DEFENDER role
+		SetGoalRole( "DEFEND_Obj1", ROLE.DEFENDER );		// Temple roof
+		SetGoalRole( "DEFEND_Obj2", ROLE.DEFENDER1 );		// Tunnel
+		SetGoalRole( "DEFEND_Obj[3-5]", ROLE.DEFENDER2 );	// Old Town
+
+		SetAvailableMapGoals( TEAM.AXIS, true, Groups.End.AXIS );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, ".*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, Groups.End.ALLIES );
+
+		Util.MapDebugPrint( "Gold_Bars_Taken" );
+	},
+
+	Gold_Bars_Returned = function()
+	{
+		Map.IsGoldBeingStolen = false;
+		Map.ManageAlliedMainSpawn();
+
+		SetAvailableMapGoals( TEAM.AXIS, false, Groups.End.AXIS );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, Groups.End.ALLIES );
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			Groups.BasementWall.ALLIES,
+			Groups.Gold.ALLIES,
+		});
+
+		Util.MapDebugPrint( "Gold_Bars_Returned" );
+	},
+
+	Gold_Bars_Secured = function()
+	{
+		// Axis won!
+
+		Functions.Print( "Gold_Bars_Secured" );
+	},
+
+	// *************************************************************************
+
+	roadbunker_Axis_Captured = function()
+	{
+		Map.FlagStatus = 1;	// Axis captured the Old Town Flag
+
+		// On map load, the flag is identified as a goal for Allies, because it isn't raised
+		// To avoid all bots going for it at that moment, it isn't enabled for Allies just yet
+		// We enable it here, after checking for game state
+		SetAvailableMapGoals( TEAM.ALLIES, !Map.GiveUpOldTown || Map.IsGoldBeingStolen, "CHECKPOINT_roadbunker" );
+
+		if ( !Map.GiveUpOldTown )
+		{
+			// Goal here is to have all Allied bots
+			// in the Old Town going for the flag
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"DEFEND_Alpha.*",
+				"ARTILLERY_S_Alpha.*",
+				"CALLARTILLERY_Alpha.*"
+			});
+		}
+
+		Util.MapDebugPrint( "roadbunker_Axis_Captured" );
+	},
+
+	roadbunker_Allies_Captured = function()
+	{
+		Map.FlagStatus = 0;	// Allies captured the Old Town Flag
+
+		if ( !Map.GiveUpOldTown )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"DEFEND_Alpha.*",
+				"ARTILLERY_S_Alpha.*",
+				"CALLARTILLERY_Alpha.*"
+			});
+		}
+
+		if ( Map.IsGoldBeingStolen )
+		{
+			// The Forward Spawn has been determined upon Gold_Bars_Taken
+			Spawns.SetSpawn();
+			Util.ChangeSpawnForRole( TEAM.ALLIES, ROLE.DEFENDER1, Spawns.FORWARD_SPAWN );
+			Util.ChangeSpawnForRole( TEAM.ALLIES, ROLE.DEFENDER2, Spawns.FORWARD_SPAWN );
+		}
+
+		Util.MapDebugPrint( "roadbunker_Allies_Captured" );
+	},
+
+	// *************************************************************************
+
+	AlliesFallBackFromOldTownToBasementWall = function()
+	{
+		// Move from Echo to Foxtrot
+		SetAvailableMapGoals( TEAM.ALLIES, true, Groups.BasementWall.ALLIES );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Echo.*" );
+
+		// Remove role from Old Town flag
+		ClearGoalRole( "CHECKPOINT_roadbunker", ROLE.DEFENDER2 );
+
+		// Spawn at the Basement
+		Util.ChangeSpawnForRole( TEAM.ALLIES, ROLE.DEFENDER2, Spawns.BASEMENT_TEMPLE_SPAWN );
+	},
+
+	MoveAlliedDefence = function()
+	{
+		if ( Map.GiveUpOldTown )
+		{
+			// Already called once, exit
+			return;
+		}
+
+		Util.MapDebugPrint( "MoveAlliedDefence", true );
+
+		Map.GiveUpOldTown = true;
+		Map.ManageAlliedMainSpawn();
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			Groups.Start.ALLIES,
+			"CHECKPOINT_roadbunker",
+		});
+
+		Util.ChangeSpawnForRole( TEAM.ALLIES, ROLE.DEFENDER2, Spawns.BASEMENT_TEMPLE_SPAWN );
+		ClearGoalRole( { ".*_Command_Post", "CHECKPOINT_roadbunker", "PLANT_Side_Wall" }, { ROLE.ATTACKER, ROLE.DEFENDER } );
+	},
+
+	ManageAlliedMainSpawn = function()
+	{
+		previousAlliedSpawn = Spawns.AlliedMainSpawn;
+		if ( Map.IsGoldBeingStolen )
+		{
+			Spawns.AlliedMainSpawn = Spawns.FORWARD_SPAWN;
+		}
+		else if ( Map.MirrorStatus == 1 )
+		{
+			Spawns.AlliedMainSpawn = Spawns.BASEMENT_TEMPLE_SPAWN;
+		}
+		else if ( Map.GiveUpOldTown )
+		{
+			Spawns.AlliedMainSpawn = Spawns.TEMPLE_SPAWN;
+		}
+
+		if ( Spawns.AlliedMainSpawn != previousAlliedSpawn )
+		{
+			// TODO Manage (suicide) spawn, take into account roles
+			Spawns.SetSpawn();
+		}
+
+		// Special case for roles
+		if ( Map.IsGoldBeingStolen && Map.FlagStatus == 0 )
+		{
+			Spawns.SetSpawn();
+			Util.ChangeSpawnForRole( TEAM.ALLIES, ROLE.DEFENDER1, Spawns.FORWARD_SPAWN );
+			Util.ChangeSpawnForRole( TEAM.ALLIES, ROLE.DEFENDER2, Spawns.FORWARD_SPAWN );
+		}
+
+		if ( !Map.IsGoldBeingStolen && Map.MirrorStatus == 1 )
+		{
+			Spawns.SetSpawn();
+			Util.ChangeSpawnForRole( TEAM.ALLIES, ROLE.DEFENDER1, Spawns.BASEMENT_TEMPLE_SPAWN );
+			Util.ChangeSpawnForRole( TEAM.ALLIES, ROLE.DEFENDER2, Spawns.BASEMENT_TEMPLE_SPAWN );
+		}
+	},
+};
+
+global OnMapLoad = function()
+{
+	Functions.timeLimitInMinutes = Ceil( GetGameTimeLeft() ) / 60;
+
+	Spawns.AlliedMainSpawn = Spawns.FORWARD_SPAWN;
+
+	// *** TRIGGERS ***
+	OnTrigger( "The Assault Ramp have been constructed.", Map.Assault_Ramp_Built );
+	OnTrigger( "The Broken Mirror have been fixed. Defend the Gold!", Map.Broken_Mirror_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "The Assault Ramp have been destroyed!", Map.Assault_Ramp_Destroyed );
+	OnTrigger( "Axis have blown up The Basement Wall!", Map.Basement_Wall_Destroyed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Axis have blown up The Side Wall!", Map.Side_Wall_Destroyed );
+	OnTrigger( "Axis have stolen The Gold Bars!", Map.Gold_Bars_Taken );
+	OnTrigger( "Flag returned Gold Bars!", Map.Gold_Bars_Returned );
+	OnTrigger( "The Axis team have escaped with the Gold Crates!", Map.Gold_Bars_Secured );
+	OnTrigger( "Axis capture the Old Town!", Map.roadbunker_Axis_Captured );
+	OnTrigger( "Allies capture the Old Town!", Map.roadbunker_Allies_Captured );
+
+	// *** AXIS GOALS ***
+	Util.DisableGoal( ".*", true );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, Groups.Start.AXIS );
+
+	// Escape Way for Gold Bars unavailable OnMapLoad
+	SetAvailableMapGoals( TEAM.AXIS, false, "ROUTE_BasementWallWay.*" );
+
+	// *** ALLIED GOALS ***
+	SetAvailableMapGoals( TEAM.ALLIES, true, Groups.Start.ALLIES );
+
+	// *** GOALS PROPERTIES ***
+	Util.RemoveGoal( "PLANT_Broken_Mirror" );	// Cannot be planted
+	Util.SetGoalPosition( 3030, 3460, 550, "PLANT_Assault_Ramp" );
+	Util.SetMaxUsersInProgress( 1, "MOUNTMG42_.*" );
+
+	// *** ROLES ***
+	ClearGoalRole( ".*", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2 } );
+
+	// Old Town
+	SetGoalRole( { ".*_Alpha.*", ".*_Command_Post", "CHECKPOINT_roadbunker", "PLANT_Basement_Wall" }, { ROLE.ATTACKER, ROLE.DEFENDER } );
+
+	// Side Wall
+	SetGoalRole( "PLANT_Side_Wall" , ROLE.ATTACKER1 );
+	SetGoalRole( "DEFEND_Bravo.*" , ROLE.DEFENDER1 );
+
+	// Basement Wall
+	SetGoalRole( { "CHECKPOINT_roadbunker", "DEFEND_Echo.*", "DEFEND_Foxtrot.*" }, ROLE.DEFENDER2 );
+
+/*
+	// Spawn entities
+	// forward_spawn, t1081, t1089, t1090
+	e1 = GetEntityByName( "t1081" );
+	e2 = GetEntityByName( "t1089" );
+	e3 = GetEntityByName( "t1090" );
+
+	goal = Util.GoalTable( "DEFEND_Charlie4" )[0];
+
+	DrawDebugLine( GetEntPosition( e1 ), goal.GetPosition(), COLOR.CYAN, 60 ); // Ruin
+	DrawDebugLine( GetEntPosition( e2 ), goal.GetPosition(), COLOR.GREEN, 60 ); // -> Temple
+	DrawDebugLine( GetEntPosition( e3 ), goal.GetPosition(), COLOR.MAGENTA, 60 ); // Basement
+
+	Util.MapDebugPrint( ToString( DistanceBetween( e2, goal ) ), true ); // 1940.09
+*/
+
+	Util.MapDebugPrint( "Omni-bot map script for Sands of Time Beta 2 by Mateos" );
+};
+
+global OnBotJoin = function( bot )
+{
+
+	Spawns.SetSpawnForBot( bot );
+
+	bot.TargetBreakableDist = 90.0;
+	weaps = { WEAPON.THOMPSON, WEAPON.MP40, WEAPON.GARAND, WEAPON.K43, WEAPON.BAR, WEAPON.STG44, WEAPON.STEN, WEAPON.FG42 };
+
+	foreach( id and weap in weaps )
+	{
+		w = bot.GetWeapon(weap);
+		w.PrimaryFire.SetTargetBias(CLASS.BREAKABLE, 1.2);
+	}
+
+	w = bot.GetWeapon(WEAPON.KNIFE);
+	w.PrimaryFire.SetDesirabilityRange(0, 48, 0.6);
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_roadbunker =
+		{
+			ROUTE_AxisSpawn =
+			{
+				ROUTE_AxisWestFlag1 =
+				{
+					ROUTE_AxisWestFlag2 =
+					{
+						ROUTE_AxisWestFlag3 = {},
+					},
+				},
+			},
+		},
+
+		PLANT_Side_Wall =
+		{
+			ROUTE_AxisSpawn =
+			{
+				ROUTE_SideWall1 =
+				{
+					ROUTE_SideWall2 = {},
+				},
+			},
+		},
+
+		CAPPOINT_GoldDropoff =
+		{
+			ROUTE_GoldBars =
+			{
+				ROUTE_BasementWallWay1 =
+				{
+					ROUTE_BasementWallWay2 =
+					{
+						ROUTE_BasementWallWay3 = {},
+					},
+				},
+			},
+		},
+	};
+
+	// Copy routes
+	MapRoutes.PLANT_Basement_Wall = MapRoutes.CHECKPOINT_roadbunker;
+
+	Util.Routes( MapRoutes );
+};
+
+global Groups =
+{
+	// Map start: Old Town/Side Wall
+	Start =
+	{
+		ALLIES =
+		{
+			"ARTILLERY_S_Alpha.*",
+			"BUILD_Command_Post",
+			"CALLARTILLERY_Alpha.*",
+			// No CHECKPOINT_roadbunker here, see roadbunker_Axis_Captured
+			"DEFEND_Alpha.*",
+			"DEFEND_Bravo.*",
+			"DEFEND_Echo.*",
+			"MOBILEMG42_Alpha.*",
+			"PLANT_Assault_Ramp",
+			"PLANT_Command_Post",
+			"TRIPMINE_Alpha.*"
+		},
+
+		AXIS =
+		{
+			"BUILD_Command_Post",
+			"CHECKPOINT_roadbunker",
+			"PLANT_Basement_Wall",
+			"PLANT_Command_Post",
+			"PLANT_Side_Wall"
+		},
+	},
+
+	// Temple
+	Temple =
+	{
+		ALLIES =
+		{
+			".*CAB_south_.*cabinet",
+			".*MG42_TempleMG42", // Not the _2, in front of the Side Wall
+			"DEFEND_Charlie.*",
+			"MOBILEMG42_Charlie.*",
+			"PLANT_Assault_Ramp",
+			"TRIPMINE_Charlie.*",
+			"TRIPMINE_Delta1" // Prepare the Gold room defence with 1 tripmine (default: 3 tripmines max)
+		},
+
+		AXIS =
+		{
+			".*CAB_south_.*cabinet",
+			"BUILD_Assault_Ramp",
+			"BUILD_Broken_Mirror",
+			"DEFEND_Charlie.*" // Useful
+		},
+	},
+
+	// Basement Wall
+	BasementWall =
+	{
+		ALLIES =
+		{
+			"DEFEND_Foxtrot.*"
+		}
+	},
+
+	// Basement/Gold
+	Gold =
+	{
+		ALLIES =
+		{
+			".*CAB_south_.*cabinet",
+			".*MG42_TempleMG42", // Not the _2, in front of the Side Wall
+			"DEFEND_Delta.*",
+			"MOBILEMG42_Delta.*",
+			"TRIPMINE_Delta.*"
+		},
+
+		AXIS =
+		{
+			".*CAB_south_.*cabinet",
+			"CAPPOINT_GoldDropoff",
+			"FLAG_Gold_Bars"
+		}
+	},
+
+	// Map end: around the Truck
+	End =
+	{
+		ALLIES =
+		{
+			"ARTILLERY_S_Obj",
+			"CALLARTILLERY_Obj.*",
+			"CHECKPOINT_roadbunker", // Be more aggressive
+			".*MG42_TempleMG42", // Not the _2, in front of the Side Wall
+			"DEFEND_Obj.*"
+		},
+
+		AXIS =
+		{
+			"ATTACK_End.*"
+		},
+	},
+};
+
+global Functions =
+{
+	// At first, I thought about submitting the idea of a new ETUtil.SuicideSpawn signature,
+	// which would call Util.ChangeSpawnForRole internally,
+	// but I'd like to go further with my own conditions (distance to target, HP left), too cumbersome
+	// TODO For now, the 2k distance is given in concrete, but can be calculated by giving spawn entity id and goal
+	SuicideSpawnForRole = function( role )
+	{
+		foreach ( id and bot in BotTable )
+		{
+			if ( bot.HasRole( role ) )
+			{
+				Util.MapDebugPrint( bot.Name + Util.DebugColorString + " has the role " + role, true );
+				thread( Functions.HandleBotSuicide, bot );
+			}
+		}
+	},
+
+	HandleBotSuicide = function( bot )
+	{
+		// If the bot is close to the obj it's going for, no suicide
+		// If the bot is low HP and the reinforce time is close, suicide in any case
+		// Else, suicide
+		// Test bot var if meanwhile the bot gets disconnected
+		while ( bot && bot.GetReinforceTime() > 2 )
+		{
+			yield();
+			sleep( 1 );
+		}
+
+		if ( !bot ) { return; } // Disconnected meanwhile
+
+		// In case the bot died meanwhile
+		goal = Util.GoalTable( bot.GetMapGoalName() )[0];
+		distanceToGoal = bot.DistanceTo( goal );
+		Util.MapDebugPrint( bot.Name + Util.DebugColorString + " has " + bot.Health + " HP and is away from " + bot.GetMapGoalName() + " by " + distanceToGoal + " units", true );
+		if ( bot.Health > 0 && ( bot.Health <= 50 || distanceToGoal > 2000 ) )
+		{
+			bot.ExecCommand( "kill" );
+			Util.MapDebugPrint( bot.Name + Util.DebugColorString + " killed itself to spawn closer to its objective", true );
+		}
+	},
+
+	timeLimitInMinutes,
+
+	Print = function( text )
+	{
+		Util.MapDebugPrint( text + Functions.GetFormattedTimeLimit() + Functions.GetFormattedElaspedTime() + Functions.GetFormattedTimeLeft(), true );
+	},
+
+	GetFormattedTimeLimit = function()
+	{
+		return " (timelimit: " + Functions.timeLimitInMinutes + ")";
+	},
+
+	GetFormattedElaspedTime = function()
+	{
+		totalTimeInSeconds = Functions.timeLimitInMinutes * 60;
+		gameTimeLeftInSeconds = Floor( GetGameTimeLeft() );
+		elapsedTimeInSeconds = totalTimeInSeconds - gameTimeLeftInSeconds;
+
+		elapsedTimeMinutes = Floor( elapsedTimeInSeconds / 60 );
+		elapsedTimeSeconds = elapsedTimeInSeconds - elapsedTimeMinutes * 60;
+		if ( elapsedTimeSeconds < 10 )
+		{
+			elapsedTimeSeconds = "0" + elapsedTimeSeconds;
+		}
+
+		return " (" + elapsedTimeMinutes + ":" + elapsedTimeSeconds + " elapsed)";
+	},
+
+	GetFormattedTimeLeft = function()
+	{
+		gameTimeLeft = Floor( GetGameTimeLeft() );
+		minutes = Floor( gameTimeLeft / 60 );
+		seconds = gameTimeLeft - minutes * 60;
+		if ( seconds < 10 )
+		{
+			seconds = "0" + seconds;
+		}
+
+		return " (" + minutes + ":" + seconds + " left)";
+	}
+};

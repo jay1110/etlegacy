@@ -1,0 +1,110 @@
+//==========================================================================================
+//
+//	tm_lcity_b5.gm
+//
+//	Who			When			What
+//------------------------------------------------------------------------------------------
+//	Mateos		10 July 2024	Initial Script
+//
+//==========================================================================================
+//
+
+/****************************************************
+Path mapping updated and script by Mateos
+Correspondant WAY file hash: -
+Last update: 10th July 2024
+****************************************************/
+
+global Map =
+{
+	IsChurchWindowDestroyed = false,
+
+	church_door_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, Map.IsChurchWindowDestroyed, "PLANT_Main_target" );
+
+		Util.MapDebugPrint( "church_door_Built" );
+	},
+
+	First_Gate_Destroyed = function()
+	{
+		sleep( 0.1 );
+		Wp.CheckBlockable();
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"CHECKPOINT_forwardflag",
+			"PLANT_church_door",
+			"PLANT_church_window"
+		});
+
+		Util.MapDebugPrint( "First_Gate_Destroyed" );
+	},
+
+	Main_target_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Main_target_Destroyed", true );
+	},
+
+	church_door_Destroyed = function()
+	{
+		sleep( 0.1 );
+		Wp.CheckBlockable();
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Main_target" );
+
+		Util.MapDebugPrint( "church_door_Destroyed" );
+	},
+
+	church_window_Destroyed = function()
+	{
+		Map.IsChurchWindowDestroyed = true;
+
+		sleep( 0.1 );
+		Wp.CheckBlockable();
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Main_target" );
+
+		Util.MapDebugPrint( "church_window_Destroyed" );
+	},
+
+	forwardflag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint( "forwardflag_Axis_Captured", true );
+	},
+
+	forwardflag_Allies_Captured = function()
+	{
+		Util.MapDebugPrint( "forwardflag_Allies_Captured", true );
+	}
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "*** Main entry built", Map.church_door_Built );
+	OnTrigger( "*** Forward gate destroyed.", Map.First_Gate_Destroyed );
+	OnTrigger( "Allies have destroyed hideout", Map.Main_target_Destroyed );
+	OnTrigger( "*** Entry is broken ", Map.church_door_Destroyed );
+	OnTrigger( "*** Axis breached side window in church", Map.church_window_Destroyed );
+	OnTrigger( "Axis have reclaimed the Forward Flag!", Map.forwardflag_Axis_Captured );
+	OnTrigger( "Allies have captured the Forward Flag!", Map.forwardflag_Allies_Captured );
+
+	Util.DisableGoal( ".*", true ); // All but routes
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_First_Gate" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_church_door",
+		"CHECKPOINT_forwardflag"
+	});
+
+	Util.AddUsePoint( "PLANT_church_door", Vec3( 505, -95, 105 ) ); // Outside
+	Util.AddUsePoint( "PLANT_church_door", Vec3( 450, -15, 105 ) ); // Inside
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " by Mateos executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};

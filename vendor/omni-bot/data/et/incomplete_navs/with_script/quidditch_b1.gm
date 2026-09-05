@@ -1,0 +1,182 @@
+//==========================================================================================
+//
+//  quidditch_b1.gm
+//
+// Who	When		What
+//------------------------------------------------------------------------------------------
+// YKM	09 April 2026	Initial Script
+// palota 23 June 2026	optimized script, ROUTE_ball
+//==========================================================================================
+//
+
+global Map =
+{
+	Movers =
+	{
+		"MOVER_e_tower_elev2",
+		"MOVER_e_tower_elev",
+		"MOVER_e_tower_elev3",
+		"MOVER_w_tower_elev2",
+		"MOVER_w_tower_elev",
+		"MOVER_w_tower_elev1",
+	},
+
+	// Platform position trackers (-1 = moving, 0 = bottom, 1 = top)
+	PlatformPosition = {},
+	RideMovers = {},
+
+	WatchPlatform = function(i)
+	{
+		mover = Map.Movers[i - 1];
+		if(i > 3) { y = 30; } else { y = -25; }
+		Map.RideMovers["platform" + i] =
+		{
+			Index = i,
+			movergoal = mover,
+			rideposition = Vec3(0,y,0),
+			startwp = "platform_bottom" + i,
+			exitwp = "platform_top" + i,
+			Tolerance = 200,
+			maxusers = 1,
+			board = function(_this)
+			{
+				return Map.PlatformPosition[_this.mover.Index] == 0;
+			},
+			leave = function(_this)
+			{
+				return Map.PlatformPosition[_this.mover.Index] == 1;
+			},
+		};
+
+		entity = GetGoal(mover).GetEntity();
+		pos = Map.PlatformPosition;
+
+		for(;;)
+		{
+			z = GetEntPosition(entity).z;
+			if(z < 370) //353
+			{
+				if (pos[i] != 0) {
+					pos[i] = 0;
+					Util.MapDebugPrint("Platform " + i + " at bottom position", 1);
+				}
+			}
+			else if(z > 870) //885
+			{
+				if (pos[i] != 1) {
+					pos[i] = 1;
+					Util.MapDebugPrint("Platform " + i + " at top position", 1);
+				}
+			}
+			else
+			{
+				pos[i] = -1;
+			}
+			sleep(1.2);
+		}
+	},
+
+};
+
+global OnMapLoad = function()
+{
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal(".*CAB_.*");
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"CAPPOINT_axis.*",
+		"FLAG_ball_obj_ax.*",
+		"MOBILEMG42_axis1",
+		"SMOKEBOMB_center2",
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"CAPPOINT_aly.*",
+		"FLAG_ball_obj_al.*",
+		"MOBILEMG42_aly1",
+		"SMOKEBOMB_center1",
+	});
+
+	// Start watching platform position
+	for(i=1; i<=6; ++i) {
+		thread(Map.WatchPlatform, i);
+	}
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes = {};
+
+	MapRoutes["FLAG_ball_obj_ax.*"] =
+	{
+		ROUTE_axisspawn =
+		{
+			ROUTE_axisleft1 =
+			{
+				ROUTE_axisleft2 =
+				{
+					ROUTE_axisleft3 = {},
+					ROUTE_axiscenter2 = {},
+				},
+			},
+			ROUTE_axiscenter1 =
+			{
+				ROUTE_axiscenter2 = {},
+				ROUTE_axiscenter3 = {},
+			},
+			ROUTE_axisright1 =
+			{
+				ROUTE_axisright2 =
+				{
+					ROUTE_axisright3 = {},
+					ROUTE_axiscenter3 = {},
+				},
+			},
+		},
+	};
+	MapRoutes["FLAG_ball_obj_al.*"] =
+	{
+		ROUTE_alyspawn =
+		{
+			ROUTE_alyleft1 =
+			{
+				ROUTE_alyleft2 =
+				{
+					ROUTE_alyleft3 = {},
+					ROUTE_alycenter2 = {},
+				},
+			},
+			ROUTE_alycenter1 =
+			{
+				ROUTE_alycenter2 = {},
+				ROUTE_alycenter3 = {},
+			},
+			ROUTE_alyright1 =
+			{
+				ROUTE_alyright2 =
+				{
+					ROUTE_alyright3 = {},
+					ROUTE_alycenter3 = {},
+				},
+			},
+		},
+	};
+	MapRoutes["CAPPOINT_axis.*"] =
+	{
+		ROUTE_ball =
+		{
+			ROUTE_axisbox1 = {},
+			ROUTE_axisbox2 = {},
+		},
+	};
+	MapRoutes["CAPPOINT_aly.*"] =
+	{
+		ROUTE_ball =
+		{
+			ROUTE_alybox1 = {},
+			ROUTE_alybox2 = {},
+		},
+	};
+	Util.Routes(MapRoutes);
+};

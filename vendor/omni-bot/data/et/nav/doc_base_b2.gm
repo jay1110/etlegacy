@@ -1,0 +1,532 @@
+//==========================================================================================
+//
+//	doc_base_b2.gm
+//
+//	      Who       	    When		   What
+//------------------------------------------------------------------------------------------
+//	^1[UJE]^3Niek	18 March 2018	Initial Script
+//	^1[UJE]^3Captain	19 March 2018	Attack/Defense/Rôles/routes And More...
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	Gold1 = false,
+	Gold2 = false,
+	AllyWithGold = 0,
+	DoorsGolds = false,
+	Roles =
+	{
+		AXIS =
+		{
+		      AllBots = true, // each bot is considered for a role
+			DEFENDER = // Defender Cappoint
+			{
+				numbots = 3,
+			},
+		},
+	},
+	constructible_defence_Destroyed = function()
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_constructible_defence" );
+
+		Util.MapDebugPrint( "constructible_defence_Destroyed" );
+	},
+
+	constructible_defence_Built = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_constructible_defence" );
+
+		Util.MapDebugPrint( "constructible_defence_Built" );
+	},
+
+	broken_gate_Destroyed = function()
+	{
+	      Util.EnableGoal("ROUTE_broken_gate");
+		Util.MapDebugPrint( "broken_gate_Destroyed" );
+	},
+
+	main_gate_Destroyed = function()
+	{
+	sleep(3.0);
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"CHECKPOINT_flag1_flag","ATTACK_main.*"} );
+	SetAvailableMapGoals( TEAM.ALLIES, true, {"PLANT_Broken_gate","SWITCH_doors_gold","ATTACK_gold.*",".*CAB_First.*"} );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, {"CHECKPOINT_flag1_flag","DEFEND_flag.*",".*CAB.*cabinet_1"} );
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_gold.*" );
+
+	      Util.DisableGoal("ROUTE_spawn_axis_checkpoint");
+		Util.MapDebugPrint( "main_gate_Destroyed" );
+	},
+
+	doors_opened = function()
+	{
+	Map.DoorsGolds = true;
+	if ( !Map.Gold1 )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "FLAG_allied_gold" );
+      }
+	if ( !Map.Gold2 )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "FLAG_allied_goldtwo" );
+      }
+	SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_doors_gold" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_doors_gold" );
+
+		Util.MapDebugPrint( "doors_opened" );
+	},
+
+	doors_closed = function()
+	{
+	Map.DoorsGolds = false;
+	if ( !Map.Gold1 )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_doors_gold" );
+      }
+	if ( !Map.Gold2 )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_doors_gold" );
+      }
+	SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_doors_gold" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_allied_gold.*" );
+
+		Util.MapDebugPrint( "doors_closed" );
+	},
+
+	allied_gold_Taken = function()
+	{
+	Map.Gold1 = true;
+	if ( Map.AllyWithGold < 2 )
+	{
+	Map.AllyWithGold += 1;
+	}
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_cappoint.*" );
+	SetGoalRole("DEFEND_cappoint.*", ROLE.DEFENDER);
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_allied_gold" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "CAPPOINT_Gold" );
+
+		Util.MapDebugPrint( "allied_gold_Taken" );
+	},
+
+	allied_goldtwo_Taken = function()
+	{
+	Map.Gold2 = true;
+	if ( Map.AllyWithGold < 2 )
+	{
+	Map.AllyWithGold += 1;
+	}
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_cappoint.*" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_allied_goldtwo" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "CAPPOINT_Gold" );
+	SetGoalRole("DEFEND_cappoint.*", ROLE.DEFENDER);
+
+		Util.MapDebugPrint( "allied_goldtwo_Taken" );
+	},
+
+	allied_gold_Returned = function()
+	{
+	Map.Gold1 = false;
+	Map.AllyWithGold -= 1;
+	if ( Map.AllyWithGold < 1 )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_cappoint.*" );
+	ClearGoalRole( "DEFEND_cappoint.*", ROLE.DEFENDER );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CAPPOINT_Gold" );
+	}
+	if ( Map.DoorsGolds )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "FLAG_allied_gold" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_doors_gold" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_doors_gold" );
+
+		Util.MapDebugPrint( "allied_gold_Returned" );
+	},
+
+	allied_goldtwo_Returned = function()
+	{
+	Map.Gold2 = false;
+	Map.AllyWithGold -= 1;
+	if ( Map.AllyWithGold < 1  )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_cappoint.*" );
+	ClearGoalRole( "DEFEND_cappoint.*", ROLE.DEFENDER );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CAPPOINT_Gold" );
+	}
+	if ( Map.DoorsGolds )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "FLAG_allied_goldtwo" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_doors_gold" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_doors_gold" );
+
+		Util.MapDebugPrint( "allied_goldtwo_Returned" );
+	},
+
+	allied_gold_Dropped = function()
+	{
+		Util.MapDebugPrint( "allied_gold_Dropped" );
+	},
+
+	allied_goldtwo_Dropped = function()
+	{
+		Util.MapDebugPrint( "allied_goldtwo_Dropped" );
+	},
+
+	allied_gold_Secured = function()
+	{
+	Map.AllyWithGold -= 1;
+	if ( Map.AllyWithGold < 1 )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CAPPOINT_Gold" );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_cappoint.*" );
+	ClearGoalRole( "DEFEND_cappoint.*", ROLE.DEFENDER );
+	}
+		Util.MapDebugPrint( "allied_gold_Secured" );
+	},
+
+	flag1_flag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint( "flag1_flag_Axis_Captured" );
+	},
+
+	flag1_flag_Allies_Captured = function()
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_main_gate" );
+
+		Util.MapDebugPrint( "flag1_flag_Allies_Captured" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "The defence has been destroyed!", Map.constructible_defence_Destroyed );
+	OnTrigger( "The defence has been constructed!", Map.constructible_defence_Built );
+	OnTrigger( "The main gate has been destroyed^1!!!", Map.main_gate_Destroyed );
+
+	OnTrigger( "Broken door has been destroyed!", Map.broken_gate_Destroyed );
+
+	OnTrigger( "Doors opened^1!!", Map.doors_opened );
+	OnTrigger( "Doors closed^1!!", Map.doors_closed );
+
+	OnTrigger( "Allies have stolen first document!", Map.allied_gold_Taken );
+	OnTrigger( "Flag dropped allied_gold!", Map.allied_gold_Dropped );
+	OnTrigger( "Flag returned allied_gold!", Map.allied_gold_Returned );
+	OnTrigger( "Allies have stolen second document!", Map.allied_goldtwo_Taken );
+	OnTrigger( "Flag dropped allied_goldtwo!", Map.allied_goldtwo_Dropped );
+	OnTrigger( "Flag returned allied_goldtwo!", Map.allied_goldtwo_Returned );
+	OnTrigger( "Allied team has transmitted a document^1!!", Map.allied_gold_Secured );
+
+
+	OnTrigger( "The Axis have reclaimed the forward bunker^1!!", Map.flag1_flag_Axis_Captured );
+	OnTrigger( "The Allies have captured the forward bunker^1!!", Map.flag1_flag_Allies_Captured );
+
+
+	Util.DisableGoal( ".*", true ); // all but routes
+	Util.DisableGoal("ROUTE_broken_gate");
+	//activation ALLIES
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"PLANT_constructible_defence",
+	"CHECKPOINT_flag1_flag",
+	"ATTACK_main.*",
+	".*CAB.*cabinet_1",
+	});
+
+	//activation AXIS
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+	"CHECKPOINT_flag1_flag",
+	"DEFEND_flag.*",
+	".*CAB.*",
+
+	});
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "PLANT.*" );
+	Util.SetMaxUsers( 1, "BUILD.*" );
+	Util.SetMaxUsers( 1, "ATTACK.*" );
+	Util.SetMaxUsers( 1, "FLAG.*" );
+	Util.SetMaxUsers( 2, "SWITCH_doors_gold" );
+	Util.SetMaxUsers( 1, "CHECKPOINT_flag1_flag" );
+
+	// Camp times
+	//SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+	SetMapGoalProperties( "ATTACK.*", {MinCampTime=40, MaxCampTime=80} );
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=40, MaxCampTime=80} );
+
+	//Priorities
+	SetGoalPriority( "CHECKPOINT_flag1_flag", 0.92 );
+	SetGoalPriority( "SWITCH_doors_gold", 0.94 );
+	SetGoalPriority( "FLAG.*", 0.92 );
+	SetGoalPriority( "PLANT_Broken_gate", 0.94 );
+
+	// *** ROLES ***
+	ClearGoalRole( "DEFEND_cappoint.*",  ROLE.DEFENDER );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		FLAG_allied_gold =
+		{
+
+		},
+		FLAG_allied_goldtwo =
+		{
+
+		},
+		CAPPOINT_Gold =
+		{
+			ROUTE_gold1  =
+			{Weight=3,
+				ROUTE_cab_first  =
+				{
+					ROUTE_tunnel_cab  =
+					{
+					},
+				},
+				ROUTE_main_gate  =
+				{
+				},
+				ROUTE_broken_gate  =
+				{Weight=3,
+					ROUTE_tunnel_split  =
+					{
+						ROUTE_bridge  =
+						{
+							ROUTE_truck_flag  =
+							{
+							},
+						},
+						ROUTE_stair_center  =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_gold2  =
+			{Weight=3,
+				ROUTE_cab_first  =
+				{
+					ROUTE_tunnel_cab  =
+					{
+					},
+				},
+				ROUTE_main_gate  =
+				{
+				},
+				ROUTE_broken_gate  =
+				{Weight=3,
+					ROUTE_tunnel_split  =
+					{
+						ROUTE_stair_center  =
+						{
+						},
+					},
+					ROUTE_bridge  =
+					{
+						ROUTE_truck_flag  =
+						{
+						},
+					},
+				},
+			},
+		},
+		PLANT_Broken_gate =
+		{
+			ROUTE_checkpoint  =
+			{
+				ROUTE_garage_stair  =
+				{
+					ROUTE_main_gate  =
+					{
+					},
+					ROUTE_tunnel_cab  =
+					{Weight=3,
+						ROUTE_cab_first  =
+						{
+						},
+					},
+				},
+			},
+		},
+		CHECKPOINT_flag1_flag =
+		{
+			ROUTE_first_spawn_allies  =
+			{
+				ROUTE_tunnel_split  =
+				{
+					ROUTE_bridge  =
+					{ Weight=3,
+						ROUTE_stair_right  =
+						{Weight=2,
+							ROUTE_checkpoint  =
+							{
+							},
+						},
+						ROUTE_truck_flag  =
+						{ Weight=3,
+							ROUTE_garage_stair  =
+							{
+								ROUTE_checkpoint  =
+								{
+								},
+							},
+						},
+					},
+					ROUTE_stair_center  =
+					{
+						ROUTE_garage_stair  =
+						{
+							ROUTE_checkpoint  =
+							{
+							},
+						},
+					},
+					ROUTE_corridor  =
+					{Weight=3,
+						ROUTE_checkpoint  =
+						{
+						},
+					},
+				},
+			},
+			ROUTE_spawn_axis_checkpoint  =
+			{
+				ROUTE_tunnel_split  =
+				{Weight=3,
+					ROUTE_first_spawn_allies  =
+					{
+						ROUTE_door_main_gate  =
+						{
+							ROUTE_garage_stair  =
+							{
+								ROUTE_checkpoint  =
+								{
+								},
+							},
+						},
+					},
+				},
+				ROUTE_bridge  =
+				{
+					ROUTE_stair_right  =
+					{
+						ROUTE_checkpoint  =
+						{
+						},
+						ROUTE_truck_flag  =
+						{Weight=3,
+							ROUTE_garage_stair  =
+							{
+								ROUTE_checkpoint  =
+								{
+								},
+							},
+						},
+					},
+				},
+				ROUTE_stair_center  =
+				{Weight=2,
+					ROUTE_garage_stair  =
+					{
+						ROUTE_checkpoint  =
+						{
+						},
+					},
+				},
+				ROUTE_corridor  =
+				{
+					ROUTE_checkpoint  =
+					{
+					},
+					ROUTE_garage_stair  =
+					{
+					},
+				},
+			},
+		},
+		SWITCH_doors_gold =
+		{
+			ROUTE_checkpoint  =
+			{
+				ROUTE_garage_stair  =
+				{
+					ROUTE_main_gate  =
+					{
+						ROUTE_switch  =
+						{
+						},
+						ROUTE_tunnel_cab  =
+						{Weight=3,
+							ROUTE_cab_first  =
+							{
+								ROUTE_switch  =
+								{
+								},
+							},
+						},
+						ROUTE_stair_center  =
+						{
+							ROUTE_tunnel_split  =
+							{
+								ROUTE_broken_gate  =
+								{
+									ROUTE_switch  =
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_main_gate  =
+				{Weight=3,
+					ROUTE_tunnel_cab  =
+					{
+						ROUTE_cab_first  =
+						{
+							ROUTE_switch  =
+							{
+							},
+						},
+					},
+				},
+			},
+		},
+	};
+		MapRoutes["DEFEND_gold.*"] = {
+			ROUTE_last_spawn_axis  =
+			{
+				ROUTE_stair  =
+				{
+				},
+			},
+		};
+	MapRoutes["ATTACK_main.*"] = MapRoutes.CHECKPOINT_flag1_flag;
+	MapRoutes["DEFEND_flag.*"] = MapRoutes.CHECKPOINT_flag1_flag;
+	MapRoutes["ATTACK_gold_02"] = MapRoutes.SWITCH_doors_gold;
+	MapRoutes["ATTACK_gold_03"] = MapRoutes.SWITCH_doors_gold;
+	MapRoutes["ATTACK_gold_04"] = MapRoutes.SWITCH_doors_gold;
+	MapRoutes["ATTACK_gold_05"] = MapRoutes.SWITCH_doors_gold;
+	MapRoutes["ATTACK_gold_06"] = MapRoutes.SWITCH_doors_gold;
+	MapRoutes["ATTACK_gold_07"] = MapRoutes.SWITCH_doors_gold;
+	Util.Routes(MapRoutes);
+};

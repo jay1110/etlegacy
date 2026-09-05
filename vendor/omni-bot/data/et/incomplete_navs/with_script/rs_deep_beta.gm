@@ -1,0 +1,145 @@
+//==========================================================================================
+//
+//	rs_deep_beta.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	15 August 2018	Initial Script
+//	palota	11 July 2025	attack, defend
+//==========================================================================================
+//
+
+global Map =
+{
+	barrierDestroyed = 0,
+
+	Wood_Barrier_Destroyed = function()
+	{
+		Map.barrierDestroyed = 1;
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.ALLIES, 1, {
+			"PLANT_Main_Gate",
+			"ATTACK_gate.*",
+			"CHECKPOINT_forward_spawn",
+		});
+
+		Util.MapDebugPrint("Wood_Barrier_Destroyed");
+	},
+
+	Bridge_Built = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.ALLIES, 1, "ATTACK_gate.*");
+		Util.MapDebugPrint("Bridge_Built");
+	},
+	Bridge_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, Map.barrierDestroyed, "ATTACK_gate.*");
+		Util.MapDebugPrint("Bridge_Destroyed");
+	},
+
+	Main_Gate_Destroyed = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.ALLIES, 1, {
+			"FLAG_Gold_Crate",
+			"CAPPOINT_Gold",
+			"PLANT_Supply_Crate",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, 1, "DEFEND_gold.*");
+
+		Util.MapDebugPrint("Main_Gate_Destroyed");
+	},
+
+	Supply_Crate_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("gold_wp", "closed", 0);
+		SetAvailableMapGoals(TEAM.ALLIES, 1, {
+			"FLAG_Gold_Crate",
+			"CAPPOINT_Gold",
+		});
+
+		Util.MapDebugPrint("Supply_Crate_Destroyed");
+	},
+
+	Gold_Crate_Taken = function()
+	{
+		Util.MapDebugPrint("Gold_Crate_Taken");
+	},
+
+	Gold_Crate_Returned = function()
+	{
+		Util.MapDebugPrint("Gold_Crate_Returned");
+	},
+
+	Gold_Crate_Secured = function()
+	{
+		Util.MapDebugPrint("Gold_Crate_Secured");
+	},
+
+	forward_spawn_Axis_Captured = function()
+	{
+		Util.MapDebugPrint("forward_spawn_Axis_Captured");
+	},
+
+	forward_spawn_Allies_Captured = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, 1, ".*Command_Post");
+		SetAvailableMapGoals(TEAM.AXIS, 1, "CHECKPOINT_forward_spawn");
+
+		Util.MapDebugPrint("forward_spawn_Allies_Captured");
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("Allied team has built the Bridge!", Map.Bridge_Built);
+	OnTrigger("Axis team has destroyed the Bridge!", Map.Bridge_Destroyed);
+
+	OnTrigger("The Allied team has destroyed the Wood Barrier!", Map.Wood_Barrier_Destroyed);
+
+	OnTrigger("The Allied team has destroyed the Main Gate!", Map.Main_Gate_Destroyed);
+
+	OnTrigger("The Allied team has destroyed the Supply Crate!", Map.Supply_Crate_Destroyed);
+
+	OnTrigger("Allied team has stolen the Gold Crate!", Map.Gold_Crate_Taken);
+	OnTrigger("Axis team has returned the Gold Crate!", Map.Gold_Crate_Returned);
+	OnTrigger("Allied team has escaped with the gold!", Map.Gold_Crate_Secured);
+
+	OnTrigger("Axis capture the forward bunker!", Map.forward_spawn_Axis_Captured);
+	OnTrigger("Allies capture the forward bunker!", Map.forward_spawn_Allies_Captured);
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal(".*CAB_.*");
+
+	Wp.SetWaypointFlag("gold_wp", "closed", 1);
+
+	//Allies
+	SetAvailableMapGoals(TEAM.ALLIES, 1, {
+		"MOUNTMG42_.*",
+		"BUILD_Bridge",
+		"PLANT_Wood_Barrier",
+	});
+
+	//Axis
+	SetAvailableMapGoals(TEAM.AXIS, 1, {
+		"DEFEND_r.*",
+		".*Command_Post",
+		"PLANT_Bridge",
+	});
+
+	Util.AddUsePoint("PLANT_Wood_Barrier", Vec3(-206,-69,520));
+	Util.LimitToClass("PLANT_Command_Post", 0, 5);
+
+	SetGoalPriority("BUILD_Bridge", 0.81);
+	SetGoalPriority("DEFUSE_Wood_Barrier.*", 0, 0, 0, true); //can't get there
+
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=20, MaxCampTime=200});
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.MaxViewDistance = 1800;
+};

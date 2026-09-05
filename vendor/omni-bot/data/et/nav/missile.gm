@@ -1,0 +1,255 @@
+//==========================================================================================
+//
+//	missile.gm (MissileX_beta_2.pk3)
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	01 November 2017	waypoints
+//	palota                  	25 April 2026	script, goals
+//==========================================================================================
+//
+
+global Map =
+{
+	SaveCampTime=0,
+	gates=0,
+	main=0,
+	defense=0,
+
+	Main_Gate_Destroyed = function()
+	{
+		sleep(0.1);
+		Map.main=1;
+		Map.SetAccess();
+
+		Util.EnableGoal(".*cabinet");
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"ATTACK_gate.*",
+			"BUILD_ramp",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"ATTACK_base.*",
+			".*_Command_Post",
+			"CAPPOINT.*",
+			"BUILD_Axis_MG42_Construction",
+			"PLANT_Gate_2",
+			"PLANT_Gate_3",
+			"PLANT_missile_defense",
+			"PLANT_tombstone",
+			".*MG42_axisconstruct1_track",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"DEFEND_gate.*",
+			"PLANT_ramp",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"DEFEND_base.*",
+			"PLANTMINE_b.*",
+			"BUILD_Allied_MG42_Construction",
+			"PLANT_Axis_MG42_Construction",
+			".*MG42_173", //defense
+		});
+
+		Util.MapDebugPrint("Main_Gate_Destroyed");
+	},
+
+	ramp_Built = function()
+	{
+		Util.EnableGoal("ROUTE_ramp");
+		Util.MapDebugPrint("ramp_Built");
+	},
+
+	ramp_Destroyed = function()
+	{
+		Util.DisableGoal("ROUTE_ramp");
+		Util.MapDebugPrint("ramp_Destroyed");
+	},
+
+	SetAccess = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.AXIS, (Map.gates || !Map.defense) && Map.main, "FLAG_allied_gold");
+	},
+
+	missile_defense_Built = function()
+	{
+		Util.DisableGoal("ROUTE_defense");
+		Map.defense=1;
+		Map.SetAccess();
+		Util.MapDebugPrint("missile_defense_Built");
+	},
+
+	missile_defense_Destroyed = function()
+	{
+		Util.EnableGoal("ROUTE_defense");
+		Map.defense=0;
+		Map.SetAccess();
+		Util.MapDebugPrint("missile_defense_Destroyed");
+	},
+
+	Gate_2_3_Destroyed = function()
+	{
+		Map.gates=1;
+		Map.SetAccess();
+		SetAvailableMapGoals(TEAM.ALLIES, true, { ".*MG42_Allied_MG42_Construction", "DEFEND_radio.*" });
+		SetAvailableMapGoals(TEAM.AXIS, true, "PLANT_Allied_MG42_Construction");
+	},
+	Gate_2_Destroyed = function()
+	{
+		Util.EnableGoal("ROUTE_gate2");
+		Map.Gate_2_3_Destroyed();
+		Util.MapDebugPrint("Gate_2_Destroyed");
+	},
+
+	Gate_3_Destroyed = function()
+	{
+		Util.EnableGoal("ROUTE_gate3");
+		Map.Gate_2_3_Destroyed();
+		Util.MapDebugPrint("Gate_3_Destroyed");
+	},
+
+	tombstone_Destroyed = function()
+	{
+		Util.EnableGoal("ROUTE_tomb");
+		Map.gates=1;
+		Map.SetAccess();
+		Util.MapDebugPrint("tombstone_Destroyed");
+	},
+
+
+	allied_gold_Taken = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"DEFEND_base.*",
+			"DEFEND_radio.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_truck.*");
+		Util.MapDebugPrint("allied_gold_Taken");
+	},
+
+	allied_gold_Returned = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_truck.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"DEFEND_base.*",
+			"DEFEND_radio.*",
+		});
+		Util.MapDebugPrint("allied_gold_Returned");
+	},
+
+	allied_gold_Secured = function()
+	{
+		Util.MapDebugPrint("allied_gold_Secured");
+	},
+
+	forwardspawn1_flag_Axis_Captured = function()
+	{
+		ClearGoalRole("CHECKPOINT_forwardspawn1_flag", ROLE.INFILTRATOR);
+		SetAvailableMapGoals(TEAM.ALLIES, true, "CHECKPOINT_forwardspawn1_flag");
+		Util.MapDebugPrint("forwardspawn1_flag_Axis_Captured");
+	},
+
+	forwardspawn1_flag_Allies_Captured = function()
+	{
+		SetGoalRole("CHECKPOINT_forwardspawn1_flag", ROLE.INFILTRATOR);
+		Util.MapDebugPrint("forwardspawn1_flag_Allies_Captured");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("------Axis have destroyed the ^1Main Gate!!!^7------", Map.Main_Gate_Destroyed);
+	OnTrigger("------^1Ramp to upper level constructed!!!^7------", Map.ramp_Built);
+	OnTrigger("------^1Ramp has been destroyed!!!^7------", Map.ramp_Destroyed);
+	OnTrigger("---------^1Axis have blown the ^3#2 ^1gate!!!^7---------", Map.Gate_2_Destroyed);
+	OnTrigger("---------^1Axis have blown the ^3#3^1 gate!!!^7---------", Map.Gate_3_Destroyed);
+	OnTrigger("---------^1Axis have accessed the ^3Underground Entrance!!!^7---------", Map.tombstone_Destroyed);
+	OnTrigger("------^1Missile Defense constructed!!!^7------", Map.missile_defense_Built);
+	OnTrigger("------^1Missile Defense Destoyed!!!^7------", Map.missile_defense_Destroyed);
+	OnTrigger("------^1The Axis have stolen the Radio Conduit!!!^7------", Map.allied_gold_Taken);
+	OnTrigger("Flag returned allied_gold!", Map.allied_gold_Returned);
+	OnTrigger(">>>>>>^1The Axis have secured the Radio Conduit!!!^7<<<<<<", Map.allied_gold_Secured);
+	OnTrigger("Axis claimed the Forward Spawn!", Map.forwardspawn1_flag_Axis_Captured);
+	OnTrigger("Allies reclaimed the Forward Spawn!", Map.forwardspawn1_flag_Allies_Captured);
+
+	Util.DisableGoal(".*", true);
+	Util.DisableGoal({"ROUTE_ramp", "ROUTE_gate2", "ROUTE_gate3", "ROUTE_tomb"});
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"ATTACK_gate.*",
+		"BUILD_ramp",
+		"PLANT_Hole_to_the_Sub_Basement",
+		"PLANT_Main_Gate",
+		"CHECKPOINT_forwardspawn1_flag",
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"DEFEND_gate.*",
+		".*_Command_Post",
+		"BUILD_missile_defense",
+		"PLANT_ramp",
+	});
+
+	SetGoalRole("CHECKPOINT_forwardspawn1_flag", ROLE.INFILTRATOR);
+
+	SetGoalPriority("PLANT_Hole_to_the_Sub_Basement", 0.5);
+	SetGoalPriority("PLANT_ramp", 0.5);
+	SetGoalPriority("PLANT_Allied_MG42_Construction", 0.8);
+	SetGoalPriority("PLANT_Axis_MG42_Construction", 0.7, TEAM.ALLIES, CLASS.ENGINEER);
+	SetGoalPriority("PLANT_missile_defense", 0.8, TEAM.AXIS, CLASS.ENGINEER);
+
+	Util.SetMaxUsers(1, {"MOUNT.*", ".*_Command_Post", "BUILD_missile_defense"});
+
+	Util.AddUsePoint("PLANT_Main_Gate", Vec3(-838, -3055, 802));
+	Util.AddUsePoint("PLANT_ramp", Vec3(-3855, -695, 1096));
+	Util.AddUsePoint("PLANT_missile_defense", {Vec3(624,2704,820), Vec3(831,2777,820)} );
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_Main_Gate =
+		{
+			ROUTE_axis_spawn =
+			{
+				ROUTE_a1 ={},
+				ROUTE_a2 ={Weight=0.4},
+				ROUTE_a3 ={},
+				ROUTE_a4 ={ ROUTE_a4_2 ={}},
+				ROUTE_sub ={Weight=3},
+				ROUTE_ramp ={Weight=2},
+			},
+		},
+		PLANT_ramp =
+		{
+			ROUTE_forward_spawn =
+			{
+				ROUTE_ramp ={},
+			},
+		},
+		FLAG_allied_gold =
+		{
+			ROUTE_forward_spawn =
+			{
+				ROUTE_defense ={},
+				ROUTE_gate2 ={},
+				ROUTE_gate3 ={},
+				ROUTE_tomb ={},
+			},
+		},
+		CAPPOINT_truck =
+		{
+			ROUTE_radio =
+			{
+				ROUTE_defense ={Weight=3},
+				ROUTE_gate2 ={},
+				ROUTE_gate3 ={Weight=2},
+			},
+		},
+	};
+
+	MapRoutes["ATTACK_gate.*"]=MapRoutes.PLANT_Main_Gate;
+	Util.Routes(MapRoutes);
+};

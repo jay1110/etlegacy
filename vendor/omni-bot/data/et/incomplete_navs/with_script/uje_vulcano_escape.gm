@@ -1,0 +1,522 @@
+//==========================================================================================
+//
+//	uje_vulcano_escape.gm
+//
+//	Who          	When		What
+//------------------------------------------------------------------------------------------
+//	^1[UJE]^3Captain	05 March 2017	Initial Script
+//  So that the bots work well, you need this mapscript
+//  https://1drv.ms/u/s!AkNXNlNQc-xmhx09_2FH2hWl0R0A
+//==========================================================================================
+//
+
+global Map =
+{
+	phase = 1,
+
+	// phase 1, first spawn , get tank and escort it
+	// phase 2, second spawn, escort tank
+	// phase 3, third spawn,
+	// phase 4, forwar.. no need to escort tank anymore
+	// phase 5, Wall Destroyed,truck escort
+	// set status' for conditionals
+	tankatswitch = false,
+	tankatbridge = false,
+	tankatend = false,
+	truckatbarrier = false,
+	truckbarrierbuild = false,
+	truckbuild = true,
+    Movers =
+    {
+	"MOVER_tank1",
+    },
+
+	Allied_CP_Built = function()
+	{
+	if ( Map.phase > 4 )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Allied_CP" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Allied_CP" );
+
+		Util.MapDebugPrint( "Allied_CP_Built" );
+	},
+
+	Axis_CP_Built = function()
+	{
+	if ( Map.phase < 3 )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_CP" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Axis_CP" );
+
+		Util.MapDebugPrint( "Axis_CP_Built" );
+	},
+
+	Allied_CP_Destroyed = function()
+	{
+	if ( Map.phase < 4 )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_CP" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Allied_CP" );
+
+		Util.MapDebugPrint( "Allied_CP_Destroyed" );
+	},
+
+	Axis_CP_Destroyed = function()
+	{
+	if ( Map.phase < 4 )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_CP" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_CP" );
+
+		Util.MapDebugPrint( "Axis_CP_Destroyed" );
+	},
+
+	Churchill_tank_Built = function()
+	{
+	if ( Map.phase < 4 )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "MOUNT_tank1" );
+	}
+	if ( Map.tankatswitch == true or Map.tankatbridge == true or Map.tankatend == true )
+	{
+    SetAvailableMapGoals( TEAM.AXIS, false, "ESCORT_tank1" );
+	}
+	else
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "ESCORT_tank1" );
+	}
+		Util.MapDebugPrint( "Churchill_tank_Built" );
+	},
+
+	Churchill_tank_Destroyed = function()
+	{
+	if ( Map.phase < 4 )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Churchill_tank" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, {"MOUNT_tank1","ESCORT_tank1"} );
+
+		Util.MapDebugPrint( "Churchill_tank_Destroyed" );
+	},
+
+	Bunker_Entrance_Destroyed = function()
+	{
+	 SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_switch.*" );
+	 SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_bunker.*" );
+
+	 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_bunker.*" );
+     SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_switch.*" );
+
+		Util.MapDebugPrint( "Bunker_Entrance_Destroyed" );
+	},
+
+	Tank_Pass_Door = function()
+	{
+	Map.tankatswitch = false;
+	Map.phase = 2;
+
+		Util.MapDebugPrint( "Tank_Pass_Door" );
+	},
+
+	Bridge_Built = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Bridge" );
+	if ( Map.phase < 3 )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Bridge" );
+	}
+		Util.MapDebugPrint( "Bridge_Built" );
+	},
+
+	Bridge_Destroyed = function()
+	{
+	if ( Map.phase < 4 )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Bridge" );
+	}
+		Util.MapDebugPrint( "Bridge_Destroyed" );
+	},
+
+	Gate_Destroyed = function()
+	{
+	    SetAvailableMapGoals( TEAM.AXIS, false, "MOUNTMG42_.*" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, ".*ARTILLERY.*" );
+
+		Util.MapDebugPrint( "Gate_Destroyed" );
+	},
+
+	door_opened = function()
+	{
+	if ( Map.phase < 2 )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_gate" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_gate" );
+	}
+		Util.MapDebugPrint( "door_opened" );
+	},
+
+	door_closed = function()
+	{
+	if ( Map.phase < 2 )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_gate" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_gate" );
+	}
+		Util.MapDebugPrint( "door_closed" );
+	},
+
+	tank_at_position = function()
+	{
+	Map.tankatswitch = true;
+	sleep(2);
+    SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_gate" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "ESCORT_tank1" );
+
+		Util.MapDebugPrint("tank_at_position");
+	},
+
+	tank_pass_switch = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, {"SWITCH_gate","ATTACK_switch.*"} );
+    SetAvailableMapGoals( TEAM.AXIS, true, {"ATTACK_bridge.*","BUILD_Bridge","BUILD_Axis_CP","ESCORT_tank1"} );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"SWITCH_gate","DEFEND_switch.*",".*ARTILLERY.*"} );
+	SetAvailableMapGoals( TEAM.ALLIES, true, {"DEFEND_bridge.*","PLANTMINE_tunnel.*","PLANTMINE_bridge.*"} );
+		sleep(4);
+		//kill bots axis
+			foreach ( id and bot in BotTable )
+			{
+				if ( bot.GetTeam() == TEAM.AXIS )
+				{
+					bot.ExecCommand("kill");
+				}
+			}
+			//kill bots allies
+			foreach ( id and bot in BotTable )
+			{
+				if ( bot.GetTeam() == TEAM.ALLIES )
+				{
+					bot.ExecCommand("kill");
+				}
+			}
+
+		Util.MapDebugPrint("tank_pass_switch");
+	},
+
+	tank_at_bridge = function()
+	{
+	Map.tankatbridge = true;
+    SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Tank_Barrier_1" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "ESCORT_tank1" );
+
+		Util.MapDebugPrint("tank_at_bridge");
+	},
+
+	Tank_Pass_Bridge = function()
+	{
+	Map.tankatbridge = false;
+	Map.phase = 3;
+    SetAvailableMapGoals( TEAM.AXIS, true, {"ESCORT_tank1*","ATTACK_vulcano.*"} );
+    SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_bridge.*" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"DEFEND_bridge.*","PLANTMINE_tunnel.*","PLANTMINE_bridge.*","PLANT_bridge"} );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_vulcano.*" );
+
+		Util.MapDebugPrint("Tank_Pass_Bridge");
+	},
+
+	Made_Hole_Vulcano = function()
+	{
+	Map.tankatend = true;
+	Map.phase = 4;
+	SetAvailableMapGoals( TEAM.AXIS, false, {"ESCORT_tank1","MOUNT_tank1","ATTACK_vulcano.*"} );
+	SetAvailableMapGoals( TEAM.AXIS, true, {"ATTACK_flag.*","PLANT_CWall","CHECKPOINT.*"} );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"DEFEND_vulcano.*","PLANT_Axis_CP"} );
+	SetAvailableMapGoals( TEAM.ALLIES, true, {"PLANTMINE_flag.*","BUILD_Allied_CP","CHECKPOINT.*","DEFEND_flag.*"} );
+
+		Util.MapDebugPrint("Made_Hole_Vulcano");
+	},
+
+	spawnflag_Axis_Captured = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_spawnflag" );
+	if ( Map.phase < 5 )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_spawnflag" );
+
+	}
+		Util.MapDebugPrint( "spawnflag_Axis_Captured" );
+	},
+
+	spawnflag_Allies_Captured = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_spawnflag" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_spawnflag" );
+
+		Util.MapDebugPrint( "spawnflag_Allies_Captured" );
+	},
+
+	Wall_Destroyed = function()
+	{
+    Map.phase = 5;
+	if ( Map.truckbuild == true )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "ESCORT_truck" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_truck.*" );
+	SetAvailableMapGoals( TEAM.AXIS, false, {"ATTACK_flag.*","CHECKPOINT.*"} );
+
+    SetAvailableMapGoals( TEAM.ALLIES, true, {"BUILD_Truck_Barrier","DEFEND_truck.*"} );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {"PLANTMINE_flag.*","BUILD_Allied_CP","CHECKPOINT.*","DEFEND_flag.*"} );
+
+		Util.MapDebugPrint("Wall_Destroyed");
+	},
+
+	truck_Built = function()
+	{
+	Map.truckbuild = true;
+	if ( Map.truckatbarrier == true && Map.truckbarrierbuild == true )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "ESCORT_truck" );
+	}
+	else
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "ESCORT_truck" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, {"ATTACK_truck.*","BUILD_truck"} );
+
+		Util.MapDebugPrint( "truck_Built" );
+	},
+
+	truck_Destroyed = function()
+	{
+	Map.truckbuild = false;
+	SetAvailableMapGoals( TEAM.AXIS, false, "ESCORT_truck" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_truck" );
+
+		Util.MapDebugPrint( "truck_Destroyed" );
+	},
+
+	Truck_Barrier_Destroyed = function()
+	{
+	Map.truckbarrierbuild = false;
+	if ( Map.truckatbarrier == true && Map.truckbuild== true )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "ESCORT_truck" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Truck_Barrier" );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Truck_Barrier" );
+
+		Util.MapDebugPrint( "Truck_Barrier_Destroyed" );
+	},
+
+	Truck_Barrier_Built = function()
+	{
+	Map.truckbarrierbuild = true;
+	if ( Map.truckatbarrier == true )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Truck_Barrier" );
+    SetAvailableMapGoals( TEAM.AXIS, false, "ESCORT_truck" );
+	}
+		Util.MapDebugPrint( "Truck_Barrier_Buil" );
+	},
+
+	truck_go_ramp = function()
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_ramp.*" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_truck.*" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_ramp.*" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_truck.*" );
+
+		Util.MapDebugPrint( "truck_go_ramp" );
+	},
+
+	truck_out_ramp = function()
+	{
+	Map.truckatbarrier = true;
+	SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_ramp.*" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_barrier.*" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_barrier.*" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_ramp.*" );
+
+		Util.MapDebugPrint( "truck_out_ramp" );
+	},
+
+	truck_at_barrier = function()
+	{
+	Map.truckatbarrier = true;
+	if ( Map.truckbarrierbuild == true )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "ESCORT_truck" );
+	}
+	else
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "ESCORT_truck" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Truck_Barrier" );
+
+		Util.MapDebugPrint( "truck_at_barrier" );
+	},
+	 vehicle_at_location = function()
+	{
+		switch(Map.VehicleLocation)
+		{
+			case 1:
+			{
+            Map.tank_at_position();
+			}
+		    case 2:
+			{
+			Map.tank_pass_switch();
+			}
+			case 3:
+			{
+			Map.tank_at_bridge();
+			}
+			case 4:
+			{
+			Map.tank_at_end();
+			}
+			case 5:
+			{
+			Map.truck_go_ramp();
+			}
+			case 6:
+			{
+			Map.truck_out_ramp();
+			}
+			case 7:
+			{
+			Map.truck_at_barrier();
+			}
+		}
+		Util.MapDebugPrint("vehicle at location " + Map.VehicleLocation, true);
+	},
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "^4Allies Command Post constructed, Allied spawntime decreased.", Map.Allied_CP_Built );
+	OnTrigger( "^3 Stage 1 Completed! + 15minutes!!", Map.Tank_Pass_Door );
+	OnTrigger( "^1Axis CP constructed, Axis spawntime decreased.", Map.Axis_CP_Built );
+	OnTrigger( "^3 The Axis have build the bridge!!!", Map.Bridge_Built );
+	OnTrigger( "The Churchill tank has been repaired.", Map.Churchill_tank_Built );
+	OnTrigger( "The Churchill tank has been damaged.", Map.Churchill_tank_Destroyed );
+	OnTrigger( "^3 The Allies have build the truck barrier!!!", Map.Truck_Barrier_Built );
+	OnTrigger( "^2 The tank has destroyed the Bunker entrance!!", Map.Bunker_Entrance_Destroyed );
+	OnTrigger( "^5The truck has been repaired.", Map.truck_Built );
+	OnTrigger( "^5The truck has been damaged.", Map.truck_Destroyed );
+	OnTrigger( "^1Allies Command Post destroyed, Allied spawntime increased.", Map.Allied_CP_Destroyed );
+	OnTrigger( "^4Axis CP destroyed.", Map.Axis_CP_Destroyed );
+	OnTrigger( "^3 The Allies have destroyed the bridge!!!", Map.Bridge_Destroyed );
+	OnTrigger( "^3 The Axis have destroyed the barrier!!!", Map.Truck_Barrier_Destroyed );
+	OnTrigger( "^2 The tank has destroyed the gate!!", Map.Gate_Destroyed );
+	OnTrigger( "The Axis captured the Flag.", Map.spawnflag_Axis_Captured );
+	OnTrigger( "The Allies reclaimed the Flag.", Map.spawnflag_Allies_Captured );
+	OnTrigger( "^3 The hatch has been opened by the Axis!!!", Map.door_opened );
+	OnTrigger( "^3 The hatch has been closed by the Allies!!!", Map.door_closed );
+	OnTrigger( "^1 The Tank is over the bridge!!", Map.Tank_Pass_Bridge );
+	OnTrigger( "^2 The tank has made a hole in the vulcano!!", Map.Made_Hole_Vulcano );
+	OnTrigger( "^3The Axis destroyed The Wall!!!", Map.Wall_Destroyed );
+	OnTrigger( "tank1 at location", Map.vehicle_at_location );
+	OnTrigger( "truck at location", Map.vehicle_at_location );
+
+	tankatpossition = OnTriggerRegion(AABB(-1643.553,-1784.871,1.126,-1599.883,-1585.757,75.128), RegionTrigger.VehicleTrigger);
+	tankpassswitch = OnTriggerRegion(AABB(-1399.672,-1846.532,1.134,-1343.125,-1474.413,102.465), RegionTrigger.VehicleTrigger);
+	tankatbridge = OnTriggerRegion(AABB(-356.552,-2086.813,19.956,-62.225,-1928.491,112.360), RegionTrigger.VehicleTrigger);
+	tankatend = OnTriggerRegion(AABB(-2304.875,1492.359,-62.875,-2017.599,1576.875,11.479), RegionTrigger.VehicleTrigger);
+	truckgoramp = OnTriggerRegion(AABB(4202.081,942.644,137.126,4362.648,983.867,211.128), RegionTrigger.VehicleTrigger);
+	truckoutramp = OnTriggerRegion(AABB(4971.998,1198.876,-94.875,5174.800,1251.534,-20.875), RegionTrigger.VehicleTrigger);
+	truckatbarrier = OnTriggerRegion(AABB(5128.816,630.882,-94.875,5541.937,757.222,-20.874), RegionTrigger.VehicleTrigger);
+
+	Util.DisableGoal( ".*", true ); // all but routes
+	//activation ALLIES
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"DEFEND_bunker.*",
+	});
+
+	//activation AXIS
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+	"ATTACK_bunker.*",
+	"MOUNT_tank1",
+	"BUILD_Churchill_tank",
+	"MOUNTMG42_.*",
+	});
+
+	// All Team goals
+	//SetGoalPriority( "SWITCH.*", 0.93 );
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, ".*MG42.*" );
+	Util.SetMaxUsers( 1, "ATTACK_.*" );
+	Util.SetMaxUsers( 1, "DEFEND_.*" );
+	Util.SetMaxUsers( 1, "MOUNT_tank1" );
+	Util.SetMaxUsers( 2, "CHECKPOINT.*" );
+	Util.SetMaxUsers( 1, "ESCORT.*" );
+	Util.SetMaxUsers( 1, "SWITCH_gate" );
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=40, MaxCampTime=90} );
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=30, MaxCampTime=45} );
+    SetMapGoalProperties( "ATTACK.*", {MinCampTime=30, MaxCampTime=45} );
+
+	Util.LimitToClass("ESCORT.*", TEAM.AXIS, CLASS.FIELDOPS, CLASS.COVERTOPS, CLASS.ENGINEER);
+	Util.LimitToClass("MOUNT_tank1", TEAM.AXIS, CLASS.SOLDIER, CLASS.MEDIC, CLASS.FIELDOPS, CLASS.COVERTOPS);
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	   bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_spawnflag =
+		{
+			ROUTE_axis_volcano  =
+			{
+				ROUTE_center_01  =
+				{
+					ROUTE_center_02  =
+					{
+					},
+				},
+				ROUTE_left_01  =
+				{
+					ROUTE_left_02  =
+					{
+					},
+				},
+				ROUTE_right_01  =
+				{
+					ROUTE_righ_02  =
+					{
+					},
+				},
+				ROUTE_cp  =
+				{
+				},
+			},
+		},
+	};
+	MapRoutes["ATTACK_flag.*"] = MapRoutes.CHECKPOINT_spawnflag ;
+	Util.Routes(MapRoutes);
+};

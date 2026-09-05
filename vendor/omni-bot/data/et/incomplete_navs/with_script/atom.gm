@@ -1,0 +1,285 @@
+//==========================================================================================
+//
+//	atom.gm
+//
+//	Who       	When		What
+//------------------------------------------------------------------------------------------
+//	^1[UJE]^3Niek	07 January 2017	Initial Script
+//	palota       	08 June 2025	BUILD_Axis_Command_Post
+//==========================================================================================
+//
+
+global Map =
+{
+	CP_CovertOps = 1, //0 = covy and engy can plant CP
+
+	Navigation =
+	{
+		El_Ladder_Bottom =
+		{
+			navigate = function(_this)
+			{
+				_this.AddAimRequest(Priority.High, "facing", Vector3( 0.013, 0.941, 0.337 ));
+				sleep(0.5);
+				_this.Bot.HoldButton(BTN.BACKWARD, 8);
+				sleep(8);
+			}
+		},
+		Shaft_Ladder_Bottom =
+		{
+			navigate = function(_this)
+			{
+				_this.AddAimRequest(Priority.High, "facing", Vector3( -0.013, -0.677, 0.736 ));
+				sleep(0.5);
+				_this.Bot.HoldButton(BTN.BACKWARD, 13);
+				sleep(13);
+			}
+		},
+	},
+
+	bunker_gate_Destroyed = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals( TEAM.ALLIES, 0, "PLANT_bunker_gate" );
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			"FLAG_gold",
+			"PLANT_Axis_Command_Post",
+		});
+
+		//SetAvailableMapGoals( TEAM.ALLIES, 1, "CHECKPOINT_forward_spawn" );
+		SetAvailableMapGoals( TEAM.AXIS, 0, "CHECKPOINT_forward_spawn" );
+
+		Util.MapDebugPrint( "bunker_gate_Destroyed" );
+	},
+
+	forward_spawn_Axis_Captured = function()
+	{
+		Util.MapDebugPrint( "forward_spawn_Axis_Captured" );
+	},
+	forward_spawn_Allies_Captured = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "FLAG_gold" );
+		Util.MapDebugPrint( "forward_spawn_Allies_Captured" );
+	},
+
+	gold_Taken = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "CAPPOINT_truck" );
+
+		Util.MapDebugPrint( "gold_Taken" );
+	},
+	gold_Returned = function()
+	{
+		Util.MapDebugPrint( "gold_Returned" );
+	},
+	gold_Secured = function()
+	{
+		Util.MapDebugPrint( "gold_Secured" );
+	},
+
+	// Dual Command Post
+	Allied_CP_Built = function()
+	{
+		Util.MapDebugPrint( "Allied_CP_Built" );
+	},
+
+	Allied_CP_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Allied_CP_Destroyed" );
+	},
+
+	Axis_CP_Built = function()
+	{
+		Util.MapDebugPrint( "Axis_CP_Built" );
+	},
+
+	Axis_CP_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Axis_CP_Destroyed" );
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "^6The bunker gate has been destroyed!", Map.bunker_gate_Destroyed );
+
+	OnTrigger( "^6Allies have stolen the documents!!!!", Map.gold_Taken );
+	OnTrigger( "^6The docments have been returned!!!!", Map.gold_Returned );
+
+	OnTrigger( "Axis capture the forward spawn!", Map.forward_spawn_Axis_Captured );
+	OnTrigger( "Allies capture the forward spawn!", Map.forward_spawn_Allies_Captured );
+
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!",  Map.Allied_CP_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!",          Map.Allied_CP_Destroyed );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!",    Map.Axis_CP_Built );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!",          Map.Axis_CP_Destroyed );
+
+	Util.DisableGoal( ".*", true );
+
+	//Allies
+	SetAvailableMapGoals( TEAM.ALLIES, 1, {
+		"CAMP_ATTACK_Bunker_.*",
+		"BUILD_Allied_Command_Post",
+		"PLANT_bunker_gate",
+	});
+
+	//Axis
+	SetAvailableMapGoals( TEAM.AXIS, 1, {
+		"CAMP_DEFEND_Bunker_.*",
+		"MOUNTMG42_.*",
+		//"REPAIRMG42_.*",
+		"CHECKPOINT_forward_spawn",
+		"PLANT_Allied_Command_Post",
+		"BUILD_Axis_Command_Post",
+	});
+
+	if ( Map.CP_CovertOps == 1 )
+	{
+		Util.LimitToClass( "PLANT_Allied_Command_Post", 1, 5 );
+		Util.LimitToClass( "PLANT_Axis_Command_Post", 2, 5 );
+	}
+
+	Util.SetMaxUsers( 1, "BUILD_Axis_Command_Post" );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_bunker_gate =
+		{
+			ROUTE_Allies_2 =
+			{
+				ROUTE_Underpass_Wet =
+				{
+					ROUTE_Bunker_Att_1 =
+					{
+						ROUTE_Bunker_Door = {},
+					},
+				},
+			},
+		},
+
+		BUILD_Axis_Command_Post =
+		{
+			ROUTE_Axis_CP_Entrance =
+			{
+				ROUTE_Axis_CP = {},
+			},
+		},
+		PLANT_Axis_Command_Post =
+		{
+			ROUTE_FS_Flag =
+			{
+				ROUTE_FS_Exit_To_Docs =
+				{
+					ROUTE_Back_1 =
+					{
+						ROUTE_Underpass_Dry =
+						{
+							ROUTE_Axis_CP_Entrance =
+							{
+								ROUTE_Axis_CP = {},
+							},
+						},
+					},
+				},
+			},
+		},
+
+		BUILD_Allied_Command_Post =
+		{
+			ROUTE_Allies_2 =
+			{
+				ROUTE_Allies_CP = {},
+			},
+		},
+
+		PLANT_Allied_Command_Post =
+		{
+			ROUTE_FS_Flag =
+			{
+				ROUTE_Bunker_Door =
+				{
+					ROUTE_Bunker_Att_1 =
+					{
+						ROUTE_Underpass_Wet =
+						{
+							ROUTE_Allies_CP = {},
+						},
+					},
+				},
+			},
+		},
+
+		FLAG_gold =
+		{
+			ROUTE_FS_Flag =
+			{
+				ROUTE_FS_Exit_To_Docs =
+				{
+					ROUTE_Back_1 =
+					{
+						ROUTE_Underpass_Dry =
+						{
+							ROUTE_Axis_CP_Window =
+							{
+								ROUTE_Docs_1 =
+								{
+									ROUTE_Docs = {},
+								},
+							},
+						},
+					},
+
+					ROUTE_Shaft_Top =
+					{
+						Weight = 3,
+						ROUTE_Shaft_Bottom =
+						{
+							ROUTE_El_Bottom  =
+							{
+								ROUTE_El_Top_Door =
+								{
+									ROUTE_Docs = {},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+
+		CHECKPOINT_forward_spawn =
+		{
+			ROUTE_AlSp =
+			{
+				ROUTE_Allies_2 =
+				{
+					ROUTE_Underpass_Wet =
+					{
+						ROUTE_Bunker_Att_1 =
+						{
+							ROUTE_Bunker_Door =
+							{
+								ROUTE_FS_Flag = {},
+							},
+						},
+					},
+				},
+			},
+		},
+
+		CAPPOINT_truck =
+		{
+			ROUTE_AlSp_1 =
+			{
+				ROUTE_Truck = {},
+			},
+		},
+	};
+	Util.Routes(MapRoutes);
+};

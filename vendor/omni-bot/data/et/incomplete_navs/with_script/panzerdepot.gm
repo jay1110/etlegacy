@@ -1,0 +1,193 @@
+//==========================================================================================
+//
+//	panzerdepot.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	27 January 2018	Initial Script
+//	palota	8 July 2025
+//==========================================================================================
+//
+
+global Map =
+{
+	Sidewall_Ledder_Built = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, 1, "PLANT_Sidewall", true);
+		Util.MapDebugPrint("Sidewall_Ledder_Built");
+	},
+	Sidewall_Ledder_Destroyed = function()
+	{
+		Util.MapDebugPrint("Sidewall_Ledder_Destroyed");
+	},
+
+	Sidewall_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, 1, {
+			"PLANT_Escape_.*",
+			"PLANT_Tank_Depot_Door",
+			"ATTACK_Gen_.*",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, 1, "DEFEND_Gen_.*");
+		Util.MapDebugPrint("Sidewall_Destroyed");
+	},
+
+	Tank_Depot_Door_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, 1, "PLANT_Tankwall_.*");
+		SetAvailableMapGoals(TEAM.AXIS, 1, "DEFEND_Depot_.*");
+		Util.MapDebugPrint("Tank_Depot_Door_Destroyed");
+	},
+
+	Tankwall_1_Built = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, 0, "PLANT_Fuel_Safe");
+		Util.MapDebugPrint("Tankwall_1_Built");
+	},
+	Tankwall_1_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, 1, "PLANT_Fuel_Safe");
+		Util.MapDebugPrint("Tankwall_1_Destroyed");
+	},
+
+	Tankwall_2_Built = function()
+	{
+		Util.MapDebugPrint("Tankwall_2_Built");
+	},
+	Tankwall_2_Destroyed = function()
+	{
+		Util.MapDebugPrint("Tankwall_2_Destroyed");
+	},
+
+	Tankwall_3_Built = function()
+	{
+		Util.MapDebugPrint("Tankwall_3_Built");
+	},
+	Tankwall_3_Destroyed = function()
+	{
+		Util.MapDebugPrint("Tankwall_3_Destroyed");
+	},
+
+	Fuel_Safe_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, 1, {
+			"FLAG_allied_obj1",
+			"CAPPOINT_Truck",
+		});
+		Util.MapDebugPrint("Fuel_Safe_Destroyed");
+	},
+
+	Escape_Voltage_Control_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("TruckDeath", "closed", 0);
+		Util.MapDebugPrint("Escape_Voltage_Control_Destroyed");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("The ALlied has build the Sidewall Ladder", Map.Sidewall_Ledder_Built);
+	OnTrigger("The Allied Sidewall Ledder has been destroyed", Map.Sidewall_Ledder_Destroyed);
+
+	OnTrigger("The Sidewall has been breached!", Map.Sidewall_Destroyed);
+
+	OnTrigger("The Tank Maindoor has been breached!", Map.Tank_Depot_Door_Destroyed);
+
+	OnTrigger("The Axis Tankwall1 has been build", Map.Tankwall_1_Built);
+	OnTrigger("The Axis Tankwall1 has been destroyed", Map.Tankwall_1_Destroyed);
+
+	OnTrigger("The Axis Tankwall2 has been build", Map.Tankwall_2_Built);
+	OnTrigger("The Axis Tankwall2 has been destroyed", Map.Tankwall_2_Destroyed);
+
+	OnTrigger("The Axis Tankwall3 has been build", Map.Tankwall_3_Built);
+	OnTrigger("The Axis Tankwall3 has been destroyed", Map.Tankwall_3_Destroyed);
+
+	OnTrigger("The Escape Voltage Control has been breached! ***Voltage Down!***", Map.Escape_Voltage_Control_Destroyed);
+
+	OnTrigger("The Tank Fuel Area  has been breached!", Map.Fuel_Safe_Destroyed);
+
+	OnTriggerRegion(AABB(47.201,1495.126,297.125,662.204,1667.624,371.125), RegionTrigger.DisableBotPush);
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal({
+		".*Command_Post",
+		".*CAB.*",
+	});
+
+	Util.SetGoalPosition(684, 453, 312, "PLANT_Sidewall");
+	Util.AddUsePoint("PLANT_Tank_Depot_Door", Vec3(-1023, 1034, 148));
+	Util.AddUsePoint("PLANT_Fuel_Safe", Vec3(-632, 1854, 158));
+
+	//Allies
+	SetAvailableMapGoals(TEAM.ALLIES, 1, "GRENADE_House_Tunnel_Entry"); //just to open tunnel entry
+
+	SetAvailableMapGoals(TEAM.ALLIES, 1, {
+		"BUILD_Sidewall_Ledder",
+		"SNIPE_Al_.*",
+		"PLANTMINE_Al_.*",
+	});
+
+	//Both
+	Util.LimitToClass("PLANT_Neutral_Command_Post", 0, CLASS.COVERTOPS);
+
+	//Axis
+	SetAvailableMapGoals(TEAM.AXIS, 1, {
+		"GRENADE_Ax_Tunnel_Entry", //just to open tunnel entry
+		"BUILD_Tankwall.*",
+		"SNIPE_Ax_.*",
+		"PLANTMINE_Ax_.*",
+		"PLANT_Sidewall_Ledder",
+	});
+	Util.LimitToClass("PLANT_Sidewall_Ledder", 1, CLASS.COVERTOPS);
+
+	SetGoalPriority("PLANT_Tankwall_[23]", 0.5);
+	SetGoalPriority("DEFUSE_Sidewall.*", 0, 0, 0, true);
+	SetGoalPriority("PLANT_Fuel_Safe", 0.9);
+	SetGoalPriority("BUILD_Neutral_Command_Post", 0.81);
+	SetGoalPriority("PLANTMINE.*", 0.4);
+
+	Util.SetMaxUsers(1, ".*Command_Post");
+
+	Wp.SetWaypointFlag("TruckDeath", "closed", 1);
+
+	Util.SetGoalRange("BUILD_Sidewall_Ledder", AABB(-622.415,-1956.588,33.125,1930.272,492.752,595.657));
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.TargetBreakableDist = 90;
+};
+
+global InitializeRoutes = function()
+{
+	r =
+	{
+		ROUTE_AlSp =
+		{
+			ROUTE_Side_Wall = {},
+			ROUTE_CP = { ROUTE_Ax_Tunnel = {}}
+		}
+	};
+	MapRoutes =
+	{
+		PLANT_Tank_Depot_Door = r,
+		PLANT_Escape_Voltage_Control = r,
+		PLANT_Tankwall_1 = r,
+		PLANT_Tankwall_2 = r,
+		PLANT_Tankwall_3 = r,
+		PLANT_Fuel_Safe = r,
+		BUILD_Neutral_Command_Post =
+		{
+			ROUTE_AxSp =
+			{
+				ROUTE_Ax_Tunnel =
+				{
+				},
+			},
+		},
+	};
+	Util.Routes(MapRoutes);
+};

@@ -1,0 +1,124 @@
+//==========================================================================================
+//
+//  one_way_b3.gm
+//
+// Who   	When		What
+//------------------------------------------------------------------------------------------
+// palota	07 July 2025	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	NavBreak = function(y, b)
+	{
+		this.AddWeaponRequest(WEAPON.KNIFE);
+		this.AddAimRequest(Priority.Medium, "facing", Vec3(0, 0.149 * y, 0.989));
+		sleep(1);
+		for(i=0; i<4; ++i){
+			this.Bot.HoldButton(BTN.ATTACK1, 1);
+			this.Bot.HoldButton(BTN.FORWARD, 1);
+			this.Bot.ResetStuckTime();
+			sleep(1);
+			if (this.Bot.GetPosition().z > 430) {
+				Map[b] = 1;
+				break;
+			}
+		}
+	},
+	
+	Navigation =
+	{
+		ladder_al =
+		{
+			EvalFunc = function()
+			{
+				return !Map.grate_al_Broken;
+			},
+			navigate = function(){ f=Map.NavBreak; this:f(1, "grate_al_Broken");},
+		},
+		ladder_ax =
+		{
+			EvalFunc = function()
+			{
+				return !Map.grate_ax_Broken;
+			},
+			navigate = function(){ f=Map.NavBreak; this:f(-1, "grate_ax_Broken");},
+		},
+	},
+
+	Switches =
+	{
+		allied_elevator_in =
+		{
+			Enabled = true,
+			Priority = 0,
+			WaypointName = "allied_elevator_switch_in",
+			AimPosition = Vec3(-528.125, 1681.560, 191.452),
+		},
+
+		axis_elevator_in =
+		{
+			Enabled = true,
+			Priority = 0,
+			WaypointName = "axis_elevator_switch_in",
+			AimPosition = Vec3(-67.875, -1974.945, 189.463),
+		}
+	},
+
+	elevator_al_goto = function(trigger)
+	{
+		if (ToVector(trigger.Action).y < 0){
+			Map.Switches.allied_elevator_in.Enabled = false;
+			Util.MapDebugPrint("allied elevator open", 1);
+		}
+		else
+		{
+			Map.Switches.allied_elevator_in.Enabled = true;
+			Util.MapDebugPrint("allied elevator close", 1);
+		}
+	},
+
+	elevator_ax_goto = function(trigger)
+	{
+		if (ToVector(trigger.Action).y > 0){
+			Map.Switches.axis_elevator_in.Enabled = false;
+			Util.MapDebugPrint("axis elevator open", 1);
+		}
+		else
+		{
+			Map.Switches.axis_elevator_in.Enabled = true;
+			Util.MapDebugPrint("axis elevator close", 1);
+		}
+	},
+
+	alliedSwitch = function()
+	{
+		Util.DisableGoal("SWITCH_allied_obj");
+		SetAvailableMapGoals(TEAM.AXIS, true, "FLAG_battery_al");
+		Util.MapDebugPrint("alliedSwitch");
+	},
+
+	axisSwitch = function()
+	{
+		Util.DisableGoal("SWITCH_axis_obj");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "FLAG_battery_ax");
+		Util.MapDebugPrint("axisSwitch");
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("Minutes Left ~> ^45", Map.alliedSwitch);
+	OnTrigger("Minutes Left ~> ^15", Map.axisSwitch);
+	OnTrigger("elevator_al_door_o_l_goto", Map.elevator_al_goto);
+	OnTrigger("elevator_ax_door_o_l_goto", Map.elevator_ax_goto);
+
+	Util.MapDebugPrint("OnMapLoad");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.TargetBreakableDist = 90;
+};

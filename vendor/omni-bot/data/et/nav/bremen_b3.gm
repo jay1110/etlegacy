@@ -1,0 +1,1256 @@
+global Map =
+{
+	GoldIsStolen = false,
+	Barrier1IsBuilt = false,
+	Barrier2IsBuilt = false,
+	GateIsIntact = true,
+	Command = false, 	//CP not owned by allies
+	Key = false,		//Keycard not captured
+	Spawnback = false, 	//Axis didnt spawn back yet
+	//SelfkillonLow
+	Suicide = true,
+	Pushing = true,
+
+	MainPlant = 0,
+
+	// delay dispense ammo a bit so they will use arty goals right away
+	DispenseAmmoTime = 12,
+
+
+	Roles =
+	{
+		// split the defense into east and west teams. anything past 8 bots will use
+		// more aggressive roaming positions
+		AXIS =
+		{
+			AllBots = true,
+			DEFENDER2 = // Flag Heavy
+			{
+				crucialClass = CLASS.MEDIC, // Revivetrain
+				numbots = 4,
+			},
+			DEFENDER1 = // Main weak
+			{
+				crucialClass = CLASS.ENGINEER, // for defuses
+				numbots = 3,
+				MinBotsForRole = 4,
+			},
+		},
+		// split for more attackpower
+		ALLIES =
+		{
+			ATTACKER2 = // Plant Engi
+			{
+				crucialClass = CLASS.ENGINEER, // for plants
+				numbots = 3,
+				MinBotsForRole = 4,
+			},
+			ATTACKER1 = // Flag medic
+			{
+				crucialClass = CLASS.MEDIC, // Revivetrain
+				numbots = 4,
+			},
+		},
+	},
+
+	OnFlagTake = function()
+	{
+		if ( Map.GoldIsStolen)
+		{
+			return;
+		}
+		SetAvailableMapGoals(TEAM.AXIS, false, "ATTACK_AFlag.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_Flag.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "ATTACK_BFlag.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "MOBILEMORTAR_AlSpawn");
+		SetAvailableMapGoals(TEAM.AXIS, true, "ATTACK_Flag.*");
+
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"ARTILLERY_S_AxFirst_.*",
+			"GRENADE_AxFirst_.*",
+			"CALLARTILLERY_AxFirst_.*",
+			"AIRSTRIKE_AxFirst_.*",
+		});
+
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"AIRSTRIKE_AllFirst_.*",
+			"GRENADE_AllFirst_.*",
+		});
+		Util.MapDebugPrint("OnFlagTake");
+	},
+
+	OnFlagRet = function()
+	{
+		if ( Map.GoldIsStolen)
+		{
+			return;
+		}
+		SetAvailableMapGoals(TEAM.AXIS, true, "ATTACK_AFlag.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "ATTACK_Flag.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_BFlag.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "MOBILEMORTAR_AlSpawn");
+		SetAvailableMapGoals(TEAM.AXIS, false, "ATTACK_Flag.*");
+
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"ARTILLERY_S_AxFirst_.*",
+			"GRENADE_AxFirst_.*",
+			"CALLARTILLERY_AxFirst_.*",
+			"AIRSTRIKE_AxFirst_.*",
+		});
+
+
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"AIRSTRIKE_AllFirst_.*",
+			"GRENADE_AllFirst_.*",
+		});
+
+		Util.MapDebugPrint("OnFlagRet");
+	},
+
+	OnFlagSec = function()
+	{
+		sleep(2);
+		SetAvailableMapGoals(TEAM.ALLIES, false, "CHECKPOINT_flag1_flag");
+		SetAvailableMapGoals(TEAM.AXIS, false, "CHECKPOINT_flag1_flag");
+		Util.SetMaxUsers( 2, "BUILD_Neutral_Command_Post" );
+
+		if ( Map.GoldIsStolen)
+		{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ESCORT_truck" );
+		return;
+		}
+
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			".*_Flag.*",
+			".*_DYNOCOVER.*",
+			"ATTACK_BFlag.*",
+			"MOBILEMORTAR_AlSpawn",
+		});
+
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			".*_CPA.*",
+			"BUILD_Neutral_Command_Post",
+			"FLAG_keycard_flag",
+			"PLANT_Neutral_Command_Post",
+			"ROUTE_maindoor_left",
+		});
+
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"ATTACK_AFlag.*",
+			"ATTACK_Flag.*",
+			"ATTACK_Axfirst_.*",
+			"PLANTMINE_Amine.*",
+		});
+
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			".*_CPB.*",
+			".*_CPC_.*",
+			"BUILD_Neutral_Command_Post",
+			"PLANT_Neutral_Command_Post",
+			"ARTILLERY_S_AxCP_1",
+		});
+
+		SetGoalPriority( "PLANT_Neutral_Command_Post", 0.91, TEAM.AXIS, CLASS.COVERTOPS );
+		SetGoalPriority( "PLANT_Neutral_Command_Post", 0.91, TEAM.ALLIES, CLASS.COVERTOPS );
+
+		SetAvailableMapGoals(TEAM.AXIS, false, ".*_AxFirst_.*");
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_flag.*" );
+
+
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"AIRSTRIKE_AllFirst_.*",
+			"GRENADE_AllFirst_.*",
+		});
+
+		//Roles
+		//CP Stage
+		//Axis
+		SetGoalRole("DEFEND_CPB.*", ROLE.DEFENDER1);
+		SetGoalRole("ATTACK_CPC_.*", ROLE.DEFENDER2);
+
+		//Allied First Stage
+		SetGoalRole("ATTACK_CPA_.*", ROLE.ATTACKER1);
+		SetGoalRole("ATTACK_CPA2_.*", ROLE.ATTACKER2);
+
+
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"DEFUSE_Main_Gate.*",
+			"DEFUSE_Side_Door.*",
+		}, true);
+
+		// allied covert ops in disguise can sneak through team doors to destroy these goals
+		ClearGoalRole({ "PLANT_Neutral_Command_Post", "FLAG_keycard_flag" }, ROLE.INFILTRATOR );
+
+		Map.GateIsIntact = false;
+		Map.Suicide = false;
+		Util.MapDebugPrint("OnFlagSec");
+	},
+
+	OnSide = function()
+	{
+		if ( Map.GoldIsStolen)
+		{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ESCORT_truck" );
+		return;
+		}
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"BUILD_Neutral_Command_Post",
+			"PLANT_Neutral_Command_Post",
+			"FLAG_keycard_flag",
+			"ROUTE_sidedoor_right",
+			"ROUTE_sidedoor_left",
+			"ROUTE_sidedoor",
+		});
+
+		// allied covert ops in disguise can sneak through team doors to destroy these goals
+		ClearGoalRole({ "PLANT_Neutral_Command_Post", "FLAG_keycard_flag" }, ROLE.INFILTRATOR );
+
+		SetAvailableMapGoals(TEAM.AXIS, true, "PLANT_Neutral_Command_Post");
+		SetGoalPriority( "PLANT_Neutral_Command_Post", 0.91, TEAM.AXIS, CLASS.COVERTOPS );
+		SetGoalPriority( "PLANT_Neutral_Command_Post", 0.91, TEAM.ALLIES, CLASS.COVERTOPS );
+		SetGoalPriority( "FLAG_keycard_flag", 0.0, TEAM.ALLIES, CLASS.COVERTOPS );
+
+
+		Util.MapDebugPrint("OnSide");
+	},
+
+	OnAllCP = function()
+	{
+		Map.Command = true;  //Allies own CP
+
+		//disables CommandPost-Attack etc
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"PLANT_Neutral_Command_Post",
+			"BUILD_Neutral_Command_Post",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, ".*_CPA_.*");
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			".*_CPB.*",
+			"CALLARTILLERY_AxCP_1",
+			"ARTILLERY_S_AxCP_1",
+		});
+		SetGoalPriority( "BUILD_Truck", 0.8 );
+
+		if(!Map.Spawnback)
+		{
+			Util.ChangeSpawn(TEAM.AXIS, 4);
+			SetAvailableMapGoals(TEAM.ALLIES, false, {
+				"ATTACK_Flag.*",
+				".*_DYNOCOVER.*",
+				"ATTACK_BFlag.*",
+				"MOBILEMORTAR_AlSpawn",
+			});
+			SetAvailableMapGoals(TEAM.AXIS, false, {
+				"ATTACK_AFlag.*",
+				"ATTACK_Flag.*",
+				"ATTACK_Axfirst_.*",
+				"PLANTMINE_Amine.*",
+			});
+		}
+
+		if (Map.Key) //Keycard captured
+		{
+			if ( Map.GoldIsStolen)
+				{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"ESCORT_truck",
+					"PLANT_Truck_Barrier_1",
+				});
+				return;
+				}
+			SetAvailableMapGoals(TEAM.ALLIES, true, "BUILD_Truck");
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, ".*_TruckA.*" );
+
+
+			SetAvailableMapGoals(TEAM.ALLIES, false, {
+				".*_CPA2_.*",
+				".*_KeyA.*",
+			});
+
+			SetAvailableMapGoals(TEAM.AXIS, false, "MOBILEMG42_Keyd1");
+			SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Truck_Barrier_1");
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"ATTACK_TruckD.*",
+				"CALLARTILLERY_TruckDEF_1",
+				"ARTILLERY_S_TruckDEF_1",
+				"MOBILEMG42_TruckDEF_.*",
+				"GRENADE_TruckDEF_.*",
+			});
+			SetAvailableMapGoals(TEAM.AXIS, false, ".*_CPC_.*");
+
+			Server.MinClassCount[TEAM.ALLIES][CLASS.COVERTOPS] = 0;
+			Server.MinClassCount[TEAM.ALLIES][CLASS.ENGINEER] += 1;
+			Server.MinClassCount[TEAM.ALLIES][CLASS.FIELDOPS] -= 1;
+			Server.MinClassCount[TEAM.ALLIES][CLASS.MEDIC] += 1;
+
+
+		}
+		else if (!Map.Key) //Keycard required
+		{
+			//enables Keycard-Attack
+			SetAvailableMapGoals(TEAM.ALLIES, true, {
+				"ATTACK_CPA2_.*",
+				".*_KeyA.*",
+			});
+
+			SetAvailableMapGoals(TEAM.AXIS, true, {
+				"ATTACK_Keyd.*",
+				"MOBILEMG42_Keyd1",
+			});
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"CALLARTILLERY_keyd_1",
+				"ARTILLERY_S_keyd_1",
+			});
+
+			SetGoalPriority( "BUILD_Truck_Barrier_1", 0.9 );
+			SetGoalPriority( "FLAG_keycard_flag", 0.8 );
+		}
+
+		Util.SetMaxUsers( 3, "FLAG_.*" );
+		Util.MapDebugPrint("OnAllCP");
+
+	},
+
+	OnKeyStolen = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "ATTACK_cappoint.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "ATTACK_cappoint.*");
+		Util.MapDebugPrint("OnKeyStolen");
+
+		Map.Suicide = false;
+	},
+
+	OnKeyReturned = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_cappoint.*");
+		SetAvailableMapGoals(TEAM.AXIS, false, "ATTACK_cappoint.*");
+		Util.MapDebugPrint("OnKeyReturned");
+	},
+
+	OnKeySec = function()
+	{
+		Map.Key = true;  //Keycard captured
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_cappoint.*",
+			".*_KeyA.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_CPA2_.*");
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"ATTACK_cappoint.*",
+			"ATTACK_Keyd.*",
+			"CALLARTILLERY_keyd_1",
+			"ARTILLERY_S_keyd_1",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, false, ".*_CPC_.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_AxBackBarr_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "FLAG_keycard_flag");
+		SetGoalPriority( "BUILD_Truck_Barrier_1", 0.9 );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Truck" );
+
+		if(!Map.Spawnback)
+		{
+			Util.ChangeSpawn(TEAM.AXIS, 4);
+			SetAvailableMapGoals(TEAM.ALLIES, false, {
+				"ATTACK_Flag.*",
+				".*_DYNOCOVER.*",
+				"ATTACK_BFlag.*",
+				"MOBILEMORTAR_AlSpawn",
+			});
+			SetAvailableMapGoals(TEAM.AXIS, false, {
+				"ATTACK_AFlag.*",
+				"ATTACK_Flag.*",
+				"ATTACK_Axfirst_.*",
+				"PLANTMINE_Amine.*",
+			});
+		}
+
+		if ( Map.GoldIsStolen)
+			{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"ESCORT_truck",
+				"PLANT_Truck_Barrier_1",
+			});
+			}
+
+
+		if(Map.Command) //CP owned by allies
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				".*_TruckA.*",
+				"DEFEND_TruckA.*",
+			});
+			SetAvailableMapGoals(TEAM.ALLIES, false, "MOBILEMG42_CPA_.*");
+
+
+			SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_TruckD.*" );
+			SetAvailableMapGoals(TEAM.AXIS, false, {
+				"MOBILEMG42_CPB_.*",
+				"MOBILEMG42_CPC_.*",
+				"MOBILEMG42_Keyd1",
+			});
+			SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Truck_Barrier_1");
+			SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Neutral_Command_Post" );
+			SetAvailableMapGoals(TEAM.AXIS, false, ".*_CPC_.*");
+
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"CALLARTILLERY_TruckDEF_1",
+				"ARTILLERY_S_TruckDEF_1",
+				"MOBILEMG42_TruckDEF_.*",
+				"GRENADE_TruckDEF_.*",
+			});
+
+			Server.MinClassCount[TEAM.ALLIES][CLASS.COVERTOPS] = 0;
+			Server.MinClassCount[TEAM.ALLIES][CLASS.ENGINEER] += 1;
+			Server.MinClassCount[TEAM.ALLIES][CLASS.FIELDOPS] -= 1;
+			Server.MinClassCount[TEAM.ALLIES][CLASS.MEDIC] += 1;
+			SetGoalPriority( "BUILD_Truck", 0.8 );
+			SetGoalPriority( "BUILD_Truck_Barrier_1", 0.9 );
+			SetAvailableMapGoals(TEAM.AXIS, false, "BUILD_Wooden_Barrier");
+
+		}
+		else if (!Map.Command) //CP not owned by allies
+		{
+			SetGoalPriority( "BUILD_Truck", 0.3);
+			SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Truck_Barrier_1" );
+		}
+
+		SetGoalPriority( "PLANT_Neutral_Command_Post", 0.6, TEAM.ALLIES, CLASS.COVERTOPS );
+
+		Util.MapDebugPrint("OnKeySec");
+
+		Map.Suicide = true;
+	},
+
+	OnTruckrep = function()
+	{
+		Map.GoldIsStolen = true;
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ESCORT_truck" );
+		Util.MapDebugPrint("OnTruckrep");
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Truck_Barrier_1" );
+		Server.MinClassCount[TEAM.AXIS][CLASS.COVERTOPS] = 0;
+		Server.MinClassCount[TEAM.AXIS][CLASS.ENGINEER] += 1;
+		SetAvailableMapGoals(TEAM.AXIS, false, "BUILD_Wooden_Barrier");
+	},
+
+	OnTruckStolen = function()
+	{
+		Map.GoldIsStolen = true;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, ".*_TruckA.*" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, ".*_AllBarr_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, true, ".*_AxBarr_.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_TruckDEF_1",
+			"MOBILEMG42_TruckDEF_.*",
+		});
+
+		Util.MapDebugPrint("OnTruckStolen");
+	},
+
+	TruckAtFirstBarrier =
+	{
+		TriggerOnEntity = GetGoal("MOVER_truck").GetEntity(),
+		OnEnter = function(ent)
+		{
+			if ( Map.Barrier1IsBuilt )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, "ESCORT_truck" );
+			}
+			SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_.*" );
+			SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_.*" );
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, ".*_AllBarr_.*" );
+			SetAvailableMapGoals( TEAM.AXIS, true, ".*_AxBarr_.*" );
+			SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_AxBackBarr_.*" );
+
+			// print(GetEntName(ent), "entered");
+		},
+	},
+
+	FirstBarConst = function()
+	{
+		Map.Barrier1IsBuilt = true;
+		Util.MapDebugPrint("FirstBarConst");
+	},
+
+	FirstBarDest = function()
+	{
+		Map.Barrier1IsBuilt = false;
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ESCORT_truck" );
+
+		Util.MapDebugPrint("FirstBarDest");
+	},
+
+	PlantFirstBar = function()
+	{
+		if ( RandInt(1,2) > 1 )
+		{
+			Util.SetGoalPosition( 1795, 695, 88, "PLANT_Truck_Barrier_1" );
+		}
+		else
+		{
+			Util.SetGoalPosition( 1577, 521, 86, "PLANT_Truck_Barrier_1" );
+		}
+		Util.MapDebugPrint("PlantFirstBar");
+	},
+
+	OnFirstBar = function()
+	{
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_CPA2.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Truck_Barrier_1" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Truck_Barrier_2" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"ATTACK_Keyd.*",
+			"ATTACK_CPC.*",
+			"BUILD_Truck_Barrier_2",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Truck_Barrier_1" );
+		DeleteTriggerRegion("AxBarr");
+		SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_AllBarr_.*" );
+		Util.MapDebugPrint("OnFirstBar");
+	},
+
+	TruckAtGate =
+	{
+		TriggerOnEntity = GetGoal("MOVER_truck").GetEntity(),
+		OnEnter = function(ent)
+		{
+			if ( Map.GateIsIntact )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, "ESCORT_truck" );
+			}
+			// print(GetEntName(ent), "entered");
+			SetAvailableMapGoals( TEAM.AXIS, true, "AIRSTRIKE_SecBa.*" );
+
+		},
+	},
+
+	TruckDefense_2 =
+	{
+		TriggerOnEntity = GetGoal("MOVER_truck").GetEntity(),
+		OnEnter = function(ent)
+		{
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_.*",
+			"GRENADE_.*",
+			"PLANT_Truck_Barrier_1",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ATTACK_SecBa.*",
+			"CAMP_SecBa.*",
+			"PLANT_Truck_Barrier_2",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"ATTACK_.*",
+			"CALLARTILLERY_.*",
+			".*_AxBarr_.*",
+			"GRENADE_.*",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_SecBa.*",
+			"BUILD_Truck_Barrier_2",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Truck_Barrier_1" );
+		DeleteTriggerRegion("AxBarr");
+		Util.ChangeSpawn( TEAM.ALLIES, 3 );	//Old Flag
+		Map.Suicide = false;
+		},
+	},
+
+	TruckAtSecondBarrier =
+	{
+		TriggerOnEntity = GetGoal("MOVER_truck").GetEntity(),
+		OnEnter = function(ent)
+		{
+			if(Map.Barrier2IsBuilt)
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, "ESCORT_truck" );
+			}
+			// print(GetEntName(ent), "entered");
+		},
+	},
+
+	PlantSecBar = function()
+	{
+		if ( RandInt(1,2) > 1 )
+		{
+			Util.SetGoalPosition( -1380, 468, 70, "PLANT_Truck_Barrier_2" );
+		}
+		else
+		{
+			Util.SetGoalPosition( -1103, 447, 70, "PLANT_Truck_Barrier_2" );
+		}
+		Util.MapDebugPrint("PlantSecBar");
+	},
+
+	SecBarConst = function()
+	{
+		Map.Barrier2IsBuilt = true;
+		Util.MapDebugPrint("SecBarConst");
+	},
+
+	SecBarDest = function()
+	{
+		Map.Barrier2IsBuilt = false;
+		if ( Map.GoldIsStolen )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "ESCORT_truck" );
+		}
+		Util.MapDebugPrint("SecBarDest");
+	},
+
+	OnSecBar = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_.*",
+			"PLANT_Truck_Barrier_2",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_.*",
+			"BUILD_Truck_Barrier_2",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_LastEx_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_LastEx_.*" );
+
+		Util.MapDebugPrint("OnSecBar");
+	},
+
+	MainPlanted = function()
+	{
+		Map.Suicide = false;
+		Map.MainPlant += 1;
+		SetGoalRole("ATTACK_DYNOCOVER.*", ROLE.ATTACKER2,ROLE.ATTACKER1);
+		if (Map.Puhing)
+		{
+		ClearGoalRole("ATTACK_Flag.*", ROLE.ATTACKER1);
+		}
+		SetAvailableMapGoals(TEAM.ALLIES, false, "PLANT_Main_Gate");
+
+		if (Map.Spawnback)
+		{
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFUSE_Main_Gate.*");
+
+		}
+	},
+
+	MainDefused = function()
+	{
+		Map.Suicide = true;
+		ClearGoalRole("ATTACK_DYNOCOVER.*", ROLE.ATTACKER1);
+		SetGoalRole("ATTACK_Flag.*", ROLE.ATTACKER1);
+		Map.MainPlant -= 1;
+		SetAvailableMapGoals(TEAM.ALLIES, true, "PLANT_Main_Gate");
+	},
+
+	SidePlanted = function()
+	{
+		if (Map.Spawnback)
+		{
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFUSE_Side_Door.*");
+		}
+	},
+
+	SideDefused = function()
+	{
+	},
+
+	OnAxCP = function()
+	{
+		SetGoalPriority( "BUILD_Truck_Barrier_1", 0.8 );
+	},
+
+	Axis_Fallback =
+	{
+		Name = "Axis_Fallback",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			Util.SetMaxUsers( 2, "BUILD_Neutral_Command_Post" );
+			if( GetEntTeam(ent) == TEAM.AXIS )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_flag.*" );
+					SetAvailableMapGoals(TEAM.ALLIES, false, "CHECKPOINT_flag1_flag");
+					SetAvailableMapGoals(TEAM.AXIS, false, "CHECKPOINT_flag1_flag");
+					SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_Flag.*");
+					SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Truck_Barrier_1");
+						if ( Map.GoldIsStolen)
+						{
+						SetAvailableMapGoals( TEAM.ALLIES, true, "ESCORT_truck" );
+						return;
+						}
+
+						if(Map.Command) // CP owned by allies
+						{
+							SetAvailableMapGoals(TEAM.ALLIES, true, {
+								"ATTACK_CPA2_.*",
+								"FLAG_keycard_flag",
+							});
+							SetAvailableMapGoals(TEAM.AXIS, true, "MOBILEMG42_CPC_.*");
+						}
+						else if (!Map.Command) // CP not owned by allies
+						{
+							SetAvailableMapGoals(TEAM.ALLIES, true, {
+								".*_CPA.*",
+								"BUILD_Neutral_Command_Post",
+								"PLANT_Neutral_Command_Post",
+							});
+							SetAvailableMapGoals(TEAM.AXIS, true, {
+								"BUILD_Neutral_Command_Post",
+								".*_CPB.*",
+								".*_CPC.*",
+								"ARTILLERY_S_AxCP_1",
+								"BUILD_Truck_Barrier_1",
+							});
+
+						}
+
+						if (Map.Key) //Keycard captured
+						{
+							SetAvailableMapGoals(TEAM.ALLIES, true, "BUILD_Truck");
+
+							SetAvailableMapGoals(TEAM.AXIS, false, {
+								"MOBILEMG42_Keyd1",
+								"PLANT_Neutral_Command_Post",
+							});
+							SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Truck_Barrier_1");
+							SetAvailableMapGoals( TEAM.AXIS, false, "CALLARTILLERY_keyd_1" );
+							SetAvailableMapGoals(TEAM.AXIS, false, {
+								"MOBILEMG42_CPB_.*",
+								".*_CPB_.*",
+								"MOBILEMG42_CPC_.*",
+							});
+						}
+						else if (!Map.Key) //Keycard required
+						{
+							SetAvailableMapGoals(TEAM.AXIS, true, {
+								"MOBILEMG42_CPB_.*",
+								"MOBILEMG42_CPC_.*",
+								"ARTILLERY_S_AxCP_1",
+							});
+							if(Map.Command)
+							{
+							SetAvailableMapGoals(TEAM.ALLIES, true, "ATTACK_CPA2_.*");
+							SetAvailableMapGoals(TEAM.AXIS, true, {
+								"ATTACK_Keyd.*",
+								"MOBILEMG42_Keyd1",
+							});
+							SetAvailableMapGoals( TEAM.AXIS, true, {
+								"CALLARTILLERY_keyd_1",
+								"ARTILLERY_S_keyd_1",
+							});
+							SetAvailableMapGoals(TEAM.AXIS, true, ".*_CPC.*");
+							SetAvailableMapGoals(TEAM.AXIS, false, ".*_CPB.*");
+							SetGoalPriority( "FLAG_keycard_flag", 0.8 );
+
+							}
+						}
+
+						SetAvailableMapGoals(TEAM.AXIS, false, {
+							"ATTACK_AFlag.*",
+							"ATTACK_Flag.*",
+							"ATTACK_Axfirst_.*",
+							"PLANTMINE_Amine.*",
+							"ARTILLERY_S_AxFirst_.*",
+							"GRENADE_AxFirst_.*",
+							"CALLARTILLERY_AxFirst_.*",
+							"AIRSTRIKE_AxFirst_.*",
+							"MOBILEMG42_AxFirst_.*",
+						});
+
+
+						SetGoalPriority( "PLANT_Neutral_Command_Post", 0.91, TEAM.AXIS, CLASS.COVERTOPS );
+						SetGoalPriority( "PLANT_Neutral_Command_Post", 0.91, TEAM.ALLIES, CLASS.COVERTOPS );
+
+						SetAvailableMapGoals(TEAM.ALLIES, false, {
+							"AIRSTRIKE_AllFirst_.*",
+							"GRENADE_AllFirst_.*",
+						});
+
+						//Roles
+						//CP Stage
+						//Axis
+						SetGoalRole("DEFEND_CPB.*", ROLE.DEFENDER1);
+						SetGoalRole("ATTACK_CPC_.*", ROLE.DEFENDER2);
+
+						//Allied First Stage
+						SetGoalRole("ATTACK_CPA_.*", ROLE.ATTACKER1);
+						SetGoalRole("ATTACK_CPA2_.*", ROLE.ATTACKER2);
+
+						ClearGoalRole("CALLARTILLERY_CPA_.*", ROLE.ATTACKER1);
+						ClearGoalRole("MOBILEMG42_CPA_.*", ROLE.ATTACKER1);
+						ClearGoalRole("MOBILEMG42_CPC_.*", ROLE.DEFENDER1);
+
+
+						SetAvailableMapGoals(TEAM.AXIS, false, {
+							"DEFUSE_Main_Gate_.*",
+							"DEFUSE_Side_Door.*",
+						}, true);
+
+						DeleteTriggerRegion("Axis_Fallback");
+
+						Map.Spawnback = true;
+
+						if ( RandInt(1,2) > 1 )
+						{
+							SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Wooden_Barrier");
+							SetAvailableMapGoals(TEAM.ALLIES, false, "ROUTE_axis_spawn_right");
+						}
+						else
+						{
+							SetAvailableMapGoals(TEAM.AXIS, false, "BUILD_Wooden_Barrier");
+						}
+				}
+
+		},
+	},
+
+
+
+	AXCP_ARTY =
+	{
+		Name = "AXCP_ARTY",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.ALLIES )
+				{
+					SetAvailableMapGoals(TEAM.AXIS, true, "CALLARTILLERY_AxCP_.*");
+				}
+				DeleteTriggerRegion("AXCP_ARTY");
+		},
+
+	},
+
+	AxBarr =
+	{
+		Name = "AxBarr",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.ALLIES )
+				{
+				if (!Map.GoldIsStolen)
+					{
+						return;
+					}
+					SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_AllBarr_.*" );
+				}
+
+		},
+		OnExit = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+			if (!Map.GoldIsStolen)
+				{
+					return;
+				}
+				SetAvailableMapGoals( TEAM.ALLIES, true, "GRENADE_AllBarr_.*" );
+				}
+
+		},
+	},
+
+	mortarwatch = function()
+	{
+	while(1)
+	{
+		foreach ( bot in BotTable )
+		{
+			if ( bot.GetTeam() == TEAM.ALLIES && bot.GetClass () == CLASS.SOLDIER && bot.GetCurrentWeapon() == WEAPON.MORTAR_SET)
+			{
+				ammoTable ={};
+				bot.GetCurrentAmmo(ammoTable, 0, WEAPON.MORTAR_SET);
+				if(ammoTable.CurrentAmmo <=3 )
+				{
+  				while ( bot.GetReinforceTime() > 2 )
+  				{sleep(1);}
+  				//print("Ready to kill");
+  				bot.ExecCommand("kill");
+				}
+			}
+		}
+		sleep(1);
+	}
+	},
+
+
+};
+
+global OnMapLoad = function()
+{
+	/*** TRIGGERS ***/
+	OnTrigger("The Allies have captured the forward bunker!", Map.OnFlagTake);
+	OnTrigger("The Axis have reclaimed the forward bunker!", Map.OnFlagRet);
+	OnTrigger("The main gate has been destroyed!", Map.OnFlagSec);
+	OnTrigger("The side door has been destroyed!", Map.OnSide);
+	OnTrigger("Allied Command Post constructed. Charge speed increased!", Map.OnAllCP);
+	OnTrigger("Allies have stolen the Keycard!", Map.OnKeyStolen);
+	OnTrigger("Flag returned keycard_flag!", Map.OnKeyReturned);
+	OnTrigger("Allied team has gained access to the truck!", Map.OnKeySec);
+	OnTrigger("The Truck has been repaired!", Map.OnTruckrep);
+	OnTrigger("Planted at Truck Barrier #1.", Map.PlantFirstBar);
+	OnTrigger("goldrush_axis_truck_barrier1", Map.OnFirstBar);
+	OnTrigger("Truck Barrier #1 has been constructed.", Map.FirstBarConst);
+	OnTrigger("Truck Barrier #1 has been destroyed.", Map.FirstBarDest);
+	OnTrigger("Truck Barrier #2 has been constructed.", Map.SecBarConst);
+	OnTrigger("Truck Barrier #2 has been destroyed.", Map.SecBarDest);
+	OnTrigger("Planted at Truck Barrier #2.", Map.PlantSecBar);
+	OnTrigger("goldrush_axis_truck_barrier2", Map.OnSecBar);
+	OnTrigger("goldrush_axis_truck_stolen", Map.OnTruckStolen);
+	OnTrigger("Planted at the Main Gate.", Map.MainPlanted);
+	OnTrigger("Defused at the Main Gate.", Map.MainDefused);
+	OnTrigger("Planted at the Side Door.", Map.SidePlanted);
+	OnTrigger("Defused at the Side Door.", Map.SideDefused);
+	OnTrigger("Axis Command Post constructed. Charge speed increased!", Map.OnAxCP);
+
+
+	OnTriggerRegion(AABB(1750.633,209.556,57.125,1980.277,712.726,140.522), Map.TruckAtFirstBarrier );
+	OnTriggerRegion( Vector3(-730,1850,90), 100, Map.TruckAtSecondBarrier );
+	OnTriggerRegion( Vector3(-1250,940,90), 100, Map.TruckAtGate );
+	OnTriggerRegion(AABB(204.028,-1232.875,57.164,1090.189,-342.665,175.093), Map.Axis_Fallback);
+	OnTriggerRegion(AABB(1752.164,18.204,57.125,2273.279,706.208,140.665), Map.AxBarr);
+	OnTriggerRegion(AABB(-614.986,1644.152,57.125,-133.350,2212.625,142.168), Map.AXCP_ARTY);
+	OnTriggerRegion(AABB(990.718,1044.926,57.982,1166.630,1517.659,155.125), Map.TruckDefense_2);
+
+	SetGoalPriority( "ATTACK_cappoint.*", 0.6, TEAM.AXIS );
+	SetGoalPriority( "PLANTMINE.*", 0.7 );
+	SetGoalPriority( "PLANT_Main_Gate", 0.85 );
+
+	SetMapGoalProperties( "ATTACK_.*", {MinCampTime=5, MaxCampTime=20} );
+	SetMapGoalProperties( "DEFEND_.*", {MinCampTime=15, MaxCampTime=30} );
+
+	/*** MAX USERS ***/
+	Util.SetMaxUsers( 1, "FLAG_.*" );
+	Util.SetMaxUsers( 4, "CHECKPOINT.*" );
+	Util.SetMaxUsers( 1, "PLANT_.*" );
+	Util.SetMaxUsers( 1, "ATTACK_.*" );
+	Util.SetMaxUsers( 1, "GRENADE_.*" );
+	Util.SetMaxUsers( 1, "BUILD_Neutral_Command_Post" );
+
+
+	Util.DisableGoal(".*", true);
+
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"PLANT_Main_Gate",
+		"PLANT_Side_Door",
+		"CHECKPOINT_flag1_flag",
+		"ATTACK_Flag.*",
+		"AIRSTRIKE_AllFirst_.*",
+		"GRENADE_AllFirst_.*",
+		".*_DYNOCOVER.*",
+		"MOBILEMORTAR_AlSpawn",
+	});
+
+	SetGoalPriority( "PLANT_Side_Door", 0.0, CLASS.ENGINEER );
+	SetGoalPriority( "ATTACK_.*", 0.3, CLASS.ENGINEER );
+	SetGoalPriority( "AIRSTRIKE_AllFirst_2", 0.85 );
+	SetGoalPriority( ".*_DYNOCOVER.*", 0.55 );
+	SetGoalPriority( "FLAG_keycard_flag", 0.3 );
+	SetGoalPriority( "FLAG_keycard_flag", 0.9, CLASS.COVERTOPS	 );
+	SetGoalPriority( "DEFEND_.*", 0.8 );
+	SetGoalPriority( "BUILD_Truck_Barrier_1", 0.3 );
+	SetGoalPriority( "PLANT_Main_Gate", 0.9 );
+	SetGoalPriority( "BUILD_Wooden_Barrier", 0.3 );
+
+	Util.SetGoalOffset(-96, 111, 0, "PLANT_Main_Gate" );
+	Util.SetGoalOffset(33, -66, 0, "BUILD_Truck_Barrier_1" );
+	Util.SetGoalOffset(-101, 73, 0, "ESCORT_truck" );
+	Util.SetGoalPosition( 1979, -942, 88, "BUILD_Truck" );
+	Util.SetGoalPosition( -1427, 309, 94, "BUILD_Truck_Barrier_2" );
+	Util.SetGoalPosition( 1384, -65, 88, "BUILD_Wooden_Barrier" );
+
+	//Axis Flag Defense First Stage
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"ATTACK_AFlag.*",
+		"PLANTMINE_Amine.*",
+		"CHECKPOINT_flag1_flag",
+		"ARTILLERY_S_AxFirst_.*",
+		"GRENADE_AxFirst_.*",
+		"CALLARTILLERY_AxFirst_.*",
+		"AIRSTRIKE_AxFirst_.*",
+		"ATTACK_Axfirst_.*",
+		"MOBILEMG42_AxFirst_.*",
+		"BUILD_Neutral_Command_Post",
+	});
+
+
+	// Shared goals
+	Util.EnableGoal( "CHECKPOINT_flag1_flag" );
+
+	OnTriggerRegion(AABB(1658.992,981.006,249.125,2174.994,1613.374,323.125), RegionTrigger.DisableCombatMovement); //CPDefense
+
+	//Behaviour
+	Util.ExcludeClass( "GRENADE_.*", TEAM.ALLIES, CLASS.ENGINEER );
+	Util.ExcludeClass( "GRENADE_.*", TEAM.ALLIES, CLASS.FIELDOPS );
+	Util.ExcludeClass( "FLAG_keycard_flag", TEAM.ALLIES, CLASS.ENGINEER );
+	Util.ExcludeClass( "DEFEND_.*", TEAM.AXIS, CLASS.ENGINEER );
+
+
+	//Roles
+
+	// covert ops in disguise can reach these goals at any time
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"PLANT_Neutral_Command_Post",
+		"FLAG_keycard_flag",
+		"CAPPOINT_236",
+	});
+
+	//AxisFirst Stage
+	SetGoalRole("ATTACK_AFlag.*", ROLE.DEFENDER1);
+	SetGoalRole("ATTACK_Axfirst_.*", ROLE.DEFENDER2);
+
+	//Allied First Stage
+	SetGoalRole("ATTACK_Flag.*", ROLE.ATTACKER1);
+	SetGoalRole("ATTACK_DYNOCOVER.*", ROLE.ATTACKER2);
+	SetGoalRole("AIRSTRIKE_AllFirst_2", ROLE.ATTACKER1);
+	SetGoalRole("AIRSTRIKE_AllFirst_1", ROLE.ATTACKER2);
+
+	//Allied
+	SetGoalRole("ATTACK_Flag.*", ROLE.ATTACKER1);
+	SetGoalRole("ATTACK_DYNOCOVER.*", ROLE.ATTACKER2);
+	SetGoalRole("AIRSTRIKE_AllFirst_2", ROLE.ATTACKER1);
+	SetGoalRole("AIRSTRIKE_AllFirst_1", ROLE.ATTACKER2);
+
+	if ( RandInt(1,2) > 1 )
+	{
+		Util.SetGoalPosition( 1795, 695, 88, "PLANT_Truck_Barrier_1" );
+		Util.SetGoalPosition( -1380, 468, 70, "PLANT_Truck_Barrier_2" );
+	}
+	else
+	{
+		Util.SetGoalPosition( 1577, 521, 86, "PLANT_Truck_Barrier_1" );
+		Util.SetGoalPosition( -1103, 447, 70, "PLANT_Truck_Barrier_2" );
+	}
+
+	// allied covert ops in disguise can sneak through team doors to destroy these goals
+	SetGoalRole({"PLANT_Neutral_Command_Post", "FLAG_keycard_flag"}, ROLE.INFILTRATOR );
+
+	WeaponTable.SetWeaponTeamAvailability( TEAM.ALLIES, CLASS.ENGINEER, WEAPON.GARAND, false );
+
+	thread(Map.mortarwatch);
+
+
+	MapRoutes =
+	{
+		PLANT_Main_Gate =
+		{
+			ROUTE_allied_spawn  =
+			{
+				ROUTE_spawn_east  =
+				{
+					ROUTE_flag_east  =
+					{
+					Weight = 2,
+					},
+					ROUTE_flag_west2  =
+					{
+					ROUTE_Halfeast = {},
+					},
+				},
+
+			},
+		},
+
+		CHECKPOINT_flag1_flag =
+		{
+			ROUTE_allied_spawn  =
+			{
+				ROUTE_house =
+				{
+					ROUTE_Center ={},
+				},
+				ROUTE_flag_west1 =
+				{
+					Weight = 2,
+					ROUTE_Center ={},
+				},
+			},
+		},
+
+		BUILD_Neutral_Command_Post =
+		{
+			ROUTE_flag =
+				{
+					ROUTE_maindoor_left =
+					{
+						ROUTE_broken_house =
+						{
+							Weight = 6,
+							ROUTE_generator =
+							{
+								ROUTE_cp_right = {Weight = 6,},
+							},
+							ROUTE_cp_right = {Weight = 6,},
+
+						},
+						ROUTE_generator =
+							{
+								ROUTE_cp_right = {Weight = 6,},
+							},
+					},
+					ROUTE_sidedoor =
+					{
+						ROUTE_sidedoor_left =
+						{
+							ROUTE_balcony_left ={}
+						},
+					},
+				},
+		},
+
+		FLAG_keycard_flag =
+		{
+			ROUTE_flag =
+			{
+				ROUTE_sidedoor =
+				{
+					ROUTE_sidedoor_right = {Weight = 2,}
+				},
+				ROUTE_maindoor_left = {},
+			},
+			ROUTE_cp =
+			{
+				ROUTE_cp_front = {},
+				ROUTE_cp_right = {},
+				ROUTE_balcony = {},
+				ROUTE_stairs = {}
+			}
+		},
+
+		DEFEND_CPB1 =
+		{
+			ROUTE_axis_spawn =
+			{
+				ROUTE_axis_spawn_left =
+				{
+					ROUTE_axis_lower_house =
+					{
+						ROUTE_cp_front = {},
+					},
+				},
+				ROUTE_axis_spawn_right =
+				{
+					Weight = 3,
+					ROUTE_axis_lower_house =
+					{
+						Weight = 3,
+						ROUTE_cp_front = {},
+					},
+					ROUTE_stairs =
+					{
+						Weight = 3,
+						ROUTE_balcony = {},
+					},
+				},
+			}
+		},
+
+		BUILD_Truck =
+		{
+			ROUTE_cp =
+			{
+				ROUTE_balcony =
+				{
+				Weight = 2,
+				ROUTE_stairs =
+				{
+					ROUTE_Truck_back =
+					{
+					Weight = 6,
+					ROUTE_truck_back_2 = {},
+					},
+					ROUTE_Truck_Main = {},
+					ROUTE_axis_spawn_right = {},
+				},
+				},
+				ROUTE_cp_front =
+				{
+					ROUTE_axis_lower_house =
+					{
+						ROUTE_axis_spawn_right = {},
+						ROUTE_axis_spawn_left = {Weight = 3,},
+					},
+					ROUTE_axis_spawn_left = {Weight = 2,},
+				},
+			},
+		},
+
+		DEFEND_TruckA_1 =
+		{
+			ROUTE_cp =
+			{
+				ROUTE_cp_front =
+				{
+					ROUTE_axis_lower_house =
+					{
+						ROUTE_axis_spawn_right = {},
+						ROUTE_axis_spawn_left = {Weight = 6,},
+					},
+					ROUTE_axis_spawn_left = {Weight = 2,},
+				},
+			},
+		},
+
+		CALLARTILLERY_CPA_1 =
+		{
+			ROUTE_flag =
+			{
+				Weight = 2,
+				ROUTE_sidedoor =
+				{
+					Weight = 2,
+					ROUTE_sidedoor_right = {Weight = 2,}
+				},
+
+			},
+		},
+
+	};
+
+	MapRoutes.ATTACK_FlagA = MapRoutes.CHECKPOINT_flag1_flag;
+	MapRoutes.ATTACK_FlagA1 = MapRoutes.CHECKPOINT_flag1_flag;
+	MapRoutes.PLANT_Side_Door = MapRoutes.PLANT_Main_Gate;
+	MapRoutes.ATTACK_CPA_1 = MapRoutes.BUILD_Neutral_Command_Post;
+	MapRoutes.ATTACK_CPA_2 = MapRoutes.BUILD_Neutral_Command_Post;
+	MapRoutes.PLANT_Neutral_Command_Post = MapRoutes.BUILD_Neutral_Command_Post;
+	MapRoutes.ATTACK_CPA2_1 = MapRoutes.FLAG_keycard_flag;
+	MapRoutes.ATTACK_CPA2_2 = MapRoutes.FLAG_keycard_flag;
+	MapRoutes.ATTACK_CPA2_3 = MapRoutes.FLAG_keycard_flag;
+
+	MapRoutes.ATTACK_TruckA1 = MapRoutes.BUILD_Truck;
+	MapRoutes.ATTACK_TruckA2 = MapRoutes.BUILD_Truck;
+	MapRoutes.ATTACK_TruckA3 = MapRoutes.BUILD_Truck;
+	MapRoutes.ATTACK_TruckA6 = MapRoutes.BUILD_Truck;
+	MapRoutes.ATTACK_TruckA7 = MapRoutes.BUILD_Truck;
+	MapRoutes.MOBILEMG42_TruckA_2 = MapRoutes.BUILD_Truck;
+	MapRoutes.DEFEND_TruckA_2 = MapRoutes.DEFEND_TruckA_1;
+	MapRoutes.MOBILEMG42_TruckA_1 = MapRoutes.DEFEND_TruckA_1;
+
+	MapRoutes.DEFEND_CPB5 = MapRoutes.DEFEND_CPB1;
+	MapRoutes.DEFEND_CPB2 = MapRoutes.DEFEND_CPB1;
+	MapRoutes.DEFEND_CPB3 = MapRoutes.DEFEND_CPB1;
+	MapRoutes.DEFEND_CPB4 = MapRoutes.DEFEND_CPB1;
+	MapRoutes.DEFEND_CPB6 = MapRoutes.DEFEND_CPB1;
+	MapRoutes.BUILD_Neutral_Command_Post = MapRoutes.DEFEND_CPB1;
+
+	Util.Routes(MapRoutes);
+
+	Util.MapDebugPrint("OnMapLoad");
+};

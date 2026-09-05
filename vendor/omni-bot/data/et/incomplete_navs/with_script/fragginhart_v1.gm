@@ -1,0 +1,287 @@
+//==========================================================================================
+//
+//	Fragginhart Canyon V1 - fragginhart_v1.gm
+//
+//	Who			When				What
+//------------------------------------------------------------------------------------------
+//	Mateos		10 January 2024		Copy from Final version
+//
+//==========================================================================================
+//
+
+/****************************************************
+Path mapping and script by Mateos
+Correspondant WAY file hash: -
+Last update: 12th January 2024
+****************************************************/
+
+global Map =
+{
+	isMainGateOpened = false,
+
+	// Either the Depot Gate Controls are destroyed (half-opened),
+	// or someone got to the other side and activated the switch
+	isDepotGateOpened = false,
+
+	Navigation =
+	{
+		// /bot waypoint_setproperty paththrough Navigation_PT:jump
+		jump =
+		{
+			navigate = function( _this )
+			{
+				_this.Bot.HoldButton( BTN.JUMP, 0.5 );
+			},
+		},
+	},
+
+	Allied_Command_Post_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Built", true );
+	},
+
+	Allied_MG42_Construction_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Allied_MG42_Construction_Built", true );
+	},
+
+	Allied_Ramp_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Allied_Ramp_Built", true );
+	},
+
+	Axis_Command_Post_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Built", true );
+	},
+
+	Allied_Command_Post_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed", true );
+	},
+
+	Allied_MG42_Construction_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Allied_MG42_Construction_Destroyed", true );
+	},
+
+	Allied_Ramp_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Allied_Ramp_Destroyed", true );
+	},
+
+	Axis_Command_Post_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed", true );
+	},
+
+	Depot_Gate_Controls_Destroyed = function( trigger )
+	{
+		Functions.RemoveDepotGateAxisDoorFlags();
+
+		// So the path above the Depot Gate is refreshed
+		Wp.CheckBlockable();
+
+		// Depot_Gate_Moving has been called twice right before,
+		// so the switch availability is messed up
+		Map.isDepotGateOpened = true;
+		Util.DisableGoal( "SWITCH_Depot_Gate" );
+
+		Util.DisableGoal( "CHECKPOINT_Forwardbunker_flag" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"CAPPOINT_Transmitter",
+			"FLAG_documents"
+		});
+
+		Util.MapDebugPrint( "Depot_Gate_Controls_Destroyed", true );
+	},
+
+	Side_Wall_Destroyed = function( trigger )
+	{
+		Util.EnableGoal( "CHECKPOINT_Forwardbunker_flag" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Depot_Gate_Controls" );
+
+		Util.MapDebugPrint( "Side_Wall_Destroyed" );
+	},
+
+	documents_Taken = function( trigger )
+	{
+		Util.MapDebugPrint( "documents_Taken", true );
+	},
+
+	main_gate_keycard_Taken = function( trigger )
+	{
+		Util.MapDebugPrint( "main_gate_keycard_Taken", true );
+	},
+
+	documents_Returned = function( trigger )
+	{
+		Util.MapDebugPrint( "documents_Returned", true );
+	},
+
+	main_gate_keycard_Returned = function( trigger )
+	{
+		Util.MapDebugPrint( "main_gate_keycard_Returned", true );
+	},
+
+	documents_Secured = function( trigger )
+	{
+		Util.MapDebugPrint( "documents_Secured", true );
+	},
+
+	main_gate_keycard_Secured = function( trigger )
+	{
+		Util.MapDebugPrint( "main_gate_keycard_Secured", true );
+	},
+
+	Forwardbunker_flag_Axis_Captured = function( trigger )
+	{
+		Util.MapDebugPrint( "Forwardbunker_flag_Axis_Captured", true );
+	},
+
+	Forwardbunker_flag_Allies_Captured = function( trigger )
+	{
+		Util.MapDebugPrint( "Forwardbunker_flag_Allies_Captured", true );
+	},
+
+	Main_Gate_Moving = function( trigger )
+	{
+		Map.isMainGateOpened = trigger.Action == "opening";
+
+		SetAvailableMapGoals( TEAM.AXIS, Map.isMainGateOpened, "SWITCH_Main_Gate_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, !Map.isMainGateOpened, "SWITCH_Main_Gate_.*" );
+
+		Util.MapDebugPrint( "Main_Gate_Moving", true );
+	},
+
+	Depot_Gate_Moving = function( trigger )
+	{
+		Map.isDepotGateOpened = trigger.Action == "opening";
+
+		SetAvailableMapGoals( TEAM.AXIS, Map.isDepotGateOpened, "SWITCH_Depot_Gate" );
+		SetAvailableMapGoals( TEAM.ALLIES, !Map.isDepotGateOpened, "SWITCH_Depot_Gate" );
+
+		Util.MapDebugPrint( "Depot_Gate_Moving", true );
+	},
+
+	Generator_Powered_Up = function( trigger )
+	{
+		Functions.RemoveMainGateAxisDoorFlags();
+
+		// So the path above the Main Gate is refreshed
+		Wp.CheckBlockable();
+
+		Util.EnableGoal( "CHECKPOINT_Forwardbunker_flag" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CAPPOINT_Generator",
+			"FLAG_main_gate_keycard" // Still listed in active goals...
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Depot_Gate_Controls",
+			"SWITCH_Main_Gate_.*"
+		});
+
+		Util.MapDebugPrint( "Generator_Powered_Up" );
+	}
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	// The announcements are trimmed to 71 chars, the maximum supported by Omni-Bot
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Allies have built the MG42 nest!", Map.Allied_MG42_Construction_Built );
+	OnTrigger( "Allies have built the Ramp!", Map.Allied_Ramp_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Axis have destroyed the MG42 Nest!", Map.Allied_MG42_Construction_Destroyed );
+	OnTrigger( "Axis have destroyed the Ramp!", Map.Allied_Ramp_Destroyed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "Allies have damaged the Depot Gate Controls and secured the Forward Bun", Map.Depot_Gate_Controls_Destroyed );
+	OnTrigger( "^1Allies have destroyed the Side Wall!", Map.Side_Wall_Destroyed );
+
+	OnTrigger( "Allies have stolen the documents!", Map.documents_Taken );
+	OnTrigger( "Allies have stolen Main Gate Keycard!", Map.main_gate_keycard_Taken );
+	OnTrigger( "Flag returned documents!", Map.documents_Returned );
+	OnTrigger( "Flag returned main_gate_keycard!", Map.main_gate_keycard_Returned );
+	OnTrigger( "Allies have transmitted the Documents!", Map.documents_Secured );
+	OnTrigger( "Allies have delivered the Keycard!", Map.main_gate_keycard_Secured );
+
+	OnTrigger( "Axis reclaim the Forward Bunker!", Map.Forwardbunker_flag_Axis_Captured );
+	OnTrigger( "Allies capture the Forward Bunker!", Map.Forwardbunker_flag_Allies_Captured );
+
+	// ^7Main Gate is ^2opening^7!
+	// ^7Main Gate is ^1closing^7!
+	// ^7Depot Gate is ^2opening^7!
+	// ^7Depot Gate is ^1closing^7!
+	OnTrigger( "Main_Gate_Moving", Map.Main_Gate_Moving );
+	OnTrigger( "Depot_Gate_Moving", Map.Depot_Gate_Moving );
+
+	// Generator powering up in 10 seconds!
+	OnTrigger( "Generator powered up!", Map.Generator_Powered_Up );
+
+	// Main Gate Controls enabled!
+	// Main Gate Controls disabled!
+
+	Util.DisableGoal( ".*", true ); // All but routes
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"BUILD_Axis_Command_Post",
+		"PLANT_Allied_Command_Post",
+		"PLANT_Allied_MG42_Construction"
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_Allied_Command_Post",
+		"BUILD_Allied_MG42_Construction",
+		"CAPPOINT_Generator",
+		"FLAG_main_gate_keycard",
+		"PLANT_Side_Wall"
+	});
+
+	Functions.AddMainGateAxisDoorFlags();
+	Functions.AddDepotGateAxisDoorFlags();
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global Functions =
+{
+	AXIS_DOOR_FLAGS = { "axis", "door" },
+
+	MAIN_GATE_AXIS_DOOR  = "main_gate_axis_door",
+	DEPOT_GATE_AXIS_DOOR = "depot_gate_axis_door",
+
+	AddMainGateAxisDoorFlags = function()
+	{
+		Wp.SetWaypointFlag( Functions.MAIN_GATE_AXIS_DOOR,  Functions.AXIS_DOOR_FLAGS, true );
+	},
+
+	AddDepotGateAxisDoorFlags = function()
+	{
+		Wp.SetWaypointFlag( Functions.DEPOT_GATE_AXIS_DOOR, Functions.AXIS_DOOR_FLAGS, true );
+	},
+
+	RemoveMainGateAxisDoorFlags = function()
+	{
+		Wp.SetWaypointFlag( Functions.MAIN_GATE_AXIS_DOOR,  Functions.AXIS_DOOR_FLAGS, false );
+	},
+
+	RemoveDepotGateAxisDoorFlags = function()
+	{
+		Wp.SetWaypointFlag( Functions.DEPOT_GATE_AXIS_DOOR, Functions.AXIS_DOOR_FLAGS, false );
+	}
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+	};
+
+	Util.Routes( MapRoutes );
+};

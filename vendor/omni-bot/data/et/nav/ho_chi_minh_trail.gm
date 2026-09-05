@@ -1,0 +1,871 @@
+//==========================================================================================
+//
+//	ho_chi_minh_trail.gm
+//
+//	Who			When				What
+//------------------------------------------------------------------------------------------
+//	Mateos		30 September 2023	Initial Script
+//
+//==========================================================================================
+//
+
+/****************************************************
+Path mapping updated and script by Mateos
+Correspondant WAY file hash: -
+Last update: 30th October 2023
+****************************************************/
+
+/*
+ * Important notes
+ * OneWayBridge1: Make bots use the Bridge #1 instead of trying to cross by water...
+ * BUILD_stone_barrier is never enabled, because it would screw one or both teams in certain cases... breaking map flow
+ * PLANT_bridge_2 is disabled once the Truck is past it in order to allow Axis to reclaim the Forward Spawn if needed
+ */
+
+/*
+ * TODO:
+ * - There's not a lot of spawns: handle BUILD/PLANT goals to hinder progress from Axis POV depending on the distance...
+ * - For such a map, goal range has its importance, keep that in mind
+ * - See how to handle navigation in tunnels... So bots don't block each other, and objectives can be done... If that's even possible (3 locations)
+ * - Priorities: PLANT Bridges > BUILD Truck? Looks fine as is
+ * - Suicide spawns
+ *   -> Other case: All alive bots far from their obj, and several bots are dead -> respawn together? Risky to script, but could help
+ * - Stone Barrier: can be used to block Allied reinforcement from Forward Spawn when the Truck is before it
+ * - If Allies loose the Forward spawn and the Stone Barrier is built, the related PLANT goal should be active
+ */
+
+global Spawn =
+{
+	US_SPAWN		= 1,
+	VC_SPAWN		= 2,
+	FORWARD_SPAWN	= 3,
+
+	AXIS_SPAWN,
+	ALLIED_SPAWN,
+
+	DoAlliesOwnForwardSpawn = function()
+	{
+		return Spawn.ALLIED_SPAWN == Spawn.FORWARD_SPAWN;
+	},
+
+	SetAlliedSpawn = function( spawn )
+	{
+		Spawn.ALLIED_SPAWN = spawn;
+		Spawn.SetSpawn();
+	},
+
+	SetAxisSpawn = function( spawn )
+	{
+		Spawn.AXIS_SPAWN = spawn;
+		Spawn.SetSpawn();
+	},
+
+	SetBotSpawn = function( bot )
+	{
+		if ( bot.GetTeam() == TEAM.AXIS )
+		{
+			bot.ChangeSpawnPoint( Spawn.AXIS_SPAWN );
+		}
+		else if ( bot.GetTeam() == TEAM.ALLIES )
+		{
+			bot.ChangeSpawnPoint( Spawn.ALLIED_SPAWN );
+		}
+	},
+
+	SetSpawn = function()
+	{
+		foreach( bot in BotTable )
+		{
+			Spawn.SetBotSpawn( bot );
+		}
+	}
+};
+
+global TruckPosition =
+{
+	SPAWN				= 0,
+	AT_FIRST_BRIDGE		= 1, // Build it
+	AT_WOODEN_BARRIER	= 2, // Plant it
+	PAST_WOODEN_BARRIER	= 3, // Forget about it
+	AT_SECOND_BRIDGE	= 4,
+	AT_STONE_BARRIER	= 5,
+	PAST_STONE_BARRIER	= 6,
+	AT_THIRD_BRIDGE		= 7,
+	PAST_THIRD_BRIDGE	= 8
+};
+
+global Map =
+{
+	isBridge1Built			= false,
+	isBridge2Built			= false,
+	isStoneBarrierBuilt		= false,
+	isWoodenBarrierBuilt	= false,
+	truckPosition			= TruckPosition.SPAWN,
+
+	Navigation =
+	{
+		// /bot waypoint_setproperty paththrough Navigation_PT:aim_up_ladder
+		aim_up_ladder =
+		{
+			navigate = function( _this )
+			{
+				_this.AddAimRequest( Priority.High, "facing", Vec3( -0.020, -0.060, 1.000 ) );
+				sleep( .5 );
+			}
+		},
+
+		// /bot waypoint_setproperty paththrough Navigation_PT:aim_up_hatch_ladder
+		aim_up_hatch_ladder =
+		{
+			navigate = function( _this )
+			{
+				_this.AddAimRequest( Priority.High, "facing", Vec3( -0.040, 0, 1.000 ) );
+				sleep( .5 );
+			}
+		},
+
+		// /bot waypoint_setproperty paththrough Navigation_PT:exit_hatch
+		exit_hatch =
+		{
+			navigate = function( _this )
+			{
+				_this.AddAimRequest( Priority.High, "facing", Vec3( -0.275, 0, 0.960 ) );
+				sleep( 1 );
+				_this.Bot.HoldButton( BTN.STRAFE_R, .5 );
+				sleep( .5 );
+			}
+		}
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Built", true );
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Built", true );
+	},
+
+	bridge_1_Built = function()
+	{
+		Map.isBridge1Built = true;
+
+		Map.ChangeEntityToDefendIfNeeded();
+
+		Wp.SetWaypointFlag( "OneWayBridge1", "closed", true );
+
+		Util.MapDebugPrint( "bridge_1_Built", true );
+	},
+
+	bridge_2_Built = function()
+	{
+		Map.isBridge2Built = true;
+
+		Map.ChangeEntityToDefendIfNeeded();
+
+		Util.MapDebugPrint( "bridge_2_Built", true );
+	},
+
+	bridge_3_Built = function()
+	{
+		Util.MapDebugPrint( "bridge_3_Built", true );
+	},
+
+	stone_barrier_Built = function()
+	{
+		Map.isStoneBarrierBuilt = true;
+
+		// If the Truck is damaged in front of the Stone Barrier while it wasn't built
+		if ( Map.truckPosition == TruckPosition.AT_STONE_BARRIER )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_stone_barrier" );
+		}
+
+		Util.MapDebugPrint( "stone_barrier_Built" );
+	},
+
+	truck_Built = function()
+	{
+		Util.MapDebugPrint( "truck_Built", true );
+	},
+
+	wooden_barrier_Built = function()
+	{
+		Map.isWoodenBarrierBuilt = true;
+
+		// If the Truck is damaged in front of the Wooden Barrier while it wasn't built
+		if ( Map.truckPosition == TruckPosition.AT_WOODEN_BARRIER )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_wooden_barrier" );
+		}
+
+		Util.MapDebugPrint( "wooden_barrier_Built" );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed", true );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed", true );
+	},
+
+	bridge_1_Destroyed = function()
+	{
+		Map.isBridge1Built = false;
+
+		Map.ChangeEntityToDefendIfNeeded();
+
+		Wp.SetWaypointFlag( "OneWayBridge1", "closed", false );
+
+		Util.MapDebugPrint( "bridge_1_Destroyed", true );
+	},
+
+	bridge_2_Destroyed = function()
+	{
+		Map.isBridge2Built = false;
+
+		Map.ChangeEntityToDefendIfNeeded();
+
+		Util.MapDebugPrint( "bridge_2_Destroyed", true );
+	},
+
+	bridge_3_Destroyed = function()
+	{
+		Util.MapDebugPrint( "bridge_3_Destroyed", true );
+	},
+
+	stone_barrier_Destroyed = function()
+	{
+		Map.isStoneBarrierBuilt = false;
+
+		Util.MapDebugPrint( "stone_barrier_Destroyed", true );
+	},
+
+	truck_Destroyed = function()
+	{
+		Util.MapDebugPrint( "truck_Destroyed", true );
+	},
+
+	wooden_barrier_Destroyed = function()
+	{
+		Map.isWoodenBarrierBuilt = false;
+
+		Util.MapDebugPrint( "wooden_barrier_Destroyed", true );
+	},
+
+	spawnflagforwardspawn_Axis_Captured = function()
+	{
+		Map.ChangeEntityToDefendIfNeeded();
+
+		Util.MapDebugPrint( "spawnflagforwardspawn_Axis_Captured", true );
+	},
+
+	spawnflagforwardspawn_Allies_Captured = function()
+	{
+		Map.ChangeEntityToDefendIfNeeded();
+
+		Util.MapDebugPrint( "spawnflagforwardspawn_Allies_Captured", true );
+	},
+
+	// -------------------------------------------------------------------------
+
+	Truck_At_First_Bridge = function()
+	{
+		Map.truckPosition = TruckPosition.AT_FIRST_BRIDGE;
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Allied_Command_Post" ); // Focus on Bridge #1
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_bridge_1" );
+
+		Util.MapDebugPrint( "Truck_At_First_Bridge" );
+	},
+
+	Truck_At_Wooden_Barrier = function()
+	{
+		Map.truckPosition = TruckPosition.AT_WOODEN_BARRIER;
+
+		if ( Map.isWoodenBarrierBuilt )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_wooden_barrier" );
+		}
+
+		Util.MapDebugPrint( "Truck_At_Wooden_Barrier" );
+	},
+
+	// Note: Wooden barrier remains available (little obstacle)
+	Truck_Past_Wooden_Barrier = function()
+	{
+		Map.truckPosition = TruckPosition.PAST_WOODEN_BARRIER;
+
+		// Move the defence to the Bridge #2
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_wooden_barrier",
+			"PLANT_bridge_1"
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_wooden_barrier" );
+
+		Util.MapDebugPrint( "Truck_Past_Wooden_Barrier" );
+	},
+
+	Truck_At_Second_Bridge = function()
+	{
+		Map.truckPosition = TruckPosition.AT_SECOND_BRIDGE;
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_bridge_2" );
+
+		Util.MapDebugPrint( "Truck_At_Second_Bridge" );
+	},
+
+	// Note: Truck stops on the second bridge...
+	Truck_At_Stone_Barrier = function()
+	{
+		Map.truckPosition = TruckPosition.AT_STONE_BARRIER;
+
+		// Moving everyone and everything to Forward Spawn area
+		Spawn.SetAxisSpawn( Spawn.FORWARD_SPAWN );
+		Spawn.SetAlliedSpawn( Spawn.FORWARD_SPAWN );
+
+		Util.EnableGoal( "CHECKPOINT_spawnflagforwardspawn" );
+		Maschinengewehr42.Tower( TEAM.AXIS & TEAM.ALLIES, true );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_Axis_Command_Post",
+			"PLANT_bridge_1",
+			"PLANT_bridge_2"
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"BUILD_Allied_Command_Post",
+			"PLANT_Axis_Command_Post"
+		});
+		if ( Map.isStoneBarrierBuilt )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_stone_barrier" );
+		}
+
+		Util.MapDebugPrint( "Truck_At_Stone_Barrier" );
+	},
+
+	// Note: Stone barrier remains available (totally blocks the way)
+	Truck_Past_Stone_Barrier = function()
+	{
+		Map.truckPosition = TruckPosition.PAST_STONE_BARRIER;
+
+		// We build the Stone Barrier once the Truck is past it,
+		// so the Truck is unreachable for Allies, if they're at the other side...
+		// But if the Forward Spawn is owned by Allied, Axis are screwed
+		//SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_stone_barrier" );
+
+		Util.MapDebugPrint( "Truck_Past_Stone_Barrier", true );
+	},
+
+	Truck_At_Third_Bridge = function()
+	{
+		Map.truckPosition = TruckPosition.AT_THIRD_BRIDGE;
+
+		Map.Open_Trail_End();
+
+		Maschinengewehr42.TrailEnd( TEAM.AXIS & TEAM.ALLIES, true );
+
+		Cabinets.TrailEndCabinets( TEAM.AXIS, true );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_bridge_3" );
+
+		Util.MapDebugPrint( "Truck_At_Third_Bridge" );
+	},
+
+	Truck_Past_Third_Bridge = function()
+	{
+		Map.truckPosition = TruckPosition.PAST_THIRD_BRIDGE;
+
+		// Make Axis focus on the last map area
+		Spawn.SetAxisSpawn( Spawn.VC_SPAWN ); // Closest to the end section
+
+		Maschinengewehr42.Tower( TEAM.AXIS & TEAM.ALLIES, false );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_stone_barrier",
+			"CHECKPOINT_spawnflagforwardspawn"
+		});
+		Cabinets.TrailEndCabinets( TEAM.ALLIES, true );
+
+		Util.MapDebugPrint( "Truck_Past_Third_Bridge" );
+	},
+
+	// -------------------------------------------------------------------------
+
+	End_Round = function()
+	{
+		EntityDefenceManagement.Stop();
+
+		Util.MapDebugPrint( "End_Round", true );
+	},
+
+	// -------------------------------------------------------------------------
+
+	// We're here in different cases
+	// First, depending on Bridges #1 and #2 status, related to Truck position
+	// Second, depending on who owns the Forward Spawn, also related to Truck position
+	ChangeEntityToDefendIfNeeded = function()
+	{
+		currentEntity = EntityDefenceManagement.entity;
+		newEntity;
+
+		// Before reaching Forward Spawn section,
+		// Allies should defend the Truck when reachable from their starting spawn
+		// Else, they should defend the furthest reachable Bridge crates, in order to make the Truck reachable again
+
+		// Once the Forward Spawn section is reached,
+		// Allies should defend the Truck when reachable from there
+		// Else, Allies should defend the Bridges if they aren't built and if they don't own the Forward Spawn
+		// Capturing Forward Spawn is priority, but if they spawn back, they should be able to defend the furthest reachable crates
+
+		if ( Map.truckPosition <= TruckPosition.AT_SECOND_BRIDGE )
+		{
+			// Before Forward Spawn section
+			if ( !Map.isBridge1Built )
+			{
+				// Closest to spawn
+				newEntity = Entity.BRIDGE_1_CRATES;
+			}
+			else
+			{
+				// Since Bridge #1 is built
+				// Since the Truck isn't past the Bridge #2
+				// The only focus is the Truck
+				newEntity = Entity.TRUCK;
+			}
+		}
+		else
+		{
+			// Forward Spawn section and after
+			if ( Spawn.DoAlliesOwnForwardSpawn() )
+			{
+				newEntity = Entity.TRUCK;
+			}
+			else
+			{
+				if ( !Map.isBridge1Built )
+				{
+					// Closest to spawn
+					newEntity = Entity.BRIDGE_1_CRATES;
+				}
+				else if ( !Map.isBridge2Built )
+				{
+					newEntity = Entity.BRIDGE_2_CRATES;
+				}
+				else
+				{
+					// Both Bridges built, focus on Truck
+					newEntity = Entity.TRUCK;
+				}
+			}
+		}
+
+		if ( newEntity != currentEntity )
+		{
+			EntityDefenceManagement.ChangeEntity( newEntity );
+		}
+	},
+
+	Close_Trail_End = function()
+	{
+		Map.Set_Trail_End_Access( true );
+	},
+
+	Open_Trail_End = function()
+	{
+		Map.Set_Trail_End_Access( false );
+		Wp.CheckBlockable();
+	},
+
+	Set_Trail_End_Access = function( bSet )
+	{
+		Wp.SetWaypointFlag( "TrailEndTunnelAccess", "closed", bSet );
+	}
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "Allied Team have built the first bridge!", Map.bridge_1_Built );
+	OnTrigger( "Allied Team have built the second bridge!", Map.bridge_2_Built );
+	OnTrigger( "Allied Team have built the third bridge!", Map.bridge_3_Built );
+	OnTrigger( "Barricade 2 has been constructed.", Map.stone_barrier_Built );
+	OnTrigger( "The truck has been repaired!", Map.truck_Built );
+	OnTrigger( "Barricade 1 has been constructed.", Map.wooden_barrier_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "Axis have destroyed the first bridge!", Map.bridge_1_Destroyed );
+	OnTrigger( "Axis have destroyed the second bridge!", Map.bridge_2_Destroyed );
+	OnTrigger( "Axis have destroyed the third bridge!", Map.bridge_3_Destroyed );
+	OnTrigger( "Barricade 2 has been destroyed", Map.stone_barrier_Destroyed );
+	OnTrigger( "^5The truck has been damaged", Map.truck_Destroyed );
+	OnTrigger( "Barricade 1 has been destroyed", Map.wooden_barrier_Destroyed );
+	OnTrigger( "^5Charlie capture the forward spawn", Map.spawnflagforwardspawn_Axis_Captured );
+	OnTrigger( "^5Allies capture the forward spawn!!", Map.spawnflagforwardspawn_Allies_Captured );
+	OnTrigger( "^1Allied team got trough with the supplies!", Map.End_Round );
+
+	OnTriggerRegion( Vector3( -1333,  1100, 225 ), 350, RegionsTriggers.Truck_At_First_Bridge );
+	OnTriggerRegion( Vector3( -1600,  2740, 225 ), 350, RegionsTriggers.Truck_At_Wooden_Barrier );
+	OnTriggerRegion( Vector3(  -960,  3010, 225 ), 350, RegionsTriggers.Truck_Past_Wooden_Barrier );
+	OnTriggerRegion( Vector3(  1315,   690, 225 ), 350, RegionsTriggers.Truck_At_Second_Bridge );
+	OnTriggerRegion( Vector3(  1315,  -125, 230 ), 350, RegionsTriggers.Truck_At_Stone_Barrier );
+	OnTriggerRegion( Vector3(   575, -1600, 225 ), 350, RegionsTriggers.Truck_Past_Stone_Barrier );
+	OnTriggerRegion( Vector3(  3110,  -900, 225 ), 350, RegionsTriggers.Truck_At_Third_Bridge );
+	OnTriggerRegion( Vector3(  2450,   300, 225 ), 350, RegionsTriggers.Truck_Past_Third_Bridge );
+
+	Spawn.AXIS_SPAWN	= Spawn.VC_SPAWN;
+	Spawn.ALLIED_SPAWN	= Spawn.US_SPAWN;
+
+	Util.DisableGoal( ".*", true ); // All but routes
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"BUILD_Axis_Command_Post",
+		"BUILD_wooden_barrier",
+		"PLANT_Allied_Command_Post",
+		"PLANT_bridge_.*"
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_Allied_Command_Post",
+		"BUILD_truck",
+		"ESCORT_Truck"
+	});
+
+	Cabinets.AlliedSpawnCabinets( TEAM.AXIS & TEAM.ALLIES, true ); // For Axis Covi
+	Cabinets.TunnelsCabinets( TEAM.AXIS & TEAM.ALLIES, true );
+
+	// Max users per goal
+	//Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+
+	// Camp times
+	//SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+
+	// TODO Until the tunnels navigation is improved (as-in, fixed) - then decrease below one to 0.91
+	SetGoalPriority( "BUILD_Axis_Command_Post", 0.91 );
+
+	// Large valley, scarce spawns, when it's enabled, it's beyond needed
+	SetGoalPriority( "CHECKPOINT_spawnflagforwardspawn", 0.92 );
+
+	Util.AddUsePoint( "PLANT_stone_barrier",  Vec3(   755, -1185, 225 ) ); // Front (Bridge #2 side)
+	Util.AddUsePoint( "PLANT_stone_barrier",  Vec3(   715, -1695, 225 ) ); // Behind (Flag side)
+	Util.AddUsePoint( "PLANT_wooden_barrier", Vec3( -1075,  2670, 225 ) );
+	Util.SetGoalPosition( -1480, 2370, 225, "PLANT_bridge_1" );
+	Util.SetGoalPosition(  1140, -555, 225, "PLANT_bridge_2" );
+	Util.SetGoalPosition(  2740,   10, 225, "PLANT_bridge_3" );
+
+	Map.Close_Trail_End();
+	Wp.SetWaypointFlag( "OneWayBridge1", "closed", false );
+
+	Entity.Init();
+	EntityDefenceManagement.Start( Entity.TRUCK );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	Spawn.SetBotSpawn( bot );
+};
+
+global Cabinets =
+{
+	AlliedSpawnCabinets = function( team, bAvailability )
+	{
+		SetAvailableMapGoals( team, bAvailability, {
+			"AMMOCAB_second_ammocabinet",
+			"HEALTHCAB_second_healthcabinet"
+		});
+	},
+
+	TunnelsCabinets = function( team, bAvailability )
+	{
+		SetAvailableMapGoals( team, bAvailability, {
+			"AMMOCAB_first_ammocabinet",
+			"HEALTHCAB_first_healthcabinet"
+		});
+	},
+
+	TrailEndCabinets = function( team, bAvailability )
+	{
+		SetAvailableMapGoals( team, bAvailability, {
+			"AMMOCAB_cabinet_ammo_model",
+			"HEALTHCAB_cabinet_health_model"
+		});
+	}
+};
+
+global Entity =
+{
+	TRUCK,
+
+	BRIDGE_1_CRATES,
+
+	BRIDGE_2_CRATES,
+
+	NAME_MAP,
+
+	Init = function()
+	{
+		Entity.TRUCK			= GetEntityByName( "truck" );
+		Entity.BRIDGE_1_CRATES	= GetEntityByName( "bridge_1_clip" );
+		Entity.BRIDGE_2_CRATES	= GetEntityByName( "bridge_2_clip" );
+
+		Entity.NAME_MAP = {};
+		Entity.NAME_MAP[ Entity.TRUCK ] = "Truck";
+		Entity.NAME_MAP[ Entity.BRIDGE_1_CRATES ] = "Bridge #1 Crates";
+		Entity.NAME_MAP[ Entity.BRIDGE_2_CRATES ] = "Bridge #2 Crates";
+	},
+
+	GetName = function( ent )
+	{
+		return Entity.NAME_MAP[ ent ];
+	}
+};
+
+global Maschinengewehr42 =
+{
+	Tower = function( team, bAvailability )
+	{
+		SetAvailableMapGoals( team, bAvailability, {
+			"MOUNTMG42_Tower_MG42",
+			"REPAIRMG42_Tower_MG42"
+		});
+	},
+
+	// The 2nd one is useless, can't aim at anything...
+
+	TrailEnd = function( team, bAvailability )
+	{
+		SetAvailableMapGoals( team, bAvailability, {
+			"MOUNTMG42_Trail_End_MG42",
+			"REPAIRMG42_Trail_End_MG42"
+		});
+	}
+};
+
+global RegionsTriggers =
+{
+	Truck_At_First_Bridge =
+	{
+		Name = "Truck_At_First_Bridge",
+		TriggerOnEntity = GetGoal( "MOVER_truck" ).GetEntity(),
+		OnEnter = function( ent )
+		{
+			Map.Truck_At_First_Bridge();
+		}
+	},
+
+	Truck_At_Wooden_Barrier =
+	{
+		Name = "Truck_At_Wooden_Barrier",
+		TriggerOnEntity = GetGoal( "MOVER_truck" ).GetEntity(),
+		OnEnter = function( ent )
+		{
+			Map.Truck_At_Wooden_Barrier();
+		}
+	},
+
+	Truck_Past_Wooden_Barrier =
+	{
+		Name = "Truck_Past_Wooden_Barrier",
+		TriggerOnEntity = GetGoal( "MOVER_truck" ).GetEntity(),
+		OnEnter = function( ent )
+		{
+			Map.Truck_Past_Wooden_Barrier();
+		}
+	},
+
+	Truck_At_Second_Bridge =
+	{
+		Name = "Truck_At_Second_Bridge",
+		TriggerOnEntity = GetGoal( "MOVER_truck" ).GetEntity(),
+		OnEnter = function( ent )
+		{
+			Map.Truck_At_Second_Bridge();
+		}
+	},
+
+	Truck_At_Stone_Barrier =
+	{
+		Name = "Truck_At_Stone_Barrier",
+		TriggerOnEntity = GetGoal( "MOVER_truck" ).GetEntity(),
+		OnEnter = function( ent )
+		{
+			Map.Truck_At_Stone_Barrier();
+		}
+	},
+
+	Truck_Past_Stone_Barrier =
+	{
+		Name = "Truck_Past_Stone_Barrier",
+		TriggerOnEntity = GetGoal( "MOVER_truck" ).GetEntity(),
+		OnEnter = function( ent )
+		{
+			Map.Truck_Past_Stone_Barrier();
+		}
+	},
+
+	Truck_At_Third_Bridge =
+	{
+		Name = "Truck_At_Third_Bridge",
+		TriggerOnEntity = GetGoal( "MOVER_truck" ).GetEntity(),
+		OnEnter = function( ent )
+		{
+			Map.Truck_At_Third_Bridge();
+		}
+	},
+
+	Truck_Past_Third_Bridge =
+	{
+		Name = "Truck_Past_Third_Bridge",
+		TriggerOnEntity = GetGoal( "MOVER_truck" ).GetEntity(),
+		OnEnter = function( ent )
+		{
+			Map.Truck_Past_Third_Bridge();
+		}
+	}
+};
+
+/** Make the bots follow the Truck all along its journey */
+global EntityDefenceManagement =
+{
+	/** Radius around the entity to enable the goals from */
+	RADIUS,
+
+	/** List of the goals to manage */
+	GOAL_LIST,
+
+	/** Check interval */
+	CHECK_INTERVAL,
+
+	/** Entity to track the position of */
+	entity,
+
+	/** Entity last position, to detect if it's either moving or not */
+	entityPreviousPosition,
+
+	/** Flag that indicates if the thread can run or not */
+	run,
+
+	/** Team for which handle the goals availability */
+	team,
+
+	// *************************************************************************
+
+	Start = function( ent )
+	{
+		EntityDefenceManagement.Init( ent );
+		thread( EntityDefenceManagement.TrackMovement );
+	},
+
+	Init = function( ent )
+	{
+		EntityDefenceManagement.RADIUS = 768;
+
+		EntityDefenceManagement.GOAL_LIST = Util.GoalTable( "CAMP_Truck.*"  );
+
+		EntityDefenceManagement.CHECK_INTERVAL = 1.0;
+
+		// ---
+
+		EntityDefenceManagement.entity = ent;
+
+		EntityDefenceManagement.team = TEAM.AXIS & TEAM.ALLIES; // Both teams
+
+		EntityDefenceManagement.run = true;
+	},
+
+	ChangeEntity = function( ent )
+	{
+		// Depending on the new entity, change the team
+		if ( ent == Entity.TRUCK )
+		{
+			EntityDefenceManagement.team = TEAM.AXIS & TEAM.ALLIES;
+		}
+		else
+		{
+			// Axis keep their current Truck-related goals, Allies move to Bridge crates ones
+			EntityDefenceManagement.team = TEAM.ALLIES;
+		}
+
+		Util.MapDebugPrint( "^6Changing entity to " + Entity.GetName( ent ), true );
+
+		EntityDefenceManagement.entity = ent;
+	},
+
+	TrackMovement = function()
+	{
+		Util.MapDebugPrint( "Starting " + Entity.GetName( EntityDefenceManagement.entity ) + " defence management thread...", true );
+
+		while ( EntityDefenceManagement.run )
+		{
+			entityCurrentPosition = GetEntPosition( EntityDefenceManagement.entity );
+			if ( entityCurrentPosition != EntityDefenceManagement.entityPreviousPosition )
+			{
+				EntityDefenceManagement.entityPreviousPosition = entityCurrentPosition;
+				EntityDefenceManagement.ManageGoals();
+			}
+			else
+			{
+				// For debug purposes
+				foreach ( goal in EntityDefenceManagement.GOAL_LIST )
+				{
+					EntityDefenceManagement.DrawDebugGoal( goal );
+				}
+			}
+
+			// For debug purposes
+			DrawRadius( entityCurrentPosition, EntityDefenceManagement.RADIUS, COLOR.BROWN, EntityDefenceManagement.CHECK_INTERVAL );
+
+			sleep( EntityDefenceManagement.CHECK_INTERVAL );
+		}
+
+		foreach ( goal in EntityDefenceManagement.GOAL_LIST )
+		{
+			goal.SetAvailable( EntityDefenceManagement.team, false );
+		}
+
+		Util.MapDebugPrint( "Stopping " + Entity.GetName( EntityDefenceManagement.entity ) + " defence management thread...", true );
+	},
+
+	ManageGoals = function()
+	{
+		foreach ( goal in EntityDefenceManagement.GOAL_LIST )
+		{
+			shouldGoalBeEnabled = DistanceBetween( goal, EntityDefenceManagement.entity ) <= EntityDefenceManagement.RADIUS;
+			goal.SetAvailable( EntityDefenceManagement.team, shouldGoalBeEnabled );
+
+			// For debug purposes
+			EntityDefenceManagement.DrawDebugGoal( goal );
+		}
+	},
+
+	DrawDebugGoal = function( goal )
+	{
+		goalPosition = goal.GetPosition();
+		goalEyePosition = Vector3( goalPosition.x, goalPosition.y, goalPosition.z + 64 );
+
+		color;
+		if ( goal.IsAvailable( TEAM.AXIS ) || goal.IsAvailable( TEAM.ALLIES ) )
+		{
+			color = COLOR.CYAN;
+		}
+		else
+		{
+			color = COLOR.ORANGE;
+		}
+
+		DrawDebugLine( goalPosition, goalEyePosition, color, EntityDefenceManagement.CHECK_INTERVAL );
+	},
+
+	Stop = function()
+	{
+		EntityDefenceManagement.run = false;
+	}
+};

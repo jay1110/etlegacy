@@ -1,0 +1,1791 @@
+//==========================================================================================
+//
+//	1944 Huertgen Forest (Final) - 1944_huertgen.gm
+//
+//	Who			When		What
+//------------------------------------------------------------------------------------------
+//	Mateos		04/12/10	Full script, based on the few things from jaskot's conversion
+//	jaskot		02/03/09	Converted old script to new format (Very poor)
+//==========================================================================================
+//
+
+/****************************************************
+Path mapping updated and script by Mateos
+Correspondant WAY file hash: -
+Last update: 15th May 2025
+****************************************************/
+
+/*
+ * TODO:
+ * - Map the mountain in front of the concrete Bunker?
+ * - TANK_STOLEN: Give a goal to the Allied mortar bot
+ * - Probably too much: case REVIVE west of North Path and Medic east of it while built... Dynamic AMBUSHER affectation, no need to clear it, if going for scripting it...
+ * - If someone crosses the Foot Bridge and builds the CP before AT-Gun destruction, goal availability is incorrect for bots... It'll probably stay as-is
+ * - Vehicle Tracking System? Perhaps too much for this map - Now that Allies escort and defend CP at once, Axis better play on both fronts too - Looks fine/balanced without
+ */
+
+global MapStep =
+{
+	START					= 0,
+	TANK_STOLEN				= 1,
+	TANK_NEAR_BRIDGE		= 2,
+	TRUCK_GATE_DESTROYED	= 3,
+	TRUCK_AT_BRIDGE			= 4,
+	TRUCK_AT_AXIS_BUNKER	= 5,
+
+	currentStep,
+
+	Init = function()
+	{
+		MapStep.currentStep = MapStep.START;
+	},
+
+	IsTankStolen = function()
+	{
+		return MapStep.currentStep >= MapStep.TANK_STOLEN;
+	},
+
+	IsTankNearBridge = function()
+	{
+		return MapStep.currentStep >= MapStep.TANK_NEAR_BRIDGE;
+	},
+
+	IsTruckAtBridge = function()
+	{
+		return MapStep.currentStep >= MapStep.TRUCK_AT_BRIDGE;
+	},
+
+	IsTruckAtAxisBunker = function()
+	{
+		return MapStep.currentStep >= MapStep.TRUCK_AT_AXIS_BUNKER;
+	}
+};
+
+global Spawn =
+{
+	ALLIED_FARM_SPAWN,
+	AXIS_BUNKER_SPAWN,	// Unavailable once Ammo Bunker destroyed
+	FORWARD_SPAWN,		// Relies on Command Post, both teams
+	TANK_SPAWN,
+	AXIS_RESERVE_SPAWN,	// Available once Ammo Bunker destroyed
+
+	// Spawn at any time outside roles
+	axisSpawn,
+	alliedSpawn,
+
+	// Counter for SuicideNextSpawnAlliedCP
+	// If several build/destroy events occurs before next spawn
+	ssacp,
+
+	Init = function()
+	{
+		Spawn.ALLIED_FARM_SPAWN		= 1;
+		Spawn.AXIS_BUNKER_SPAWN		= 2;
+		Spawn.FORWARD_SPAWN			= 3;
+		Spawn.TANK_SPAWN			= 4;
+		Spawn.AXIS_RESERVE_SPAWN	= 5;
+
+		Spawn.alliedSpawn = Spawn.ALLIED_FARM_SPAWN;
+		Spawn.axisSpawn   = Spawn.TANK_SPAWN;
+
+		Spawn.ssacp = 0;
+
+		Spawn.PrintSpawns();
+	},
+
+	DetermineAndSetSpawns = function()
+	{
+		Spawn.DetermineSpawns();
+		Spawn.SetSpawns();
+	},
+
+	/**
+	 * => Allies
+	 * On start: Farm
+	 * CP built by Allies: Whole teams move there excepted the mortar bot (ATTACKER2), unless Tank is stolen, in which case everyone
+	 * TANK_STOLEN: Split between Tank and CP (if built)
+	 * TANK_NEAR_BRIDGE: CP (if built)
+	 * TRUCK_AT_AXIS_BUNKER: Split between CP (if built) and Farm
+	 * ---
+	 * => Axis
+	 * On start: Tank (and Bunker/Reserve depending on DEFENDER1 role and Ammo Room status)
+	 * TANK_STOLEN: CP (if built), else Bunker if not destroyed, else Reserve
+	 * TRUCK_AT_BRIDGE: Split between CP (if built) and Bunker if not destroyed, else Reserve
+	 */
+	DetermineSpawns = function()
+	{
+		if ( !MapStep.IsTankStolen() )
+		{
+			if ( Map.CPStatus == TEAM.ALLIES )
+			{
+				Spawn.alliedSpawn = Spawn.FORWARD_SPAWN;
+			}
+			else
+			{
+				Spawn.alliedSpawn = Spawn.ALLIED_FARM_SPAWN;
+			}
+
+			Spawn.axisSpawn = Spawn.TANK_SPAWN;
+		}
+		else if ( MapStep.IsTruckAtAxisBunker() )
+		{
+			Spawn.alliedSpawn = Spawn.GetLastAlliedSpawn();
+			Spawn.axisSpawn   = Spawn.GetLastAxisSpawn();
+		}
+		else if ( MapStep.IsTruckAtBridge() )
+		{
+			Spawn.alliedSpawn = Spawn.GetIntermediaryAlliedSpawn();
+			Spawn.axisSpawn   = Spawn.GetTruckAtBridgeAxisSpawn();
+		}
+		else if ( MapStep.IsTankNearBridge() )
+		{
+			Spawn.alliedSpawn = Spawn.GetIntermediaryAlliedSpawn();
+			Spawn.axisSpawn   = Spawn.GetIntermediaryAxisSpawn();
+		}
+		else
+		{
+			// Equivalent of TANK_STOLEN
+			if ( Map.CPStatus == TEAM.ALLIES )
+			{
+				Spawn.alliedSpawn = { Spawn.TANK_SPAWN, Spawn.FORWARD_SPAWN };
+			}
+			else
+			{
+				Spawn.alliedSpawn = Spawn.TANK_SPAWN;
+			}
+
+			Spawn.axisSpawn = Spawn.GetIntermediaryAxisSpawn();
+		}
+	},
+
+	GetIntermediaryAlliedSpawn = function()
+	{
+		if ( Map.CPStatus == TEAM.ALLIES )
+		{
+			return Spawn.FORWARD_SPAWN;
+		}
+
+		return Spawn.TANK_SPAWN;
+	},
+
+	GetIntermediaryAxisSpawn = function()
+	{
+		if ( Map.CPStatus == TEAM.AXIS )
+		{
+			return Spawn.FORWARD_SPAWN;
+		}
+
+		return Spawn.GetLastAxisSpawn();
+	},
+
+	GetTruckAtBridgeAxisSpawn = function()
+	{
+		if ( Map.CPStatus == TEAM.AXIS )
+		{
+			return { Spawn.FORWARD_SPAWN, Spawn.GetLastAxisSpawn() };
+		}
+
+		return Spawn.GetLastAxisSpawn();
+	},
+
+	GetLastAlliedSpawn = function()
+	{
+		if ( Map.CPStatus == TEAM.ALLIES )
+		{
+			return { Spawn.ALLIED_FARM_SPAWN, Spawn.FORWARD_SPAWN };
+		}
+
+		return Spawn.ALLIED_FARM_SPAWN;
+	},
+
+	GetLastAxisSpawn = function()
+	{
+		if ( !Map.isAxisAmmoBunkerDestroyed )
+		{
+			return Spawn.AXIS_BUNKER_SPAWN;
+		}
+
+		return Spawn.AXIS_RESERVE_SPAWN;
+	},
+
+	SetSpawns = function()
+	{
+		Spawn.PrintSpawns();
+		foreach ( bot in BotTable ) { Spawn.SetBotSpawn( bot ); }
+	},
+
+	PrintSpawns = function()
+	{
+		// Extra-informations
+		if ( !Map.isAxisAmmoBunkerDestroyed )
+		{
+			Util.MapDebugPrint( "Axis Ammo Room ^2intact", true );
+		}
+		else
+		{
+			Util.MapDebugPrint( "Axis Ammo Room ^1destroyed", true );
+		}
+
+		if ( Map.CPStatus == TEAM.ALLIES )
+		{
+			Util.MapDebugPrint( "CP is owned by ^$ALLIES", true );
+		}
+		else if ( Map.CPStatus == TEAM.AXIS )
+		{
+			Util.MapDebugPrint( "CP is owned by ^)AXIS", true );
+		}
+		else
+		{
+			Util.MapDebugPrint( "CP is owned by ^3NOBODY", true );
+		}
+
+		// Allies
+		Util.MapDebugPrint( "Allies spawn(s): " + Spawn.SpawnToStr( Spawn.alliedSpawn ), true );
+
+		// Axis
+		Util.MapDebugPrint( "Axis spawn(s): " + Spawn.SpawnToStr( Spawn.axisSpawn ), true );
+	},
+
+	SpawnToStr = function( teamSpawn )
+	{
+		if ( IsTable( teamSpawn ) )
+		{
+			return Spawn.GetSpawnLabelFromId( teamSpawn[0] ) + ", " + Spawn.GetSpawnLabelFromId( teamSpawn[1] );
+		}
+
+		return Spawn.GetSpawnLabelFromId( teamSpawn );
+	},
+
+	GetSpawnLabelFromId = function( spawnId )
+	{
+		switch ( spawnId )
+		{
+			case Spawn.ALLIED_FARM_SPAWN:	{ return "Farm"; }
+			case Spawn.AXIS_BUNKER_SPAWN:	{ return "Bunker"; }
+			case Spawn.FORWARD_SPAWN:		{ return "CP"; }
+			case Spawn.TANK_SPAWN:			{ return "Tank"; }
+			case Spawn.AXIS_RESERVE_SPAWN:	{ return "Reserve"; }
+		}
+	},
+
+	SetBotSpawn = function( bot )
+	{
+		if ( !bot ) { return; }
+		if ( bot.GetTeam() == TEAM.AXIS )
+		{
+			// Special case where Axis DEFENDER1 are too far: Tank not stolen, Ammo Room destroyed, CP owned by Allies
+			// In that particular case, these bots should be moved like others, regardless of their role
+			if ( bot.HasRole( ROLE.DEFENDER1 ) && !MapStep.IsTankStolen()
+				&& ( !Map.isAxisAmmoBunkerDestroyed || Map.CPStatus != TEAM.ALLIES ) )
+			{
+				// If Allies have built the CP, DEFENDER1 bots have been moved to Tank spawn
+				// Move them back to either Bunker or Reserve spawn
+				if ( Map.isAxisAmmoBunkerDestroyed ) { s = Spawn.AXIS_RESERVE_SPAWN; } else { s = Spawn.AXIS_BUNKER_SPAWN; }
+				bot.ChangeSpawnPoint( s );
+
+				Util.MapDebugPrint( "DEFENDER1 bot keeps its current spawn", true );
+				return;
+			}
+
+			if ( bot.HasRole( ROLE.DEFENDER1 ) )
+			{
+				Util.MapDebugPrint( "DEFENDER1 bot is changing spawn for: " + Spawn.SpawnToStr( Spawn.axisSpawn ), true );
+			}
+
+			spawn = Spawn.axisSpawn ;
+		}
+		else if ( bot.GetTeam() == TEAM.ALLIES )
+		{
+			// Mortar bot remains at Farm before Tank_Stolen
+			if ( bot.HasRole( ROLE.ATTACKER2 ) && !MapStep.IsTankStolen() ) { return; }
+			spawn = Spawn.alliedSpawn;
+		}
+		else
+		{
+			// Spectator
+			return;
+		}
+
+		if ( !IsTable( spawn ) )
+		{
+			bot.ChangeSpawnPoint( spawn );
+		}
+		else
+		{
+			if ( RandInt( 0, 9 ) < 5 )
+			{
+				bot.ChangeSpawnPoint( spawn[0] );
+			}
+			else
+			{
+				bot.ChangeSpawnPoint( spawn[1] );
+			}
+		}
+	},
+
+	SuicideSpawnAlliedCP = function()
+	{
+		if ( Spawn.ssacp > 0 ) { return; }
+
+		foreach ( bot in BotTable )
+		{
+			// We filter team and role now, since these are probably not changing later...
+			// Only the ATTACKER2 mortar bot remains at the Farm when this function is called
+			if ( bot.GetTeam() != TEAM.ALLIES || bot.HasRole( ROLE.ATTACKER2 ) )
+			{
+				continue;
+			}
+
+			thread( Spawn.SuicideNextSpawnAlliedCP, bot );
+		}
+	},
+
+	// Copied/adapted from ETUtil.SuicideNextSpawn
+	SuicideNextSpawnAlliedCP = function( bot )
+	{
+		Spawn.ssacp += 1;
+
+		ETUtil.WaitForSpawn( bot.GetTeam() );
+
+		if ( bot.Name && bot.Health > 0 && Map.CPStatus == TEAM.ALLIES && Map.IsBotAtFarm( bot ) )
+		{
+			bot.ExecCommand( "kill" );
+		}
+
+		Spawn.ssacp -= 1;
+	}
+};
+
+global TankBuildOffset =
+{
+	BACK	= 0,
+	RIGHT	= 1,
+	LEFT	= 2
+};
+
+global TankMountAimMode =
+{
+	BRIDGE_EAST_ROAD,
+	BRIDGE_SOUTH_ENTRANCE,
+	CP,
+	GRATE,
+
+	Init = function()
+	{
+		TankMountAimMode.BRIDGE_EAST_ROAD      = Vec3(  -765, -1795, 128 );
+		TankMountAimMode.BRIDGE_SOUTH_ENTRANCE = Vec3( -1545,  -905, 128 );
+		TankMountAimMode.CP                    = Vec3( -3335, -2560,  40 );
+		TankMountAimMode.GRATE                 = Vec3( -2115, -3400, 100 );
+	}
+};
+
+global TruckBuildOffset =
+{
+	BACK	= 0,
+	RIGHT	= 1,
+	LEFT	= 2
+};
+
+global Map =
+{
+	// -------------------------------------------------------------------------
+
+	AXIS_NORTH_PATH_X,
+	GRENADE_AXIS_NORTH_PATH_GOAL,
+	PEN,
+	TANK_SPAWN_EXIT_POS,
+	WALL_TOP_IN,
+	WALL_TOP_OUT,
+	WOOD_PILE,
+
+	initialised,
+
+	CPStatus = 0,	// Owned by none
+	isATGDestroyed = false,
+	isAxisAmmoBunkerDestroyed = false,
+	isAxisNorthPathDestroyed = false,
+	isGrateDestroyed = false,
+
+	// -------------------------------------------------------------------------
+
+	ShowMovers = true,
+	Movers =
+	{
+		"MOVER_aagun_1_clip",
+		"MOVER_allied_footbridge_debri",
+		"MOVER_axis_ammo_room",
+		"MOVER_axis_ammo_room_1",
+		"MOVER_axis_bunker_wall",
+		"MOVER_axispath1",
+		"MOVER_axispath1_1",
+		"MOVER_axispath1_2",
+		"MOVER_bridge_bldg_door",
+		"MOVER_neutral_compost_clip",
+		"MOVER_neutral_compost_closed_clip",
+		"MOVER_north_healthcabinet_clip",
+		"MOVER_south_ammocabinet_clip",
+		"MOVER_south_ammocabinet_clip_1",
+		"MOVER_south_healthcabinet_clip",
+		"MOVER_tankbay_commandpost_wires",
+		"MOVER_tower",
+		"MOVER_tower_base",
+		"MOVER_truck_supplies",
+		"MOVER_truckwall",
+		"MOVER_truckwall_1",
+		"MOVER_truckwall_2",
+		"MOVER_truckwall_3"
+	},
+
+	// -------------------------------------------------------------------------
+
+	Roles =
+	{
+		AXIS =
+		{
+			AllBots = true,		// Each bot is considered for a role
+
+			// Protect the Tank
+			DEFENDER =
+			{
+				AllBots = true,
+				numbots			= 2, // Same as DEFENDER1
+				voice			= "defend"
+			},
+
+			// Cover the North Path + Anticipate CP
+			DEFENDER1 =
+			{
+				crucialClass	= { CLASS.ENGINEER, CLASS.COVERTOPS }, // First bots
+				numbots			= 2,		// Maximum of 2 bots
+				spawnpt			= 2,		// Users of this role will choose spawnpt 2 (Bunker Spawn)
+				voice			= "defend"	// Signals voice chat to randomly announce
+			}
+		},
+
+		ALLIES =
+		{
+			AllBots = true,	// Make (almost) sure we have at least one Covi on ATTACKER
+
+			// Make 1 Engi blow the Axis North Path, destroy the AT-Gun then Build CP
+			// Also a Covi to destroy the CP if Axis-built
+			// And an extra bot for covering purposes
+			ATTACKER =
+			{
+				crucialClass	= { CLASS.ENGINEER, CLASS.COVERTOPS },
+				numbots			= 3,
+				voice			= "attack"
+			},
+
+			// Make 1 Engi build the Foot Bridge
+			ATTACKER1 =
+			{
+				AllBots = true,
+				crucialClass	= CLASS.ENGINEER,
+				numbots			= 2, // No more than ATTACKER one
+				voice			= "attack"
+			},
+
+			// Mortar by the Farm
+			ATTACKER2 =
+			{
+				crucialClass	= CLASS.SOLDIER,
+				numbots			= 1,
+				voice			= "attack"
+			}
+		}
+	},
+
+	// -------------------------------------------------------------------------
+
+	allied_farm_spawn =
+	{
+		Name = "allied_farm_spawn",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function( ent )
+		{
+			bot = Util.IsBot( ent );
+
+			/*if ( bot && MapStep.IsTruckAtAxisBunker() && !Map.isAxisNorthPathDestroyed )
+			{
+				Map.PrintDistanceFromGrenadeAndAttackNodes( bot );
+			}*/
+
+			if ( !bot || bot.GetTeam() != TEAM.ALLIES || !bot.HasRole( ROLE.AMBUSHER ) ) { return; }
+
+			// Clear the AMBUSHER role in all cases...
+			bot.ClearRoles( ROLE.AMBUSHER );
+
+			//Util.MapDebugPrint( "Cleared AMBUSHER role for " + bot.Name, true );
+
+			if ( MapStep.IsTankStolen() ) { return; }
+
+			// ... but only swap in favor of ATTACKER during the 1st phase
+			bot.SetRoles( ROLE.ATTACKER );
+
+			Util.MapDebugPrint( /*"(5) " +*/ "Swapped ATTACKER role for " + bot.Name, true );
+		}
+	},
+
+	// ATTACK_Wait_For_North_Path   1250
+	// GRENADE_Axis_North_Path_East 2000
+	// Values between 1077 and 2120
+	PrintDistanceFromGrenadeAndAttackNodes = function( bot )
+	{
+		if ( Map.t == null )
+		{
+			Map.t = Util.GoalTable( "ATTACK_Wait_For_North_Path.*" );
+			Map.t = Util.AddTable( Map.t, Util.GoalTable( "GRENADE_Axis_North_Path_East.*" ) );
+		}
+
+		foreach ( mg in Map.t )
+		{
+			Util.MapDebugPrint(
+				bot.Name + Util.DebugColorString + " <=> " + mg.GetName() + " = " + ToString( DistanceBetween( bot.GetGameEntity(), mg ) ),
+				true );
+		}
+	},
+
+	// Note: A second table because removed upon Tank_Stolen
+	allied_farm_spawn_attacker_engi_thompson =
+	{
+		Name = "allied_farm_spawn_attacker_engi_thompson",
+		TriggerOnClass = CLASS.ENGINEER,
+		OnEnter = function( ent )
+		{
+			bot = Util.IsBot( ent );
+			if ( !bot || bot.GetTeam() != TEAM.ALLIES || !bot.HasRole( ROLE.ATTACKER ) ) { return; }
+
+			// Commented-out because OB can choose at some point to change weapon,
+			// causing affected bot(s) to be caught in a selfkill loop
+			// The trigger table remains here just in case...
+			/*if ( bot.HasWeapon( WEAPON.CARBINE ) )
+			{
+				bot.ChangePrimaryWeapon( WEAPON.THOMPSON );
+				Util.MapDebugPrint( bot.Name + Util.DebugColorString + " switched weapon for Thompson", true );
+			}*/
+		}
+	},
+
+	Navigation =
+	{
+		// /bot waypoint_setproperty paththrough Navigation_PT:exit_pen
+		exit_pen =
+		{
+			navigate = function( _this )
+			{
+				Map.JumpOverWallNav( _this, Map.PEN, Map.WALL_TOP_OUT );
+			}
+		},
+
+		// /bot waypoint_setproperty paththrough Navigation_PT:jump_over_distant_high_wall
+		jump_over_distant_high_wall =
+		{
+			navigate = function( _this )
+			{
+				Map.JumpOverWallNav( _this, Map.WOOD_PILE, Map.WALL_TOP_IN );
+			}
+		},
+
+		// Avoid spawn exit bottleneck
+		// Only care about bots...
+		// Class/weapon not taken into account (aka heavy weaps slowing down first movements)
+		// ---
+		// With the radius of the waypoint, managedBotNameList and the sleep in OnExit are 'required',
+		// because the path through is triggered at least twice per bot told to not move...
+		// /bot waypoint_setproperty paththrough Navigation_PT:tank_spawn
+		tank_spawn =
+		{
+			mutex = false,
+			botList = {},
+			managedBotNameList = {}, // Avoids several navigate triggering on the same bot
+			//t = Timer(),
+			navigate = function()
+			{
+				//Util.MapDebugPrint( this.Bot.Name + Util.DebugColorString + " entered the tank_spawn path through", true );
+
+				bot = this.Bot;
+				if ( !bot ) { return; }
+
+				// OnExit being triggered as soon as navigate is over, bot would immediately re-enter the path through
+				// Bot already managed, let it go!
+				if ( Map.Navigation.tank_spawn.managedBotNameList[ bot.Name ] == 1 ) { return; }
+
+				//Util.MapDebugPrint( this.Bot.Name + Util.DebugColorString + " is considered for the tank_spawn path through", true );
+
+				Map.Navigation.tank_spawn.botList[ bot ] = 1;
+
+				// Immediately capture current bot position
+				// So it's only queried once
+				botPos = bot.GetPosition();
+
+				// Little sleep to let all spawning bots be listed
+				sleep( .1 );
+
+				// We want both the mutex to be available AND the current bot to be the closest one
+				while ( Map.Navigation.tank_spawn.mutex || !Map.IsClosestBot( bot ) )
+				{
+					// Don't move until it's your turn to enter the mutex
+					this.Goto( botPos );
+					//Map.PrintBotPos( bot, botPos );
+					yield();
+				}
+
+				Map.Navigation.tank_spawn.mutex = true;
+
+				// Let the chosen bot exit the path through without being reconsidered until outside
+				// Keep it still in the list for closest bot, else the next one will exit the loop above
+				if ( bot ) { Map.Navigation.tank_spawn.managedBotNameList[ bot.Name ] = 1; }
+
+				/*Util.MapDebugPrint(
+					ToString( "(" + Map.Navigation.tank_spawn.t.GetElapsedTime() ) + ") Exiting mutex as it is " + bot.Name + Util.DebugColorString + "'s turn",
+					true );*/
+
+				// Let the bot move a bit towards the exit before allowing the next one to be selected
+				sleep( .50 );
+
+				// Allow the next one to be selected
+				if ( bot ) { Map.Navigation.tank_spawn.botList[ bot ] = null; }
+			},
+			OnExit = function() // OnExit is called after navigate finished or the bot has been killed/disconnected
+			{
+				//Util.MapDebugPrint( this.Bot.Name + Util.DebugColorString + " OnExit tank_spawn path through", true );
+
+				Map.Navigation.tank_spawn.mutex = false;
+
+				// Reconsider the bot the next time it spawns...
+				// ... but allow it to exit the waypoint radius 1st
+				// Basic sleep and not a distance check
+				botName = this.Bot.Name;
+				sleep( 1.5 ); // sleep after the name retrieval to handle the disconnection case (this.Bot is null after yielding)
+				Map.Navigation.tank_spawn.managedBotNameList[ botName ] = null;
+			}
+		}
+	},
+
+	JumpOverWallNav = function( _this, startPos, wallPos )
+	{
+		if ( _this.Goto( startPos ) == EVENT.PATH_SUCCESS )
+		{
+			_this.AddAimRequest( Priority.High, "position", wallPos );
+			sleep( .5 );
+
+			// Start to move a bit forward
+			_this.Bot.HoldButton( BTN.FORWARD, .1 );
+			sleep( .1 );
+
+			// Do the actual jump
+			_this.Bot.HoldButton( BTN.SPRINT, 1 );
+			_this.Bot.HoldButton( BTN.FORWARD, 1 );
+			_this.Bot.HoldButton( BTN.JUMP, 1 );
+
+			// Release aim request
+			sleep( .75 );
+			_this.ReleaseAimRequest();
+		}
+	},
+
+	IsClosestBot = function( bot )
+	{
+		return bot && bot.Health > 0 && bot.Name == Map.DetermineClosestBot( Map.Navigation.tank_spawn.botList ).Name;
+	},
+
+	DetermineClosestBot = function( list )
+	{
+		closestBot;
+		dist = 500;
+
+		foreach ( bot and val in list )
+		{
+			if ( !bot || bot.Health <= 0 ) { val = 0; continue; } // Disconnected or dead meanwhile
+			if ( val != 1 ) { continue; }
+
+			currentDist = DistanceBetween( bot.GetPosition(), Map.TANK_SPAWN_EXIT_POS );
+			if ( currentDist < dist )
+			{
+				closestBot = bot;
+				dist = currentDist;
+			}
+		}
+
+		//Util.MapDebugPrint( "Closest bot: " + closestBot.Name + " (" + ToString( dist ) + ")", true );
+
+		return closestBot;
+	},
+
+	PrintBotPos = function( bot, targetPos )
+	{
+		//Util.MapDebugPrint( bot.Name + Util.DebugColorString + "'s position -> " + ToString( bot.GetPosition() ), true );
+		Util.MapDebugPrint( bot.Name + Util.DebugColorString + "'s distance to its target position -> " + ToString( DistanceBetween( bot.GetPosition(), targetPos ) ), true );
+	},
+
+	// -------------------------------------------------------------------------
+
+	Allied_Command_Post_Built = function()
+	{
+		Map.CPStatus = TEAM.ALLIES;
+
+		Spawn.DetermineAndSetSpawns();
+
+		if ( !MapStep.IsTankStolen() )
+		{
+			// Not calling Map.ManageAlliesAmbusherRole() here
+			Spawn.SuicideSpawnAlliedCP();
+			thread( Map.AmbusherToAttackerUponNextAlliedCPSpawn );
+
+			// Go for CP
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"BUILD_Axis_North_Path",
+				"DEFEND_Echo[89]",
+				"PLANTMINE_North_Path.*"
+			});
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"BUILD_Tank",
+				"ESCORT_Tank",
+				"GRENADE_Village_MG42",
+				"MOUNT_Tank_Allies",
+				"PLANT_Grate"
+			});
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"ATTACK_North_Path.*",
+				"BUILD_footbridge",
+				"GRENADE_Axis_North_Path_West1"
+			});
+
+			// Add BUILD_Tank to ATTACKER, so Engis with that role also go for it
+			// Revise BUILD_Tank priority so that PLANT_Grate is considered
+			// Note: Restored upon Tank_Stolen
+			SetGoalPriority( "PLANT_Grate", 0.80 ); // Since BUILD_Tank is 0.80 + 0.10, same here
+			SetGoalRole( "BUILD_Tank", ROLE.ATTACKER );
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Grate" );
+		}
+
+		Map.DetermineAndSetTankMountAimMode();
+
+		Util.MapDebugPrint( "Allied_Command_Post_Built", true );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+		Map.CPStatus = 0;
+
+		Spawn.DetermineAndSetSpawns();
+
+		if ( !MapStep.IsTankStolen() )
+		{
+			Map.ManageAlliesAmbusherRole();
+
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_Axis_North_Path",
+				"DEFEND_Echo[89]",
+				"PLANTMINE_North_Path.*"
+			});
+			SetAvailableMapGoals( TEAM.ALLIES, Map.isAxisNorthPathDestroyed, "ATTACK_North_Path1" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"ATTACK_North_Path2",
+				"BUILD_footbridge",
+				"GRENADE_Axis_North_Path_West1"
+			});
+
+			// Mirrored from Allied_Command_Post_Built
+			ClearGoalRole( "BUILD_Tank", ROLE.ATTACKER );
+		}
+
+		if ( !MapStep.IsTruckAtBridge() )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Grate" );
+		}
+
+		Map.DetermineAndSetTankMountAimMode();
+
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed", true );
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+		Map.CPStatus = TEAM.AXIS;
+
+		Spawn.DetermineAndSetSpawns();
+
+		Map.DetermineAndSetTankMountAimMode();
+
+		Util.MapDebugPrint( "Axis_Command_Post_Built", true );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+		Map.CPStatus = 0;
+
+		Spawn.DetermineAndSetSpawns();
+
+		Map.DetermineAndSetTankMountAimMode();
+
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed", true );
+	},
+
+	// Called by Map.TraceGrate
+	Grate_Built = function()
+	{
+		Map.isGrateDestroyed = false;
+
+		Map.DetermineAndSetTankMountAimMode();
+
+		Util.MapDebugPrint( "Grate_Built", true );
+	},
+
+	Grate_Destroyed = function()
+	{
+		Map.isGrateDestroyed = true;
+
+		Map.DetermineAndSetTankMountAimMode();
+
+		Util.MapDebugPrint( "Grate_Destroyed", true );
+	},
+
+	Tank_Built = function()
+	{
+		Util.MapDebugPrint( "Tank_Built", true );
+	},
+
+	Tank_Stolen = function()
+	{
+		MapStep.currentStep += 1;
+
+		Map.SuicideAttacker1And2AtFarm();
+
+		DeleteTriggerRegion( "allied_farm_spawn_attacker_engi_thompson" );
+
+		Spawn.DetermineAndSetSpawns();
+
+		Map.ManageAlliesAmbusherRole();
+
+		// Focus on Tank, no more need for roles
+		ClearGoalRole( ".*", ROLE );
+
+		// And thus, restore some priorities
+		SetGoalPriority( "BUILD_Command_Post", 0.90 );
+		SetGoalPriority( "BUILD_Tank", 0.90 );
+		SetGoalPriority( "PLANT_Command_Post", 0.81 );
+		SetGoalPriority( "PLANT_Grate", 0.81 );
+
+		if ( Map.CPStatus == TEAM.ALLIES )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Grate" );
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Bravo.*" );
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_Axis_North_Path",
+			"DEFEND_Alpha.*",
+			"DEFEND_Echo[89]",
+			"PLANT_footbridge",
+			"PLANTMINE_North_Path.*"
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ATTACK_Bravo.*",
+			"BUILD_Command_Post",
+			"PLANT_Command_Post",
+			"PLANT_Grate"
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_Alpha.*",
+			"ATTACK_North_Path.*",
+			"BUILD_footbridge",
+			"GRENADE_Axis_North_Path.*",
+			"MOBILEMORTAR_Farm",
+			"SNIPE_Alpha.*"
+		});
+
+		ETUtil.SetAimModeForMount( "MOUNT_Tank_Axis", "opposite" );
+
+		Map.SetAllyGrenadeLowAmmoPriority();
+
+		Util.MapDebugPrint( "Tank_Stolen" );
+	},
+
+	Tank_Past_First_House = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Charlie.*" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Bravo.*" );
+
+		ETUtil.SetExcludeIndexes( "BUILD_Tank", { TankBuildOffset.LEFT, TankBuildOffset.RIGHT } );
+
+		Util.MapDebugPrint( "Tank_Past_First_House" );
+	},
+
+	Tank_Near_Bridge = function()
+	{
+		MapStep.currentStep += 1;
+
+		Spawn.DetermineAndSetSpawns();
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"BUILD_tower",
+			"DEFEND_Delta.*",
+			"MOUNTMG42_Village_MG42", // Note: special nav on vanilla to exit it (stuck in solid)
+			"REPAIRMG42_Village_MG42"
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Charlie.*" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"GRENADE_Village_MG42",
+			"PLANT_Grate",
+			//"PLANT_tower" // Prefer nading it over planting dynamite
+		});
+
+		SetGoalPriority( "PLANT_Grate", 0.9 ); // Same as BUILD
+
+		Map.DetermineAndSetTankMountAimMode();
+		ETUtil.SetExcludeIndexes( "BUILD_Tank", { TankBuildOffset.BACK, TankBuildOffset.RIGHT } );
+
+		Util.MapDebugPrint( "Tank_Near_Bridge" );
+	},
+
+	Truck_Gate_Destroyed = function()
+	{
+		MapStep.currentStep += 1;
+
+		sleep( .4 );
+		Wp.CheckBlockable();
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"MOUNTMG42_tower",
+			"REPAIRMG42_tower"
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ATTACK_Charlie.*",
+			"BUILD_Truck",
+			"ESCORT_Truck",
+			"GRENADE_Tower_MG42"
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_Bravo[123]",
+			"BUILD_Tank",
+			"ESCORT_Tank"
+		});
+
+		ETUtil.SetExcludeIndexes( "BUILD_Truck", { TruckBuildOffset.LEFT } );
+
+		Util.MapDebugPrint( "Truck_Gate_Destroyed" );
+	},
+
+	Truck_at_Bridge = function()
+	{
+		MapStep.currentStep += 1;
+
+		Spawn.DetermineAndSetSpawns();
+
+		Util.DisableGoal( "MOUNT_Tank.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"BUILD_Axis_North_Path",
+			"DEFEND_Echo.*",
+			"PLANTMINE_North_Path.*"
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_Command_Post",
+			"BUILD_Grate",
+			"DEFEND_Delta.*",
+			"PLANT_Command_Post"
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Delta.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_Bravo4",
+			"ATTACK_Charlie.*",
+			"CAMP_Command_Post.*",
+			"PLANT_Grate"
+		});
+
+		Util.MapDebugPrint( "Truck_at_Bridge" );
+	},
+
+	// Move or split Allies at Farm, re-enable North Path related goals (Bridge is suicide)
+	Truck_at_Axis_Bunker = function()
+	{
+		MapStep.currentStep += 1;
+
+		Spawn.DetermineAndSetSpawns();
+
+		Map.ManageAlliesAmbusherRole();
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"MOUNTMG42_Village_MG42",
+			"REPAIRMG42_Village_MG42"
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_Village_MG42" );
+
+		// Restore North Path nading
+		SetGoalPriority( "ATTACK_North_Path.*", 0.51, TEAM.ALLIES ); // Above other ATTACK goals
+		SetGoalPriority( "GRENADE_Axis_North_Path.*", 0.85, TEAM.ALLIES ); // Don't go beyond 1.0 with AMBUSHER boost
+		SetGoalPriority( "GRENADE_Axis_North_Path.*", 0.95, TEAM.ALLIES, CLASS.ENGINEER ); // Above Engi goals
+		SetAvailableMapGoals( TEAM.ALLIES, Map.isAxisNorthPathDestroyed, "ATTACK_North_Path1" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ATTACK_North_Path2",
+			"GRENADE_Axis_North_Path.*"
+		});
+
+		if ( !Map.isAxisNorthPathDestroyed )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Wait_For_North_Path.*" );
+		}
+
+		Map.SetAllyGrenadeLowAmmoPriority();
+
+		Util.MapDebugPrint( "Truck_at_Axis_Bunker" );
+	},
+
+	Tank_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Tank_Destroyed", true );
+	},
+
+	Truck_Built = function()
+	{
+		Util.MapDebugPrint( "Truck_Built", true );
+	},
+
+	Truck_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Truck_Destroyed", true );
+	},
+
+	footbridge_Built = function()
+	{
+		sleep( .1 );
+		Wp.CheckBlockable();
+
+		if ( !MapStep.IsTankStolen() )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "MOUNT_Tank_Axis" );
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"ATTACK_Alpha.*",
+				"BUILD_Tank",
+				"ESCORT_Tank",
+				"MOUNT_Tank_Allies"
+			});
+		}
+
+		Util.MapDebugPrint( "footbridge_Built", true );
+	},
+
+	footbridge_Planted = function()
+	{
+		Util.SetGoalRange( "DEFUSE_footbridge.*", 2000 );
+
+		Util.MapDebugPrint( "footbridge_Planted", true );
+	},
+
+	footbridge_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_footbridge" );
+
+		if ( !MapStep.IsTankStolen() )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_footbridge" );
+		}
+
+		Util.MapDebugPrint( "footbridge_Destroyed", true );
+	},
+
+	tower_Built = function()
+	{
+		Util.MapDebugPrint( "tower_Built", true );
+	},
+
+	tower_Destroyed = function()
+	{
+		Util.MapDebugPrint( "tower_Destroyed", true );
+	},
+
+	Anti_Tank_Gun_Destroyed = function()
+	{
+		// Avoid double-call
+		if ( Map.isATGDestroyed ) { return; }
+
+		Map.isATGDestroyed = true;
+
+		// Don't defuse extra dynamites
+		foreach ( mg in Util.GoalTable( "DEFUSE_Anti_Tank_Gun.*" ) )
+		{
+			mg.SetAvailable( TEAM.AXIS, false );
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Command_Post",
+			"PLANT_Command_Post"
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_ATG_Defence" );
+
+		if ( !MapStep.IsTruckAtAxisBunker() )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "CAMP_Command_Post.*" );
+		}
+
+		Util.MapDebugPrint( "Anti_Tank_Gun_Destroyed", true );
+	},
+
+	Axis_Ammo_Bunker_Destroyed = function()
+	{
+		Map.isAxisAmmoBunkerDestroyed = true;
+
+		Spawn.DetermineAndSetSpawns();
+
+		Util.MapDebugPrint( "Axis_Ammo_Bunker_Destroyed", true );
+	},
+
+	Axis_North_Path_Built = function()
+	{
+		Map.isAxisNorthPathDestroyed = false;
+
+		Map.ManageAlliesAmbusherRole();
+		Map.SetAllyGrenadeLowAmmoPriority();
+
+		sleep( .1 );
+		Wp.CheckBlockable();
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_North_Path1" ); // Avoid teamkill...
+
+		if ( MapStep.IsTruckAtAxisBunker() )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Wait_For_North_Path.*" );
+//			SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Echo.*" );
+		}
+
+		Util.MapDebugPrint( "Axis_North_Path_Built", true );
+	},
+
+	Axis_North_Path_Destroyed = function()
+	{
+		Map.isAxisNorthPathDestroyed = true;
+
+		sleep( .1 );
+		Wp.CheckBlockable();
+
+		Map.ManageAlliesAmbusherRole();
+		Map.SetAllyGrenadeLowAmmoPriority();
+
+		if ( !Map.isATGDestroyed )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Anti_Tank_Gun" );
+		}
+
+		if ( !Map.isAxisAmmoBunkerDestroyed )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "GRENADE_Axis_Ammo_Room" );
+		}
+
+		if ( !MapStep.IsTankStolen() && Map.CPStatus != TEAM.ALLIES || MapStep.IsTruckAtAxisBunker() )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"ATTACK_North_Path.*",
+				"GRENADE_Axis_North_Path_West1"
+			});
+		}
+
+		if ( !MapStep.IsTankStolen() && !Map.isATGDestroyed )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_ATG_Defence" );
+		}
+
+//		if ( MapStep.IsTruckAtAxisBunker() )
+//		{
+//			SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Echo.*" );
+//		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Wait_For_North_Path.*" );
+
+		Util.MapDebugPrint( "Axis_North_Path_Destroyed", true );
+	},
+
+	// -------------------------------------------------------------------------
+
+	AdjustFarmAmmoCabRangeForAxisNorthPathGrenades = function()
+	{
+		cab = GetGoal( "AMMOCAB_north_ammocabinet" );
+		mov = GetGoal( "ATTACK_North_Path2" ); // Better than MOVER_axispath1
+		dst = ToInt( Ceil( DistanceBetween( cab, mov ) ) );
+		cab.SetRange( dst );
+
+		print( Util.DebugColorString + cab.GetName() + "'s range set to " + dst );
+
+		DrawDebugLine( cab.GetPosition(), mov.GetPosition(), COLOR.CYAN, 20 );
+	},
+
+	// Note: executed in a thread
+	AmbusherToAttackerUponNextAlliedCPSpawn = function()
+	{
+		ETUtil.WaitForSpawn( TEAM.ALLIES );
+		if ( Map.CPStatus == TEAM.ALLIES && !Map.isAxisNorthPathDestroyed )
+		{
+			Map.ClearAlliesAmbusherRole( Map.GetAlliesGoalsForAmbusherManagement() );
+		}
+	},
+
+	// Note: only between TANK_NEAR_BRIDGE and TRUCK_AT_BRIDGE
+	// Function name would be too long, so just clarifying it in a note
+	DetermineAndSetTankMountAimMode = function()
+	{
+		if ( !MapStep.IsTankNearBridge() || MapStep.IsTruckAtBridge() ) { return; }
+
+		// Axis
+		// Depends on CP and Grate
+		if ( Map.CPStatus == TEAM.ALLIES )
+		{
+			aimMode = TankMountAimMode.CP;
+		}
+		else if ( Map.isGrateDestroyed )
+		{
+			aimMode = TankMountAimMode.GRATE;
+		}
+		else
+		{
+			aimMode = TankMountAimMode.BRIDGE_EAST_ROAD;
+		}
+
+		ETUtil.SetAimModeForMount( "MOUNT_Tank_Axis", aimMode );
+
+		// Allies
+		// Depends on CP
+		if ( Map.CPStatus == TEAM.AXIS )
+		{
+			aimMode = TankMountAimMode.CP;
+		}
+		else
+		{
+			aimMode = TankMountAimMode.BRIDGE_SOUTH_ENTRANCE;
+		}
+
+		ETUtil.SetAimModeForMount( "MOUNT_Tank_Allies", aimMode );
+	},
+
+	Init = function()
+	{
+		if ( Map.initialised ) { return; }
+
+		Map.initialised = true;
+
+		MapStep.Init();
+		Spawn.Init();
+		TankMountAimMode.Init();
+
+		Map.AXIS_NORTH_PATH_X = GetGoal( "MOVER_axispath1_1" ).GetPosition().x;
+		Map.GRENADE_AXIS_NORTH_PATH_GOAL = GetGoal( "GRENADE_Axis_North_Path_East1" );
+
+		Map.PEN                 = Map.GetWpPos( "pen" );
+		Map.TANK_SPAWN_EXIT_POS = Map.GetWpPos( "tank_spawn_exit" );
+		Map.WALL_TOP_IN         = Map.GetWpPos( "wall_top_in" );
+		Map.WALL_TOP_OUT        = Map.GetWpPos( "wall_top_out" );
+		Map.WOOD_PILE           = Map.GetWpPos( "wood_pile" );
+	},
+
+	GetWpPos = function( name )
+	{
+		wpTable = {};
+		w = Wp.GetWaypointByName( name, wpTable );
+		return wpTable.position;
+	},
+
+	IsBotAtFarm = function( bot )
+	{
+		botPos = bot.GetPosition();
+		return botPos.x > Map.AXIS_NORTH_PATH_X && botPos.y >= 1800;
+	},
+
+	// The goal here is the following
+	// ---
+	// Before Tank_Stolen, upon Axis_North_Path_Destroyed, some west goals are enabled for Allies, with a role
+	// Roles are used to split Footbridge/Tank and West goals, to ultimately reach CP and attack Tank from 2 sides
+	// (and have strategic advantage for later)
+	// If Axis_North_Path_Built happens, there can be Allies on both sides
+	// The goal is to split bots depending on their position (east or west), to avoid them trying to travel to the other side...
+	// This is also true when the Truck reaches the Bunker, where Allies spawning is split between CP and Farm, or all spawn at Farm if no CP
+	// ---
+	// Initially, West bots and goals have ATTACKER goal
+	// Upon Axis_North_Path_Built, everything west having ATTACKER gets cleared from ATTACKER and gets AMBUSHER
+	// The restriction on role is for ATTACKER1 bots travelling by Axis North Path because Footbridge is/was destroyed, so they're unaffected
+	// This is different when the Truck reaches the Bunker
+	// ---
+	// There's a trigger on Farm spawn to restore the roles, since spawning there means the bot is now on the east side
+	// This restoration also happens upon Axis_North_Path_Destroyed ofc
+	// Also managed around CP built/destroyed before Tank_Stolen
+	ManageAlliesAmbusherRole = function()
+	{
+		goals = Map.GetAlliesGoalsForAmbusherManagement();
+
+		if ( MapStep.IsTruckAtAxisBunker() )
+		{
+			// Fall-through
+		}
+		else if ( MapStep.IsTankStolen() || Map.CPStatus == TEAM.ALLIES )
+		{
+			Map.ClearAlliesAmbusherRole( goals );
+			return;
+		}
+
+		if ( Map.isAxisNorthPathDestroyed )
+		{
+			Map.ClearAlliesAmbusherRole( goals );
+		}
+		else
+		{
+			Map.AddAlliesAmbusherRole( goals );
+		}
+	},
+
+	AddAlliesAmbusherRole = function( goals )
+	{
+		// Goals
+		foreach ( expr in goals )
+		{
+			mgs = Util.GoalTable( expr );
+			foreach ( mg in mgs )
+			{
+				mg.ClearRoles( ROLE.ATTACKER );
+				mg.SetRoles( ROLE.AMBUSHER );
+			}
+		}
+
+		Util.MapDebugPrint( "Swapped role for goals: ATTACKER -> AMBUSHER", true );
+
+		// Bots
+		foreach ( bot in BotTable )
+		{
+			if ( bot.GetTeam() != TEAM.ALLIES ) { continue; }
+			if ( !MapStep.IsTankStolen() && !bot.HasRole( ROLE.ATTACKER ) ) { continue; }
+
+			//Util.MapDebugPrint( "(1) " + bot.Name + Util.DebugColorString + " is going for " + bot.GetHighLevelGoalName() + "/" + bot.GetMapGoalName(), true );
+
+			if ( bot.GetPosition().x < Map.AXIS_NORTH_PATH_X )
+			{
+				bot.ClearRoles( ROLE.ATTACKER );
+				bot.SetRoles( ROLE.AMBUSHER );
+				Util.MapDebugPrint( /*"(2) " +*/ "Swapped AMBUSHER role for " + bot.Name, true );
+				//Util.MapDebugPrint( format( "%s (%f,%f,%f) %s %s", "(2) Position:", bot.GetPosition().x, bot.GetPosition().y, bot.GetPosition().z, "for", bot.Name ), true );
+			}
+
+			/*if ( bot.Health <= 0 )
+			{
+				Util.MapDebugPrint( "(3) " + bot.Name + Util.DebugColorString + " is down", true );
+			}
+
+			Util.MapDebugPrint( "(4) " + bot.Name + Util.DebugColorString + " is going for " + bot.GetHighLevelGoalName() + "/" + bot.GetMapGoalName(), true );*/
+		}
+	},
+
+	ClearAlliesAmbusherRole = function( goals )
+	{
+		// Goals
+		ClearGoalRole( goals, ROLE.AMBUSHER );
+		if ( !MapStep.IsTankStolen() )
+		{
+			SetGoalRole( goals, ROLE.ATTACKER );
+			Util.MapDebugPrint( "Swapped role for goals: AMBUSHER -> ATTACKER", true );
+		}
+		else
+		{
+			Util.MapDebugPrint( "Cleared role for goals: AMBUSHER", true );
+		}
+
+		// Bots
+		foreach ( bot in BotTable )
+		{
+			if ( bot.GetTeam() != TEAM.ALLIES ) { continue; }
+			if ( bot.HasRole( ROLE.AMBUSHER ) )
+			{
+				bot.ClearRoles( ROLE.AMBUSHER );
+				Util.MapDebugPrint( "Cleared AMBUSHER role from " + bot.Name, true );
+
+				if ( !MapStep.IsTankStolen() )
+				{
+					bot.SetRoles( ROLE.ATTACKER );
+					Util.MapDebugPrint( "Affected ATTACKER role to " + bot.Name, true );
+				}
+			}
+		}
+	},
+
+	GetAlliesGoalsForAmbusherManagement = function()
+	{
+		if ( !MapStep.IsTruckAtAxisBunker() )
+		{
+			goals = Groups.ALLIES_START_WEST_GOALS;
+		}
+		else
+		{
+			// No AT-Gun since useless now
+			goals =
+			{
+				"ATTACK_Delta.*",
+				"ATTACK_North_Path2", // 1 is off while North Path is intact
+				"BUILD_Command_Post",
+				"BUILD_Truck",
+				"ESCORT_Truck",
+				"GRENADE_Axis_Ammo_Room",
+				"GRENADE_Axis_North_Path_West1",
+				"GRENADE_Tower_MG42",
+				"PLANT_Command_Post"
+			};
+		}
+
+		return goals;
+	},
+
+	GetAllyGrenadeLowAmmoPriority = function()
+	{
+		if ( Map.GRENADE_AXIS_NORTH_PATH_GOAL.IsAvailable( TEAM.ALLIES )
+			&& !Map.isAxisNorthPathDestroyed )
+		{
+			p = 0.83; // Above 0.825 of ATTACK_Wait_For_North_Path
+		}
+		else
+		{
+			p = .0;
+		}
+
+		//Map.PrintAxisNorthPathInfo( p );
+
+		return p;
+	},
+
+	PrintAxisNorthPathInfo = function( p )
+	{
+		Util.MapDebugPrint( "==========", true );
+
+		if ( Map.isAxisNorthPathDestroyed )
+		{
+			Util.MapDebugPrint( "Axis North Path is ^1destroyed", true );
+		}
+		else
+		{
+			Util.MapDebugPrint( "Axis North Path is ^2intact", true );
+		}
+
+		if ( Map.GRENADE_AXIS_NORTH_PATH_GOAL.IsAvailable( TEAM.ALLIES ) )
+		{
+			Util.MapDebugPrint( "Its nading is ^2on", true );
+		}
+		else
+		{
+			Util.MapDebugPrint( "Its nading is ^1off", true );
+		}
+
+		Util.MapDebugPrint( "ALLY_GRENADE low ammo priority is " + ToString( p ), true );
+
+		Util.MapDebugPrint( "==========", true );
+	},
+
+	// For once, I'll not create several functions with a different name
+	// If args are given, set the value
+	// If args are not given, loop through the bots and call yourself with args
+	SetAllyGrenadeLowAmmoPriority = function( bot, p )
+	{
+		if ( bot == null )
+		{
+			p = Map.GetAllyGrenadeLowAmmoPriority();
+			foreach ( bot in BotTable )
+			{
+				Map.SetAllyGrenadeLowAmmoPriority( bot, p );
+			}
+		}
+		else
+		{
+			wpn = bot.GetWeapon( WEAPON.ALLY_GRENADE );
+			if ( wpn )
+			{
+				wpn.PrimaryFire.LowAmmoPriority = p;
+			}
+		}
+	},
+
+	SuicideAttacker1And2AtFarm = function()
+	{
+		foreach ( bot in BotTable )
+		{
+			if ( bot.GetTeam() != TEAM.ALLIES || !Map.IsBotAtFarm( bot ) ) { continue; }
+			if ( bot.HasRole( ROLE.ATTACKER1 ) || bot.HasRole( ROLE.ATTACKER2 ) )
+			{
+				bot.ExecCommand( "kill" );
+			}
+		}
+	},
+
+	// No wm_announce for Grate_Built: tracing done in a thread
+	TraceGrate = function()
+	{
+		start	= Vec3( -1530, -3450, 95 );
+		end		= Vec3( -1430, -3450, 95 );
+		//colour	= COLOR.RED;
+		timer	= 3;
+		while ( true )
+		{
+			tr = TraceLine( start, end, null, TRACE.PLAYERCLIP, 0, false);
+
+			// The fraction value tells us of a collision or not
+			// If it's 1, there was no collision
+			// If less than 1 there was a collision
+			if ( tr.fraction < 1 && Map.isGrateDestroyed )
+			{
+				Map.Grate_Built();
+				//colour = COLOR.RED;
+			}
+			/*else if ( tr.fraction == 1 )
+			{
+				colour = COLOR.GREEN;
+			}
+
+			DrawDebugLine( start, end, colour, timer );*/
+
+			sleep( timer );
+		}
+	},
+
+	// -------------------------------------------------------------------------
+
+	vehicle_at_location = function()
+	{
+		switch ( Map.VehicleLocation )
+		{
+			case 1:
+			{
+				Map.Truck_at_Bridge();
+			}
+			case 2:
+			{
+				// Truck exits Case 1
+			}
+			case 3:
+			{
+				Map.Truck_at_Axis_Bunker();
+			}
+		}
+
+//		Util.MapDebugPrint( "vehicle at location " + Map.VehicleLocation, true );
+	}
+};
+
+global OnMapLoad = function()
+{
+	// *** TRIGGERS ***
+	// The announcements are trimmed to 71 chars, the maximum supported by Omni-Bot
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!, Allies Contro", Map.Allied_Command_Post_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!, Axis Control th", Map.Axis_Command_Post_Built );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "the Grate has been destroyed.", Map.Grate_Destroyed );
+	OnTrigger( "The Tank has been repaired!", Map.Tank_Built );
+	OnTrigger( "Allied team has stolen the Tank!", Map.Tank_Stolen );
+	OnTrigger( "The Tank has been damaged!", Map.Tank_Destroyed );
+	OnTrigger( "The Truck has been repaired!", Map.Truck_Built );
+	OnTrigger( "The Truck has been damaged!", Map.Truck_Destroyed );
+	OnTrigger( "the Allied Footbridge has been constructed.", Map.footbridge_Built );
+	OnTrigger( "Planted at footbridge.", Map.footbridge_Planted );
+	OnTrigger( "the Allied Footbridge has been destroyed.", Map.footbridge_Destroyed );
+	OnTrigger( "the Axis tower has been constructed.", Map.tower_Built );
+	OnTrigger( "the Axis Tower has been destroyed.", Map.tower_Destroyed );
+
+	OnTrigger( "1944_huertgen_allies_truck_steal", Map.Truck_Gate_Destroyed );
+	OnTrigger( "Allies have destroyed the Anti Tank Gun!", Map.Anti_Tank_Gun_Destroyed );
+	OnTrigger( "the Axis Ammo Bunker has been destroyed, Axis Bunker Spawn disabled.", Map.Axis_Ammo_Bunker_Destroyed );
+
+	OnTrigger( "the Axis North Path has been blockaded.", Map.Axis_North_Path_Built );
+	OnTrigger( "the Allies have cleared the Axis North Path.", Map.Axis_North_Path_Destroyed );
+
+	alliedFarmSpawnAABB = AABB( 2980.885, 3284.742, 17.125, 3242.974, 3643.081, 91.125 );
+	OnTriggerRegion( alliedFarmSpawnAABB, Map.allied_farm_spawn );
+	OnTriggerRegion( alliedFarmSpawnAABB, Map.allied_farm_spawn_attacker_engi_thompson );
+
+	Map.Init();
+
+	// *** CLEAR ALL GOALS FOR BOTH TEAMS ***
+	Util.DisableGoal( ".*", true ); // All but routes
+	Util.RemoveGoal( "PLANT_Axis_North_Path" ); // GRENADE_Axis_North_Path goals, targeting MOVER_axispath1
+
+	// *** AXIS GOALS ***
+	Cabinets.SetAvailable( TEAM.AXIS, Cabinets.VILLAGE );
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"BUILD_Axis_North_Path",
+		"BUILD_Command_Post",
+		"BUILD_Grate",
+		"DEFEND_Alpha.*",
+		"DEFEND_Echo[89]",
+		"PLANT_Command_Post",
+		"PLANT_footbridge",
+		"PLANTMINE_North_Path.*"
+	});
+
+	// *** ALLIED GOALS ***
+	Cabinets.SetAvailable( TEAM.ALLIES, Cabinets.ALLIED_FARM );
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_footbridge",
+		"GRENADE_Axis_North_Path_East.*",
+		"MOBILEMORTAR_Farm",
+		"SNIPE_Alpha.*"
+	});
+
+	// *** ROLES ***
+	ClearGoalRole( ".*", ROLE );
+
+	// Special case of the CP
+	// ATTACKER affected right after using Groups
+	SetGoalRole(
+		{ "BUILD_Command_Post", "PLANT_Command_Post" },
+		{ ROLE.DEFENDER, ROLE.DEFENDER1 } );
+
+	SetGoalRole( "DEFEND_Alpha.*", ROLE.DEFENDER );
+	SetGoalRole({
+		"BUILD_Axis_North_Path",
+		"DEFEND_Echo[89]",
+		"PLANTMINE_North_Path.*"
+	}, ROLE.DEFENDER1 );
+
+	SetGoalRole( Groups.ALLIES_START_WEST_GOALS, ROLE.ATTACKER );
+	SetGoalRole({
+		"ATTACK_Alpha.*",
+		"BUILD_footbridge",
+		"BUILD_Tank",
+		"ESCORT_Tank",
+		"MOUNT_Tank_Allies",
+		"SNIPE_Alpha.*"
+	}, ROLE.ATTACKER1 );
+	SetGoalRole( "DEFUSE_footbridge.*", ROLE.ATTACKER1, true ); // Avoid ATTACKER Engis travelling to defuse it...
+	SetGoalRole( "MOBILEMORTAR_Farm", ROLE.ATTACKER2 );
+
+	// Special case of GRENADE_Axis_North_Path_East
+	SetGoalRole( "GRENADE_Axis_North_Path_East.*", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2 } );
+
+	// *** GOALS PROPERTIES ***
+	SetGoalPriority( "ATTACK_North_Path.*", 0.51 ); // Above CAMP_Command_Post
+	SetGoalPriority( "ATTACK_Wait_For_North_Path.*", 0.825 ); // Between ESCORT (0.79) and GRENADE (0.80), role boost taken into account
+	SetGoalPriority( "BUILD_Command_Post", 0.81 ); // So that it's 0.91 with Role boost (above BUILD_Tank)
+	SetGoalPriority( "BUILD_Axis_North_Path", 0.85 ); // So that it's below DEFUSE with Role boost (AT-Gun)
+	SetGoalPriority( "BUILD_Tank", 0.80 ); // So that it's default 0.90 with Role boost
+	SetGoalPriority( "GRENADE_Axis_North_Path.*", 0.92, TEAM.ALLIES, CLASS.ENGINEER ); // Above BUILD_Command_Post with role boost
+	SetGoalPriority( "GRENADE_Axis_North_Path.*", 0.82, TEAM.ALLIES, CLASS.COVERTOPS ); // Above PLANT_Command_Post
+	SetGoalPriority( "PLANT_Command_Post", 0.71 ); // So that it's default 0.81 with Role boost...
+	SetGoalPriority( "PLANT_Command_Post", 0.81, TEAM.ALLIES ); // ... excepted for Allies, so it's 0.91, just like the related BUILD goal
+	SetGoalPriority( "PLANTMINE_North_Path.*", 0.82 ); // So that it's above BUILD_Command_Post with Role boost
+
+	Util.AddUsePoint( "BUILD_Grate", { // Avoid Engis building themselves in...
+		Vec3( -1430, -3375, 85 ), // West side
+		Vec3( -1520, -3370, 90 )  // East side
+	});
+	Util.AddUsePoint( "PLANT_Grate", {
+		Vec3( -1375, -3300, 110 ), // West side
+		Vec3( -1500, -3365,  90 )  // East side
+	});
+	Util.AddUsePoint( "REPAIRMG42_tower", Vec3( -1230, 455, 315 ) ); // Else timeout
+
+	villageMG42Pos = Vec3( -1520, -2620, 220 );
+	Util.AddUsePoint( "MOUNTMG42_Village_MG42" , villageMG42Pos ); // Else unreachable
+	Util.AddUsePoint( "REPAIRMG42_Village_MG42", villageMG42Pos ); // Else timeout
+
+	Util.ExcludeClass( "MOUNT.*", 0, CLASS.MEDIC, CLASS.ENGINEER );
+
+	Util.SetGoalOffset( 0, 20, 0, "AMMOCAB_north_ammocabinet" ); // Avoid bots trying to step on it
+
+	// Distance between ATTACK_Wait_For_North_Path8 and BUILD_footbridge is 1195
+	// Distance between ATTACK_Wait_For_North_Path8 and ATTACK_North_Path2 is 1295
+	// We roughly would like something inbetween as range for ATTACK_Wait_For_North_Path
+	Util.SetGoalRange( "ATTACK_Wait_For_North_Path.*", 1250 );
+
+	Util.SetGoalRange( "GRENADE_Axis_North_Path.*", 2000 );
+
+	Util.SetGoalPosition( -1472, -3350,  72, "BUILD_Grate" );
+	Util.SetGoalPosition(  -955,   310, 145, "PLANT_tower" );
+	Util.SetGoalPosition(  3700,   700,   0, "PLANT_footbridge" );
+	Util.SetGoalPosition( -3960, -1940, -10, "PLANT_Command_Post" );
+	Util.SetGoalPosition( -2430,  1555, 520, "PLANT_Anti_Tank_Gun" );
+
+	ETUtil.SetAimModeForMount( "MOUNT_Tank_Axis", "velocity" );
+	ETUtil.SetAimModeForMount( "MOUNT_Tank_Allies", "velocity" );
+	ETUtil.SetExcludeIndexes( "BUILD_Tank", { TankBuildOffset.LEFT } );
+
+	// *** VEHICLE TRIGGERS ***
+	OnTrigger( "tank at location", Map.vehicle_at_location );
+	OnTrigger( "truck at location", Map.vehicle_at_location );
+
+	OnTriggerRegion( AABB( -1664.875, -1051.546, 105.125, -1407.125, -884.309, 179.125 ), RegionTrigger.VehicleTrigger );
+	OnTriggerRegion( AABB( -1656.225,   400.432, 105.125, -1409.084,  663.498, 179.125 ), RegionTrigger.VehicleTrigger );
+
+	Util.OnTriggerPosition( "MOVER_tank",                 "region1", 200.0, Map.Tank_Past_First_House );
+	Util.OnTriggerPosition( "MOVER_tank", Vec3( -1280, -1790, 128 ), 200.0, Map.Tank_Near_Bridge );
+
+	Util.FixMoverPos( "truck", Vec3( -2889.000, -4430.500, 164.500 ), Vec3( -2888.000, -4576.000, 108.000 ) );
+
+	Map.AdjustFarmAmmoCabRangeForAxisNorthPathGrenades();
+
+	thread( Map.TraceGrate );
+
+	Util.MapDebugPrint( "Omni-bot 0.9x map script for 1944 Huertgen Forest (Final) by Mateos" );
+};
+
+global OnBotJoin = function( bot )
+{
+	Map.Init();
+	Spawn.SetBotSpawn( bot );
+
+	// Make bots stop shooting the Movers-like targets
+	bot.IgnoreTarget( Map.Movers, 9999 );
+
+	// Mainly for targeting the Axis North Path (ammo cabinet at the Allied Farm)
+	Map.SetAllyGrenadeLowAmmoPriority( bot, Map.GetAllyGrenadeLowAmmoPriority() );
+};
+
+global Cabinets =
+{
+	ALLIED_FARM	= { "AMMOCAB_north_ammocabinet", "HEALTHCAB_north_healthcabinet" },
+	VILLAGE		= { "AMMOCAB_south_ammocabinet", "HEALTHCAB_south_healthcabinet" },
+
+	SetAvailable = function( team, goalTable )
+	{
+		SetAvailableMapGoals( team, true, goalTable );
+	}
+};
+
+global Groups =
+{
+	ALLIES_START_WEST_GOALS = {
+		"ATTACK_Echo.*",
+		"ATTACK_North_Path.*",
+		"ATTACK_ATG_Defence",
+		"BUILD_Command_Post",
+		"CAMP_Command_Post.*",
+		"GRENADE_Axis_Ammo_Room",
+		"GRENADE_Axis_North_Path_West1",
+		"PLANT_Anti_Tank_Gun",
+		"PLANT_Command_Post",
+		"PLANT_Grate"
+	},
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_Command_Post =
+		{
+			ROUTE_Axis_Bunker_Spawn =
+			{
+				ROUTE_Axis_CP_Route1 =
+				{
+					ROUTE_Axis_CP_Route2 =
+					{
+						ROUTE_Axis_CP_Route3 =
+						{
+							ROUTE_Axis_CP = {}
+						}
+					}
+				}
+			}
+		}
+	};
+
+	Util.Routes( MapRoutes );
+};

@@ -1,0 +1,2132 @@
+//==========================================================================================
+//
+//	mlb_d_day.gm
+//
+//	Who      	When		What
+//------------------------------------------------------------------------------------------
+//	Qiki		22.7.2021	Initial Script & Waypoints
+//	Native12	12.11.2021	Test
+//	Qiki		25.11.2021	Stuckages
+//	Native12	25.11.2021	Released
+//
+//==========================================================================================
+//
+//	Keep your omni-bot scripts up to date!
+//	Bugs and suggestions: PM on https://fearless-assassins.com/
+
+global Map =
+{
+	Allied_CP = false,
+	Axis_CP = false,
+	Gate_MG42 = false,
+	Beach_Bunker_MG42 = false,
+	Sea_Wall_Breach = true,
+	Sea_Wall_Gate = true,
+	South_Front_Bunker_Door = true,
+	Forward_Bunker_Axis = true,
+	count_allyArea = {},
+	count_ally = {},
+	DocsDropped = false,
+	Docs_Taken = false,
+	CarryDocs = false,
+
+	Navigation =
+	{
+		//	/bot waypoint_setproperty paththrough Navigation_PT:jump
+		jump =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+	},
+
+	Roles =
+	{
+		ALLIES =
+		{
+			AllBots = true,
+			ATTACKER =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER1 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER2 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER3 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+		},
+
+		AXIS =
+		{
+			AllBots = true,
+			DEFENDER =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER1 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER2 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER3 =
+			{
+				numbots = 5,
+				crucialClass = CLASS.ENGINEER,
+			},
+		},
+	},
+
+	Allied_CP_Built = function()
+	{
+		Util.MapDebugPrint( "Allied_CP_Built" );
+
+		Map.Allied_CP = true;
+
+		Util.DisableGoal( {
+			"BUILD_Command_Post",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"PLANT_Command_Post",
+		});
+	},
+
+	Allied_CP_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Allied_CP_Destroyed" );
+
+		Map.Allied_CP = false;
+
+		foreach( goal in Util.GoalTable("DEFUSE_Command_Post_.*") )
+		{
+			goal.SetAvailable(TEAM.ALLIES, false);
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"PLANT_Command_Post",
+		});
+
+		if ( !Map.Docs_Taken )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_Command_Post",
+			});
+		}
+
+		if ( !Map.Sea_Wall_Breach or !Map.Sea_Wall_Gate or !Map.South_Front_Bunker_Door )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"BUILD_Command_Post",
+			});
+		}
+	},
+
+	CP_Planted = function()
+	{
+		if ( Map.Allied_CP )
+		{
+			Util.MapDebugPrint( "Allied_CP_Planted" );
+		}
+		else
+		{
+			Util.MapDebugPrint( "Axis_CP_Planted" );
+		}
+
+		Util.SetGoalRange( "DEFUSE_Command_Post_.*", 800);
+		Util.SetMaxUsers( 1, "DEFUSE_Command_Post_.*" );
+
+		if ( Map.Docs_Taken )
+		{
+			Util.DisableGoal( "DEFUSE_Command_Post_.*" );
+		}
+	},
+
+	CP_Defused = function()
+	{
+		if ( Map.Allied_CP )
+		{
+			Util.MapDebugPrint( "Allied_CP_Defused" );
+		}
+		else
+		{
+			Util.MapDebugPrint( "Axis_CP_Defused" );
+		}
+	},
+
+	Axis_CP_Built = function()
+	{
+		Util.MapDebugPrint( "Axis_CP_Built" );
+
+		Map.Axis_CP = true;
+
+		Util.DisableGoal( {
+			"BUILD_Command_Post",
+		});
+
+		if ( !Map.Sea_Wall_Breach or !Map.Sea_Wall_Gate or !Map.South_Front_Bunker_Door )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"PLANT_Command_Post",
+			});
+		}
+	},
+
+	Axis_CP_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Axis_CP_Destroyed" );
+
+		Map.Axis_CP = false;
+
+		foreach( goal in Util.GoalTable("DEFUSE_Command_Post_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"PLANT_Command_Post",
+		});
+
+		if ( !Map.Docs_Taken )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_Command_Post",
+			});
+		}
+
+		if ( !Map.Sea_Wall_Breach or !Map.Sea_Wall_Gate or !Map.South_Front_Bunker_Door )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"BUILD_Command_Post",
+			});
+		}
+	},
+
+	Gate_MG42_Built = function()
+	{
+		Util.MapDebugPrint( "Gate_MG42_Built" );
+
+        Wp.SetWaypointFlag( "Gate_MG42_2", "closed", false );
+
+        DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Map.Gate_MG42 = true;
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_axis_basement_MG_Gun",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"GRENADE_Gate_MG42",
+		});
+
+		if ( tableCount(Map.count_ally) < 1 and Map.Forward_Bunker_Axis and tableCount(Map.count_allyArea) < 1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"MOUNTMG42_axis_basement_MG_Gun",
+				"REPAIRMG42_axis_basement_MG_Gun",
+			});
+		}
+	},
+
+	Gate_MG42_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Gate_MG42_Destroyed" );
+
+        Wp.SetWaypointFlag( "Gate_MG42_2", "closed", true );
+
+        DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Map.Gate_MG42 = false;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"GRENADE_Gate_MG42",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"MOUNTMG42_axis_basement_MG_Gun",
+			"REPAIRMG42_axis_basement_MG_Gun",
+		});
+
+		if ( tableCount(Map.count_ally) < 1 and Map.Forward_Bunker_Axis and tableCount(Map.count_allyArea) < 1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_axis_basement_MG_Gun",
+			});
+		}
+	},
+
+	Beach_Bunker_MG42_Built = function()
+	{
+		Util.MapDebugPrint( "Beach_Bunker_MG42_Built" );
+
+        Wp.SetWaypointFlag( "Beach_Bunker_MG42_1", "closed", false );
+
+        DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Map.Beach_Bunker_MG42 = true;
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_main_bunker_MG42_gun",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"GRENADE_Beach_Bunker_MG42",
+		});
+
+		if ( tableCount(Map.count_ally) < 1 and Map.Forward_Bunker_Axis and tableCount(Map.count_allyArea) < 1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"MOUNTMG42_mg1gun",
+				"REPAIRMG42_mg1gun",
+			});
+		}
+	},
+
+	Beach_Bunker_MG42_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Beach_Bunker_MG42_Destroyed" );
+
+        Wp.SetWaypointFlag( "Beach_Bunker_MG42_1", "closed", true );
+
+        DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Map.Beach_Bunker_MG42 = false;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"GRENADE_Beach_Bunker_MG42",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"MOUNTMG42_mg1gun",
+			"REPAIRMG42_mg1gun",
+		});
+
+		if ( tableCount(Map.count_ally) < 1 and Map.Forward_Bunker_Axis and tableCount(Map.count_allyArea) < 1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_main_bunker_MG42_gun",
+			});
+		}
+	},
+
+	Sea_Wall_Breach_Planted = function()
+	{
+		Util.MapDebugPrint( "Sea_Wall_Breach_Planted" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_Sea_Wall_Breach_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+	},
+
+	Sea_Wall_Breach_Defused = function()
+	{
+		Util.MapDebugPrint( "Sea_Wall_Breach_Defused" );
+	},
+
+	Sea_Wall_Breach_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Sea_Wall_Breach_Destroyed" );
+
+		Map.Sea_Wall_Breach = false;
+
+		Util.EnableGoal( "ROUTE_SeaWallBreached_1" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_Sea_Wall_Breach_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		Util.RemoveGoal( "DEFEND_Axis_SWB_Out_10" );
+		Util.RemoveGoal( "DEFEND_Axis_SWB_Out_11" );
+		Util.RemoveGoal( "DEFEND_Axis_SWB_Out_12" );
+		Util.RemoveGoal( "DEFEND_Axis_SWB_Out_13" );
+		Util.RemoveGoal( "DEFEND_Axis_SWB_Out_14" );
+		Util.RemoveGoal( "DEFEND_Axis_SWB_Out_15" );
+		Util.RemoveGoal( "DEFEND_Axis_SWB_Out_20" );
+		Util.RemoveGoal( "DEFEND_Axis_SWB_Out_21" );
+		Util.RemoveGoal( "DEFEND_Axis_SWB_Out_22" );
+		Util.RemoveGoal( "DEFEND_Axis_SWB_Out_23" );
+		Util.RemoveGoal( "DEFEND_Axis_SWB_Out_24" );
+		Util.RemoveGoal( "DEFEND_Axis_SWB_Out_25" );
+
+		if ( tableCount(Map.count_ally) < 1 )
+		{
+			if ( tableCount(Map.count_allyArea) < 1 )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"DEFEND_Axis_SWB_Out_5.*",
+					"DEFEND_Axis_SWB_Out_6.*",
+				});
+			}
+		}
+
+		if ( Map.Sea_Wall_Gate and Map.South_Front_Bunker_Door and Map.Forward_Bunker_Axis )
+		{
+			sleep(3);
+
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"MOUNTMG42_t378",
+				"REPAIRMG42_t378",
+				"MOUNTMG42_t378_1",
+				"REPAIRMG42_t378_1",
+				"CAMP_Allies_Beach_.*",
+			});
+
+			if ( Map.Axis_CP )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"PLANT_Command_Post",
+				});
+			}
+			else
+			{
+				if ( !Map.Allied_CP )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"BUILD_Command_Post",
+					});
+				}
+			}
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"AMMOCAB_north_ammocabinet",
+				"HEALTHCAB_t629",
+			});
+
+			if ( Map.Forward_Bunker_Axis )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"CHECKPOINT_beach_flag"
+				});
+			}
+
+			if ( !Map.Docs_Taken )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"FLAG_gold"
+				});
+			}
+		}
+	},
+
+	Sea_Wall_Gate_Planted = function()
+	{
+		Util.MapDebugPrint( "Sea_Wall_Gate_Planted" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_Sea_Wall_Gate_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+	},
+
+	Sea_Wall_Gate_Defused = function()
+	{
+		Util.MapDebugPrint( "Sea_Wall_Gate_Defused" );
+	},
+
+	Sea_Wall_Gate_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Sea_Wall_Gate_Destroyed" );
+
+		Map.Sea_Wall_Gate = false;
+
+		Util.EnableGoal( "ROUTE_SeaGateBreached_1" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_Sea_Wall_Gate_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		Util.RemoveGoal( "DEFEND_Axis_SWG_Out_10" );
+		Util.RemoveGoal( "DEFEND_Axis_SWG_Out_11" );
+		Util.RemoveGoal( "DEFEND_Axis_SWG_Out_12" );
+		Util.RemoveGoal( "DEFEND_Axis_SWG_Out_13" );
+		Util.RemoveGoal( "DEFEND_Axis_SWG_Out_14" );
+		Util.RemoveGoal( "DEFEND_Axis_SWG_Out_15" );
+
+		if ( tableCount(Map.count_ally) < 1 )
+		{
+			if ( tableCount(Map.count_allyArea) < 1 )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"DEFEND_Axis_SWG_Out_4.*",
+				});
+			}
+		}
+
+		if ( Map.Sea_Wall_Breach and Map.South_Front_Bunker_Door and Map.Forward_Bunker_Axis )
+		{
+			sleep(3);
+
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"MOUNTMG42_t378",
+				"REPAIRMG42_t378",
+				"MOUNTMG42_t378_1",
+				"REPAIRMG42_t378_1",
+				"CAMP_Allies_Beach_.*",
+			});
+
+			if ( Map.Axis_CP )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"PLANT_Command_Post",
+				});
+			}
+			else
+			{
+				if ( !Map.Allied_CP )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"BUILD_Command_Post",
+					});
+				}
+			}
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"AMMOCAB_north_ammocabinet",
+				"HEALTHCAB_t629",
+			});
+
+			if ( Map.Forward_Bunker_Axis )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"CHECKPOINT_beach_flag"
+				});
+			}
+
+			if ( !Map.Docs_Taken )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"FLAG_gold"
+				});
+			}
+		}
+	},
+
+	South_Front_Bunker_Door_Planted = function()
+	{
+		Util.MapDebugPrint( "South_Front_Bunker_Door_Planted" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_South_Front_Bunker_Door_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+	},
+
+	South_Front_Bunker_Door_Defused = function()
+	{
+		Util.MapDebugPrint( "South_Front_Bunker_Door_Defused" );
+	},
+
+	South_Front_Bunker_Door_Destroyed = function()
+	{
+		Util.MapDebugPrint( "South_Front_Bunker_Door_Destroyed" );
+
+		Map.South_Front_Bunker_Door = false;
+
+		Util.EnableGoal( "ROUTE_BunkerDoorBreached_1" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_South_Front_Bunker_Door_.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		Util.RemoveGoal( "DEFEND_Axis_FBD_Out_10" );
+		Util.RemoveGoal( "DEFEND_Axis_FBD_Out_11" );
+		Util.RemoveGoal( "DEFEND_Axis_FBD_Out_12" );
+		Util.RemoveGoal( "DEFEND_Axis_FBD_Out_13" );
+		Util.RemoveGoal( "DEFEND_Axis_FBD_Out_14" );
+
+		if ( tableCount(Map.count_ally) < 1 )
+		{
+			if ( tableCount(Map.count_allyArea) < 1 )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"DEFEND_Axis_FBD_Out_3.*",
+					"DEFEND_Axis_FBD_Out_4.*",
+				});
+			}
+		}
+
+		if ( Map.Sea_Wall_Breach and Map.Sea_Wall_Gate and Map.Forward_Bunker_Axis )
+		{
+			sleep(3);
+
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"MOUNTMG42_t378",
+				"REPAIRMG42_t378",
+				"MOUNTMG42_t378_1",
+				"REPAIRMG42_t378_1",
+				"CAMP_Allies_Beach_.*",
+			});
+
+			if ( Map.Axis_CP )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"PLANT_Command_Post",
+				});
+			}
+			else
+			{
+				if ( !Map.Allied_CP )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"BUILD_Command_Post",
+					});
+				}
+			}
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"AMMOCAB_north_ammocabinet",
+				"HEALTHCAB_t629",
+			});
+
+			if ( Map.Forward_Bunker_Axis )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"CHECKPOINT_beach_flag"
+				});
+			}
+
+			if ( !Map.Docs_Taken )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"FLAG_gold"
+				});
+			}
+		}
+	},
+
+	Documents_Taken = function()
+	{
+		Util.MapDebugPrint( "Documents_Taken" );
+
+		Map.Docs_Taken = true;
+		Map.DocsDropped = false;
+
+		OnTriggerRegion(AABB(3240.125,639.125,129.125,5951.875,2496.875,875.260), Map.Docs_Inside);
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"FLAG_gold",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_Inside_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"CAPPOINT_Radio",
+		});
+
+		if ( !Map.Axis_CP and !Map.Allied_CP )
+		{
+			Util.DisableGoal( {
+				"BUILD_Command_Post",
+			});
+		}
+
+		if ( Map.Axis_CP )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"PLANT_Command_Post",
+			});
+		}
+
+		if ( Map.Allied_CP )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"PLANT_Command_Post",
+			});
+		}
+
+		sleep(0.5);
+
+		if ( Map.Docs_Taken )
+		{
+			Util.MapDebugPrint( "AAA" );
+			if ( Map.CarryDocs )
+			{
+				Util.MapDebugPrint( "BBB" );
+				SetAvailableMapGoals( TEAM.AXIS, false, {
+					".*_Axis_DocsOut_.*",
+					"ATTACK_Axis_CappointPlace_.*",
+				});
+
+				SetAvailableMapGoals( TEAM.ALLIES, false, {
+					".*_Allies_DocsOut_.*",
+				});
+			}
+			else
+			{
+				if ( !Map.DocsDropped )
+				{
+					Util.MapDebugPrint( "CCC" );
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						".*_Axis_DocsIns_.*",
+					});
+
+					SetAvailableMapGoals( TEAM.ALLIES, false, {
+						".*_Allies_DocsIns_.*",
+					});
+
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						".*_Axis_DocsOut_.*",
+						"ATTACK_Axis_CappointPlace_.*",
+					});
+
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						".*_Allies_DocsOut_.*",
+					});
+				}
+			}
+		}
+	},
+
+	Docs_Inside =
+	{
+		Name = "Docs_Inside",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+			{
+				Map.CarryDocs = true;
+
+				Util.MapDebugPrint( "Entered Docs_Inside trigger" );
+
+				SetAvailableMapGoals( TEAM.AXIS, false, {
+					".*_Axis_DocsOut_.*",
+					"ATTACK_Axis_CappointPlace_.*",
+				});
+
+				SetAvailableMapGoals( TEAM.ALLIES, false, {
+					".*_Allies_DocsOut_.*",
+				});
+
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					".*_Axis_DocsIns_.*",
+				});
+
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					".*_Allies_DocsIns_.*",
+				});
+			}
+		},
+		OnExit = function(ent)
+		{
+			if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+			{
+				Map.CarryDocs = false;
+
+				if ( Map.Docs_Taken )
+				{
+					Util.MapDebugPrint( "Exited Docs_Inside trigger" );
+
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						".*_Axis_DocsIns_.*",
+					});
+
+					SetAvailableMapGoals( TEAM.ALLIES, false, {
+						".*_Allies_DocsIns_.*",
+					});
+
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						".*_Axis_DocsOut_.*",
+						"ATTACK_Axis_CappointPlace_.*",
+					});
+
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						".*_Allies_DocsOut_.*",
+					});
+				}
+			}
+		},
+	},
+
+	Documents_Dropped = function()
+	{
+		Util.MapDebugPrint( "Documents_Dropped" );
+
+		DeleteTriggerRegion("Docs_Inside");
+
+		Map.DocsDropped = true;
+		Map.CarryDocs = false;
+
+		Util.DisableGoal( {
+			".*_DocsIns_.*",
+			".*_DocsOut_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_main_bunker_MG42_gun",
+			"BUILD_axis_basement_MG_Gun",
+			"MOUNTMG42_t400",
+			"REPAIRMG42_t400",
+			".*_axis_basement_MG_Gun",
+			".*_mg1gun",
+			".*_Axis_.*_Out_.*",
+			"MOUNTMG42_t401",
+			"REPAIRMG42_t401",
+			".*_Axis_BA_.*",
+			"ATTACK_Axis_CappointPlace_.*",
+		});
+	},
+
+	Documents_Returned = function()
+	{
+		Util.MapDebugPrint( "Documents_Returned" );
+
+		Map.Docs_Taken = false;
+		Map.DocsDropped = false;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CAPPOINT_Radio",
+		});
+
+		if ( !Map.Axis_CP and !Map.Allied_CP )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_Command_Post",
+			});
+
+			if ( !Map.Sea_Wall_Breach or !Map.Sea_Wall_Gate or !Map.South_Front_Bunker_Door )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"BUILD_Command_Post",
+				});
+			}
+		}
+
+		if ( Map.Allied_CP )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"PLANT_Command_Post",
+			});
+		}
+
+		if ( Map.Axis_CP )
+		{
+			if ( !Map.Sea_Wall_Breach or !Map.Sea_Wall_Gate or !Map.South_Front_Bunker_Door )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"PLANT_Command_Post",
+				});
+			}
+		}
+
+		if ( !Map.Sea_Wall_Breach or !Map.Sea_Wall_Gate or !Map.South_Front_Bunker_Door or !Map.Forward_Bunker_Axis )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"FLAG_gold",
+			});
+		}
+
+		if ( tableCount(Map.count_ally) < 1 )
+		{
+			if ( tableCount(Map.count_allyArea) < 1 )
+			{
+				if ( Map.Forward_Bunker_Axis )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						"MOUNTMG42_t401",
+						"REPAIRMG42_t401",
+						".*_Axis_BA_.*",
+					});
+
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						".*_Axis_.*_Out_.*",
+						"MOUNTMG42_t400",
+						"REPAIRMG42_t400",
+					});
+
+					if ( Map.Beach_Bunker_MG42 )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, {
+							"MOUNTMG42_mg1gun",
+							"REPAIRMG42_mg1gun",
+						});
+					}
+					else
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, {
+							"BUILD_main_bunker_MG42_gun",
+						});
+					}
+
+					if ( Map.Gate_MG42 )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, {
+							"MOUNTMG42_axis_basement_MG_Gun",
+							"REPAIRMG42_axis_basement_MG_Gun",
+						});
+					}
+					else
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, {
+							"BUILD_axis_basement_MG_Gun",
+						});
+					}
+				}
+				else
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						"MOUNTMG42_t401",
+						"REPAIRMG42_t401",
+						".*_Axis_BA_.*",
+					});
+
+					foreach ( id and bot in BotTable )
+					{
+						if ( bot.GetTeam() == TEAM.AXIS and bot.GetClass() == CLASS.SOLDIER )
+						{
+							if ( bot.HasWeapon(WEAPON.MOBILE_MG42) )
+							{
+							}
+							else
+							{
+								bot.ChangePrimaryWeapon(WEAPON.MOBILE_MG42);
+								Util.MapDebugPrint( "Change weapon to MOBILE_MG42" );
+							}
+						}
+					}
+
+					//move selected goals inside bunker
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						"MOBILEMG42_Axis_Inside_.*",
+					});
+				}
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"MOUNTMG42_t401",
+					"REPAIRMG42_t401",
+					".*_Axis_BA_.*",
+				});
+
+				foreach ( id and bot in BotTable )
+				{
+					if ( bot.GetTeam() == TEAM.AXIS and bot.GetClass() == CLASS.SOLDIER )
+					{
+						if ( bot.HasWeapon(WEAPON.MOBILE_MG42) )
+						{
+						}
+						else
+						{
+							bot.ChangePrimaryWeapon(WEAPON.MOBILE_MG42);
+							Util.MapDebugPrint( "Change weapon to MOBILE_MG42" );
+						}
+					}
+				}
+
+				//move selected goals inside bunker
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"MOBILEMG42_Axis_Inside_.*",
+				});
+			}
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				".*_Axis_Inside_.*",
+			});
+		}
+	},
+
+	Documents_Secured = function()
+	{
+		Util.MapDebugPrint( "Documents_Secured" );
+
+		ETUtil.WinningChat( TEAM.ALLIES );
+		ETUtil.LosingChat( TEAM.AXIS );
+	},
+
+	Forward_Bunker_Axis_Captured = function()
+	{
+		Util.MapDebugPrint( "Forward_Bunker_Axis_Captured" );
+
+		Map.Forward_Bunker_Axis = true;
+
+		ClearGoalRole( "CHECKPOINT_beach_flag", ROLE.INFILTRATOR );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"CHECKPOINT_beach_flag",
+		});
+
+		if ( tableCount(Map.count_allyArea) < 1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"MOUNTMG42_t401",
+				"REPAIRMG42_t401",
+				".*_Axis_BA_.*",
+			});
+		}
+
+		if ( tableCount(Map.count_ally) < 1 )
+		{
+			if ( tableCount(Map.count_allyArea) < 1 )
+			{
+				foreach ( id and bot in BotTable )
+				{
+					if ( bot.GetTeam() == TEAM.AXIS and bot.GetClass() == CLASS.SOLDIER )
+					{
+						if ( bot.HasWeapon(WEAPON.MORTAR) )
+						{
+						}
+						else
+						{
+							bot.ChangePrimaryWeapon(WEAPON.MORTAR);
+							Util.MapDebugPrint( "Change weapon to MORTAR" );
+						}
+					}
+				}
+
+				SetAvailableMapGoals( TEAM.AXIS, false, {
+					"MOBILEMG42_Axis_Inside_.*",
+				});
+
+				if ( Map.Beach_Bunker_MG42 )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						"MOUNTMG42_mg1gun",
+						"REPAIRMG42_mg1gun",
+					});
+				}
+				else
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						"BUILD_main_bunker_MG42_gun",
+					});
+				}
+
+				if ( Map.Gate_MG42 )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						"MOUNTMG42_axis_basement_MG_Gun",
+						"REPAIRMG42_axis_basement_MG_Gun",
+					});
+				}
+				else
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						"BUILD_axis_basement_MG_Gun",
+					});
+				}
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"MOUNTMG42_t400",
+					"REPAIRMG42_t400",
+					".*_Axis_.*_Out_.*",
+				});
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"MOUNTMG42_t401",
+					"REPAIRMG42_t401",
+					".*_Axis_BA_.*",
+				});
+
+				foreach ( id and bot in BotTable )
+				{
+					if ( bot.GetTeam() == TEAM.AXIS and bot.GetClass() == CLASS.SOLDIER )
+					{
+						if ( bot.HasWeapon(WEAPON.MOBILE_MG42) )
+						{
+						}
+						else
+						{
+							bot.ChangePrimaryWeapon(WEAPON.MOBILE_MG42);
+							Util.MapDebugPrint( "Change weapon to MOBILE_MG42" );
+						}
+					}
+				}
+
+				//move selected goals inside bunker
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"MOBILEMG42_Axis_Inside_.*",
+				});
+			}
+		}
+
+		if ( !Map.Sea_Wall_Breach or !Map.Sea_Wall_Gate or !Map.South_Front_Bunker_Door )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"CHECKPOINT_beach_flag",
+			});
+		}
+
+		if ( Map.Sea_Wall_Breach and Map.Sea_Wall_Gate and Map.South_Front_Bunker_Door )
+		{
+			if ( !Map.Docs_Taken )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, {
+					"FLAG_gold"
+				});
+			}
+		}
+	},
+
+	Forward_Bunker_Allies_Captured = function()
+	{
+		Util.MapDebugPrint( "Forward_Bunker_Allies_Captured" );
+
+		Map.Forward_Bunker_Axis = false;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CHECKPOINT_beach_flag",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"MOUNTMG42_mg1gun",
+			"REPAIRMG42_mg1gun",
+			"BUILD_main_bunker_MG42_gun",
+			"MOUNTMG42_axis_basement_MG_Gun",
+			"REPAIRMG42_axis_basement_MG_Gun",
+			"BUILD_axis_basement_MG_Gun",
+			"MOUNTMG42_t400",
+			"REPAIRMG42_t400",
+			".*_Axis_.*_Out_.*",
+		});
+
+		if ( tableCount(Map.count_ally) < 1 )
+		{
+			if ( !Map.Docs_Taken )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"CHECKPOINT_beach_flag",
+					"MOUNTMG42_t401",
+					"REPAIRMG42_t401",
+					".*_Axis_BA_.*",
+				});
+
+				foreach ( id and bot in BotTable )
+				{
+					if ( bot.GetTeam() == TEAM.AXIS and bot.GetClass() == CLASS.SOLDIER )
+					{
+						if ( bot.HasWeapon(WEAPON.MOBILE_MG42) )
+						{
+						}
+						else
+						{
+							bot.ChangePrimaryWeapon(WEAPON.MOBILE_MG42);
+							Util.MapDebugPrint( "Change weapon to MOBILE_MG42" );
+						}
+					}
+				}
+
+				//move selected goals inside bunker
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"MOBILEMG42_Axis_Inside_.*",
+				});
+			}
+		}
+		else
+		{
+			SetGoalRole( "CHECKPOINT_beach_flag", ROLE.INFILTRATOR );
+
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"CHECKPOINT_beach_flag",
+			});
+		}
+
+		if ( !Map.Docs_Taken )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"FLAG_gold"
+			});
+		}
+	},
+
+	Ally_InBunkerArea =
+	{
+		Name = "Ally_InBunkerArea",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				if (Map.count_allyArea[ent])
+				{
+					Map.count_allyArea[ent] += 1;
+				}
+				else
+				{
+					Map.count_allyArea[ent] = 1;
+					Util.MapDebugPrint("Allies in Area: " + tableCount(Map.count_allyArea));
+				}
+
+				if ( !Map.Docs_Taken )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						"BUILD_main_bunker_MG42_gun",
+						"BUILD_axis_basement_MG_Gun",
+						"MOUNTMG42_t400",
+						"REPAIRMG42_t400",
+						".*_axis_basement_MG_Gun",
+						".*_mg1gun",
+						".*_Axis_.*_Out_.*",
+					});
+
+					if ( tableCount(Map.count_ally) < 1 )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, {
+							"MOUNTMG42_t401",
+							"REPAIRMG42_t401",
+							".*_Axis_BA_.*",
+						});
+
+						foreach ( id and bot in BotTable )
+						{
+							if ( bot.GetTeam() == TEAM.AXIS and bot.GetClass() == CLASS.SOLDIER )
+							{
+								if ( bot.HasWeapon(WEAPON.MOBILE_MG42) )
+								{
+								}
+								else
+								{
+									bot.ChangePrimaryWeapon(WEAPON.MOBILE_MG42);
+									Util.MapDebugPrint( "Change weapon to MOBILE_MG42" );
+								}
+							}
+						}
+
+						//move selected goals inside bunker
+						SetAvailableMapGoals( TEAM.AXIS, true, {
+							"MOBILEMG42_Axis_Inside_.*",
+						});
+					}
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.count_allyArea[ent])
+			{
+				if (Map.count_allyArea[ent] > 1)
+				{
+					Map.count_allyArea[ent] -= 1;
+				}
+				else
+				{
+					Map.count_allyArea[ent] = null;
+					Util.MapDebugPrint("Allies in Area: " + tableCount(Map.count_allyArea));
+				}
+
+				if ( tableCount(Map.count_allyArea) < 1 )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						"MOUNTMG42_t401",
+						"REPAIRMG42_t401",
+						".*_Axis_BA_.*",
+					});
+
+					if ( !Map.Docs_Taken )
+					{
+						if ( tableCount(Map.count_ally) < 1 )
+						{
+							if ( Map.Forward_Bunker_Axis )
+							{
+								foreach ( id and bot in BotTable )
+								{
+									if ( bot.GetTeam() == TEAM.AXIS and bot.GetClass() == CLASS.SOLDIER )
+									{
+										if ( bot.HasWeapon(WEAPON.MORTAR) )
+										{
+										}
+										else
+										{
+											bot.ChangePrimaryWeapon(WEAPON.MORTAR);
+											Util.MapDebugPrint( "Change weapon to MORTAR" );
+										}
+									}
+								}
+
+								SetAvailableMapGoals( TEAM.AXIS, false, {
+									"MOBILEMG42_Axis_Inside_.*",
+								});
+
+								SetAvailableMapGoals( TEAM.AXIS, true, {
+									".*_Axis_.*_Out_.*",
+									"MOUNTMG42_t400",
+									"REPAIRMG42_t400",
+								});
+
+								if ( Map.Beach_Bunker_MG42 )
+								{
+									SetAvailableMapGoals( TEAM.AXIS, true, {
+										"MOUNTMG42_mg1gun",
+										"REPAIRMG42_mg1gun",
+									});
+								}
+								else
+								{
+									SetAvailableMapGoals( TEAM.AXIS, true, {
+										"BUILD_main_bunker_MG42_gun",
+									});
+								}
+
+								if ( Map.Gate_MG42 )
+								{
+									SetAvailableMapGoals( TEAM.AXIS, true, {
+										"MOUNTMG42_axis_basement_MG_Gun",
+										"REPAIRMG42_axis_basement_MG_Gun",
+									});
+								}
+								else
+								{
+									SetAvailableMapGoals( TEAM.AXIS, true, {
+										"BUILD_axis_basement_MG_Gun",
+									});
+								}
+							}
+							else
+							{
+								SetAvailableMapGoals( TEAM.AXIS, true, {
+									"MOUNTMG42_t401",
+									"REPAIRMG42_t401",
+									".*_Axis_BA_.*",
+								});
+
+								foreach ( id and bot in BotTable )
+								{
+									if ( bot.GetTeam() == TEAM.AXIS and bot.GetClass() == CLASS.SOLDIER )
+									{
+										if ( bot.HasWeapon(WEAPON.MOBILE_MG42) )
+										{
+										}
+										else
+										{
+											bot.ChangePrimaryWeapon(WEAPON.MOBILE_MG42);
+											Util.MapDebugPrint( "Change weapon to MOBILE_MG42" );
+										}
+									}
+								}
+
+								//move selected goals inside bunker
+								SetAvailableMapGoals( TEAM.AXIS, true, {
+									"MOBILEMG42_Axis_Inside_.*",
+								});
+							}
+						}
+					}
+				}
+			}
+		},
+	},
+
+	Ally_Inside =
+	{
+		Name = "Ally_Inside",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				if (Map.count_ally[ent])
+				{
+					Map.count_ally[ent] += 1;
+				}
+				else
+				{
+					Map.count_ally[ent] = 1;
+					Util.MapDebugPrint("Allies inside bunker: " + tableCount(Map.count_ally));
+				}
+
+				if ( !Map.Forward_Bunker_Axis )
+				{
+					SetGoalRole( "CHECKPOINT_beach_flag", ROLE.INFILTRATOR );
+				}
+
+				if ( !Map.Docs_Taken )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						"MOUNTMG42_t401",
+						"REPAIRMG42_t401",
+						".*_Axis_BA_.*",
+					});
+
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						".*_Axis_Inside_.*",
+					});
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.count_ally[ent])
+			{
+				if (Map.count_ally[ent] > 1)
+				{
+					Map.count_ally[ent] -= 1;
+				}
+				else
+				{
+					Map.count_ally[ent] = null;
+					Util.MapDebugPrint("Allies inside bunker: " + tableCount(Map.count_ally));
+				}
+
+				if ( tableCount(Map.count_ally) < 1 )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						".*_Axis_Inside_.*",
+					});
+
+					if ( !Map.Forward_Bunker_Axis )
+					{
+						ClearGoalRole( "CHECKPOINT_beach_flag", ROLE.INFILTRATOR );
+					}
+
+					if ( !Map.Docs_Taken )
+					{
+						if ( tableCount(Map.count_allyArea) < 1 )
+						{
+							if ( Map.Forward_Bunker_Axis )
+							{
+								SetAvailableMapGoals( TEAM.AXIS, false, {
+									"MOUNTMG42_t401",
+									"REPAIRMG42_t401",
+									".*_Axis_BA_.*",
+								});
+
+								SetAvailableMapGoals( TEAM.AXIS, true, {
+									".*_Axis_.*_Out_.*",
+									"MOUNTMG42_t400",
+									"REPAIRMG42_t400",
+								});
+
+								if ( Map.Beach_Bunker_MG42 )
+								{
+									SetAvailableMapGoals( TEAM.AXIS, true, {
+										"MOUNTMG42_mg1gun",
+										"REPAIRMG42_mg1gun",
+									});
+								}
+								else
+								{
+									SetAvailableMapGoals( TEAM.AXIS, true, {
+										"BUILD_main_bunker_MG42_gun",
+									});
+								}
+
+								if ( Map.Gate_MG42 )
+								{
+									SetAvailableMapGoals( TEAM.AXIS, true, {
+										"MOUNTMG42_axis_basement_MG_Gun",
+										"REPAIRMG42_axis_basement_MG_Gun",
+									});
+								}
+								else
+								{
+									SetAvailableMapGoals( TEAM.AXIS, true, {
+										"BUILD_axis_basement_MG_Gun",
+									});
+								}
+							}
+							else
+							{
+								SetAvailableMapGoals( TEAM.AXIS, true, {
+									"MOUNTMG42_t401",
+									"REPAIRMG42_t401",
+									".*_Axis_BA_.*",
+								});
+							}
+						}
+						else
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, {
+								"MOUNTMG42_t401",
+								"REPAIRMG42_t401",
+								".*_Axis_BA_.*",
+							});
+
+							foreach ( id and bot in BotTable )
+							{
+								if ( bot.GetTeam() == TEAM.AXIS and bot.GetClass() == CLASS.SOLDIER )
+								{
+									if ( bot.HasWeapon(WEAPON.MOBILE_MG42) )
+									{
+									}
+									else
+									{
+										bot.ChangePrimaryWeapon(WEAPON.MOBILE_MG42);
+										Util.MapDebugPrint( "Change weapon to MOBILE_MG42" );
+									}
+								}
+							}
+
+							//move selected goals inside bunker
+							SetAvailableMapGoals( TEAM.AXIS, true, {
+								"MOBILEMG42_Axis_Inside_.*",
+							});
+						}
+					}
+				}
+			}
+		},
+	},
+
+	Ignore_Target =
+	{
+		Name = "Ignore_Target",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			b = Util.IsBot(ent);
+			if (b)
+			{
+				for ( q = 0; q < 64; q += 1 )
+				{
+					if ( EntityIsValid(q) )
+					{
+						b.IgnoreTarget(q, 999);
+					}
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			b = Util.IsBot(ent);
+			if (b)
+			{
+				for ( q = 0; q < 64; q += 1 )
+				{
+					if ( EntityIsValid(q) )
+					{
+						b.IgnoreTarget(q, 0.1);
+					}
+				}
+			}
+		},
+	},
+};
+
+global OnMapLoad = function()
+{
+	if ( Map.Debug )
+	{
+		Util.DebugColorString = "^3";
+	}
+
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_CP_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_CP_Destroyed );
+	OnTrigger( "Planted at the Command Post.", Map.CP_Planted );
+	OnTrigger( "Defused at the Command Post.", Map.CP_Defused );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_CP_Built );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_CP_Destroyed );
+
+	OnTrigger( "The Gate MG42 nest has been set up", Map.Gate_MG42_Built );
+	OnTrigger( "The Gate MG42 nest has been disabled", Map.Gate_MG42_Destroyed );
+
+	OnTrigger( "Main beach bunker MG42 nest constructed", Map.Beach_Bunker_MG42_Built );
+	OnTrigger( "Main beach bunker MG42 nest disabled", Map.Beach_Bunker_MG42_Destroyed );
+
+	OnTrigger( "Planted at the Sea Wall Breach.", Map.Sea_Wall_Breach_Planted );
+	OnTrigger( "Defused at the Sea Wall Breach.", Map.Sea_Wall_Breach_Defused );
+	OnTrigger( "^6The Sea Wall has been breached!", Map.Sea_Wall_Breach_Destroyed );
+
+	OnTrigger( "Planted at the Sea Wall Gate.", Map.Sea_Wall_Gate_Planted );
+	OnTrigger( "Defused at the Sea Wall Gate.", Map.Sea_Wall_Gate_Defused );
+	OnTrigger( "^6The Beach Gate has been breached!", Map.Sea_Wall_Gate_Destroyed );
+
+	OnTrigger( "Planted at the South Front Bunker Door.", Map.South_Front_Bunker_Door_Planted );
+	OnTrigger( "Defused at the South Front Bunker Door.", Map.South_Front_Bunker_Door_Defused );
+	OnTrigger( "^6The South Bunker Door has been breached!", Map.South_Front_Bunker_Door_Destroyed );
+
+	OnTrigger( "Allies have stolen The Documents!", Map.Documents_Taken );
+	OnTrigger( "USA have stolen The Documents!", Map.Documents_Taken );	//ETNam
+	OnTrigger( "Flag dropped gold!", Map.Documents_Dropped );
+	OnTrigger( "^6The docments have been returned!!!!", Map.Documents_Returned );
+	OnTrigger( "Round End.", Map.Documents_Secured );
+
+	OnTrigger( "Axis reclaims the Forward Bunker!", Map.Forward_Bunker_Axis_Captured );
+	OnTrigger( "Allies capture the Forward Bunker!", Map.Forward_Bunker_Allies_Captured );
+
+	Util.DisableGoal( ".*", true );
+
+	Util.DisableGoal( "ROUTE_SeaWallBreached_1" );
+	Util.DisableGoal( "ROUTE_SeaGateBreached_1" );
+	Util.DisableGoal( "ROUTE_BunkerDoorBreached_1" );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"AMMOCAB_north_ammocabinet",
+		"HEALTHCAB_t629",
+		"BUILD_main_bunker_MG42_gun",
+		"BUILD_axis_basement_MG_Gun",
+		"BUILD_Command_Post",
+		"MOUNTMG42_t400",
+		"REPAIRMG42_t400",
+		".*_Axis_.*_Out_.*",
+	});
+
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+		"DEFEND_Axis_SWG_Out_4.*",
+		"DEFEND_Axis_SWB_Out_5.*",
+		"DEFEND_Axis_SWB_Out_6.*",
+		"DEFEND_Axis_FBD_Out_3.*",
+		"DEFEND_Axis_FBD_Out_4.*",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"MOUNTMG42_t378",
+		"REPAIRMG42_t378",
+		"MOUNTMG42_t378_1",
+		"REPAIRMG42_t378_1",
+		"PLANT_Sea_Wall_Breach",
+		"PLANT_Sea_Wall_Gate",
+		"PLANT_South_Front_Bunker_Door",
+		"CAMP_Allies_Beach_.*",
+	});
+
+	Util.SetMaxUsers( 2, "PLANT_.*" );
+	Util.SetMaxUsers( 1, "GRENADE_.*" );
+	Util.SetMaxUsers( 1, "BUILD_main_bunker_MG42_gun" );
+	Util.SetMaxUsers( 1, "BUILD_axis_basement_MG_Gun" );
+	Util.SetMaxUsers( 1, "BUILD_Command_Post" );
+	Util.SetMaxUsers( 6, "CHECKPOINT_.*" );
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+	Util.SetMaxUsers( 2, "ATTACK_Axis_CappointPlace_.*" );
+
+	Util.SetMaxUsersInProgress( 6, "ROUTE_VerticalTunnel_.*" );
+
+	SetGoalPriority( ".*_DocsIns_.*", 0.57, 0, 0 );
+	SetGoalPriority( ".*_DocsOut_.*", 0.59, 0, 0 );
+
+	SetGoalPriority( "DEFEND_Axis_FBD_Out_4.*", 0.51, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_BA_33", 0.52, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_BA_44", 0.52, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_BA_45", 0.52, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_BA_52", 0.52, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_BA_63", 0.52, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_BA_64", 0.52, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_Inside_.*", 0.55, TEAM.AXIS, 0 );
+	SetGoalPriority( "MOUNTMG42_mg1gun", 0.6, TEAM.AXIS, 0 );	//decrease because of role
+	SetGoalPriority( "MOUNTMG42_axis_basement_MG_Gun", 0.6, TEAM.AXIS, 0 );	//decrease because of role
+	SetGoalPriority( "ATTACK_Axis_CappointPlace_.*", 0.61, TEAM.AXIS, 0 );
+	SetGoalPriority( "REPAIRMG42_mg1gun", 0.71, TEAM.AXIS, 0 );	//decrease because of role
+	SetGoalPriority( "REPAIRMG42_axis_basement_MG_Gun", 0.71, TEAM.AXIS, 0 );	//decrease because of role
+	SetGoalPriority( "MOBILEMG42_.*", 0.79, TEAM.AXIS, CLASS.SOLDIER );
+	SetGoalPriority( "BUILD_main_bunker_MG42_gun", 0.8, TEAM.AXIS, 0 );	//decrease because of role
+	SetGoalPriority( "BUILD_axis_basement_MG_Gun", 0.8, TEAM.AXIS, 0 );	//decrease because of role
+	SetGoalPriority( "MOBILEMG42_.*", 0.9, TEAM.AXIS, 0 );	//decrease because of role
+	SetGoalPriority( "MOBILEMORTAR_Axis_FBD_Out_20", 0.9, TEAM.AXIS, CLASS.SOLDIER );
+	SetGoalPriority( "MOBILEMORTAR_Axis_SWB_Out_40", 0.9, TEAM.AXIS, CLASS.SOLDIER );
+	SetGoalPriority( "MOBILEMG42_Axis_Inside_.*", 1, TEAM.AXIS, 0 );
+
+	SetGoalPriority( "CHECKPOINT_.*", 0.81, TEAM.ALLIES, 0 );
+	SetGoalPriority( "PLANT_.*", 0.82, TEAM.ALLIES, 0 );
+	SetGoalPriority( "PLANT_S.*", 0.72, TEAM.ALLIES, 0 );	//decrease because of role
+
+	SetGoalPriority( "PLANT_Command_Post", 0.75, 0, CLASS.ENGINEER );
+
+	SetGoalRole( "DEFEND_Axis_SWB_Out_1.*", ROLE.DEFENDER );
+	SetGoalRole( "DEFEND_Axis_SWB_Out_5.*", ROLE.DEFENDER );
+	SetGoalRole( "DEFEND_Axis_BA_3.*", ROLE.DEFENDER );
+
+	SetGoalRole( "DEFEND_Axis_SWB_Out_2.*", ROLE.DEFENDER3 );
+	SetGoalRole( "DEFEND_Axis_SWB_Out_6.*", ROLE.DEFENDER3 );
+	SetGoalRole( "DEFEND_Axis_BA_4.*", ROLE.DEFENDER3 );
+
+	SetGoalRole( "DEFEND_Axis_FBD_Out_1.*", ROLE.DEFENDER1 );
+	SetGoalRole( "DEFEND_Axis_FBD_Out_3.*", ROLE.DEFENDER1 );
+	SetGoalRole( "DEFEND_Axis_FBD_Out_4.*", ROLE.DEFENDER3 );
+	SetGoalRole( "DEFEND_Axis_BA_5.*", ROLE.DEFENDER1 );
+
+	SetGoalRole( "DEFEND_Axis_SWG_Out_1.*", ROLE.DEFENDER2 );
+	SetGoalRole( "DEFEND_Axis_SWG_Out_4.*", ROLE.DEFENDER2 );
+	SetGoalRole( "DEFEND_Axis_BA_6.*", ROLE.DEFENDER2 );
+
+	SetGoalRole( "AIRSTRIKE_Axis_SWG_Out_.*", { ROLE.DEFENDER, ROLE.DEFENDER3 });
+	SetGoalRole( "CALLARTILLERY_Axis_SWB_Out_.*", { ROLE.DEFENDER, ROLE.DEFENDER3 });
+	SetGoalRole( "ARTILLERY_S_Axis_SWB_Out_.*", { ROLE.DEFENDER, ROLE.DEFENDER3 });
+	SetGoalRole( "PLANTMINE_Axis_SWB_Out_.*", { ROLE.DEFENDER, ROLE.DEFENDER3 });
+	SetGoalRole( "BUILD_main_bunker_MG42_gun", { ROLE.DEFENDER, ROLE.DEFENDER3 });
+	SetGoalRole( "REPAIRMG42_mg1gun", { ROLE.DEFENDER, ROLE.DEFENDER3 });
+	SetGoalRole( "MOUNTMG42_mg1gun", { ROLE.DEFENDER, ROLE.DEFENDER3 });
+	SetGoalRole( "MOUNTMG42_t400", { ROLE.DEFENDER, ROLE.DEFENDER3 });
+	SetGoalRole( "REPAIRMG42_t400", { ROLE.DEFENDER, ROLE.DEFENDER3 });
+
+	SetGoalRole( "AIRSTRIKE_Axis_FBD_Out_.*", { ROLE.DEFENDER1, ROLE.DEFENDER2 });
+	SetGoalRole( "CALLARTILLERY_Axis_FBD_Out_.*", { ROLE.DEFENDER1, ROLE.DEFENDER2 });
+	SetGoalRole( "ARTILLERY_S_Axis_FBD_Out_.*", { ROLE.DEFENDER1, ROLE.DEFENDER2 });
+	SetGoalRole( "PLANTMINE_Axis_SWG_Out_.*", { ROLE.DEFENDER1, ROLE.DEFENDER2 });
+	SetGoalRole( "PLANTMINE_Axis_FBD_Out_.*", { ROLE.DEFENDER1, ROLE.DEFENDER2 });
+	SetGoalRole( "BUILD_axis_basement_MG_Gun", { ROLE.DEFENDER1, ROLE.DEFENDER2 });
+	SetGoalRole( "MOUNTMG42_axis_basement_MG_Gun", { ROLE.DEFENDER1, ROLE.DEFENDER2 });
+	SetGoalRole( "REPAIRMG42_axis_basement_MG_Gun", { ROLE.DEFENDER1, ROLE.DEFENDER2 });
+
+	SetGoalRole( "PLANT_Sea_Wall_Breach", ROLE.ATTACKER );
+	SetGoalRole( "PLANT_South_Front_Bunker_Door", ROLE.ATTACKER1 );
+	SetGoalRole( "PLANT_Sea_Wall_Gate", { ROLE.ATTACKER2, ROLE.ATTACKER3 });
+
+	Util.SetGoalPosition(1421.181, 1051.047, 615.221, "PLANT_Sea_Wall_Breach");
+
+	OnTriggerRegion(AABB(3140.125,354,129.184,6169.805,2492.419,760.812), Map.Ally_Inside);
+	OnTriggerRegion(AABB(3210.125,287.143,810.125,4096.875,1320.875,1025.305), Map.Ally_Inside);
+	OnTriggerRegion(AABB(1939,-1968.875,261.064,3352.875,2240.875,1067.347), Map.Ally_InBunkerArea);
+
+	RegionTrigger.Create(AABB(-2306.652,-1948.279,318.684,-2053.330,-1172.228,421.185), "DisableBotPush", "Barb_Wire_On_The_Beach");
+	RegionTrigger.Create(AABB(-2071.561,-267.043,284.592,-1777.143,523.934,401.783), "DisableBotPush", "Barb_Wire_On_The_Beach");
+	RegionTrigger.Create(AABB(-1247.905,77.333,304.178,-965.943,2008.047,457.863), "DisableBotPush", "Barb_Wire_On_The_Beach");
+	RegionTrigger.Create(AABB(-1274.224,-849.133,369.235,-640.096,-280.890,475.282), "DisableBotPush", "Barb_Wire_On_The_Beach");
+	RegionTrigger.Create(AABB(-667.357,120.474,358.309,-512.594,809.334,446.803), "DisableBotPush", "Barb_Wire_On_The_Beach");
+	RegionTrigger.Create(AABB(-183.902,-553.679,356.313,91.811,173.682,441.514), "DisableBotPush", "Barb_Wire_On_The_Beach");
+	RegionTrigger.Create(AABB(-380.906,-2643.168,378.563,-107.586,-1503.226,514.128), "DisableBotPush", "Barb_Wire_On_The_Beach");
+	RegionTrigger.Create(AABB(269.042,-2249.493,381.632,543.400,-954.435,500.567), "DisableBotPush", "Barb_Wire_On_The_Beach");
+	RegionTrigger.Create(AABB(889.336,-1131.370,398.715,1247.875,847.575,518.532), "DisableBotPush", "Barb_Wire_On_The_Beach");
+	RegionTrigger.Create(AABB(576.655,1049.515,388.725,847.567,1829.666,498.799), "DisableBotPush", "Barb_Wire_On_The_Beach");
+	RegionTrigger.Create(AABB(3135.126,1919.125,713.125,3392.875,2035.788,829.140), "DisableBotPush", "Vent_Shaft_Tunnel_Up");
+	RegionTrigger.Create(AABB(3244.963,1991.125,217.125,3349.633,2052.419,267.125), "DisableBotPush", "Vent_Shaft_Tunnel_Bottom");
+	RegionTrigger.Create(AABB(3894.834,1831.126,193.125,4016.875,2208.874,315.125), "DisableBotPush", "Vent_Shaft");
+	RegionTrigger.Create(AABB(4351.125,1758.769,193.125,4420.266,1832.875,267.125), "DisableBotPush", "Vent_Shaft");
+	RegionTrigger.Create(AABB(4351.125,2335.125,193.235,4442.017,2431.492,267.235), "DisableBotPush", "Vent_Shaft");
+	RegionTrigger.Create(AABB(3230.162,-1476.875,579.125,3300.875,-1376.804,653.125), "DisableBotPush", "Ladder");
+
+	RegionTrigger.Create(AABB(1470.916,-1768.875,769.128,1977.356,1460.562,843.128), "DisableCombatMovement", "Over_Wall");
+	RegionTrigger.Create(AABB(3903.125,639.125,421.125,4096.875,1088.875,907.125), "DisableCombatMovement", "Stairwell");
+	RegionTrigger.Create(AABB(4519.735,1793.511,193.125,4612.645,1896.716,308.388), "DisableCombatMovement", "Door_At_Docs");
+	RegionTrigger.Create(AABB(4687.125,1800.733,193.125,4800.245,1888.353,309.297), "DisableCombatMovement", "Door_At_Docs");
+	RegionTrigger.Create(AABB(1983.125,-1792.540,649.125,2139.317,-1720.929,723.125), "DisableCombatMovement", "Jump_On_Crates_Near_Checkpoint");
+	RegionTrigger.Create(AABB(2413.399,378.803,696.310,2599.925,734.877,818.009), "DisableCombatMovement", "Jump");
+
+	Ladder = OnTriggerRegion(AABB(3100.252,243,707.884,3148.627,244.875,830),Map.Ignore_Target);
+	Ladder = OnTriggerRegion(AABB(3296,-1432.016,579.125,3300.875,-1394.016,898.875),Map.Ignore_Target);
+
+	Util.AddUseWp( "CHECKPOINT_beach_flag", "Check_1" );
+	Util.AddUseWp( "CHECKPOINT_beach_flag", "Check_2" );
+	Util.AddUseWp( "CHECKPOINT_beach_flag", "Check_3" );
+	Util.AddUseWp( "CHECKPOINT_beach_flag", "Check_4" );
+
+	Util.AddUseWp( "PLANT_South_Front_Bunker_Door", "South_Front_Bunker_Door_1" );
+	Util.AddUseWp( "PLANT_South_Front_Bunker_Door", "South_Front_Bunker_Door_2" );
+
+	Util.AddUseWp( "PLANT_Sea_Wall_Gate", "Sea_Wall_Gate_1" );
+	Util.AddUseWp( "PLANT_Sea_Wall_Gate", "Sea_Wall_Gate_2" );
+
+	Util.AddUseWp( "PLANT_Sea_Wall_Breach", "Sea_Wall_Breach_1" );
+	Util.AddUseWp( "PLANT_Sea_Wall_Breach", "Sea_Wall_Breach_2" );
+
+	Util.AddUseWp( "BUILD_axis_basement_MG_Gun", "Gate_MG42_1" );
+	Util.AddUseWp( "BUILD_main_bunker_MG42_gun", "Beach_Bunker_MG42_2" );
+
+	Util.AddUseWp( "BUILD_Command_Post", "CP" );
+	Util.AddUseWp( "PLANT_Command_Post", "CP" );
+
+	Util.AddUseWp( "MOUNTMG42_t401", "t401" );
+	Util.AddUseWp( "REPAIRMG42_t401", "t401" );
+
+	Wp.SetWaypointFlag( "Gate_MG42_2", "closed", true );
+	Wp.SetWaypointFlag( "Beach_Bunker_MG42_1", "closed", true );
+
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.MP40, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.THOMPSON, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.PANZERFAUST, false );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.FLAMETHROWER, false );
+
+	foreach ( id and bot in BotTable )
+	{
+		if ( bot.GetTeam() == TEAM.AXIS and bot.GetClass() == CLASS.SOLDIER )
+		{
+			if ( bot.HasWeapon(WEAPON.MORTAR) )
+			{
+			}
+			else
+			{
+				bot.ChangePrimaryWeapon(WEAPON.MORTAR);
+				bot.ExecCommand( "kill" );
+
+				Util.MapDebugPrint( "Soldier killed himself" );
+			}
+		}
+	}
+
+	if(GetGameState() == "Playing")
+	{
+		sleep(5);
+		EchoToScreen(0,"^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12 ^3");
+		Util.BotChat( 0, "say", "^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12^7" , 1 );
+	}
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 200.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		FLAG_gold =
+		{
+			ROUTE_Allied_Beach_Spawn_1 =
+			{
+				ROUTE_SeaWallBreached_1 =
+				{
+					ROUTE_Stairs_1 =
+					{
+						Weight = 7,
+						ROUTE_Around_CP_1 =
+						{
+							ROUTE_DocsHallStairs_1 =
+							{
+								Weight = 4,
+							},
+							ROUTE_DestroyableDoor_1 =
+							{
+								ROUTE_DestroyableDoor_2 = {},
+							},
+						},
+					},
+					ROUTE_VerticalTunnel_1 =
+					{
+						ROUTE_VerticalTunnel_2 =
+						{
+							ROUTE_VerticalTunnel_4 =
+							{
+								Weight = 2,
+								ROUTE_VerticalTunnel_5 = {},
+							},
+							ROUTE_VerticalTunnel_3 = {},
+						},
+					},
+				},
+			},
+			ROUTE_FrontBunkerDoor_Spawn_1 =
+			{
+				ROUTE_Stairs_1 =
+				{
+					Weight = 7,
+					ROUTE_Around_CP_1 =
+					{
+						ROUTE_DocsHallStairs_1 =
+						{
+							Weight = 4,
+						},
+						ROUTE_DestroyableDoor_1 =
+						{
+							ROUTE_DestroyableDoor_2 = {},
+						},
+					},
+				},
+				ROUTE_VerticalTunnel_1 =
+				{
+					ROUTE_VerticalTunnel_2 =
+					{
+						ROUTE_VerticalTunnel_4 =
+						{
+							Weight = 2,
+							ROUTE_VerticalTunnel_5 = {},
+						},
+						ROUTE_VerticalTunnel_3 = {},
+					},
+				},
+			},
+		},
+		CAPPOINT_Radio =
+		{
+			ROUTE_Flag_Place =
+			//ROUTE_Gold_Room_1 =
+			{
+				ROUTE_DocsHallStairs_1 =
+				{
+					Weight = 5,
+					ROUTE_Around_CP_1 =
+					{
+						ROUTE_Stairs_1 =
+						{
+							ROUTE_FloorHole_1 =
+							{
+								Weight = 3,
+								ROUTE_FloorHole_2 = {},
+							},
+							ROUTE_FloorHole_2 = {},
+						},
+					},
+				},
+				ROUTE_DestroyableDoor_2 =
+				{
+					Weight = 3,
+					ROUTE_DestroyableDoor_1 =
+					{
+						ROUTE_Around_CP_1 =
+						{
+							ROUTE_Stairs_1 =
+							{
+								ROUTE_FloorHole_1 =
+								{
+									Weight = 3,
+									ROUTE_FloorHole_2 = {},
+								},
+								ROUTE_FloorHole_2 = {},
+							},
+						},
+					},
+				},
+				ROUTE_VerticalTunnel_5 =
+				{
+					ROUTE_VerticalTunnel_4 =
+					{
+						ROUTE_VerticalTunnel_2 =
+						{
+							ROUTE_VerticalTunnel_1 = {},
+						},
+					},
+				},
+			},
+			ROUTE_Gold_Room_1 =
+			{
+				ROUTE_Around_CP_1 =
+				{
+					Weight = 5,
+					ROUTE_Stairs_1 =
+					{
+						ROUTE_FloorHole_1 =
+						{
+							Weight = 3,
+							ROUTE_FloorHole_2 = {},
+						},
+						ROUTE_FloorHole_2 = {},
+					},
+				},
+				ROUTE_DestroyableDoor_1 =
+				{
+					Weight = 3,
+					ROUTE_Around_CP_1 =
+					{
+						ROUTE_Stairs_1 =
+						{
+							ROUTE_FloorHole_1 =
+							{
+								Weight = 3,
+								ROUTE_FloorHole_2 = {},
+							},
+							ROUTE_FloorHole_2 = {},
+						},
+					},
+				},
+				ROUTE_VerticalTunnel_5 =
+				{
+					ROUTE_VerticalTunnel_4 =
+					{
+						ROUTE_VerticalTunnel_2 =
+						{
+							ROUTE_VerticalTunnel_1 = {},
+						},
+					},
+				},
+			},
+		},
+	};
+
+	MapRoutes[".*_Axis_Inside_.*"] =
+	{
+		ROUTE_Axis_Spawn_1 =
+		{
+			ROUTE_Platform_1 =
+			{
+				Weight = 6,
+				ROUTE_Platform_2 =
+				{
+					ROUTE_Stairs_1 =
+					{
+						ROUTE_Around_CP_1 =
+						{
+							ROUTE_DocsHallStairs_1 =
+							{
+								Weight = 4,
+							},
+							ROUTE_DestroyableDoor_1 =
+							{
+								ROUTE_DestroyableDoor_2 = {},
+							},
+						},
+					},
+				},
+			},
+			ROUTE_VerticalTunnel_1 =
+			{
+				ROUTE_VerticalTunnel_2 =
+				{
+					ROUTE_VerticalTunnel_3 = {},
+				},
+			},
+		},
+		ROUTE_FrontBunkerDoor_Spawn_1 =
+		{
+			ROUTE_Stairs_1 =
+			{
+				ROUTE_Around_CP_1 =
+				{
+					ROUTE_DocsHallStairs_1 =
+					{
+						Weight = 4,
+					},
+					ROUTE_DestroyableDoor_1 =
+					{
+						ROUTE_DestroyableDoor_2 = {},
+					},
+				},
+			},
+		},
+	};
+
+	MapRoutes[".*_DocsIns_0.*"] =
+	{
+		ROUTE_Axis_Spawn_1 =
+		{
+			ROUTE_Platform_1 =
+			{
+				ROUTE_Platform_2 =
+				{
+					ROUTE_Stairs_1 = {},
+				},
+			},
+		},
+		ROUTE_FrontBunkerDoor_Spawn_1 =
+		{
+			ROUTE_Tower =
+			{
+				ROUTE_Stairs_1 = {},
+			},
+		},
+		ROUTE_Allied_Beach_Spawn_1 =
+		{
+			ROUTE_SeaWallBreached_1 =
+			{
+				ROUTE_Platform_1 =
+				{
+					ROUTE_Platform_2 =
+					{
+						ROUTE_Stairs_1 = {},
+					},
+				},
+			},
+			ROUTE_SeaGateBreached_1 =
+			{
+				ROUTE_Tower =
+				{
+					ROUTE_Stairs_1 = {},
+				},
+			},
+			ROUTE_BunkerDoorBreached_1 =
+			{
+				ROUTE_Tower =
+				{
+					ROUTE_Stairs_1 = {},
+				},
+			},
+		},
+	};
+
+	MapRoutes[".*_DocsIns_1.*"] =
+	{
+		ROUTE_Axis_Spawn_1 =
+		{
+			ROUTE_Platform_1 =
+			{
+				ROUTE_Platform_2 = {},
+			},
+		},
+		ROUTE_FrontBunkerDoor_Spawn_1 =
+		{
+			ROUTE_Tower = {},
+		},
+		ROUTE_Allied_Beach_Spawn_1 =
+		{
+			ROUTE_SeaWallBreached_1 =
+			{
+				ROUTE_Platform_1 =
+				{
+					ROUTE_Platform_2 = {},
+				},
+			},
+			ROUTE_SeaGateBreached_1 =
+			{
+				ROUTE_Tower = {},
+			},
+			ROUTE_BunkerDoorBreached_1 =
+			{
+				ROUTE_Tower = {},
+			},
+		},
+	};
+
+	MapRoutes[".*_DocsOut_.*"] =
+	{
+		ROUTE_Gold_Room_1 =
+		{
+			ROUTE_DocsHallStairs_1 =
+			{
+				Weight = 4,
+				ROUTE_Around_CP_1 =
+				{
+					ROUTE_Stairs_1 = {},
+				},
+			},
+			ROUTE_DestroyableDoor_2 =
+			{
+				Weight = 2,
+				ROUTE_DestroyableDoor_1 =
+				{
+					ROUTE_Around_CP_1 =
+					{
+						ROUTE_Stairs_1 = {},
+					},
+				},
+			},
+		},
+	};
+
+	MapRoutes[".*_Axis_Inside_.*"].ROUTE_Axis_Spawn_2 = MapRoutes[".*_Axis_Inside_.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes[".*_Axis_Inside_.*"].ROUTE_Axis_Spawn_3 = MapRoutes[".*_Axis_Inside_.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes[".*_Axis_Inside_.*"].ROUTE_Axis_Spawn_4 = MapRoutes[".*_Axis_Inside_.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes[".*_Axis_Inside_.*"].ROUTE_Axis_Spawn_5 = MapRoutes[".*_Axis_Inside_.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes[".*_Axis_Inside_.*"].ROUTE_Axis_Spawn_6 = MapRoutes[".*_Axis_Inside_.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes[".*_Axis_Inside_.*"].ROUTE_Axis_Spawn_7 = MapRoutes[".*_Axis_Inside_.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes[".*_Axis_Inside_.*"].ROUTE_FrontBunkerDoor_Spawn_2 = MapRoutes[".*_Axis_Inside_.*"].ROUTE_FrontBunkerDoor_Spawn_1;
+	MapRoutes[".*_Axis_Inside_.*"].ROUTE_FrontBunkerDoor_Spawn_3 = MapRoutes[".*_Axis_Inside_.*"].ROUTE_FrontBunkerDoor_Spawn_1;
+	MapRoutes.FLAG_gold.ROUTE_Allied_Beach_Spawn_1.ROUTE_SeaGateBreached_1  = MapRoutes.FLAG_gold.ROUTE_Allied_Beach_Spawn_1.ROUTE_SeaWallBreached_1;
+	MapRoutes.FLAG_gold.ROUTE_Allied_Beach_Spawn_1.ROUTE_BunkerDoorBreached_1  = MapRoutes.FLAG_gold.ROUTE_Allied_Beach_Spawn_1.ROUTE_SeaWallBreached_1;
+	MapRoutes.FLAG_gold.ROUTE_Allied_Beach_Spawn_2  = MapRoutes.FLAG_gold.ROUTE_Allied_Beach_Spawn_1;
+	MapRoutes.FLAG_gold.ROUTE_FrontBunkerDoor_Spawn_2  = MapRoutes.FLAG_gold.ROUTE_FrontBunkerDoor_Spawn_1;
+	MapRoutes.FLAG_gold.ROUTE_FrontBunkerDoor_Spawn_3  = MapRoutes.FLAG_gold.ROUTE_FrontBunkerDoor_Spawn_1;
+	MapRoutes[".*_DocsIns_0.*"].ROUTE_Allied_Beach_Spawn_2 = MapRoutes[".*_DocsIns_0.*"].ROUTE_Allied_Beach_Spawn_1;
+	MapRoutes[".*_DocsIns_0.*"].ROUTE_Axis_Spawn_2 = MapRoutes[".*_DocsIns_0.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes[".*_DocsIns_0.*"].ROUTE_Axis_Spawn_3 = MapRoutes[".*_DocsIns_0.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes[".*_DocsIns_0.*"].ROUTE_Axis_Spawn_4 = MapRoutes[".*_DocsIns_0.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes[".*_DocsIns_0.*"].ROUTE_Axis_Spawn_5 = MapRoutes[".*_DocsIns_0.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes[".*_DocsIns_0.*"].ROUTE_Axis_Spawn_6 = MapRoutes[".*_DocsIns_0.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes[".*_DocsIns_0.*"].ROUTE_Axis_Spawn_7 = MapRoutes[".*_DocsIns_0.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes[".*_DocsIns_1.*"].ROUTE_Allied_Beach_Spawn_2 = MapRoutes[".*_DocsIns_1.*"].ROUTE_Allied_Beach_Spawn_1;
+	MapRoutes[".*_DocsIns_1.*"].ROUTE_Axis_Spawn_2 = MapRoutes[".*_DocsIns_1.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes[".*_DocsIns_1.*"].ROUTE_Axis_Spawn_3 = MapRoutes[".*_DocsIns_1.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes[".*_DocsIns_1.*"].ROUTE_Axis_Spawn_4 = MapRoutes[".*_DocsIns_1.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes[".*_DocsIns_1.*"].ROUTE_Axis_Spawn_5 = MapRoutes[".*_DocsIns_1.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes[".*_DocsIns_1.*"].ROUTE_Axis_Spawn_6 = MapRoutes[".*_DocsIns_1.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes[".*_DocsIns_1.*"].ROUTE_Axis_Spawn_7 = MapRoutes[".*_DocsIns_1.*"].ROUTE_Axis_Spawn_1;
+	MapRoutes.CAPPOINT_Radio.ROUTE_Gold_Room_2 = MapRoutes.CAPPOINT_Radio.ROUTE_Gold_Room_1;
+	MapRoutes[".*_DocsOut_.*"].ROUTE_Gold_Room_2 = MapRoutes[".*_DocsOut_.*"].ROUTE_Gold_Room_1;
+
+	Util.Routes(MapRoutes);
+};

@@ -1,0 +1,3386 @@
+//==========================================================================================
+//
+//	transmitter_spring.gm (based on transmitter)
+//  previous version made by ^4Tardis
+//
+//	Who	        When		What
+//------------------------------------------------------------------------------------------
+//	Qiki	    23.09.2023	waypoints, navigate
+//	Native12	27.09.2023	script
+//  Qiki	    30.11.2023	stuckages
+//  Native12	30.11.2023	released
+//
+//==========================================================================================
+//  In original version of this map when the Serpentine Barricade is destroyed while
+//  Forward Hut is owned by Axis, the Forward Hut Spawn will stay Axis. This file fixes that:
+//  https://bigfiles.assembla.com/spaces/cQRUVQDLCr3zhlab7jnrAJ/documents/download/dwK0mwJ5Kr7QVcbQarZsNG
+//  or
+//  https://app.assembla.com/spaces/omnibot/tickets/realtime_list?ticket=196
+//==========================================================================================
+//	Keep your omni-bot scripts up to date!
+//	Bugs and suggestions: PM on https://fearless-assassins.com/
+
+global Map =
+{
+	Axis_Castle_MG = false,
+	Bridge = false,
+	Bridge_MG = false,
+	Axis_CP = false,
+	Allied_CP = false,
+	Grate_Door = true,
+	Allied_Castle_MG = false,
+	Backgate = true,
+	Serpentine_Barricade = true,
+	Forward_Hut_Allied = false,
+	Cave_Ladder = false,
+	Bunker_Wall = true,
+	Tunnel_Wall = true,
+	Antenna_Ready = false,
+	Modification_Kit_Taken = false,
+	Modification_Kit_Secured = false,
+	Backgate_Open_Counter = 0,
+	Backgate_Opened = false,
+	Ent_73 = true,
+	Ent_74 = true,
+	Ent_75 = true,
+	Ent_76 = true,
+	Ent_508 = true,
+	b_ice = {},
+	Forward_Spawn_Fixed = false,
+
+	count_ally = {},
+
+	DontDispenseAmmo = true,
+
+	weaps_1 =
+	{
+		WEAPON.THOMPSON, WEAPON.MP40,
+		WEAPON.BAR, WEAPON.STG44,
+		WEAPON.SHOTGUN, WEAPON.M97, WEAPON.M7,
+		WEAPON.GARAND, WEAPON.K43,
+		WEAPON.STEN, WEAPON.MP34, WEAPON.FG42, WEAPON.FG42_SCOPE
+	},
+
+	weaps_2 =
+	{
+		WEAPON.COLT, WEAPON.COLT_AKIMBO,
+		WEAPON.COLT_AKIMBO_SILENCED, COLT_SILENCED,
+		WEAPON.LUGER, WEAPON.LUGER_AKIMBO, WEAPON.LUGER_AKIMBO_SILENCED,
+		WEAPON.LUGER_SILENCED, WEAPON.KNIFE
+	},
+
+	Navigation =
+	{
+		//  /bot waypoint_setproperty paththrough Navigation_PT:jump
+		jump =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+
+		//  /bot waypoint_setproperty paththrough Navigation_PT:jump_wait
+		jump_wait =
+		{
+			navigate = function(_this)
+			{
+				sleep(0.25);
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				sleep(0.55);
+			},
+		},
+
+		//  /bot waypoint_setproperty paththrough Navigation_PT:jump_wait_2
+		jump_wait_2 =
+		{
+			navigate = function(_this)
+			{
+				sleep(1);
+				_this.Bot.HoldButton(BTN.JUMP, 0.55);
+				_this.Goto(Vector3( 234.125, 299.044, 184.125 ));
+			},
+		},
+
+		//  /bot waypoint_setproperty paththrough Navigation_PT:jump_with_crouch
+		jump_with_crouch =
+		{
+			navigate = function(_this)
+			{
+			   //sleep(0.25);
+			   _this.Bot.HoldButton(BTN.JUMP, 0.25);
+				sleep(0.25);
+				_this.Bot.HoldButton(BTN.CROUCH, 1);
+				sleep(1);
+			},
+		},
+	},
+
+	Roles =
+	{
+		AXIS =
+		{
+			AllBots = true, // each bot is considered for a role
+			DEFENDER =
+			{
+				spawnpt = 1,    //Forward spawn
+				numbots = 4,
+				crucialClass = CLASS.FIELDOPS,
+			},
+			DEFENDER1 =
+			{
+				spawnpt = 1,    //Forward spawn
+				numbots = 4,
+				crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER2 =
+			{
+				spawnpt = 1,    //Forward spawn
+				numbots = 4,
+				crucialClass = CLASS.ENGINEER,
+			},
+			DEFENDER3 =
+			{
+				spawnpt = 1,    //Forward spawn
+				numbots = 4,
+				crucialClass = CLASS.ENGINEER,
+			},
+			DEFENSECAPTAIN =
+			{
+				spawnpt = 2,    //Castle
+				numbots = 4,
+				crucialClass = CLASS.SOLDIER,
+			}
+		},
+
+		ALLIES =
+		{
+			AllBots = true, // each bot is considered for a role
+			ATTACKER =
+			{
+				spawnpt = 3,    //Allied base
+				numbots = 4,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER1 =
+			{
+				spawnpt = 3,    //Allied base
+				numbots = 4,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER2 =
+			{
+				spawnpt = 3,    //Allied base
+				numbots = 4,
+				crucialClass = CLASS.ENGINEER,
+			},
+			ATTACKER3 =
+			{
+				spawnpt = 3,    //Allied base
+				numbots = 4,
+				crucialClass = CLASS.ENGINEER,
+			},
+			OFFENSECAPTAIN =
+			{
+				spawnpt = 3,    //Allied base
+				numbots = 4,
+				crucialClass = CLASS.ENGINEER,
+			},
+		},
+	},
+
+	Bridge_MG_Built = function( trigger )
+	{
+		Map.Bridge_MG = true;
+
+		Wp.SetWaypointFlag( "Bridge_MG_1", "closed", false );
+
+		Util.MapDebugPrint( "Bridge_MG_Built" );
+
+		SetGoalRole( "BUILD_Bridge", ROLE.ATTACKER );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"BUILD_Bridge_MG",
+		});
+
+		if ( !Map.Bridge and !Map.Forward_Hut_Allied )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				".*MG42_Bridge_MG",
+			});
+		}
+	},
+
+	Bridge_MG_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Bridge_MG_Planted" );
+
+		Util.SetGoalRange( "DEFUSE_Bridge_MG_.*", 800);
+	},
+
+	Bridge_MG_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Bridge_MG_Defused" );
+	},
+
+	Bridge_MG_Destroyed = function( trigger )
+	{
+		Map.Bridge_MG = false;
+
+		Wp.SetWaypointFlag( "Bridge_MG_1", "closed", true );
+
+		Util.MapDebugPrint( "Bridge_MG_Destroyed" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*MG42_Bridge_MG",
+		});
+
+		if ( !Map.Bridge and !Map.Forward_Hut_Allied )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"BUILD_Bridge_MG",
+			});
+		}
+	},
+
+	Bridge_Built = function( trigger )
+	{
+		Map.Bridge = true;
+
+		for ( q = 2; q < 16; q += 1 )
+		{
+			Wp.SetWaypointFlag( "Bridge_" + q, "closed", false );
+		}
+
+		Util.MapDebugPrint( "Bridge_Built" );
+
+		Util.EnableGoal( "ROUTE_Bridge_.*" );
+
+		SetGoalRole( "CHECKPOINT_forwardflag", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2 });
+		SetGoalRole( ".*_Allies_ForwardSpawn_.*", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2 });
+		SetGoalRole( "PLANT_Serpentine_Barricade", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2 });
+
+		SetGoalRole( "BUILD_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( "PLANT_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( ".*_Allies_ForestHut_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( "FLAG_radioparts", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( "PLANT_Grate_Door", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( ".*_Allies_GrateDoor_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*MG42_Damaged_Building",
+			"BUILD_Bridge_MG",
+			"BUILD_Bridge",
+			".*_Allies_Bridge_.*",
+			".*MG42_Bridge_MG",
+		});
+
+		if ( Map.Serpentine_Barricade )
+		{
+			if ( !Map.Forward_Hut_Allied )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"CHECKPOINT_forwardflag",
+				});
+			}
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				".*_Allies_ForwardSpawn_.*",
+			});
+
+			if ( Map.Forward_Spawn_Fixed )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"PLANT_Serpentine_Barricade",
+				});
+			}
+			else
+			{
+				if ( Map.Forward_Hut_Allied )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"PLANT_Serpentine_Barricade",
+					});
+				}
+				else
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, false, {
+						"PLANT_Serpentine_Barricade",
+					});
+				}
+			}
+		}
+
+		if ( !Map.Allied_CP )
+		{
+			if ( !Map.Cave_Ladder )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					".*_Allies_ForestHut_.*",
+				});
+
+				if ( Map.Axis_CP )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"PLANT_Command_Post",
+					});
+				}
+				else
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"BUILD_Command_Post",
+					});
+				}
+
+				if ( Map.Grate_Door )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"PLANT_Grate_Door",
+					});
+				}
+			}
+		}
+
+		sleep(5);
+
+		if ( Map.Bridge )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				".*_Axis_Bridge_.*",
+			});
+			//Plant bridge IMHO is suicide - so don't allow
+			if ( tableCount(Map.count_ally) < 1 )
+			{
+				if ( Map.Serpentine_Barricade and !Map.Modification_Kit_Taken and !Map.Forward_Hut_Allied )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						".*_Axis_ForwardSpawn_.*",
+						".*_Forward_Hut",
+						".*_Axis_SerpBarric_.*",
+						".*MG42_barricade_mg",
+					});
+				}
+			}
+		}
+	},
+
+	Bridge_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Bridge_Planted" );
+
+		Util.SetGoalRange( "DEFUSE_Bridge_.*", 1400);
+	},
+
+	Bridge_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Bridge_Defused" );
+	},
+
+	Bridge_Destroyed = function( trigger )
+	{
+		Map.Bridge = false;
+
+		for ( q = 2; q < 16; q += 1 )
+		{
+			Wp.SetWaypointFlag( "Bridge_" + q, "closed", true );
+		}
+
+		Util.MapDebugPrint( "Bridge_Destroyed" );
+
+		Util.DisableGoal( "ROUTE_Bridge_.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_ForwardSpawn_.*",
+			".*_Forward_Hut",
+			".*_Axis_SerpBarric_.*",
+			".*MG42_barricade_mg",
+		});
+
+		if ( tableCount(Map.count_ally) < 1 )
+		{
+			if ( Map.Serpentine_Barricade and !Map.Modification_Kit_Taken )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					".*_Axis_Bridge_.*",
+				});
+			}
+		}
+
+		if ( !Map.Forward_Hut_Allied )
+		{
+			ClearGoalRole( "CHECKPOINT_forwardflag", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2 });
+			ClearGoalRole( ".*_Allies_ForwardSpawn_.*", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2 });
+			ClearGoalRole( "PLANT_Serpentine_Barricade", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2 });
+		}
+
+		if ( !Map.Serpentine_Barricade )
+		{
+			Util.SetMaxUsers( 1, "BUILD_Bridge" );
+		}
+
+		if ( !Map.Cave_Ladder and !Map.Allied_CP and !Map.Forward_Hut_Allied )
+		{
+			ClearGoalRole( "BUILD_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			ClearGoalRole( "PLANT_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			ClearGoalRole( "FLAG_radioparts", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			ClearGoalRole( "PLANT_Grate_Door", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			ClearGoalRole( ".*_Allies_ForestHut_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			ClearGoalRole( ".*_Allies_GrateDoor_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			".*MG42_Damaged_Building",
+			"BUILD_Bridge",
+			".*_Allies_Bridge_.*",
+		});
+
+		if ( !Map.Bridge_MG )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"BUILD_Bridge_MG",
+			});
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				".*MG42_Bridge_MG",
+			});
+		}
+	},
+
+	Cave_Ladder_Built = function( trigger )
+	{
+		Map.Cave_Ladder = true;
+
+		Wp.SetWaypointFlag( "Cave_Ladder_1", "closed", false );
+		Wp.SetWaypointFlag( "Cave_Ladder_2", "closed", false );
+
+		Util.MapDebugPrint( "Cave_Ladder_Built" );
+
+		Util.EnableGoal( "ROUTE_Cave_.*" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"BUILD_Cave_Ladder",
+		});
+
+		if ( !Map.Forward_Hut_Allied )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"PLANT_Cave_Ladder",
+			});
+		}
+		SetGoalRole( "BUILD_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( "PLANT_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( "FLAG_radioparts", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( "PLANT_Grate_Door", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( ".*_Allies_ForestHut_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( ".*_Allies_GrateDoor_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+
+		if ( !Map.Bridge and !Map.Allied_CP )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				".*_Allies_ForestHut_.*",
+			});
+
+			if ( Map.Axis_CP )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"PLANT_Command_Post",
+				});
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"BUILD_Command_Post",
+				});
+			}
+
+			if ( Map.Grate_Door )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"PLANT_Grate_Door",
+				});
+			}
+		}
+	},
+
+	Cave_Ladder_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Cave_Ladder_Planted" );
+	},
+
+	Cave_Ladder_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Cave_Ladder_Defused" );
+	},
+
+	Cave_Ladder_Destroyed = function( trigger )
+	{
+		Map.Cave_Ladder = false;
+
+		Wp.SetWaypointFlag( "Cave_Ladder_1", "closed", true );
+		Wp.SetWaypointFlag( "Cave_Ladder_2", "closed", true );
+
+		Util.MapDebugPrint( "Cave_Ladder_Destroyed" );
+
+		Util.DisableGoal( "ROUTE_Cave_.*" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"PLANT_Cave_Ladder",
+		});
+
+		if ( Map.Serpentine_Barricade )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"BUILD_Cave_Ladder",
+			});
+		}
+
+		if ( !Map.Bridge and !Map.Allied_CP and !Map.Forward_Hut_Allied )
+		{
+			ClearGoalRole( "BUILD_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			ClearGoalRole( "PLANT_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			ClearGoalRole( "FLAG_radioparts", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			ClearGoalRole( "PLANT_Grate_Door", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			ClearGoalRole( ".*_Allies_ForestHut_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			ClearGoalRole( ".*_Allies_GrateDoor_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		}
+	},
+
+	Bunker_Wall_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Bunker_Wall_Planted" );
+	},
+
+	Bunker_Wall_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Bunker_Wall_Defused" );
+	},
+
+	Bunker_Wall_Destroyed = function( trigger )
+	{
+		Map.Bunker_Wall = false;
+
+		Util.MapDebugPrint( "Bunker_Wall_Destroyed" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"PLANT_Bunker_Wall",
+		});
+
+		foreach( goal in Util.GoalTable("DEFUSE_Bunker_Wall.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		sleep(2);
+
+		if ( Map.Tunnel_Wall )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"PLANT_Tunnel_Wall",
+			});
+		}
+	},
+
+	Tunnel_Wall_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Tunnel_Wall_Planted" );
+	},
+
+	Tunnel_Wall_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Tunnel_Wall_Defused" );
+	},
+
+	Tunnel_Wall_Destroyed = function( trigger )
+	{
+		Map.Tunnel_Wall = false;
+
+		Util.MapDebugPrint( "Tunnel_Wall_Destroyed" );
+
+		Util.EnableGoal( "ROUTE_Passage.*" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"PLANT_Tunnel_Wall",
+		});
+
+		foreach( goal in Util.GoalTable("DEFUSE_Tunnel_Wall.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+	},
+
+	Axis_CP_Built = function( trigger )
+	{
+		Map.Axis_CP = true;
+
+		Util.MapDebugPrint( "Axis_CP_Built" );
+
+		Util.DisableGoal( {
+			"BUILD_Command_Post",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_Axis_CommPost_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Command_Post",
+		});
+
+		if ( Map.Serpentine_Barricade and !Map.Modification_Kit_Taken )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				".*_Axis_ForestHut_.*",
+			});
+		}
+	},
+
+	Axis_CP_Destroyed = function( trigger )
+	{
+		Map.Axis_CP = false;
+
+		Util.MapDebugPrint( "Axis_CP_Destroyed" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"PLANT_Command_Post",
+		});
+
+		if ( Map.Serpentine_Barricade and !Map.Modification_Kit_Secured )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_Command_Post",
+			});
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Command_Post",
+		});
+	},
+
+	CP_Planted = function( trigger )
+	{
+		Util.SetGoalRange( "DEFUSE_Command_Post_.*", 1400);
+
+		if ( Map.Allied_CP )
+		{
+			Util.MapDebugPrint( "Allied_CP_Planted" );
+		}
+		else
+		{
+			Util.MapDebugPrint( "Axis_CP_Planted" );
+
+			if ( Map.Modification_Kit_Secured )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, false, {
+					"DEFUSE_Command_Post_.*",
+				});
+			}
+		}
+	},
+
+	CP_Defused = function( trigger )
+	{
+		if ( Map.Allied_CP )
+		{
+			Util.MapDebugPrint( "Allied_CP_Defused" );
+		}
+		else
+		{
+			Util.MapDebugPrint( "Axis_CP_Defused" );
+		}
+	},
+
+	Allied_CP_Built = function( trigger )
+	{
+		Map.Allied_CP = true;
+
+		Util.MapDebugPrint( "Allied_CP_Built" );
+
+		Map.Roles.ALLIES.ATTACKER3.spawnpt = 4; //Forest hut spawn
+		Map.Roles.ALLIES.OFFENSECAPTAIN.spawnpt = 4; //Forest hut spawn
+
+		Map.SetSpawn();
+
+		SetGoalRole( "BUILD_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( "PLANT_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( ".*_Allies_ForestHut_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( ".*_Allies_GrateDoor_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( "FLAG_radioparts", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+
+		Util.DisableGoal( {
+			"BUILD_Command_Post",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_ForestHut_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*_Allies_ForestHut_.*",
+		});
+
+		if ( !Map.Modification_Kit_Taken )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"FLAG_radioparts",
+			});
+		}
+
+		if ( Map.Grate_Door )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"PLANT_Grate_Door",
+			});
+		}
+
+		if ( Map.Serpentine_Barricade and !Map.Modification_Kit_Secured and !Map.Modification_Kit_Taken )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"DEFEND_Axis_CommPost_.*",
+			});
+		}
+
+		if ( tableCount(Map.count_ally) < 1 and !Map.Modification_Kit_Secured )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"PLANT_Command_Post",
+			});
+		}
+	},
+
+	Allied_CP_Destroyed = function( trigger )
+	{
+		Map.Allied_CP = false;
+
+		Util.MapDebugPrint( "Allied_CP_Destroyed" );
+
+		if ( !Map.Forward_Hut_Allied )
+		{
+			Map.Roles.ALLIES.ATTACKER3.spawnpt = 3; //Allied base
+			Map.Roles.ALLIES.OFFENSECAPTAIN.spawnpt = 3; //Allied base
+		}
+		else
+		{
+			Map.Roles.ALLIES.ATTACKER3.spawnpt = 1; //Forward spawn
+			Map.Roles.ALLIES.OFFENSECAPTAIN.spawnpt = 1; //Forward spawn
+		}
+
+		Map.SetSpawn();
+
+		if ( !Map.Cave_Ladder and !Map.Bridge and !Map.Forward_Hut_Allied )
+		{
+			ClearGoalRole( "BUILD_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			ClearGoalRole( "PLANT_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			ClearGoalRole( ".*_Allies_ForestHut_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			ClearGoalRole( ".*_Allies_GrateDoor_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			ClearGoalRole( "FLAG_radioparts", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"PLANT_Command_Post",
+			"DEFEND_Axis_CommPost_.*",
+		});
+
+		if ( Map.Serpentine_Barricade and !Map.Modification_Kit_Secured )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_Command_Post",
+			});
+		}
+
+		if ( !Map.Serpentine_Barricade )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"FLAG_radioparts",
+			});
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Command_Post",
+		});
+
+		if ( !Map.Modification_Kit_Secured )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				".*_Allies_ForestHut_.*",
+			});
+		}
+
+		if ( !Map.Modification_Kit_Taken )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				".*_Axis_ForestHut_.*",
+			});
+		}
+	},
+
+	Grate_Door_Built = function( trigger )
+	{
+		Map.Grate_Door = true;
+
+		Wp.SetWaypointFlag( "Grate_Door_1", "closed", false );
+		Wp.SetWaypointFlag( "Grate_Door_3", "door", true );
+		Wp.SetWaypointFlag( "Grate_Door_3", "sneak", true );
+		Wp.SetWaypointFlag( "Grate_Door_3", "axis", true );
+		Wp.SetWaypointFlag( "Grate_Door_3", "infiltrator", true );
+		Wp.SetWaypointFlag( "Grate_Door_4", "door", true );
+		Wp.SetWaypointFlag( "Grate_Door_4", "sneak", true );
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Util.MapDebugPrint( "Grate_Door_Built" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_Axis_GrateDoorDest_.*",
+			"BUILD_Grate_Door",
+		});
+
+		if ( Map.Serpentine_Barricade and !Map.Modification_Kit_Taken )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"DEFEND_Axis_GrateDoor_.*",
+			});
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"PLANT_Grate_Door",
+		});
+
+		if ( Map.Serpentine_Barricade )
+		{
+			ClearGoalRole( "ATTACK_Allies_CappointPlace_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			ClearGoalRole( "ATTACK_Allies_CappointArea_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			ClearGoalRole( "PLANT_Backgate", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+
+			foreach ( bot in BotTable )
+			{
+				if ( bot.IsCarryingFlag() and ( bot.HasRole(ROLE.ROAMER) or bot.HasRole(ROLE.TEAMCAPTAIN) ))
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"CAPPOINT_FakePlace_.*",
+					});
+
+					SetAvailableMapGoals( TEAM.ALLIES, false, {
+						"CAPPOINT_Transmitter",
+					});
+				}
+			}
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				".*_Allies_ForestHut_.*",
+			});
+		}
+	},
+
+	Grate_Door_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Grate_Door_Planted" );
+
+		if ( !Map.Modification_Kit_Secured )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				".*_Allies_GrateDoor_.*",
+			});
+
+			if ( !Map.Modification_Kit_Taken )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"DEFEND_Axis_GrateDoor_1.*",
+				});
+			}
+
+			if ( !Map.Serpentine_Barricade )
+			{
+				Util.SetGoalRange( "DEFUSE_Grate_Door.*", 900);
+			}
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"DEFUSE_Grate_Door_.*",
+			});
+		}
+	},
+
+	Grate_Door_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Grate_Door_Defused" );
+
+		if ( tableCount(Util.GoalTable("DEFUSE_Grate_Door.*")) == 1 )
+		{
+			if ( !Map.Modification_Kit_Taken )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, false, {
+					"DEFEND_Axis_GrateDoor_.*",
+				});
+			}
+		}
+	},
+
+	Grate_Door_Destroyed = function( trigger )
+	{
+		Map.Grate_Door = false;
+
+		Wp.SetWaypointFlag( "Grate_Door_1", "closed", true );
+		Wp.SetWaypointFlag( "Grate_Door_3", "door", false );
+		Wp.SetWaypointFlag( "Grate_Door_3", "sneak", false );
+		Wp.SetWaypointFlag( "Grate_Door_3", "axis", false );
+		Wp.SetWaypointFlag( "Grate_Door_3", "infiltrator", false );
+		Wp.SetWaypointFlag( "Grate_Door_4", "door", false );
+		Wp.SetWaypointFlag( "Grate_Door_4", "sneak", false );
+
+		DynamicPathsUpdated( TEAM.AXIS, TEAM.ALLIES );
+
+		Util.MapDebugPrint( "Grate_Door_Destroyed" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_Grate_Door.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"PLANT_Grate_Door",
+			".*_Allies_GrateDoor_.*",
+		});
+
+		if ( !Map.Modification_Kit_Secured )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_Grate_Door",
+			});
+		}
+
+		if ( Map.Serpentine_Barricade )
+		{
+			SetGoalRole( "ATTACK_Allies_CappointPlace_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			SetGoalRole( "ATTACK_Allies_CappointArea_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			SetGoalRole( "PLANT_Backgate", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+
+			if ( !Map.Modification_Kit_Secured )
+			{
+				if ( Map.Modification_Kit_Taken )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+					  "DEFEND_Axis_GrateDoor_.*",
+					  "DEFEND_Axis_GrateDoorDest_.*",
+					});
+
+					SetAvailableMapGoals( TEAM.ALLIES, false, {
+						"CAPPOINT_FakePlace_.*",
+						".*_Allies_ForestHut_.*",
+					});
+
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"CAPPOINT_Transmitter",
+						".*_Allies_CappointPlace_.*",
+						".*_Allies_CappointArea_.*",
+					});
+				}
+				else
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+					  "DEFEND_Axis_GrateDoor_1.*",
+					});
+				}
+			}
+		}
+	},
+
+	Forward_Hut_Axis_Captured = function( trigger )
+	{
+		Map.Forward_Hut_Allied = false;
+
+		Util.MapDebugPrint( "Forward_Hut_Axis_Captured" );
+
+		if ( !Map.Allied_CP )
+		{
+			Map.Roles.ALLIES.ATTACKER3.spawnpt = 3; //Allied base
+			Map.Roles.ALLIES.OFFENSECAPTAIN.spawnpt = 3; //Allied base
+		}
+
+		Map.Roles.ALLIES.ATTACKER.spawnpt = 3; //Allied base
+		Map.Roles.ALLIES.ATTACKER1.spawnpt = 3; //Allied base
+		Map.Roles.ALLIES.ATTACKER2.spawnpt = 3; //Allied base
+
+		Map.SetSpawn();
+
+		ClearGoalRole( "MOUNTMG42_Forward_Hut", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2 });
+		ClearGoalRole( "REPAIRMG42_Forward_Hut", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2 });
+
+		if ( !Map.Bridge )
+		{
+			ClearGoalRole( ".*_Allies_ForwardSpawn_.*", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2 });
+			ClearGoalRole( "PLANT_Serpentine_Barricade", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2 });
+
+			if ( !Map.Allied_CP and !Map.Cave_Ladder )
+			{
+				ClearGoalRole( "BUILD_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+				ClearGoalRole( "PLANT_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+				ClearGoalRole( ".*_Allies_ForestHut_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+				ClearGoalRole( ".*_Allies_GrateDoor_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+				ClearGoalRole( "PLANT_Grate_Door", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+			}
+		}
+
+		if ( !Map.Forward_Spawn_Fixed and Map.Serpentine_Barricade )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"PLANT_Serpentine_Barricade",
+			});
+		}
+
+		if ( Map.Cave_Ladder and tableCount(Map.count_ally) < 1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"PLANT_Cave_Ladder",
+			});
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"CHECKPOINT_forwardflag",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"CHECKPOINT_forwardflag",
+		});
+
+		GetGoal("MOUNTMG42_Forward_Hut").AimVectors = { Vec3(0.926, -0.366, -0.095) };
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*MG42_Forward_Hut",
+			".*_Allies_ForwardSpawn_.*",
+		});
+
+		if ( !Map.Modification_Kit_Taken )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				".*_Axis_TunnelEntrance_.*",
+			});
+
+			if ( !Map.Bridge )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					".*_Axis_Bridge_.*",
+				});
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					".*_Axis_ForwardSpawn_.*",
+					".*MG42_Forward_Hut",
+				});
+			}
+		}
+	},
+
+	Forward_Hut_Allies_Captured = function( trigger )
+	{
+		Map.Forward_Hut_Allied = true;
+
+		Util.MapDebugPrint( "Forward_Hut_Allies_Captured" );
+
+		if ( !Map.Allied_CP )
+		{
+			Map.Roles.ALLIES.ATTACKER3.spawnpt = 1; //Forward spawn
+			Map.Roles.ALLIES.OFFENSECAPTAIN.spawnpt = 1; //Forward spawn
+		}
+
+		Map.Roles.ALLIES.ATTACKER.spawnpt = 1; //Forward spawn
+		Map.Roles.ALLIES.ATTACKER1.spawnpt = 1; //Forward spawn
+		Map.Roles.ALLIES.ATTACKER2.spawnpt = 1; //Forward spawn
+
+		Map.SetSpawn();
+
+		SetGoalRole( ".*_Allies_ForwardSpawn_.*", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2 });
+		SetGoalRole( "PLANT_Serpentine_Barricade", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2 });
+		SetGoalRole( "MOUNTMG42_Forward_Hut", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2 });
+		SetGoalRole( "REPAIRMG42_Forward_Hut", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2 });
+
+		SetGoalRole( "BUILD_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( "PLANT_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( ".*_Allies_ForestHut_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( ".*_Allies_GrateDoor_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( "PLANT_Grate_Door", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_Bridge_.*",
+			".*_Axis_TunnelEntrance_.*",
+			".*_Axis_ForwardSpawn_.*",
+			".*MG42_Forward_Hut",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CHECKPOINT_forwardflag",
+		});
+
+		if ( Map.Cave_Ladder )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"PLANT_Cave_Ladder",
+			});
+		}
+
+		if ( Map.Forward_Spawn_Fixed and Map.Serpentine_Barricade )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"PLANT_Serpentine_Barricade",
+			});
+		}
+
+		if ( !Map.Modification_Kit_Taken )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"CHECKPOINT_forwardflag",
+			});
+		}
+
+		GetGoal("MOUNTMG42_Forward_Hut").AimVectors = { Vec3(0.926, -0.366, -0.095), Vec3(0.824, 0.557, 0.103) };
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			".*MG42_Forward_Hut",
+			".*_Allies_ForwardSpawn_.*",
+		});
+
+		if ( !Map.Modification_Kit_Taken )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"FLAG_radioparts",
+			});
+		}
+	},
+
+	Serpentine_Barricade_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Serpentine_Barricade_Planted" );
+	},
+
+	Serpentine_Barricade_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Serpentine_Barricade_Defused" );
+	},
+
+	Serpentine_Barricade_Destroyed = function( trigger )
+	{
+		Map.Serpentine_Barricade = false;
+
+		if ( !Map.Forward_Spawn_Fixed )
+		{
+			if ( Map.Forward_Hut_Allied )
+			{
+				Map.Forward_Hut_Allied = true;
+			}
+			else
+			{
+				Map.Forward_Hut_Allied = false;
+			}
+		}
+		else
+		{
+			Map.Forward_Hut_Allied = true;
+		}
+
+		Wp.SetWaypointFlag( "Serpentine_Door_1", "door", false );
+		Wp.SetWaypointFlag( "Serpentine_Door_2", "door", false );
+		Wp.SetWaypointFlag( "Serpentine_Door_2", "axis", false );
+		Wp.SetWaypointFlag( "Serpentine_Door_2", "infiltrator", false );
+		Wp.SetWaypointFlag( "Serpentine_Barricade_3", "closed", false );
+
+		Util.MapDebugPrint( "Serpentine_Barricade_Destroyed" );
+
+		if ( !Map.Allied_CP )
+		{
+			Map.Roles.ALLIES.ATTACKER3.spawnpt = 1; //Forward spawn
+			Map.Roles.ALLIES.OFFENSECAPTAIN.spawnpt = 1; //Forward spawn
+		}
+
+		Map.Roles.ALLIES.ATTACKER.spawnpt = 1; //Forward spawn
+		Map.Roles.ALLIES.ATTACKER1.spawnpt = 1; //Forward spawn
+		Map.Roles.ALLIES.ATTACKER2.spawnpt = 1; //Forward spawn
+
+		Map.SetSpawn();
+
+		foreach( goal in Util.GoalTable("DEFUSE_Serpentine_Barricade.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		Util.DisableGoal( {
+			"CHECKPOINT_forwardflag",
+			".*MG42_Forward_Hut",
+		});
+
+		ClearGoalRole( "BUILD_Axis_Castle_MG", { ROLE.DEFENDER, ROLE.DEFENSECAPTAIN });
+		ClearGoalRole( ".*MG42_Axis_Castle_MG", { ROLE.DEFENDER, ROLE.DEFENSECAPTAIN });
+		ClearGoalRole( "PLANT_Command_Post", { ROLE.DEFENDER3, ROLE.DEFENSECAPTAIN });
+
+		ClearGoalRole( "ATTACK_Allies_CappointArea_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN, ROLE.SNIPER });
+		ClearGoalRole( "PLANT_Backgate", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN, ROLE.SNIPER });
+
+		SetGoalRole( "PLANT_Bunker_Wall", { ROLE.ATTACKER, ROLE.ATTACKER1 });
+		SetGoalRole( "PLANT_Tunnel_Wall", { ROLE.ATTACKER, ROLE.ATTACKER1 });
+		SetGoalRole( "BUILD_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( "PLANT_Command_Post", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN, ROLE.INFILTRATOR });
+		SetGoalRole( "FLAG_radioparts", ROLE.ATTACKER );
+		SetGoalRole( ".*_Allies_ForestHut_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( ".*_Allies_GrateDoor_.*", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( "PLANT_Grate_Door", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+		SetGoalRole( "ATTACK_Allies_CappointPlace_.*", { ROLE.ATTACKER2, ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+
+		if ( !Map.Modification_Kit_Secured )
+		{
+			SetGoalRole( "ATTACK_Allies_Antenna_.*", { ROLE.ATTACKER, ROLE.ATTACKER1 });
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_Bridge_.*",
+			".*_Axis_TunnelEntrance_.*",
+			".*_Axis_ForwardSpawn_.*",
+			".*_Axis_SerpBarric_.*",
+			".*MG42_barricade_mg",
+			"DEFEND_Axis_GrateDoorDest_.*",
+			"DEFEND_Axis_GrateDoor_.*",
+			".*_Axis_ForestHut_.*",
+			"DEFEND_Axis_CommPost_.*",
+			"PLANT_Cave_Ladder",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*_Allies_ForwardSpawn_.*",
+			"PLANT_Serpentine_Barricade",
+			"BUILD_Cave_Ladder",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			".*_Allies_Antenna_.*",
+			".*_Allies_AntennaArea_.*",
+		});
+
+		if ( !Map.Modification_Kit_Secured )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				".*_Allies_CappointArea_.*",
+				".*_Allies_CappointPlace_.*",
+			});
+		}
+
+		if ( !Map.Axis_Castle_MG )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_Axis_Castle_MG",
+			});
+		}
+		else
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				".*MG42_Axis_Castle_MG",
+			});
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"PLANT_Axis_Castle_MG",
+			});
+		}
+
+		if ( tableCount(Map.count_ally) < 1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				".*MG42_Castle",
+				".*_Axis_CastleBackEntr_.*",
+				".*_Axis_CastleFront_.*",
+				".*_Axis_CastleBackGate_.*",
+			});
+		}
+
+		if ( !Map.Modification_Kit_Taken )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"FLAG_radioparts",
+			});
+		}
+		else
+		{
+			if ( !Map.Modification_Kit_Secured )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, {
+					"CAPPOINT_FakePlace_.*",
+				});
+
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"CAPPOINT_Transmitter",
+				});
+			}
+		}
+
+		if ( Map.Backgate )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"PLANT_Backgate",
+			});
+
+			if ( !Map.Backgate_Opened )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"CAMP_Backgate_Opening",
+				});
+			}
+		}
+
+		if ( !Map.Antenna_Ready )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"SWITCH_Antenna",
+			});
+		}
+
+		if ( !Map.Allied_Castle_MG )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"BUILD_allied_Castle_MG",
+			});
+		}
+
+		if ( Map.Bunker_Wall )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"PLANT_Bunker_Wall",
+			});
+		}
+	},
+
+	Axis_Castle_MG_Built = function( trigger )
+	{
+		Map.Axis_Castle_MG = true;
+
+		Wp.SetWaypointFlag( "Axis_Castle_MG_1", "closed", false );
+
+		Util.MapDebugPrint( "Axis_Castle_MG_Built" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_Axis_Castle_MG",
+		});
+
+		if ( tableCount(Map.count_ally) < 1 )
+		{
+			if ( Map.Modification_Kit_Taken or !Map.Serpentine_Barricade )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					".*MG42_Axis_Castle_MG",
+				});
+			}
+		}
+
+		if ( !Map.Serpentine_Barricade )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"PLANT_Axis_Castle_MG",
+			});
+		}
+	},
+
+	Axis_Castle_MG_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Axis_Castle_MG_Planted" );
+
+		Util.SetMaxUsers( 1, "DEFUSE_Axis_Castle_MG.*" );
+		Util.SetGoalRange( "DEFUSE_Axis_Castle_MG.*", 1400);
+	},
+
+	Axis_Castle_MG_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Axis_Castle_MG_Defused" );
+	},
+
+	Axis_Castle_MG_Destroyed = function( trigger )
+	{
+		Map.Axis_Castle_MG = false;
+
+		Wp.SetWaypointFlag( "Axis_Castle_MG_1", "closed", true );
+
+		Util.MapDebugPrint( "Axis_Castle_MG_Destroyed" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_Axis_Castle_MG.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*MG42_Axis_Castle_MG",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"PLANT_Axis_Castle_MG",
+		});
+
+		if ( tableCount(Map.count_ally) < 1 )
+		{
+			if ( Map.Modification_Kit_Taken or !Map.Serpentine_Barricade )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"BUILD_Axis_Castle_MG",
+				});
+			}
+		}
+	},
+
+	Allied_Castle_MG_Built = function( trigger )
+	{
+		Map.Allied_Castle_MG = true;
+
+		Wp.SetWaypointFlag( "Allied_Castle_MG_1", "closed", true );
+		Wp.SetWaypointFlag( "Allied_Castle_MG_4", "closed", false );
+
+		Util.MapDebugPrint( "Allied_Castle_MG_Built" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"BUILD_allied_Castle_MG",
+		});
+
+		if ( tableCount(Map.count_ally) < 1 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"PLANT_allied_Castle_MG",
+			});
+		}
+
+		if ( !Map.Serpentine_Barricade and !Map.Modification_Kit_Secured )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				".*MG42_allied_Castle_MG",
+			});
+		}
+	},
+
+	Allied_Castle_MG_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Allied_Castle_MG_Planted" );
+
+		Util.SetMaxUsers( 1, "DEFUSE_allied_Castle_MG.*" );
+		Util.SetGoalRange( "DEFUSE_allied_Castle_MG.*", 1400);
+	},
+
+	Allied_Castle_MG_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Allied_Castle_MG_Defused" );
+	},
+
+	Allied_Castle_MG_Destroyed = function( trigger )
+	{
+		Map.Allied_Castle_MG = false;
+
+		Wp.SetWaypointFlag( "Allied_Castle_MG_1", "closed", false );
+		Wp.SetWaypointFlag( "Allied_Castle_MG_4", "closed", true );
+
+		Util.MapDebugPrint( "Allied_Castle_MG_Destroyed" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_allied_Castle_MG.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"PLANT_allied_Castle_MG",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			".*MG42_allied_Castle_MG",
+		});
+
+		if ( !Map.Serpentine_Barricade )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"BUILD_allied_Castle_MG",
+			});
+		}
+	},
+
+	Backgate_Opening = function( trigger )
+	{
+		vel = ToVector( trigger.Action );
+
+		if ( vel[ 2 ] == 8 )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"ATTACK_Backgate_Opening_.*",
+			});
+
+			Map.Backgate_Open_Counter += 1;
+
+			if ( Map.Backgate_Open_Counter == 6 )
+			{
+				Map.Backgate_Opened = true;
+
+				Util.MapDebugPrint( "Backgate_Opened" );
+			}
+		}
+		else
+		{
+			Map.Backgate_Open_Counter = 0;
+
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"ATTACK_Backgate_Opening_.*",
+			});
+
+			if ( Map.Backgate_Opened )
+			{
+				Map.Backgate_Opened = false;
+
+				Util.MapDebugPrint( "Backgate_Closed" );
+			}
+		}
+	},
+
+	Backgate_Planted = function( trigger )
+	{
+		Util.MapDebugPrint( "Backgate_Planted" );
+
+		Util.SetMaxUsers( 2, "DEFUSE_Backgate_.*" );
+	},
+
+	Backgate_Defused = function( trigger )
+	{
+		Util.MapDebugPrint( "Backgate_Defused" );
+	},
+
+	Backgate_Destroyed = function( trigger )
+	{
+		Map.Backgate = false;
+		Map.Backgate_Opened = true;
+
+		Util.MapDebugPrint( "Backgate_Destroyed" );
+
+		foreach( goal in Util.GoalTable("DEFUSE_Backgate.*") )
+		{
+			goal.SetAvailable(TEAM.AXIS, false);
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"ATTACK_Backgate_Opening_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CAMP_Backgate_Opening",
+			"PLANT_Backgate",
+		});
+	},
+
+	Radio_Modification_Kit_Taken = function( trigger )
+	{
+		SetGoalPriority( "DEFEND_Axis_CappointPlace_00", 0.81, TEAM.AXIS, 0 );
+		SetGoalPriority( "DEFEND_Axis_CappointPlace_01", 0.81, TEAM.AXIS, 0 );
+		SetGoalPriority( "DEFEND_Axis_CappointPlace_02", 0.81, TEAM.AXIS, 0 );
+		SetGoalPriority( "DEFEND_Axis_CappointPlace_00", 0.68, TEAM.AXIS, CLASS.SOLDIER );
+		SetGoalPriority( "DEFEND_Axis_CappointPlace_01", 0.68, TEAM.AXIS, CLASS.SOLDIER  );
+		SetGoalPriority( "DEFEND_Axis_CappointPlace_02", 0.68, TEAM.AXIS, CLASS.SOLDIER  );
+
+		if ( !Map.Modification_Kit_Taken )
+		{
+			Map.Modification_Kit_Taken = true;
+
+			Util.MapDebugPrint( "Radio_Modification_Kit_Taken" );
+
+			Map.Roles.AXIS.DEFENDER.spawnpt = 2;    //Castle
+
+			Map.SetSpawn();
+
+			Util.SetMaxUsers( 2, "BUILD_Grate_Door" );
+
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				".*_Axis_TunnelEntrance_.*",
+				".*_Axis_ForestHut_.*",
+				"DEFEND_Axis_CommPost_.*",
+			});
+
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"FLAG_radioparts",
+			});
+
+			if ( Map.Serpentine_Barricade )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"DEFEND_Axis_GrateDoor_.*",
+					"DEFEND_Axis_MKTaken_.*",
+				});
+
+				if ( Map.Forward_Hut_Allied )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						"CHECKPOINT_forwardflag",
+					});
+				}
+			}
+
+			if ( !Map.Axis_Castle_MG )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"BUILD_Axis_Castle_MG",
+				});
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					".*MG42_Axis_Castle_MG",
+				});
+			}
+
+			if ( !Map.Grate_Door )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"DEFEND_Axis_GrateDoorDest_.*",
+				});
+
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					"CAPPOINT_Transmitter",
+					".*_Allies_CappointPlace_.*",
+					".*_Allies_CappointArea_.*",
+				});
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, true, {
+					".*_Allies_GrateDoor_.*",
+				});
+
+				if ( Map.Serpentine_Barricade )
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"CAPPOINT_FakePlace_.*",
+					});
+				}
+				else
+				{
+					SetAvailableMapGoals( TEAM.ALLIES, true, {
+						"CAPPOINT_Transmitter",
+					});
+				}
+			}
+		}
+	},
+
+	Radio_Modification_Kit_Dropped = function( trigger )
+	{
+		Util.MapDebugPrint( "Radio_Modification_Kit_Dropped" );
+
+		SetGoalPriority( "DEFEND_Axis_CappointPlace_00", 0.78, TEAM.AXIS, 0 );
+		SetGoalPriority( "DEFEND_Axis_CappointPlace_01", 0.78, TEAM.AXIS, 0 );
+		SetGoalPriority( "DEFEND_Axis_CappointPlace_02", 0.78, TEAM.AXIS, 0 );
+		SetGoalPriority( "DEFEND_Axis_CappointPlace_00", 0.68, TEAM.AXIS, CLASS.SOLDIER );
+		SetGoalPriority( "DEFEND_Axis_CappointPlace_01", 0.68, TEAM.AXIS, CLASS.SOLDIER  );
+		SetGoalPriority( "DEFEND_Axis_CappointPlace_02", 0.68, TEAM.AXIS, CLASS.SOLDIER  );
+	},
+
+	Radio_Modification_Kit_Returned = function( trigger )
+	{
+		Map.Modification_Kit_Taken = false;
+
+		Util.MapDebugPrint( "Radio_Modification_Kit_Returned" );
+
+		Util.SetMaxUsers( 4, "BUILD_Grate_Door" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_Axis_GrateDoorDest_.*",
+			"DEFEND_Axis_GrateDoor_.*",
+			".*MG42_Axis_Castle_MG",
+			"DEFEND_Axis_MKTaken_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"CAPPOINT_.*",
+		});
+
+		if ( Map.Allied_CP or Map.Forward_Hut_Allied )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"FLAG_radioparts",
+			});
+		}
+
+		if ( !Map.Grate_Door )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_Grate_Door",
+			});
+		}
+
+		if ( Map.Serpentine_Barricade )
+		{
+			if ( Map.Allied_CP )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					"DEFEND_Axis_CommPost_.*",
+				});
+			}
+			else
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+					".*_Axis_ForestHut_.*",
+				});
+			}
+
+			if ( Map.Grate_Door )
+			{
+				SetAvailableMapGoals( TEAM.ALLIES, false, {
+					".*_Allies_CappointPlace_.*",
+					".*_Allies_CappointArea_.*",
+				});
+			}
+		}
+
+		if ( tableCount(Map.count_ally) < 1 )
+		{
+			if ( Map.Serpentine_Barricade )
+			{
+				if ( Map.Forward_Hut_Allied )
+				{
+					Map.Roles.AXIS.DEFENDER.spawnpt = 1;
+
+					Map.SetSpawn();
+
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						"CHECKPOINT_forwardflag",
+					});
+				}
+				else
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						".*_Axis_TunnelEntrance_.*",
+					});
+
+					if ( !Map.Bridge )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, {
+							".*_Axis_Bridge_.*",
+						});
+					}
+					else
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, {
+							".*_Axis_ForwardSpawn_.*",
+						});
+					}
+				}
+			}
+		}
+	},
+
+	Radio_Modification_Kit_Secured = function( trigger )
+	{
+		Map.Modification_Kit_Secured = true;
+
+		Util.MapDebugPrint( "Radio_Modification_Kit_Secured" );
+
+		Util.SetMaxUsersInProgress( 8, "SWITCH_Antenna" );
+		ClearGoalRole( "DEFEND_Axis_Antenna_.*", { ROLE.DEFENDER, ROLE.DEFENDER1 });
+		ClearGoalRole( "ATTACK_Allies_Antenna_.*", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.SNIPER });
+		ClearGoalRole( "SWITCH_Antenna", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.ATTACKER, ROLE.ATTACKER1 });
+		SetGoalPriority( "SWITCH_Antenna", 0.91, TEAM.AXIS, 0 );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			".*_Axis_Cappoint.*",
+			".*MG42_Castle",
+			".*_Axis_CastleBackEntr_.*",
+			".*_Axis_CastleFront_.*",
+			".*_Axis_CastleBackGate_.*",
+			".*_Axis_TunnelEntrance_.*",
+			".*_Axis_Bridge_.*",
+			".*_Axis_ForwardSpawn_.*",
+			".*_Forward_Hut",
+			".*_Axis_SerpBarric_.*",
+			".*MG42_barricade_mg",
+			"PLANT_Command_Post",
+			"DEFEND_Axis_CommPost_.*",
+			"BUILD_Command_Post",
+			".*_Axis_ForestHut_.*",
+			".*_Axis_GrateDoor_.*",
+			"BUILD_Grate_Door",
+			".*MG42_Axis_Castle_MG",
+			"BUILD_Axis_Castle_MG",
+			"DEFEND_Axis_GrateDoorDest_.*",
+			"DEFEND_Axis_MKTaken_.*",
+		});
+
+		if ( Map.Serpentine_Barricade and Map.Forward_Hut_Allied )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"CHECKPOINT_forwardflag",
+			});
+		}
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ATTACK_Allies_CappointArea_.*",
+			"ATTACK_Allies_CappointPlace_.*",
+			"CAPPOINT_Transmitter",
+			".*_Allies_ForestHut_.*",
+			".*_Allies_GrateDoor_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			".*_Axis_Antenna_.*",
+			".*_Axis_AntennaArea_.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			".*_Allies_Antenna_.*",
+			".*_Allies_AntennaArea_.*",
+		});
+
+		if ( !Map.Antenna_Ready )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"SWITCH_Antenna",
+			});
+		}
+	},
+
+	Antenna_Rearranged = function( trigger )
+	{
+		Map.Antenna_Ready = false;
+
+		Util.MapDebugPrint( "Antenna_Rearranged" );
+
+		if ( Map.Modification_Kit_Secured or !Map.Serpentine_Barricade )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"SWITCH_Antenna",
+			});
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"SWITCH_Antenna",
+		});
+	},
+
+	Antenna_Rotated = function( trigger )
+	{
+		Map.Antenna_Ready = true;
+
+		Util.MapDebugPrint( "Antenna_Rotated" );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"SWITCH_Antenna",
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"SWITCH_Antenna",
+		});
+	},
+
+	Spawn_Fixed = function( trigger )
+	{
+		Map.Forward_Spawn_Fixed = true;
+
+		Util.MapDebugPrint( "Forward_Spawn_Fixed" );
+	},
+
+	Allies_Win = function( trigger )
+	{
+		Util.MapDebugPrint( "Allies_Win" );
+	},
+
+	Wooden_Barrier_Planks_Test = function()
+	{
+		start73 = Vector3(1417, -4913, -750);
+		end73 = Vector3(1442, -4913, -750);
+		start74 = Vector3(1417, -5061, -750);
+		end74 = Vector3(1442, -5061, -750);
+		start75 = Vector3(1418, -4922, -795);
+		end75 = Vector3(1425, -4922, -795);
+		start76 = Vector3(1400, -5060, -808);
+		end76 = Vector3(1410, -5060, -808);
+		start508 = Vector3(1418, -4922, -817);
+		end508 = Vector3(1424, -4922, -817);
+
+		tr73 = TraceLine( start73, end73, null, TRACE.SOLID, 0, false );
+		if ( tr73.fraction == 1 )
+		{
+			if ( Map.Ent_73 )
+			{
+				Map.Ent_73 = false;
+			}
+		}
+
+		tr74 = TraceLine( start74, end74, null, TRACE.SOLID, 0, false );
+		if ( tr74.fraction == 1 )
+		{
+			if ( Map.Ent_74 )
+			{
+				Map.Ent_74 = false;
+			}
+		}
+
+		tr75 = TraceLine( start75, end75, null, TRACE.SOLID, 0, false );
+		if ( tr75.fraction == 1 )
+		{
+			if ( Map.Ent_75 )
+			{
+				Map.Ent_75 = false;
+			}
+		}
+
+		tr76 = TraceLine( start76, end76, null, TRACE.SOLID, 0, false );
+		if ( tr76.fraction == 1 )
+		{
+			if ( Map.Ent_76 )
+			{
+				Map.Ent_76 = false;
+			}
+		}
+
+		tr508 = TraceLine( start508, end508, null, TRACE.SOLID, 0, false );
+		if ( tr508.fraction == 1 )
+		{
+			if ( Map.Ent_508 )
+			{
+				Map.Ent_508 = false;
+			}
+		}
+
+		if ( Map.Ent_73 or Map.Ent_74 or Map.Ent_75 or Map.Ent_76 or Map.Ent_508 )
+		{
+			Map.Wooden_Barrier_Planks = true;
+
+			//Util.MapDebugPrint( "Some_Planks_Still_Aren't_Destroyed" );
+		}
+		else
+		{
+			Map.Wooden_Barrier_Planks = false;
+
+			//Util.MapDebugPrint( "All_Planks_Are_Destroyed" );
+		}
+	},
+
+	Wooden_Barrier =
+	{
+		Name = "Wooden_Barrier",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			bot = Util.IsBot(ent);
+			if ( bot )
+			{
+				Map.Wooden_Barrier_Planks_Test();
+
+				if ( Map.Wooden_Barrier_Planks )
+				{
+					bot.OldReactionTime = bot.ReactionTime;
+					bot.ReactionTime = 0.05;
+					bot.TargetBreakableDist = 300;
+					bot.Change = true;
+
+					for ( q = 0; q < 64; q += 1 )
+					{
+						if ( EntityIsValid(q) and !GetEntFlags( q, ENTFLAG.CARRYINGGOAL ) )
+						{
+							bot.IgnoreTarget(q, 999);
+						}
+					}
+
+					foreach( id and weap1 in Map.weaps_1 )
+					{
+						bot.GetWeapon( weap1 ).PrimaryFire.SetTargetBias( CLASS.BREAKABLE, 1.2 );
+					}
+
+					foreach( id and weap2 in Map.weaps_2 )
+					{
+						bot.GetWeapon( weap2 ).PrimaryFire.SetTargetBias( CLASS.BREAKABLE, 0.2 );
+					}
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			bot = Util.IsBot(ent);
+
+			if ( bot )
+			{
+				if ( bot.Change == true )
+				{
+					bot.Change = false;
+					bot.ReactionTime = bot.OldReactionTime;
+					bot.TargetBreakableDist = 130;
+
+					for ( q = 0; q < 64; q += 1 )
+					{
+						if ( EntityIsValid(q) )
+						{
+							bot.IgnoreTarget(q, 0.1);
+						}
+					}
+
+					foreach( id and weap1 in Map.weaps_1 )
+					{
+						bot.GetWeapon( weap1 ).PrimaryFire.SetTargetBias( CLASS.BREAKABLE, 0 );
+					}
+
+					foreach( id and weap2 in Map.weaps_2 )
+					{
+						bot.GetWeapon( weap2 ).PrimaryFire.SetTargetBias( CLASS.BREAKABLE, 1.2 );
+					}
+				}
+
+			}
+		},
+	},
+
+	ForwardSpawnArea =
+	{
+		Name = "ForwardSpawnArea",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			bot = Util.IsBot(ent);
+			if ( bot )
+			{
+				if( GetEntTeam(ent) == TEAM.ALLIES )
+				{
+					bot.SetRoles(ROLE.ROAMER);
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			bot = Util.IsBot(ent);
+
+			if ( bot )
+			{
+				bot.ClearRoles(ROLE.ROAMER);
+			}
+		},
+	},
+
+	ForestHutArea =
+	{
+		Name = "ForestHutArea",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			bot = Util.IsBot(ent);
+			if ( bot )
+			{
+				if( GetEntTeam(ent) == TEAM.ALLIES )
+				{
+					bot.SetRoles(ROLE.TEAMCAPTAIN);
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			bot = Util.IsBot(ent);
+
+			if ( bot )
+			{
+				bot.ClearRoles(ROLE.TEAMCAPTAIN);
+			}
+		},
+	},
+
+	BehindSerpentine =
+	{
+		Name = "BehindSerpentine",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			bot = Util.IsBot(ent);
+			if ( bot )
+			{
+				if( GetEntTeam(ent) == TEAM.ALLIES )
+				{
+					bot.SetRoles(ROLE.SNIPER);
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			bot = Util.IsBot(ent);
+
+			if ( bot )
+			{
+				bot.ClearRoles(ROLE.SNIPER);
+			}
+		},
+	},
+
+	Inside =
+	{
+		Name = "Inside",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				if (Map.count_ally[ent])
+				{
+					Map.count_ally[ent] += 1;
+				}
+				else
+				{
+					Map.count_ally[ent] = 1;
+					Util.MapDebugPrint("Allies entered into inside trigger");
+				}
+
+				if ( Map.Cave_Ladder )
+				{
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						"PLANT_Cave_Ladder",
+					});
+				}
+
+				if ( Map.Modification_Kit_Secured )
+				{
+					Util.MapDebugPrint("Allies entered; Modification Kit Secured");
+
+					Map.SetSpawn();
+
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						".*MG42_Castle",
+						".*_Axis_CastleBackEntr_.*",
+						".*_Axis_CastleFront_.*",
+						".*_Axis_CastleBackGate_.*",
+						".*_Axis_TunnelEntrance_.*",
+						".*_Axis_Bridge_.*",
+						".*_Axis_ForwardSpawn_.*",
+						".*_Forward_Hut",
+						".*_Axis_SerpBarric_.*",
+						".*MG42_barricade_mg",
+						"PLANT_Command_Post",
+						"DEFEND_Axis_CommPost_.*",
+						"BUILD_Command_Post",
+						".*_Axis_ForestHut_.*",
+						".*_Axis_GrateDoor_.*",
+						"BUILD_Grate_Door",
+						".*MG42_Axis_Castle_MG",
+						"BUILD_Axis_Castle_MG",
+						"DEFEND_Axis_GrateDoorDest_.*",
+						"DEFEND_Axis_MKTaken_.*",
+					});
+
+					if ( Map.Serpentine_Barricade and Map.Forward_Hut_Allied )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, false, {
+							"CHECKPOINT_forwardflag",
+						});
+					}
+
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						".*_Axis_Antenna_.*",
+						".*_Axis_AntennaArea_.*",
+					});
+				}
+				else
+				{
+					SetAvailableMapGoals( TEAM.AXIS, true, {
+						".*_Axis_Antenna_.*",
+					});
+
+					if ( Map.Modification_Kit_Taken )
+					{
+						if ( GetEntFlags(ent,ENTFLAG.CARRYINGGOAL) )
+						{
+							Util.MapDebugPrint("Allies with radioparts entered; Modification Kit taken");
+
+							SetAvailableMapGoals( TEAM.AXIS, false, {
+								".*MG42_Castle",
+								".*_Axis_CastleBackEntr_.*",
+								".*_Axis_CastleFront_.*",
+								".*_Axis_CastleBackGate_.*",
+								".*_Axis_TunnelEntrance_.*",
+								".*_Axis_Bridge_.*",
+								".*_Axis_ForwardSpawn_.*",
+								".*_Forward_Hut",
+								".*_Axis_SerpBarric_.*",
+								".*MG42_barricade_mg",
+								"PLANT_Command_Post",
+								"DEFEND_Axis_CommPost_.*",
+								"BUILD_Command_Post",
+								".*_Axis_ForestHut_.*",
+								".*_Axis_GrateDoor_.*",
+								"BUILD_Grate_Door",
+								".*MG42_Axis_Castle_MG",
+								"BUILD_Axis_Castle_MG",
+								"DEFEND_Axis_GrateDoorDest_.*",
+								"DEFEND_Axis_MKTaken_.*",
+							});
+
+							if ( Map.Serpentine_Barricade and Map.Forward_Hut_Allied )
+							{
+								SetAvailableMapGoals( TEAM.AXIS, false, {
+									"CHECKPOINT_forwardflag",
+								});
+							}
+
+							SetAvailableMapGoals( TEAM.AXIS, true, {
+								".*_Axis_CappointPlace_.*",
+								".*_Axis_CappointArea_.*",
+							});
+						}
+						else
+						{
+							Util.MapDebugPrint("Allies without radioparts entered; Modification Kit taken");
+
+							SetAvailableMapGoals( TEAM.AXIS, true, {
+								".*_Axis_CappointArea_.*",
+							});
+						}
+					}
+					else
+					{
+						Util.MapDebugPrint("Allies without radioparts entered; Modification Kit doesn't taken");
+
+						//maybe nothing
+					}
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			if (Map.count_ally[ent])
+			{
+				if (Map.count_ally[ent] > 1)
+				{
+					Map.count_ally[ent] -= 1;
+					//Util.MapDebugPrint("Allies in trigger: " + tableCount(Map.count_ally));
+				}
+				else
+				{
+					Map.count_ally[ent] = null;
+					Util.MapDebugPrint("Inside trigger is empty");
+				}
+
+				if ( tableCount(Map.count_ally) < 1 )
+				{
+					Map.SetSpawn();
+
+					SetAvailableMapGoals( TEAM.AXIS, false, {
+						".*_Axis_Antenna_.*",
+						".*_Axis_AntennaArea_.*",
+						".*_Axis_CappointPlace_.*",
+					});
+
+					if ( Map.Allied_CP and !Map.Modification_Kit_Secured )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, {
+							"PLANT_Command_Post",
+						});
+					}
+
+					if ( !Map.Grate_Door and !Map.Modification_Kit_Secured )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, {
+							"BUILD_Grate_Door",
+						});
+					}
+
+					if ( Map.Allied_Castle_MG )
+					{
+						SetAvailableMapGoals( TEAM.AXIS, true, {
+							"PLANT_allied_Castle_MG",
+						});
+					}
+
+					if ( Map.Serpentine_Barricade )
+					{
+						if ( Map.Forward_Hut_Allied )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, {
+								"CHECKPOINT_forwardflag",
+							});
+						}
+						else
+						{
+							if ( Map.Cave_Ladder )
+							{
+								SetAvailableMapGoals( TEAM.AXIS, true, {
+									"PLANT_Cave_Ladder",
+								});
+							}
+						}
+
+						SetAvailableMapGoals( TEAM.AXIS, true, {
+							".*_Axis_TunnelEntrance_.*",
+						});
+
+						if ( !Map.Bridge )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, {
+								".*_Axis_Bridge_.*",
+							});
+						}
+						else
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, {
+								".*_Axis_ForwardSpawn_.*",
+								".*_Forward_Hut",
+								".*_Axis_SerpBarric_.*",
+								".*MG42_barricade_mg",
+							});
+						}
+
+						if ( !Map.Modification_Kit_Taken )
+						{
+							if ( Map.Allied_CP )
+							{
+								SetAvailableMapGoals( TEAM.AXIS, true, {
+									"DEFEND_Axis_CommPost_.*",
+								});
+							}
+							else
+							{
+								if ( !Map.Axis_CP )
+								{
+									SetAvailableMapGoals( TEAM.AXIS, true, {
+										"BUILD_Command_Post",
+									});
+								}
+
+								SetAvailableMapGoals( TEAM.AXIS, true, {
+									".*_Axis_ForestHut_.*",
+									"PLANTMINE_Axis_GrateDoor_.*",
+								});
+							}
+
+							if ( !Map.Grate_Door )
+							{
+								SetAvailableMapGoals( TEAM.AXIS, true, {
+									"DEFEND_Axis_GrateDoor_1.*",
+								});
+							}
+						}
+						else
+						{
+							if ( Map.Axis_Castle_MG )
+							{
+								SetAvailableMapGoals( TEAM.AXIS, true, {
+									".*MG42_Axis_Castle_MG",
+								});
+							}
+							else
+							{
+								SetAvailableMapGoals( TEAM.AXIS, true, {
+									"BUILD_Axis_Castle_MG",
+								});
+							}
+
+							if ( Map.Grate_Door )
+							{
+								SetAvailableMapGoals( TEAM.AXIS, true, {
+									"DEFEND_Axis_GrateDoor_.*",
+								});
+							}
+							else
+							{
+								SetAvailableMapGoals( TEAM.AXIS, true, {
+									"DEFEND_Axis_GrateDoor_.*",
+									"DEFEND_Axis_GrateDoorDest_.*",
+								});
+							}
+
+							SetAvailableMapGoals( TEAM.AXIS, true, {
+								"DEFEND_Axis_MKTaken_.*",
+							});
+						}
+					}
+					else
+					{
+						if ( Map.Axis_Castle_MG )
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, {
+								".*MG42_Axis_Castle_MG",
+							});
+						}
+						else
+						{
+							SetAvailableMapGoals( TEAM.AXIS, true, {
+								"BUILD_Axis_Castle_MG",
+							});
+						}
+
+						SetAvailableMapGoals( TEAM.AXIS, true, {
+							".*MG42_Castle",
+							".*_Axis_CastleBackEntr_.*",
+							".*_Axis_CastleFront_.*",
+							".*_Axis_CastleBackGate_.*",
+						});
+					}
+				}
+			}
+		},
+	},
+
+	SetSpawn = function()
+	{
+		foreach(bot in BotTable)
+		{
+			Map.SetSpawn1(bot);
+		}
+	},
+
+	SetSpawn1 = function(bot)
+	{
+		if (bot.GetTeam() == TEAM.ALLIES)
+		{
+			if ( Map.Allied_CP )
+			{
+				if ( bot.HasRole(ROLE.ATTACKER3) or bot.HasRole(ROLE.OFFENSECAPTAIN) )
+				{
+					bot.ChangeSpawnPoint(4);    //Forest hut spawn
+				}
+			}
+			else
+			{
+				if ( bot.HasRole(ROLE.ATTACKER3) or bot.HasRole(ROLE.OFFENSECAPTAIN) )
+				{
+					if ( !Map.Forward_Hut_Allied )
+					{
+						bot.ChangeSpawnPoint(3);    //Allied base
+					}
+					else
+					{
+						bot.ChangeSpawnPoint(1);    //Forward spawn
+					}
+				}
+			}
+			if ( !Map.Forward_Hut_Allied )
+			{
+				if ( bot.HasRole(ROLE.ATTACKER) or bot.HasRole(ROLE.ATTACKER1) or bot.HasRole(ROLE.ATTACKER2) )
+				{
+					bot.ChangeSpawnPoint(3);    //Allied base
+				}
+			}
+			else
+			{
+				if ( bot.HasRole(ROLE.ATTACKER) or bot.HasRole(ROLE.ATTACKER1) or bot.HasRole(ROLE.ATTACKER2) )
+				{
+					bot.ChangeSpawnPoint(1);    //Forward spawn
+				}
+			}
+
+		}
+		else
+		{
+			if ( tableCount(Map.count_ally) < 1 )
+			{
+				if ( !Map.Forward_Hut_Allied )
+				{
+					if ( Map.Modification_Kit_Taken )
+					{
+						if ( bot.HasRole(ROLE.DEFENDER) )
+						{
+							bot.ChangeSpawnPoint(2);    //Castle
+						}
+						else
+						{
+							bot.ChangeSpawnPoint(1);    //Forward spawn
+						}
+					}
+					else
+					{
+						bot.ChangeSpawnPoint(1);    //Forward spawn
+					}
+				}
+				else
+				{
+					bot.ChangeSpawnPoint(2);    //Castle
+				}
+			}
+			else
+			{
+				bot.ChangeSpawnPoint(2);    //Castle
+			}
+		}
+	},
+
+	Ignore_Target =
+	{
+		Name = "Ignore_Target",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			b = Util.IsBot(ent);
+			if ( b )
+			{
+				if ( b.DistanceTo( Vec3( 893.813, -999.994, -127.875 )) < 60 )
+				{
+					Util.MapDebugPrint("I go outside");
+				}
+				else
+				{
+					Util.MapDebugPrint("I go inside");
+
+					for ( q = 0; q < 64; q += 1 )
+					{
+						if ( EntityIsValid(q) and !GetEntFlags(q,ENTFLAG.CARRYINGGOAL) )
+						{
+							b.IgnoreTarget(q, 999);
+						}
+					}
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			b = Util.IsBot(ent);
+			if ( b )
+			{
+				for ( q = 0; q < 64; q += 1 )
+				{
+					if ( EntityIsValid(q) )
+					{
+						b.IgnoreTarget(q, 0.1);
+					}
+				}
+			}
+		},
+	},
+
+	Ignore_Breakable =
+	{
+		Name = "Ignore_Breakable",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			b = Util.IsBot(ent);
+			if ( b )
+			{
+				b.TargetBreakableDist = 0;
+			}
+		},
+		OnExit = function(ent)
+		{
+			b = Util.IsBot(ent);
+			if ( b )
+			{
+				b.TargetBreakableDist = 130;
+			}
+		},
+	},
+};
+
+global OnMapLoad = function()
+{
+	if ( Map.Debug )
+	{
+		Util.DebugColorString = "^3";
+	}
+
+	OnTrigger( "^1Axis team has built the Axis Castle MG!", Map.Axis_Castle_MG_Built );
+	OnTrigger( "Planted at Axis Castle MG.", Map.Axis_Castle_MG_Planted );
+	OnTrigger( "Defused at Axis Castle MG.", Map.Axis_Castle_MG_Defused );
+	OnTrigger( "^1Allied team has destroyed the Axis Castle MG!", Map.Axis_Castle_MG_Destroyed );
+
+	OnTrigger( "^1Allied team has built the Bridge!", Map.Bridge_Built );
+	OnTrigger( "Planted at the Bridge.", Map.Bridge_Planted );
+	OnTrigger( "Defused at the Bridge.", Map.Bridge_Defused );
+	OnTrigger( "^1Axis team has destroyed the Bridge!", Map.Bridge_Destroyed );
+
+	OnTrigger( "^1Allied team has built the Bridge MG!", Map.Bridge_MG_Built );
+	OnTrigger( "Planted at the Bridge MG.", Map.Bridge_MG_Planted );
+	OnTrigger( "Defused at the Bridge MG.", Map.Bridge_MG_Defused );
+	OnTrigger( "^1Axis team has destroyed the Bridge MG!", Map.Bridge_MG_Destroyed );
+
+	OnTrigger( "^1Axis Command Post constructed. Charge speed increased!", Map.Axis_CP_Built );
+	OnTrigger( "^1Allied team has damaged the Axis Command Post!", Map.Axis_CP_Destroyed );
+
+	OnTrigger( "Planted at the Command Post.", Map.CP_Planted );
+	OnTrigger( "Defused at the Command Post.", Map.CP_Defused );
+
+	OnTrigger( "^1Allied Command Post constructed. Charge speed increased! Forest Spawn", Map.Allied_CP_Built );
+	OnTrigger( "^1Axis team has damaged the Allied Command Post!", Map.Allied_CP_Destroyed );
+
+	OnTrigger( "^1Axis team has rebuilt the Grate Door!", Map.Grate_Door_Built );
+	OnTrigger( "Planted at the Grate Door.", Map.Grate_Door_Planted );
+	OnTrigger( "Defused at the Grate Door.", Map.Grate_Door_Defused );
+	OnTrigger( "^1Allied team has breached the Grate Door!", Map.Grate_Door_Destroyed );
+
+	OnTrigger( "^1Allied team has built the Castle MG!", Map.Allied_Castle_MG_Built );
+	OnTrigger( "Planted at the allied Castle MG.", Map.Allied_Castle_MG_Planted );
+	OnTrigger( "Defused at the allied Castle MG.", Map.Allied_Castle_MG_Defused );
+	OnTrigger( "^1Axis team has destroyed the Castle MG!", Map.Allied_Castle_MG_Destroyed );
+
+	OnTrigger( "backdoor_goto", Map.Backgate_Opening );
+	OnTrigger( "Planted at the Backgate.", Map.Backgate_Planted );
+	OnTrigger( "Defused at the Backgate.", Map.Backgate_Defused );
+	OnTrigger( "^1Backgate destroyed!", Map.Backgate_Destroyed );
+
+	OnTrigger( "Planted at the Serpentine Barricade.", Map.Serpentine_Barricade_Planted );
+	OnTrigger( "Defused at the Serpentine Barricade.", Map.Serpentine_Barricade_Defused );
+	OnTrigger( "^1Allies have breached the Serpentine Barricade and secured the Forward", Map.Serpentine_Barricade_Destroyed );
+
+	OnTrigger( "allies_modification_kit_taken", Map.Radio_Modification_Kit_Taken );
+	OnTrigger( "Flag dropped radioparts!", Map.Radio_Modification_Kit_Dropped );
+	OnTrigger( "Flag returned radioparts!", Map.Radio_Modification_Kit_Returned );
+	OnTrigger( "^1Allies have manipulated the receiving frequency!", Map.Radio_Modification_Kit_Secured );
+
+	OnTrigger( "^1Axis reclaim the Forward Hut!", Map.Forward_Hut_Axis_Captured );
+	OnTrigger( "^1Allies capture the Forward Hut!", Map.Forward_Hut_Allies_Captured );
+
+	OnTrigger( "^1Axis have rearranged the Antenna!", Map.Antenna_Rearranged );
+	OnTrigger( "^1Allies have changed the Antenna orientation!", Map.Antenna_Rotated );
+
+	OnTrigger( "^1Allied Team Have Built The Cave Ladder!", Map.Cave_Ladder_Built );
+	OnTrigger( "Planted at The Cave Ladder.", Map.Cave_Ladder_Planted );
+	OnTrigger( "Defused at The Cave Ladder.", Map.Cave_Ladder_Defused );
+	OnTrigger( "^1Axis Team Have Destroyed The Cave Ladder!", Map.Cave_Ladder_Destroyed );
+
+	OnTrigger( "Planted at The Bunker Wall.", Map.Bunker_Wall_Planted );
+	OnTrigger( "Defused at The Bunker Wall.", Map.Bunker_Wall_Defused );
+	OnTrigger( "^1The Allies have breached the Bunker Wall!", Map.Bunker_Wall_Destroyed );
+
+	OnTrigger( "Planted at The Tunnel Wall.", Map.Tunnel_Wall_Planted );
+	OnTrigger( "Defused at The Tunnel Wall.", Map.Tunnel_Wall_Defused );
+	OnTrigger( "^1The Allies have breached the Tunnel Wall!", Map.Tunnel_Wall_Destroyed );
+
+	OnTrigger( "^1Allies are sending their pirate signal!", Map.Allies_Win );
+
+	OnTrigger( "Forward Spawn Fixed!", Map.Spawn_Fixed );
+
+	OnTriggerRegion(AABB(1221.368,-5076.570,-884.086,1682.282,-4916.660,-751.906), Map.Wooden_Barrier );
+	OnTriggerRegion(AABB(-2256.616,-5930.828,-966.875,1265.415,-3153.126,-265.535), Map.ForwardSpawnArea );
+	OnTriggerRegion(AABB(1999.125,-5979.406,-928.957,5981.241,-591.125,-186.436), Map.ForestHutArea );
+	OnTriggerRegion(AABB(-2608.875,-3048.776,-422.874,1968.875,1533.290,465.788), Map.BehindSerpentine );
+	OnTriggerRegion(AABB(-1380.875,-992.874,-150.875,1312.875,1241.171,522.146), Map.Inside );
+	OnTriggerRegion(AABB(861.125,-1040.125,-150.875,928.875,-1035.125,-55.875), Map.Ignore_Target );
+	OnTriggerRegion(AABB(357.488,500.539,25.125,674.295,665.118,136.188), Map.Ignore_Breakable );
+
+	RegionTrigger.Create(AABB(2207.549,-6007.247,-918.873,2340.144,-5920.412,-842.868), "DisableCombatMovement", "Cave_Ladder_plant");
+	RegionTrigger.Create(AABB(-2211.333,-938.647,129.126,-1527.378,-782.128,211.128), "DisableCombatMovement", "Wall_1");
+	RegionTrigger.Create(AABB(-2085.219,-872.872,129.125,-1733.984,-787.729,211.125), "DisableCombatMovement", "Callartillery_Wall_3");
+	RegionTrigger.Create(AABB(-1944.170,426.905,-62.875,-1851.560,575.473,27.125), "DisableCombatMovement", "Callartillery_22");
+	RegionTrigger.Create(AABB(-753.342,-1368.143,97.125,-26.274,-1216.505,227.125), "DisableBotPush", "Callartillery_Wall_1");
+	RegionTrigger.Create(AABB(760.495,-1024.875,241.125,980.875,-938.824,315.125), "DisableBotPush", "Callartillery_Wall_2");
+	RegionTrigger.Create(AABB(107.222,261.408,25.125,336.738,378.401,239.125), "DisableBotPush", "Window_cappoint_place");
+
+	Util.DisableGoal( ".*", true );
+
+	Util.DisableGoal( "ROUTE_Bridge_.*" );
+	Util.DisableGoal( "ROUTE_Cave_.*" );
+	Util.DisableGoal( "ROUTE_Passage.*" );
+
+	Util.EnableGoal( ".*CAB_.*" );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		".*MG42_Damaged_Building",
+		"BUILD_Bridge_MG",
+		"BUILD_Bridge",
+		"BUILD_Cave_Ladder",
+		".*_Allies_Bridge_.*",
+	});
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"BUILD_Command_Post",
+		".*_Axis_Bridge_.*",
+		".*_Axis_TunnelEntrance_.*",
+		".*_Axis_ForestHut_.*",
+		"PLANTMINE_Axis_GrateDoor_.*",
+	});
+
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+	Util.SetMaxUsers( 1, "CAMP_.*" );
+	Util.SetMaxUsers( 1, "ATTACK_Backgate_Opening_.*" );
+	Util.SetMaxUsers( 1, ".*_Axis_GrateDoor_.*" );
+	Util.SetMaxUsers( 1, "PLANT_.*_Castle_MG" );
+	Util.SetMaxUsers( 1, "BUILD_.*_Castle_MG" );
+	Util.SetMaxUsers( 1, "PLANT_Bunker_Wall" );
+	Util.SetMaxUsers( 1, "PLANT_Tunnel_Wall" );
+	Util.SetMaxUsers( 2, "BUILD_Bridge_MG" );
+	Util.SetMaxUsers( 2, "PLANT_Command_Post" );
+	Util.SetMaxUsers( 2, "BUILD_Command_Post" );
+	Util.SetMaxUsers( 2, "PLANT_Backgate" );
+	Util.SetMaxUsers( 2, "PLANT_Grate_Door" );
+	Util.SetMaxUsers( 1, "PLANT_Cave_Ladder" );
+	Util.SetMaxUsersInProgress( 4, "SWITCH_Antenna" );
+	Util.SetMaxUsersInUse( 1, "BUILD_Grate_Door" );
+
+	SetGoalRole( "BUILD_Command_Post", { ROLE.DEFENDER3, ROLE.DEFENSECAPTAIN, ROLE.TEAMCAPTAIN });
+	SetGoalRole( "PLANT_Command_Post", { ROLE.DEFENDER3, ROLE.DEFENSECAPTAIN, ROLE.TEAMCAPTAIN, ROLE.INFILTRATOR });
+	SetGoalRole( "SWITCH_Antenna", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.ATTACKER, ROLE.ATTACKER1 });
+
+	SetGoalRole( "MOUNTMG42_Forward_Hut", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2, ROLE.ROAMER });
+	SetGoalRole( "REPAIRMG42_Forward_Hut", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2, ROLE.ROAMER });
+	SetGoalRole( "CHECKPOINT_forwardflag", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2, ROLE.ROAMER });
+
+	SetGoalRole( ".*_Axis_TunnelEntrance_.*", ROLE.DEFENDER );
+	SetGoalRole( "DEFEND_Axis_ForwardSpawn_.*", ROLE.DEFENDER1 );
+	SetGoalRole( "DEFEND_Axis_SerpBarric_.*", ROLE.DEFENDER2 );
+	SetGoalRole( "MOUNTMG42_barricade_mg", ROLE.DEFENDER2 );
+	SetGoalRole( "CALLARTILLERY_Axis_Bridge_.*", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2 });
+	SetGoalRole( "MOBILEMG42_Axis_ForwardSpawn_.*", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2 });
+	SetGoalRole( "DEFEND_Axis_CastleBackEntr_.*", { ROLE.DEFENDER, ROLE.DEFENDER1 });
+	SetGoalRole( ".*MG42_Castle", { ROLE.DEFENDER, ROLE.DEFENDER1 });
+	SetGoalRole( "DEFEND_Axis_Antenna_.*", { ROLE.DEFENDER, ROLE.DEFENDER1 });
+	SetGoalRole( "DEFEND_Axis_Bridge_.*", { ROLE.DEFENDER1, ROLE.DEFENDER2 });
+	SetGoalRole( "PLANTMINE_Axis_ForwardSpawn_.*", { ROLE.DEFENDER1, ROLE.DEFENDER2 });
+	SetGoalRole( "PLANTMINE_Axis_SerpBarric_.*", { ROLE.DEFENDER1, ROLE.DEFENDER2 });
+	SetGoalRole( "REPAIRMG42_barricade_mg", { ROLE.DEFENDER1, ROLE.DEFENDER2 });
+	SetGoalRole( "DEFUSE_Serpentine_Barricade_.*", { ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2 }, true );
+	SetGoalRole( "DEFUSE_Bunker_Wall_.*", { ROLE.DEFENDER1, ROLE.DEFENDER2 }, true );
+	SetGoalRole( "DEFEND_Axis_CastleFront_.*", { ROLE.DEFENDER2, ROLE.DEFENDER3 });
+	SetGoalRole( ".*_Axis_ForestHut_.*", { ROLE.DEFENDER3, ROLE.DEFENSECAPTAIN });
+	SetGoalRole( ".*_Axis_GrateDoor_.*", { ROLE.DEFENDER3, ROLE.DEFENSECAPTAIN });
+	SetGoalRole( "DEFEND_Axis_GrateDoorDest_.*", { ROLE.DEFENDER3, ROLE.DEFENSECAPTAIN });
+	SetGoalRole( "DEFEND_Axis_CommPost_.*", { ROLE.DEFENDER3, ROLE.DEFENSECAPTAIN });
+	SetGoalRole( "DEFEND_Axis_CappointPlace_.*", { ROLE.DEFENDER2, ROLE.DEFENDER3, ROLE.DEFENSECAPTAIN });
+	SetGoalRole( "DEFEND_Axis_CastleBackGate_.*", ROLE.DEFENSECAPTAIN );
+
+	SetGoalRole( "DEFUSE_Grate_Door_.*", { ROLE.DEFENDER3, ROLE.DEFENSECAPTAIN }, true );
+	SetGoalRole( "BUILD_Axis_Castle_MG", { ROLE.DEFENDER, ROLE.DEFENSECAPTAIN });
+	SetGoalRole( ".*MG42_Axis_Castle_MG", { ROLE.DEFENDER, ROLE.DEFENSECAPTAIN });
+
+	SetGoalRole( ".*_Allies_ForwardSpawn_.*", ROLE.ROAMER);
+	SetGoalRole( "PLANT_Serpentine_Barricade", ROLE.ROAMER);
+	SetGoalRole( ".*_Allies_ForestHut_.*", ROLE.TEAMCAPTAIN);
+	SetGoalRole( "FLAG_radioparts", ROLE.TEAMCAPTAIN);
+	SetGoalRole( "PLANT_Grate_Door", ROLE.TEAMCAPTAIN);
+	SetGoalRole( ".*_Allies_GrateDoor_.*", ROLE.TEAMCAPTAIN);
+
+	SetGoalRole( "ATTACK_Allies_Antenna_.*", ROLE.SNIPER );
+	SetGoalRole( "ATTACK_Allies_CappointPlace_.*", ROLE.SNIPER );
+	SetGoalRole( "ATTACK_Allies_CappointArea_.*", ROLE.SNIPER );
+	SetGoalRole( "PLANT_Backgate", ROLE.SNIPER );
+
+	SetGoalRole( "BUILD_Bridge_MG", ROLE.ATTACKER );
+	SetGoalRole( "BUILD_Bridge", { ROLE.ATTACKER1, ROLE.ATTACKER2 });
+	SetGoalRole( "BUILD_Cave_Ladder", { ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN });
+
+	/*
+	ClearGoalRole( ".*", { ROLE.ATTACKER, ROLE.ATTACKER1, ROLE.ATTACKER2, ROLE.ATTACKER3, ROLE.OFFENSECAPTAIN, ROLE.ROAMER, ROLE.TEAMCAPTAIN,
+							ROLE.DEFENDER, ROLE.DEFENDER1, ROLE.DEFENDER2, ROLE.DEFENDER3, ROLE.DEFENSECAPTAIN });
+	*/
+
+	SetGoalPriority( "BUILD_.*", 0.8, 0, 0 );
+	SetGoalPriority( "REPAIRMG42_.*", 0.69, 0, 0 );
+	SetGoalPriority( "MOUNTMG42_.*", 0.69, 0, 0 );
+	SetGoalPriority( "MOUNTMG42_.*", 0.58, 0, CLASS.SOLDIER );
+	SetGoalPriority( "MOUNTMG42_.*", 0.68, 0, CLASS.ENGINEER );
+
+	SetGoalPriority( "DEFEND_Axis_GrateDoor_.*", 0.51, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_GrateDoorDest_.*", 0.52, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_AntennaArea_.*", 0.6, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_CappointArea_.*", 0.61, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_CappointPlace_.*", 0.65, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_CappointPlace_00", 0.81, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_CappointPlace_01", 0.81, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_CappointPlace_02", 0.81, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_CappointPlace_00", 0.68, TEAM.AXIS, CLASS.SOLDIER  );
+	SetGoalPriority( "DEFEND_Axis_CappointPlace_01", 0.68, TEAM.AXIS, CLASS.SOLDIER  );
+	SetGoalPriority( "DEFEND_Axis_CappointPlace_02", 0.68, TEAM.AXIS, CLASS.SOLDIER  );
+	SetGoalPriority( "CALLARTILLERY_Axis_.*", 0.69, TEAM.AXIS, 0 );
+	SetGoalPriority( "AIRSTRIKE_.*", 0.69, TEAM.AXIS, 0 );
+	SetGoalPriority( "PLANTMINE_.*", 0.69, TEAM.AXIS, 0 );
+	SetGoalPriority( "MOBILEMG42_Axis_.*", 0.69, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFEND_Axis_Antenna_.*", 0.7, TEAM.AXIS, 0 );
+	SetGoalPriority( "MOUNTMG42_barricade_mg", 0.71, TEAM.AXIS, 0 );
+	SetGoalPriority( "MOUNTMG42_barricade_mg", 0.68, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Cave_Ladder", 0.73, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "ARTILLERY_S_Axis_.*", 0.79, TEAM.AXIS, 0 );
+	SetGoalPriority( "AIRSTRIKE_Axis_Bridge_30", 0.81, TEAM.AXIS, 0 );
+	SetGoalPriority( "ATTACK_Backgate_Opening_.*", 0.81, TEAM.AXIS, 0 );
+	SetGoalPriority( "DEFUSE_Grate_Door_.*", 0.89, TEAM.AXIS, 0, true );
+	SetGoalPriority( "SWITCH_Antenna", 0.81, TEAM.AXIS, 0 );
+
+	SetGoalPriority( ".*_Allies_GrateDoor_.*", 0.51, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_CappointArea_.*", 0.55, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_CappointPlace_.*", 0.58, TEAM.ALLIES, 0 );
+	SetGoalPriority( "ATTACK_Allies_Antenna_.*", 0.6, TEAM.ALLIES, 0 );
+	SetGoalPriority( "SWITCH_Antenna", 0.62, TEAM.ALLIES, 0 );
+	SetGoalPriority( "PLANT_.*", 0.71, TEAM.ALLIES, 0 );
+	SetGoalPriority( "PLANT_Grate_Door", 0.70, TEAM.ALLIES, 0 );
+	SetGoalPriority( "FLAG_radioparts", 0.70, TEAM.ALLIES, 0 );
+	SetGoalPriority( "CAPPOINT_FakePlace_.*", 0.79, TEAM.ALLIES, 0 );
+	SetGoalPriority( "CAMP_Backgate_Opening", 0.81, TEAM.ALLIES, 0 );
+
+	Util.LimitToClass( "ATTACK_Backgate_Opening_00", TEAM.AXIS, CLASS.COVERTOPS, CLASS.MEDIC );
+	Util.LimitToClass( "ATTACK_Backgate_Opening_01", TEAM.AXIS, CLASS.COVERTOPS, CLASS.MEDIC );
+	Util.LimitToClass( "DEFEND_Axis_CappointPlace_00", TEAM.AXIS, CLASS.COVERTOPS, CLASS.MEDIC, CLASS.ENGINEER, CLASS.FIELDOPS );
+	Util.LimitToClass( "DEFEND_Axis_CappointPlace_01", TEAM.AXIS, CLASS.COVERTOPS, CLASS.MEDIC, CLASS.ENGINEER, CLASS.FIELDOPS );
+	Util.LimitToClass( "DEFEND_Axis_CappointPlace_02", TEAM.AXIS, CLASS.COVERTOPS, CLASS.MEDIC, CLASS.ENGINEER, CLASS.FIELDOPS );
+	Util.LimitToClass( "DEFEND_Axis_Antenna_.*", TEAM.AXIS, CLASS.COVERTOPS, CLASS.MEDIC, CLASS.ENGINEER, CLASS.FIELDOPS );
+	Util.LimitToClass( "PLANT_allied_Castle_MG", TEAM.AXIS, CLASS.COVERTOPS );
+
+	Util.LimitToClass( "CAMP_Backgate_Opening", TEAM.ALLIES, CLASS.SOLDIER, CLASS.FIELDOPS );
+	Util.LimitToClass( "PLANT_Axis_Castle_MG", TEAM.ALLIES, CLASS.COVERTOPS );
+
+	Util.AddUseWp( "PLANT_Bridge_MG", "Bridge_MG_2" );
+	Util.AddUseWp( "BUILD_Bridge_MG", "Bridge_MG_3" );
+
+	Util.AddUseWp( "BUILD_Bridge", "Bridge_1" );
+
+	Util.AddUseWp( "PLANT_Serpentine_Barricade", "Serpentine_Barricade_1" );
+	Util.AddUseWp( "PLANT_Serpentine_Barricade", "Serpentine_Barricade_2" );
+
+	Util.AddUseWp( "MOUNTMG42_barricade_mg", "Serpentine_Barricade_4" );
+	Util.AddUseWp( "REPAIRMG42_barricade_mg", "Serpentine_Barricade_4" );
+
+	Util.AddUseWp( "CHECKPOINT_forwardflag", "Flag_1" );
+	Util.AddUseWp( "CHECKPOINT_forwardflag", "Flag_2" );
+	Util.AddUseWp( "CHECKPOINT_forwardflag", "Flag_3" );
+	Util.AddUseWp( "CHECKPOINT_forwardflag", "Flag_4" );
+
+	Util.AddUseWp( "FLAG_radioparts", "Radio_Modification_Kit_1" );
+	Util.AddUseWp( "FLAG_radioparts", "Radio_Modification_Kit_2" );
+
+	Util.AddUseWp( "PLANT_Grate_Door", "Grate_Door_4" );
+	Util.AddUseWp( "PLANT_Grate_Door", "Grate_Door_5" );
+
+	Util.AddUseWp( "PLANT_Backgate", "Backgate_1" );
+	Util.AddUseWp( "PLANT_Backgate", "Backgate_2" );
+
+	Util.AddUseWp( "BUILD_Axis_Castle_MG", "Axis_Castle_MG_2" );
+	Util.AddUseWp( "PLANT_Axis_Castle_MG", "Axis_Castle_MG_3" );
+	Util.AddUseWp( "PLANT_Axis_Castle_MG", "Axis_Castle_MG_4" );
+
+	Util.AddUseWp( "PLANT_allied_Castle_MG", "Allied_Castle_MG_2" );
+	Util.AddUseWp( "MOUNTMG42_allied_Castle_MG", "Allied_Castle_MG_2" );
+	Util.AddUseWp( "REPAIRMG42_allied_Castle_MG", "Allied_Castle_MG_2" );
+	Util.AddUseWp( "BUILD_allied_Castle_MG", "Allied_Castle_MG_3" );
+
+	Util.AddUseWp( "BUILD_Cave_Ladder", "Cave_Ladder_3" );
+	Util.AddUseWp( "PLANT_Cave_Ladder", "Cave_Ladder_4" );
+
+	Util.SetGoalPosition( -476.333, -6039.416, -927.875, "PLANT_Bridge" );
+	Util.SetGoalPosition( 1818.125, -785.687, -335.875, "BUILD_Grate_Door" );
+
+	for ( q = 2; q < 16; q += 1 )
+	{
+		Wp.SetWaypointFlag( "Bridge_" + q, "closed", true );
+	}
+
+	Wp.SetWaypointFlag( "Bridge_MG_1", "closed", true );
+	Wp.SetWaypointFlag( "Cave_Ladder_1", "closed", true );
+	Wp.SetWaypointFlag( "Cave_Ladder_2", "closed", true );
+	Wp.SetWaypointFlag( "Serpentine_Door_1", "door", true );
+	Wp.SetWaypointFlag( "Serpentine_Door_2", "door", true );
+	Wp.SetWaypointFlag( "Serpentine_Door_2", "axis", true );
+	Wp.SetWaypointFlag( "Serpentine_Door_2", "infiltrator", true );
+	Wp.SetWaypointFlag( "Serpentine_Barricade_3", "closed", true );
+	Wp.SetWaypointFlag( "Grate_Door_1", "closed", false );
+	Wp.SetWaypointFlag( "Grate_Door_3", "door", true );
+	Wp.SetWaypointFlag( "Grate_Door_3", "sneak", true );
+	Wp.SetWaypointFlag( "Grate_Door_3", "axis", true );
+	Wp.SetWaypointFlag( "Grate_Door_3", "infiltrator", true );
+	Wp.SetWaypointFlag( "Grate_Door_4", "door", true );
+	Wp.SetWaypointFlag( "Grate_Door_4", "sneak", true );
+	Wp.SetWaypointFlag( "Axis_Castle_MG_1", "closed", true );
+	Wp.SetWaypointFlag( "Allied_Castle_MG_1", "closed", false );
+	Wp.SetWaypointFlag( "Allied_Castle_MG_4", "closed", true );
+
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.MP40, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.THOMPSON, true );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.PANZERFAUST, false );
+	WeaponTable.SetWeaponAvailability( CLASS.SOLDIER, WEAPON.FLAMETHROWER, false );
+
+	Util.SetGoalRange( ".*CAB_.*", 3700);
+
+	if(GetGameState() == "Playing")
+	{
+		sleep(5);
+		EchoToScreen(0,"^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12 ^3");
+		Util.BotChat( 0, "say", "^3Omni-bot map script ^3by ^1Q^2i^3k^4i ^3and ^1n^2a^4t^8i^3v^5e12^7" , 1 );
+	}
+	sleep(2);
+
+	SetGoalPriority( "AIRSTRIKE_Axis_Bridge_30", 0.79, TEAM.AXIS, 0 );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 130;
+
+	Map.SetSpawn1(bot);
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+	};
+
+	MapRoutes["ATTACK_Allies_ForestHut_.*"] =
+	{
+		ROUTE_AlliedBase_Spawn =
+		{
+			ROUTE_Bridge_00 =
+			{
+				ROUTE_Bridge_01 =
+				{
+					ROUTE_Forest_00 = {},
+				},
+			},
+			ROUTE_Cave_00 =
+			{
+				ROUTE_Cave_01 =
+				{
+					ROUTE_Forest_00 = {},
+				},
+			},
+		},
+	};
+
+	MapRoutes["SWITCH_Antenna"] =
+	{
+		ROUTE_ForwardSpawnHut =
+		{
+			ROUTE_SerpBarricade =
+			{
+				ROUTE_Ruins =
+				{
+					Weight=2,
+					ROUTE_Statue01 =
+					{
+						ROUTE_Statue02 =
+						{
+							ROUTE_InsideCastle01 =
+							{
+								ROUTE_Stairs01 =
+								{
+									ROUTE_Stairs02 = {},
+								},
+								ROUTE_Spawn01 =
+								{
+									ROUTE_Spawn02 = {},
+								},
+								ROUTE_Tower01 =
+								{
+									ROUTE_Tower02 = {},
+								},
+								ROUTE_Underground01 =
+								{
+									ROUTE_Underground02 = {},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Ice01 =
+				{
+					ROUTE_Ice02 =
+					{
+						ROUTE_BackGateFree =
+						{
+							ROUTE_InsideCastle02 =
+							{
+								ROUTE_Stairs01 =
+								{
+									ROUTE_Stairs02 = {},
+								},
+								ROUTE_Spawn01 =
+								{
+									ROUTE_Spawn02 = {},
+								},
+								ROUTE_Tower01 =
+								{
+									ROUTE_Tower02 = {},
+								},
+								ROUTE_Underground01 =
+								{
+									ROUTE_Underground02 = {},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Passage01 =
+				{
+					ROUTE_Passage02 =
+					{
+						ROUTE_BackGateFree =
+						{
+							ROUTE_InsideCastle02 =
+							{
+								ROUTE_Stairs01 =
+								{
+									ROUTE_Stairs02 = {},
+								},
+								ROUTE_Spawn01 =
+								{
+									ROUTE_Spawn02 = {},
+								},
+								ROUTE_Tower01 =
+								{
+									ROUTE_Tower02 = {},
+								},
+								ROUTE_Underground01 =
+								{
+									ROUTE_Underground02 = {},
+								},
+							},
+						},
+						ROUTE_AroundCastleWall01 =
+						{
+							ROUTE_AroundCastleWall02 =
+							{
+								ROUTE_Statue01 =
+								{
+									ROUTE_Statue02 =
+									{
+										ROUTE_InsideCastle01 =
+										{
+											ROUTE_Stairs01 =
+											{
+												ROUTE_Stairs02 = {},
+											},
+											ROUTE_Spawn01 =
+											{
+												ROUTE_Spawn02 = {},
+											},
+											ROUTE_Tower01 =
+											{
+												ROUTE_Tower02 = {},
+											},
+											ROUTE_Underground01 =
+											{
+												ROUTE_Underground02 = {},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		ROUTE_ForestSpawnHut =
+		{
+			ROUTE_GrateDoorFree =
+			{
+				ROUTE_BackGateFree =
+				{
+					ROUTE_InsideCastle02 =
+					{
+						ROUTE_Stairs01 =
+						{
+							ROUTE_Stairs02 = {},
+						},
+						ROUTE_Spawn01 =
+						{
+							ROUTE_Spawn02 = {},
+						},
+						ROUTE_Tower01 =
+						{
+							ROUTE_Tower02 = {},
+						},
+						ROUTE_Underground01 =
+						{
+							ROUTE_Underground02 = {},
+						},
+					},
+				},
+				ROUTE_AroundCastleWall01 =
+				{
+					ROUTE_AroundCastleWall02 =
+					{
+						ROUTE_Statue01 =
+						{
+							ROUTE_Statue02 =
+							{
+								ROUTE_InsideCastle01 =
+								{
+									ROUTE_Stairs01 =
+									{
+										ROUTE_Stairs02 = {},
+									},
+									ROUTE_Spawn01 =
+									{
+										ROUTE_Spawn02 = {},
+									},
+									ROUTE_Tower01 =
+									{
+										ROUTE_Tower02 = {},
+									},
+									ROUTE_Underground01 =
+									{
+										ROUTE_Underground02 = {},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Passage02 =
+				{
+					ROUTE_Passage01 =
+					{
+						ROUTE_Ruins =
+						{
+							ROUTE_Statue01 =
+							{
+								ROUTE_Statue02 =
+								{
+									ROUTE_InsideCastle01 =
+									{
+										ROUTE_Stairs01 =
+										{
+											ROUTE_Stairs02 = {},
+										},
+										ROUTE_Spawn01 =
+										{
+											ROUTE_Spawn02 = {},
+										},
+										ROUTE_Tower01 =
+										{
+											ROUTE_Tower02 = {},
+										},
+										ROUTE_Underground01 =
+										{
+											ROUTE_Underground02 = {},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			ROUTE_SerpBarricade =
+			{
+				ROUTE_Ruins =
+				{
+					Weight=2,
+					ROUTE_Statue01 =
+					{
+						ROUTE_Statue02 =
+						{
+							ROUTE_InsideCastle01 =
+							{
+								ROUTE_Stairs01 =
+								{
+									ROUTE_Stairs02 = {},
+								},
+								ROUTE_Spawn01 =
+								{
+									ROUTE_Spawn02 = {},
+								},
+								ROUTE_Tower01 =
+								{
+									ROUTE_Tower02 = {},
+								},
+								ROUTE_Underground01 =
+								{
+									ROUTE_Underground02 = {},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Ice01 =
+				{
+					ROUTE_Ice02 =
+					{
+						ROUTE_BackGateFree =
+						{
+							ROUTE_InsideCastle02 =
+							{
+								ROUTE_Stairs01 =
+								{
+									ROUTE_Stairs02 = {},
+								},
+								ROUTE_Spawn01 =
+								{
+									ROUTE_Spawn02 = {},
+								},
+								ROUTE_Tower01 =
+								{
+									ROUTE_Tower02 = {},
+								},
+								ROUTE_Underground01 =
+								{
+									ROUTE_Underground02 = {},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Passage01 =
+				{
+					ROUTE_Passage02 =
+					{
+						ROUTE_BackGateFree =
+						{
+							ROUTE_InsideCastle02 =
+							{
+								ROUTE_Stairs01 =
+								{
+									ROUTE_Stairs02 = {},
+								},
+								ROUTE_Spawn01 =
+								{
+									ROUTE_Spawn02 = {},
+								},
+								ROUTE_Tower01 =
+								{
+									ROUTE_Tower02 = {},
+								},
+								ROUTE_Underground01 =
+								{
+									ROUTE_Underground02 = {},
+								},
+							},
+						},
+						ROUTE_AroundCastleWall01 =
+						{
+							ROUTE_AroundCastleWall02 =
+							{
+								ROUTE_Statue01 =
+								{
+									ROUTE_Statue02 =
+									{
+										ROUTE_InsideCastle01 =
+										{
+											ROUTE_Stairs01 =
+											{
+												ROUTE_Stairs02 = {},
+											},
+											ROUTE_Spawn01 =
+											{
+												ROUTE_Spawn02 = {},
+											},
+											ROUTE_Tower01 =
+											{
+												ROUTE_Tower02 = {},
+											},
+											ROUTE_Underground01 =
+											{
+												ROUTE_Underground02 = {},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		ROUTE_CastleSpawn01 =
+		{
+			ROUTE_Spawn02 = {},
+			ROUTE_Stairs01 =
+			{
+				ROUTE_Stairs02 = {},
+			},
+			ROUTE_Tower01 =
+			{
+				ROUTE_Tower02 = {},
+			},
+		},
+		ROUTE_CastleSpawn02 =
+		{
+			ROUTE_Spawn02 = {},
+			ROUTE_Stairs01 =
+			{
+				ROUTE_Stairs02 = {},
+			},
+			ROUTE_Tower01 =
+			{
+				ROUTE_Tower02 = {},
+			},
+		},
+	};
+
+	MapRoutes["ATTACK_Allies_Cappoint.*"] =
+	{
+		ROUTE_ForwardSpawnHut =
+		{
+			ROUTE_SerpBarricade =
+			{
+				ROUTE_Ruins =
+				{
+					Weight=2,
+					ROUTE_Statue01 =
+					{
+						ROUTE_Statue02 =
+						{
+							ROUTE_InsideCastle01 = {},
+						},
+					},
+				},
+				ROUTE_Ice01 =
+				{
+					ROUTE_Ice02 =
+					{
+						ROUTE_BackGateFree =
+						{
+							ROUTE_InsideCastle02 = {},
+						},
+					},
+				},
+			},
+		},
+		ROUTE_ForestSpawnHut =
+		{
+			ROUTE_GrateDoorFree =
+			{
+				ROUTE_BackGateFree =
+				{
+					ROUTE_InsideCastle02 = {},
+				},
+				ROUTE_AroundCastleWall01 =
+				{
+					ROUTE_AroundCastleWall02 =
+					{
+						ROUTE_Statue01 =
+						{
+							ROUTE_Statue02 =
+							{
+								ROUTE_InsideCastle01 = {},
+							},
+						},
+					},
+				},
+			},
+			ROUTE_SerpBarricade =
+			{
+				ROUTE_Ruins =
+				{
+					Weight=2,
+					ROUTE_Statue01 =
+					{
+						ROUTE_Statue02 =
+						{
+							ROUTE_InsideCastle01 = {},
+						},
+					},
+				},
+				ROUTE_Ice01 =
+				{
+					ROUTE_Ice02 =
+					{
+						ROUTE_BackGateFree =
+						{
+							ROUTE_InsideCastle02 = {},
+						},
+					},
+				},
+				ROUTE_Passage01 =
+				{
+					ROUTE_Passage02 =
+					{
+						ROUTE_BackGateFree =
+						{
+							ROUTE_InsideCastle02 = {},
+						},
+						ROUTE_AroundCastleWall01 =
+						{
+							ROUTE_AroundCastleWall02 =
+							{
+								ROUTE_Statue01 =
+								{
+									ROUTE_Statue02 =
+									{
+										ROUTE_InsideCastle01 = {},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	};
+
+	MapRoutes.PLANT_Command_Post = MapRoutes["ATTACK_Allies_ForestHut_.*"];
+	MapRoutes.BUILD_Command_Post = MapRoutes["ATTACK_Allies_ForestHut_.*"];
+	MapRoutes["ATTACK_Allies_Antenna.*"] = MapRoutes["ATTACK_Allies_Cappoint.*"];
+
+	Util.Routes(MapRoutes);
+};

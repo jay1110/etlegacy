@@ -1,0 +1,110 @@
+//==========================================================================================
+//
+//	ctf_cw_arena_b2.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	18 February 2018	Initial Script
+//	palota	10 June 2025
+//==========================================================================================
+//
+
+global Map =
+{
+	countAllies = 1,
+	countAxis = 1,
+	numStr = {"", "1st", "2nd", "3rd", "4th", "5th"},
+
+	allied_team_door_Built = function()
+	{
+		Wp.SetWaypointFlag( "Allies_Door.*", "team2", 1 );
+		Util.MapDebugPrint( "allied_team_door_Built" );
+	},
+	allied_team_door_Destroyed = function()
+	{
+		Wp.SetWaypointFlag( "Allies_Door.*", "team2", 0 );
+		Util.MapDebugPrint( "allied_team_door_Destroyed" );
+	},
+
+	axis_team_door_Built = function()
+	{
+		Wp.SetWaypointFlag( "Axis_Door.*", "team1", 1 );
+		Util.MapDebugPrint( "axis_team_door_Built" );
+	},
+	axis_team_door_Destroyed = function()
+	{
+		Wp.SetWaypointFlag( "Axis_Door.*", "team1", 0 );
+		Util.MapDebugPrint( "axis_team_door_Destroyed" );
+	},
+
+	alli_flag_Taken = function()
+	{
+		Util.MapDebugPrint( "alli_flag_Taken " + Map.countAllies );
+	},
+
+	alli_flag_Secured = function()
+	{
+		Util.MapDebugPrint( "alli_flag_Secured " + Map.countAllies );
+		SetAvailableMapGoals( TEAM.AXIS, 1, "FLAG_alli_" + Map.numStr[++Map.countAllies] + "_flag");
+	},
+
+	axis_flag_Taken = function()
+	{
+		Util.MapDebugPrint( "axis_flag_Taken " + Map.countAxis );
+	},
+
+	axis_flag_Secured = function()
+	{
+		Util.MapDebugPrint( "axis_flag_Secured " + Map.countAxis );
+		SetAvailableMapGoals( TEAM.ALLIES, 1, "FLAG_axis_" + Map.numStr[++Map.countAxis] + "_flag");
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "^>Allies ^7have built their team door!", Map.allied_team_door_Built );
+	OnTrigger( "^1Axis ^7have destroyed the ^>Allied ^7team door!", Map.allied_team_door_Destroyed );
+	OnTrigger( "^1Axis ^7have built their team door!", Map.axis_team_door_Built );
+	OnTrigger( "^>Allies ^7have destroyed the ^1Axis ^7team door!!", Map.axis_team_door_Destroyed );
+
+	OnTrigger( "The ^>Allied ^7flag taken!", Map.alli_flag_Taken );
+	OnTrigger( "The ^>Allied ^7taken!", Map.alli_flag_Taken );
+	OnTrigger( "^?Axis ^7captured the flag!", Map.alli_flag_Secured );
+	OnTrigger( "The ^?Axis ^7captured the flag (again)!", Map.alli_flag_Secured );
+	OnTrigger( "^?Axis ^7flag taken!", Map.axis_flag_Taken );
+	OnTrigger( "^>Allied ^7team captured the flag!", Map.axis_flag_Secured );
+	OnTrigger( "^>Allied ^7team captured the flag! (again)", Map.axis_flag_Secured );
+
+	Util.DisableGoal( ".*", true );
+	Util.EnableGoal(".*CAB_.*");
+
+	SetAvailableMapGoals( TEAM.ALLIES, 1, {
+		"BUILD_allied_team_door",
+		"BUILD_Allied_Command_Post",
+		"PLANT_Axis_Command_Post",
+		"PLANT_axis_team_door",
+		"FLAG_axis_1st_flag",
+		"CAPPOINT_Allies",
+		".*MG42_mg42_2",
+	});
+
+	SetAvailableMapGoals( TEAM.AXIS, 1, {
+		"BUILD_axis_team_door",
+		"BUILD_Axis_Command_Post",
+		"PLANT_Allied_Command_Post",
+		"PLANT_allied_team_door",
+		"FLAG_alli_1st_flag",
+		"CAPPOINT_Axis",
+		".*MG42_mg42_1",
+	});
+
+	Util.LimitToClass( "PLANT_.*", 0, 5 );
+
+	Util.SetMaxUsers( 1, "PLANT.*" );
+	Util.SetMaxUsers( 1, "BUILD.*" );
+
+	Wp.SetWaypointFlag( "Allies_Door.*", "team2", 0 );
+	Wp.SetWaypointFlag( "Axis_Door.*", "team1", 0 );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};

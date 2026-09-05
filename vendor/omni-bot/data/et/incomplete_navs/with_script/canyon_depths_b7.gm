@@ -1,0 +1,1230 @@
+//==========================================================================================
+//
+//	canyon_depths_b7.gm
+//
+//	Who  	When		What
+//------------------------------------------------------------------------------------------
+//	^4Tardis	08 March 2011	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	Castle_Gate_Dyno = 0,
+	Laboratory_Safe_Door_Dyno = 0,
+	North_MG_Shield_Dyno = 0,
+	Pit_Bridge_Dyno = 0,
+	Pit_Bridge_1_Dyno = 0,
+	Pit_Bunker_Side_Gate_Dyno = 0,
+	Pit_Tank_Barrier_Dyno = 0,
+	River_Barrier_Dyno = 0,
+	Road_Barrier_Dyno = 0,
+	Sas_Control_Room_Barricade_Dyno = 0,
+	Supply_Room_Door_Dyno = 0,
+	Train_System_Controls_Dyno = 0,
+	assault_ladder_Dyno = 0,
+	Axis_Command_Post_Dyno = 0,
+	Allied_Command_Post_Dyno = 0,
+	Bunkerbackclosed = true,
+	Bunkerfrontclosed = true,
+	Bunkerfrontopen = false,
+	Bunkerfrontclosed = true,
+	Castle_Gate = fasle,
+	Talk = true, //set Talk to false if you don't want the bots to cheer after winning game:
+
+	Movers =
+	{
+		"MOVER_tank_01",
+		"MOVER_tank_02",
+		"MOVER_tank_03",
+		"MOVER_mobile_bridge_mover",
+		"MOVER_bunker_monte_charge",
+		"MOVER_convoyeur_1",
+	},
+	//IgnoreTarget
+	NoMovers=
+	{
+		"MOVER_pit_sas_bar_shield",
+	},
+
+	Switches =
+	{
+		ladder =
+		{
+			Enabled = false,
+			WaypointName = "ladder",
+			LimitTeam = 0, // disabled initially.
+			LimitClass = (1<<CLASS.COVERTOPS) | (1<<CLASS.FIELDOPS) | (1<<CLASS.SOLDIER),
+			LimitBots = 1,
+			Priority = 0, // leave for paththrough
+		},
+
+		garagedoor =
+		{
+			Enabled = false,
+			WaypointName = "garagedoor",
+			LimitTeam = 0, // disabled initially.
+			LimitClass = (1<<CLASS.COVERTOPS) | (1<<CLASS.FIELDOPS) | (1<<CLASS.SOLDIER),
+			LimitBots = 1,
+			Priority = 0, // leave for paththrough
+		},
+
+		lockA =
+		{
+			Enabled = false,
+			WaypointName = "lockA",
+			LimitTeam = 0, // disabled initially.
+			LimitClass = (1<<CLASS.COVERTOPS) | (1<<CLASS.FIELDOPS) | (1<<CLASS.SOLDIER),
+			LimitBots = 1,
+			Priority = 0, // leave for paththrough
+		},
+
+		lockB =
+		{
+			Enabled = false,
+			WaypointName = "lockB",
+			LimitTeam = 0, // disabled initially.
+			LimitClass = (1<<CLASS.COVERTOPS) | (1<<CLASS.FIELDOPS) | (1<<CLASS.SOLDIER),
+			LimitBots = 1,
+			Priority = 0, // leave for paththrough
+		},
+
+		DoorA =
+		{
+			WaypointName = "DoorA",
+			LimitTeam = 0, // disabled initially.
+			LimitClass = (1<<CLASS.COVERTOPS) | (1<<CLASS.FIELDOPS) | (1<<CLASS.SOLDIER),
+			LimitBots = 1,
+			Priority = 0, // leave for paththrough
+		},
+
+		DoorB =
+		{
+			Enabled = false,
+			WaypointName = "DoorB",
+			LimitTeam = 0, // disabled initially.
+			LimitClass = (1<<CLASS.COVERTOPS) | (1<<CLASS.FIELDOPS) | (1<<CLASS.SOLDIER),
+			LimitBots = 1,
+			Priority = 0, // leave for paththrough
+		},
+
+		lock1 =
+		{
+			Enabled = false,
+			WaypointName = "lock1",
+			LimitTeam = 0, // disabled initially.
+			LimitClass = (1<<CLASS.COVERTOPS) | (1<<CLASS.FIELDOPS) | (1<<CLASS.SOLDIER),
+			LimitBots = 1,
+			Priority = 0, // leave for paththrough
+		},
+
+		lock2 =
+		{
+			Enabled = false,
+			WaypointName = "lock2",
+			LimitTeam = 0, // disabled initially.
+			LimitClass = (1<<CLASS.COVERTOPS) | (1<<CLASS.FIELDOPS) | (1<<CLASS.SOLDIER),
+			LimitBots = 1,
+			Priority = 0, // leave for paththrough
+		},
+
+		lock2 =
+		{
+			Enabled = false,
+			WaypointName = "lock2",
+			LimitTeam = 0, // disabled initially.
+			LimitClass = (1<<CLASS.COVERTOPS) | (1<<CLASS.FIELDOPS) | (1<<CLASS.SOLDIER),
+			LimitBots = 1,
+			Priority = 0, // leave for paththrough
+		},
+
+		backdoor =
+		{
+			Enabled = false,
+			WaypointName = "backdoor",
+			LimitTeam = 0, // disabled initially.
+			LimitClass = (1<<CLASS.COVERTOPS) | (1<<CLASS.FIELDOPS) | (1<<CLASS.SOLDIER),
+			LimitBots = 1,
+			Priority = 0, // leave for paththrough
+		},
+
+		//lift
+		liftup =
+		{
+			Enabled = true,
+			WaypointName = "liftup",
+			PressOnce = true,
+			Timeout = 1500,
+			LimitTeam = 0, // disabled initially.
+			LimitBots = 1,
+			Priority = 0, // leave for paththrough
+			AimPosition = Vec3(12159.938, 1491.875, -5869.089),
+			// /bot waypoint_setproperty paththrough UseSwitch_PT:liftup
+			Wait = function()
+			{
+				if ( Map.liftPos == "top")
+				{
+					sleep(6);
+					return true;
+				}
+				else if ( Map.liftPos == "bottom")
+				{
+					sleep(6);
+					return true;
+				}
+				else if ( Map.liftPos == "moving" )
+				{
+					sleep(6);
+					return true;
+				}
+				return false;
+			},
+		},
+	},
+	//lift
+	lift = function(trigger)
+	{
+		Map.liftPos = "moving";
+		Map.Switches.liftup.Disabled = true;
+		Util.MapDebugPrint("lift moving");
+
+		sleep(6);
+
+		vel = ToVector(trigger.Action);
+
+		if (vel.z < 0)
+		{
+			Map.liftPos = "bottom";
+			Map.Switches.liftup.Enabled = true;
+
+			Util.MapDebugPrint("lift at bottom");
+		}
+		else if (vel.z > 0)
+		{
+			Map.lift1Pos = "top";
+			Map.Switches.liftup.Disabled = true;
+
+			Util.MapDebugPrint("lift at top");
+		}
+	},
+
+	spawn_castle_flag_Axis_Captured = function( trigger )
+	{
+		Util.MapDebugPrint( "spawn_castle_flag_Axis_Captured" );
+	},
+
+	spawn_castle_flag_Allies_Captured = function( trigger )
+	{
+		Util.MapDebugPrint( "spawn_castle_flag_Allies_Captured" );
+	},
+
+	River = function( trigger )
+	{
+		Util.DisableGoal( "PLANT_River_Barrier" );
+		Util.DisableGoal( "BUILD_River_Barrier" );
+		Util.DisableGoal( "RIDE_Mobile" );
+
+		Util.MapDebugPrint( "Axis secured the River Barracks" );
+	},
+
+	Axis_Castle = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_garage" );
+		Util.DisableGoal( "PLANT_Command_Post" );
+		Util.DisableGoal( "PLANT_Pit_Bridge" );
+		Util.DisableGoal( "PLANT_North_MG_Shield" );
+		Util.DisableGoal( "PLANT_assault_ladder" );
+		Util.DisableGoal( "CHECKPOINT.*" );
+		Util.DisableGoal( "BUILD_Pit_Bridge" );
+		Util.DisableGoal( "SWITCH_ladder" );
+
+		Util.MapDebugPrint( "Axis secured the Castle" );
+	},
+
+	tankoutbunker=
+	{
+		TriggerOnEntity = GetGoal("MOVER_tank_03").GetEntity(),
+		OnEnter = function(ent)
+		{
+			if( Map.Bunkerfrontopen == true )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockA" );
+			}
+			else if( Map.Bunkerfrontclosed == false )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_lockA" );
+			}
+			Util.MapDebugPrint( "Tank Outside Bunker" );
+		},
+	},
+
+	tankinbunker=
+	{
+		TriggerOnEntity = GetGoal("MOVER_tank_03").GetEntity(),
+		OnEnter = function(ent)
+		{
+			if( Map.Bunkerfrontclosed == false )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_lockA" );
+			}
+			else if( Map.Bunkerfrontclosed == true )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockA" );
+				SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_lockB" );
+			}
+			Util.MapDebugPrint( "Tank Inside Bunker" );
+		},
+	},
+
+	Tram =
+	{
+		TriggerOnEntity = GetGoal("MOVER_convoyeur_1").GetEntity(),
+		OnEnter = function(ent)
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "RIDE_Tram" );
+
+			Util.MapDebugPrint( "Tram_Entered_Dissmount_Zone" );
+		},
+		OnExit = function(ent)
+		{
+			Util.MapDebugPrint( "Tram_Exited_Dissmount_Zone" );
+		},
+	},
+
+	Bunkerbackclosed = function( trigger )
+	{
+
+		Map.Bunkerbackclosed = true;
+		Util.MapDebugPrint( "Bunker Door B Closed" );
+	},
+
+	Bunkerbackopen = function( trigger )
+	{
+
+		Map.Bunkerbackopen = true;
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Pit_Bunker_Side_Gate" );
+		Util.MapDebugPrint( "Bunker Door B Open" );
+	},
+
+	Bunkerfrontclosed = function( trigger )
+	{
+
+		Map.Bunkerfrontclosed = true;
+		Util.MapDebugPrint( "Bunker Door A Closed" );
+	},
+
+	Bunkerfrontopen = function( trigger )
+	{
+
+		Map.Bunkerfrontopen = true;
+
+		Util.MapDebugPrint( "Bunker Door A Open" );
+	},
+
+	lockunlock = function( trigger )
+	{
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"SWITCH_lock1",
+			"SWITCH_lock2",
+			"SWITCH_lock3",
+		});
+
+		Util.MapDebugPrint( "Lock levers can be switched again" );
+	},
+
+	locked = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"SWITCH_lock1",
+			"SWITCH_lock2",
+			"SWITCH_lock3",
+		});
+
+		Util.MapDebugPrint( "Wait 25 seconds before switching any other lock" );
+	},
+
+
+	bunkerlock = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"SWITCH_lockA",
+			"SWITCH_lockB",
+			"BUILD_Sas_Control_Room_Barricade",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Sas_Control_Room_Barricade" );
+		Util.EnableGoal( "SWITCH_DoorA" );
+		Util.EnableGoal( "SWITCH_DoorB" );
+
+		Util.MapDebugPrint( "Tank Is Pass The Control Room" );
+	},
+
+
+	resupply = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT_AmmoFuleDrop" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "GRENADE_fulegate" );
+
+		Util.MapDebugPrint( "Resupplyed the Tank" );
+	},
+
+	Garage_open  = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_garagedoor" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "RIDE_Mobile" );
+
+		Util.MapDebugPrint( "Garage gate is open" );
+	},
+
+	Garage_closed  = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_garagedoor" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "RIDE_Mobile" );
+
+		Util.MapDebugPrint( "Garage door is closed" );
+	},
+
+	Garage_dead  = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_garagedoor" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "RIDE_Mobile" );
+
+		Util.MapDebugPrint( "secured the Garage" );
+	},
+
+	Lock1_dead = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lock1" );
+
+		Util.MapDebugPrint( "disabled Lock #1" );
+	},
+
+	Lock2_dead = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lock2" );
+
+		Util.MapDebugPrint( "disabled Lock #2" );
+	},
+
+	Lock3_dead = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lock3" );
+
+		Util.MapDebugPrint( "disabled Lock #3" );
+	},
+
+	Lab_door1_open = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_DoorA" );
+
+		Util.MapDebugPrint( "opening Laboratory Door #1" );
+	},
+
+	Lab_door1_closed = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_DoorA" );
+
+		Util.MapDebugPrint( "closing Laboratory Door #1 " );
+	},
+
+	Lab_door1_dead = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_DoorA" );
+
+		Util.MapDebugPrint( "The tank has passed Laboratory Door #1" );
+	},
+
+	Lab_door2_open = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_DoorB" );
+
+		Util.MapDebugPrint( "opening Laboratory Door #2" );
+	},
+
+	Lab_door2_closed = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_DoorB" );
+
+		Util.MapDebugPrint( "closing Laboratory Door #2" );
+	},
+
+	Lab_door2_dead = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_DoorB" );
+
+		Util.MapDebugPrint( "The tank has passed Laboratory Door #2" );
+	},
+
+	Mobile_system = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "RIDE_Mobile" );
+
+		Util.MapDebugPrint( "Mobile Bridge hydrolics systems pressurising" );
+	},
+
+	Mobile_ready = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "RIDE_Mobile" );
+
+		Util.MapDebugPrint( "Mobile Bridge Ready!" );
+	},
+
+	Mobile_dead = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "RIDE_Mobile" );
+
+		Util.MapDebugPrint( "Mobile Bridge is deploying" );
+	},
+
+	ladder = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_ladder" );
+
+		Util.MapDebugPrint( "Axis placed the mountain path ladder" );
+	},
+
+	Allied_Command_Post_Built = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Command_Post" );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+	Allied_Command_Post_Planted = function( trigger )
+	{
+		Map.Allied_Command_Post_Dyno += 1;
+		Util.MapDebugPrint( "Allied_Command_Post_Planted" );
+	},
+
+	Allied_Command_Post_Defused = function( trigger )
+	{
+		Map.Allied_Command_Post_Dyno -= 1;
+		Util.MapDebugPrint( "Allied_Command_Post_Defused" );
+	},
+
+	Allied_Command_Post_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+	assault_ladder_Built = function( trigger )
+	{
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_ladder" );
+		Util.EnableGoal( "CHECKPOINT.*" );
+
+		Util.MapDebugPrint( "assault_ladder_Built" );
+	},
+
+	assault_ladder_Planted = function( trigger )
+	{
+		Map.assault_ladder_Dyno += 1;
+		Util.MapDebugPrint( "assault_ladder_Planted" );
+	},
+
+	assault_ladder_Defused = function( trigger )
+	{
+		Map.assault_ladder_Dyno -= 1;
+		Util.MapDebugPrint( "assault_ladder_Defused" );
+	},
+
+	assault_ladder_Destroyed = function( trigger )
+	{
+		Map.assault_ladder_Dyno = 0;
+
+		if (Map.Castle_Gate == "false")
+		{
+			Util.DisableGoal( "CHECKPOINT.*" );
+		}
+
+		Util.MapDebugPrint( "assault_ladder_Destroyed" );
+	},
+
+	Axis_Command_Post_Built = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Planted = function( trigger )
+	{
+		Map.Axis_Command_Post_Dyno += 1;
+		Util.MapDebugPrint( "Axis_Command_Post_Planted" );
+	},
+
+	Axis_Command_Post_Defused = function( trigger )
+	{
+		Map.Axis_Command_Post_Dyno -= 1;
+		Util.MapDebugPrint( "Axis_Command_Post_Defused" );
+	},
+
+	Axis_Command_Post_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+	Castle_Gate_Planted = function( trigger )
+	{
+		Map.Castle_Gate_Dyno += 1;
+		Util.MapDebugPrint( "Castle_Gate_Planted" );
+	},
+
+	Castle_Gate_Defused = function( trigger )
+	{
+		Map.Castle_Gate_Dyno -= 1;
+		Util.MapDebugPrint( "Castle_Gate_Defused" );
+	},
+
+	Castle_Gate_Destroyed = function( trigger )
+	{
+		Map.Castle_Gate_Dyno = 0;
+		Map.Castle_Gate = "true" ;
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_ladder" );
+		Util.EnableGoal( "CHECKPOINT.*" );
+
+		Util.MapDebugPrint( "Castle_Gate_Destroyed" );
+	},
+
+	Laboratory_Safe_Door_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Laboratory_Safe_Door_Built" );
+	},
+
+	Laboratory_Safe_Door_Planted = function( trigger )
+	{
+		Map.Laboratory_Safe_Door_Dyno += 1;
+		Util.MapDebugPrint( "Laboratory_Safe_Door_Planted" );
+	},
+
+	Laboratory_Safe_Door_Defused = function( trigger )
+	{
+		Map.Laboratory_Safe_Door_Dyno -= 1;
+		Util.MapDebugPrint( "Laboratory_Safe_Door_Defused" );
+	},
+
+	Laboratory_Safe_Door_Destroyed = function( trigger )
+	{
+		Map.Laboratory_Safe_Door_Dyno = 0;
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"SWITCH_lock1",
+			"SWITCH_lock3",
+			"SWITCH_lock3",
+		});
+
+		Util.MapDebugPrint( "Laboratory_Safe_Door_Destroyed" );
+	},
+
+	North_MG_Shield_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "North_MG_Shield_Built" );
+	},
+
+	North_MG_Shield_Planted = function( trigger )
+	{
+		Map.North_MG_Shield_Dyno += 1;
+		Util.MapDebugPrint( "North_MG_Shield_Planted" );
+	},
+
+	North_MG_Shield_Defused = function( trigger )
+	{
+		Map.North_MG_Shield_Dyno -= 1;
+		Util.MapDebugPrint( "North_MG_Shield_Defused" );
+	},
+
+	North_MG_Shield_Destroyed = function( trigger )
+	{
+		Map.North_MG_Shield_Dyno = 0;
+
+		Util.MapDebugPrint( "North_MG_Shield_Destroyed" );
+	},
+
+	Pit_Bridge_Built = function( trigger )
+	{
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_ladder" );
+
+		Util.MapDebugPrint( "Pit_Bridge_Built" );
+	},
+
+	Pit_Bridge_Planted = function( trigger )
+	{
+		Map.Pit_Bridge_Dyno += 1;
+		Util.MapDebugPrint( "Pit_Bridge_Planted" );
+	},
+
+	Pit_Bridge_Defused = function( trigger )
+	{
+		Map.Pit_Bridge_Dyno -= 1;
+		Util.MapDebugPrint( "Pit_Bridge_Defused" );
+	},
+
+	Pit_Bridge_Destroyed = function( trigger )
+	{
+		Map.Pit_Bridge_Dyno = 0;
+
+		Util.MapDebugPrint( "Pit_Bridge_Destroyed" );
+	},
+
+	Pit_Bridge_1_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Pit_Bridge_1_Built" );
+	},
+
+	Pit_Bunker_Side_Gate_Planted = function( trigger )
+	{
+		Map.Pit_Bunker_Side_Gate_Dyno += 1;
+		Util.MapDebugPrint( "Pit_Bunker_Side_Gate_Planted" );
+	},
+
+	Pit_Bunker_Side_Gate_Defused = function( trigger )
+	{
+		Map.Pit_Bunker_Side_Gate_Dyno -= 1;
+		Util.MapDebugPrint( "Pit_Bunker_Side_Gate_Defused" );
+	},
+
+	Pit_Bunker_Side_Gate_Destroyed = function( trigger )
+	{
+		Map.Pit_Bunker_Side_Gate_Dyno = 0;
+
+		Util.MapDebugPrint( "Pit_Bunker_Side_Gate_Destroyed" );
+	},
+
+	Pit_Tank_Barrier_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Pit_Tank_Barrier_Built" );
+	},
+
+	Pit_Tank_Barrier_Planted = function( trigger )
+	{
+		Map.Pit_Tank_Barrier_Dyno += 1;
+		Util.MapDebugPrint( "Pit_Tank_Barrier_Planted" );
+	},
+
+	Pit_Tank_Barrier_Defused = function( trigger )
+	{
+		Map.Pit_Tank_Barrier_Dyno -= 1;
+		Util.MapDebugPrint( "Pit_Tank_Barrier_Defused" );
+	},
+
+	Pit_Tank_Barrier_Destroyed = function( trigger )
+	{
+		Map.Pit_Tank_Barrier_Dyno = 0;
+
+		Util.MapDebugPrint( "Pit_Tank_Barrier_Destroyed" );
+	},
+
+	River_Barrier_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "River_Barrier_Built" );
+	},
+
+	River_Barrier_Planted = function( trigger )
+	{
+		Map.River_Barrier_Dyno += 1;
+		Util.MapDebugPrint( "River_Barrier_Planted" );
+	},
+
+	River_Barrier_Defused = function( trigger )
+	{
+		Map.River_Barrier_Dyno -= 1;
+		Util.MapDebugPrint( "River_Barrier_Defused" );
+	},
+
+	River_Barrier_Destroyed = function( trigger )
+	{
+		Map.River_Barrier_Dyno = 0;
+
+		Util.MapDebugPrint( "River_Barrier_Destroyed" );
+	},
+
+	Road_Barrier_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Road_Barrier_Built" );
+	},
+
+	Road_Barrier_Planted = function( trigger )
+	{
+		Map.Road_Barrier_Dyno += 1;
+		Util.MapDebugPrint( "Road_Barrier_Planted" );
+	},
+
+	Road_Barrier_Defused = function( trigger )
+	{
+		Map.Road_Barrier_Dyno -= 1;
+		Util.MapDebugPrint( "Road_Barrier_Defused" );
+	},
+
+	Road_Barrier_Destroyed = function( trigger )
+	{
+		Map.Road_Barrier_Dyno = 0;
+
+		Util.MapDebugPrint( "Road_Barrier_Destroyed" );
+	},
+
+	Sas_Control_Room_Barricade_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Sas_Control_Room_Barricade_Built" );
+	},
+
+	Sas_Control_Room_Barricade_Planted = function( trigger )
+	{
+		Map.Sas_Control_Room_Barricade_Dyno += 1;
+		Util.MapDebugPrint( "Sas_Control_Room_Barricade_Planted" );
+	},
+
+	Sas_Control_Room_Barricade_Defused = function( trigger )
+	{
+		Map.Sas_Control_Room_Barricade_Dyno -= 1;
+		Util.MapDebugPrint( "Sas_Control_Room_Barricade_Defused" );
+	},
+
+	Sas_Control_Room_Barricade_Destroyed = function( trigger )
+	{
+		Map.Sas_Control_Room_Barricade_Dyno = 0;
+
+		Util.MapDebugPrint( "Sas_Control_Room_Barricade_Destroyed" );
+	},
+
+	Supply_Room_Door_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Supply_Room_Door_Built" );
+	},
+
+	Supply_Room_Door_Planted = function( trigger )
+	{
+		Map.Supply_Room_Door_Dyno += 1;
+		Util.MapDebugPrint( "Supply_Room_Door_Planted" );
+	},
+
+	Supply_Room_Door_Defused = function( trigger )
+	{
+		Map.Supply_Room_Door_Dyno -= 1;
+		Util.MapDebugPrint( "Supply_Room_Door_Defused" );
+	},
+
+	Supply_Room_Door_Destroyed = function( trigger )
+	{
+		Map.Supply_Room_Door_Dyno = 0;
+
+		Util.MapDebugPrint( "Supply_Room_Door_Destroyed" );
+	},
+
+	Tank_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Tank_Built" );
+	},
+
+	Tank_Destroyed = function( trigger )
+	{
+		Map.Tank_Dyno = 0;
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Tank" );
+		Util.MapDebugPrint( "Tank_Destroyed" );
+	},
+
+	Tank_1_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Tank_1_Built" );
+	},
+
+	Tank_1_Destroyed = function( trigger )
+	{
+		Map.Tank_1_Dyno = 0;
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Tank_1" );
+		Util.MapDebugPrint( "Tank_1_Destroyed" );
+	},
+
+	Tank_2_Built = function( trigger )
+	{
+
+		Util.MapDebugPrint( "Tank_2_Built" );
+	},
+
+	Tank_2_Destroyed = function( trigger )
+	{
+		Map.Tank_2_Dyno = 0;
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Tank_2" );
+		Util.MapDebugPrint( "Tank_2_Destroyed" );
+	},
+
+	Train_System_Controls_Built = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "RIDE_Tram" );
+
+		Util.MapDebugPrint( "Train_System_Controls_Built" );
+	},
+
+	Train_System_Controls_Planted = function( trigger )
+	{
+		Map.Train_System_Controls_Dyno += 1;
+		Util.MapDebugPrint( "Train_System_Controls_Planted" );
+	},
+
+	Train_System_Controls_Defused = function( trigger )
+	{
+		Map.Train_System_Controls_Dyno -= 1;
+		Util.MapDebugPrint( "Train_System_Controls_Defused" );
+	},
+
+	Train_System_Controls_Destroyed = function( trigger )
+	{
+		Map.Train_System_Controls_Dyno = 0;
+		SetAvailableMapGoals( TEAM.AXIS, false, "RIDE_Tram" );
+
+		Util.MapDebugPrint( "Train_System_Controls_Destroyed" );
+	},
+
+	obj_ammo_01_Taken = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_ammo_01_Taken" );
+	},
+
+	obj_ammo_01_Returned = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_ammo_01_Returned" );
+	},
+
+	obj_ammo_01_Secured = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_ammo_01_Secured" );
+	},
+
+	obj_ammo_02_Taken = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_ammo_02_Taken" );
+	},
+
+	obj_ammo_02_Returned = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_ammo_02_Returned" );
+	},
+
+	obj_ammo_02_Secured = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_ammo_02_Secured" );
+	},
+
+	obj_fuel_can1_Taken = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_fuel_can1_Taken" );
+	},
+
+	obj_fuel_can1_Returned = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_fuel_can1_Returned" );
+	},
+
+	obj_fuel_can1_Secured = function( trigger )
+	{
+
+		Util.DisableGoal("CAPPOINT_GasDrop");
+
+		Util.MapDebugPrint( "obj_fuel_can1_Secured" );
+	},
+
+	obj_pit_key_01_Taken = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_pit_key_01_Taken" );
+	},
+
+	obj_pit_key_01_Returned = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_pit_key_01_Returned" );
+	},
+
+	obj_pit_key_01_Secured = function( trigger )
+	{
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"SWITCH_lockA",
+			"SWITCH_lockB",
+		});
+
+		Util.MapDebugPrint( "obj_pit_key_01_Secured" );
+	},
+
+	obj_refuel_can_01_Taken = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_refuel_can_01_Taken" );
+	},
+
+	obj_refuel_can_01_Returned = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_refuel_can_01_Returned" );
+	},
+
+	obj_refuel_can_01_Secured = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_refuel_can_01_Secured" );
+	},
+
+	obj_refuel_can_02_Taken = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_refuel_can_02_Taken" );
+	},
+
+	obj_refuel_can_02_Returned = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_refuel_can_02_Returned" );
+	},
+
+	obj_refuel_can_02_Secured = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_refuel_can_02_Secured" );
+	},
+
+	obj_refuel_can_03_Taken = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_refuel_can_03_Taken" );
+	},
+
+	obj_refuel_can_03_Returned = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_refuel_can_03_Returned" );
+	},
+
+	obj_refuel_can_03_Secured = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_refuel_can_03_Secured" );
+	},
+
+	obj_refuel_can_04_Taken = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_refuel_can_04_Taken" );
+	},
+
+	obj_refuel_can_04_Returned = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_refuel_can_04_Returned" );
+	},
+
+	obj_refuel_can_04_Secured = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_refuel_can_04_Secured" );
+	},
+
+	obj_refuel_can_05_Taken = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_refuel_can_05_Taken" );
+	},
+
+	obj_refuel_can_05_Returned = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_refuel_can_05_Returned" );
+	},
+
+	obj_refuel_can_05_Secured = function( trigger )
+	{
+		Util.MapDebugPrint( "obj_refuel_can_05_Secured" );
+	},
+
+
+
+	Axis_Win = function( trigger )
+	{
+		//Game Over
+		if ( Map.Talk && MAP_TALK )
+		{
+			ETUtil.WinningChat( TEAM.AXIS );
+			ETUtil.LosingChat( TEAM.ALLIES );
+		}
+
+		Util.MapDebugPrint( "Axis_Win" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "<> ^3Allies Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "<> ^3Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "The North Shield has been constructed.", Map.North_MG_Shield_Built );
+	OnTrigger( "The Small Pit Bridge has been constructed.", Map.Pit_Bridge_Built );
+	OnTrigger( "<> ^3Axis have built the Pit Bridge !", Map.Pit_Bridge_1_Built );
+	OnTrigger( "<> ^3Allies constructed the Pit Tank Barrier !", Map.Pit_Tank_Barrier_Built );
+	OnTrigger( "<> ^3Allies constructed the Mobile Bridge Barrier !", Map.River_Barrier_Built );
+	OnTrigger( "<> ^3Allies constructed the Canyon Tank Barrier !", Map.Road_Barrier_Built );
+	OnTrigger( "The Control Room Barrier has been constructed.", Map.Sas_Control_Room_Barricade_Built );
+	OnTrigger( "<>^3 Axis repaired the tank !", Map.Tank_Built );
+	OnTrigger( "<>^3 Axis repaired the tank !", Map.Tank_1_Built );
+	OnTrigger( "<>^3 Axis repaired the tank !", Map.Tank_2_Built );
+	OnTrigger( "<>^3 Axis have built the conveyor controls !", Map.Train_System_Controls_Built );
+	OnTrigger( "The Castle Ladder has been constructed.", Map.assault_ladder_Built );
+	OnTrigger( "Planted at the Allied Command Post!", Map.Allied_Command_Post_Planted );
+	OnTrigger( "Planted at the Axis Command Post!", Map.Axis_Command_Post_Planted );
+	OnTrigger( "Planted at the Castle Gate", Map.Castle_Gate_Planted );
+	OnTrigger( "Planted at the MISSING_STRING.", Map.Laboratory_Safe_Door_Planted );
+	OnTrigger( "Planted at the MISSING_STRING.", Map.North_MG_Shield_Planted );
+	OnTrigger( "Planted at the MISSING_STRING.", Map.Pit_Bridge_Planted );
+	OnTrigger( "Planted at the MISSING_STRING.", Map.Pit_Bunker_Side_Gate_Planted );
+	OnTrigger( "Planted at the MISSING_STRING.", Map.Pit_Tank_Barrier_Planted );
+	OnTrigger( "Planted at the MISSING_STRING.", Map.River_Barrier_Planted );
+	OnTrigger( "Planted at the MISSING_STRING.", Map.Road_Barrier_Planted );
+	OnTrigger( "Planted at the MISSING_STRING.", Map.Sas_Control_Room_Barricade_Planted );
+	OnTrigger( "Planted at the MISSING_STRING.", Map.Supply_Room_Door_Planted );
+	OnTrigger( "Planted at the MISSING_STRING.", Map.Train_System_Controls_Planted );
+	OnTrigger( "Planted at the MISSING_STRING.", Map.assault_ladder_Planted );
+	OnTrigger( "Defused at the MISSING_STRING.", Map.Castle_Gate_Defused );
+	OnTrigger( "Defused at the MISSING_STRING.", Map.Laboratory_Safe_Door_Defused );
+	OnTrigger( "Defused at the MISSING_STRING.", Map.North_MG_Shield_Defused );
+	OnTrigger( "Defused at the MISSING_STRING.", Map.Pit_Bridge_Defused );
+	OnTrigger( "Defused at the MISSING_STRING.", Map.Pit_Bunker_Side_Gate_Defused );
+	OnTrigger( "Defused at the MISSING_STRING.", Map.Pit_Tank_Barrier_Defused );
+	OnTrigger( "Defused at the MISSING_STRING.", Map.River_Barrier_Defused );
+	OnTrigger( "Defused at the MISSING_STRING.", Map.Road_Barrier_Defused );
+	OnTrigger( "Defused at the MISSING_STRING.", Map.Sas_Control_Room_Barricade_Defused );
+	OnTrigger( "Defused at the MISSING_STRING.", Map.Supply_Room_Door_Defused );
+	OnTrigger( "Defused at the MISSING_STRING.", Map.Train_System_Controls_Defused );
+	OnTrigger( "Defused at the MISSING_STRING.", Map.assault_ladder_Defused );
+	OnTrigger( "Defused at the Axis Command Post.", Map.Axis_Command_Post_Defused );
+	OnTrigger( "Defused at the Allied Command Post.", Map.Allied_Command_Post_Defused );
+	OnTrigger( "The Castle Gate has been destroyed.", Map.Castle_Gate_Destroyed );
+	OnTrigger( "<>^3 Axis destroyed the laboratory door !", Map.Laboratory_Safe_Door_Destroyed );
+	OnTrigger( "The North Shield has been destroyed.", Map.North_MG_Shield_Destroyed );
+	OnTrigger( "The Small Pit Bridge has been destroyed.", Map.Pit_Bridge_Destroyed );
+	OnTrigger( "<>^3 Axis opened the bunker side Gate !", Map.Pit_Bunker_Side_Gate_Destroyed );
+	OnTrigger( "<> ^3Axis destroyed the Pit Tank Barrier !", Map.Pit_Tank_Barrier_Destroyed );
+	OnTrigger( "<> ^3Axis destroyed the Mobile Bridge Barrier !", Map.River_Barrier_Destroyed );
+	OnTrigger( "<> ^3Axis destroyed the Canyon Tank Barrier !", Map.Road_Barrier_Destroyed );
+	OnTrigger( "The Control Room Barrier has been destroyed.", Map.Sas_Control_Room_Barricade_Destroyed );
+	OnTrigger( "<> ^3Axis breached the Storage Room !", Map.Supply_Room_Door_Destroyed );
+	OnTrigger( "<> ^3Allies team has destroyed the Axis Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "<> ^3Allies team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "<>^3 Allies damaged the tank !", Map.Tank_Destroyed );
+	OnTrigger( "<>^3 Allies damaged the tank !", Map.Tank_1_Destroyed );
+	OnTrigger( "<>^3 Allies damaged the tank !", Map.Tank_2_Destroyed );
+	OnTrigger( "<>^3 Allies destroyed the conveyor controls !", Map.Train_System_Controls_Destroyed );
+	OnTrigger( "The Castle Ladder has been destroyed.", Map.assault_ladder_Destroyed );
+	OnTrigger( "<> ^3Axis are stealing the 1st Ammo Crate !", Map.obj_ammo_01_Taken );
+	OnTrigger( "<> ^3Axis are stealing the 2nd Ammo Crate !", Map.obj_ammo_02_Taken );
+	OnTrigger( "<> ^3Axis are stealing the Fuel Can !", Map.obj_fuel_can1_Taken );
+	OnTrigger( "<> ^3Axis are stealing the Bunker Door Codes !", Map.obj_pit_key_01_Taken );
+	OnTrigger( "<> ^3Axis are stealing the 2nd Fuel Can !", Map.obj_refuel_can_01_Taken );
+	OnTrigger( "<> ^3Axis are stealing the 3rd Fuel Can !", Map.obj_refuel_can_02_Taken );
+	OnTrigger( "<> ^3Axis are stealing the 4th Fuel Can !", Map.obj_refuel_can_03_Taken );
+	OnTrigger( "<> ^3Axis are stealing the 5th Fuel Can !", Map.obj_refuel_can_04_Taken );
+	OnTrigger( "<> ^3Axis are stealing the 6th Fuel Can !", Map.obj_refuel_can_05_Taken );
+	OnTrigger( "^3Allies returned the 1st Ammo Crate.", Map.obj_ammo_01_Returned );
+	OnTrigger( "^3Allies returned the 2nd Ammo Crate.", Map.obj_ammo_02_Returned );
+	OnTrigger( "<> ^3Allies returned the Fuel Can.", Map.obj_fuel_can1_Returned );
+	OnTrigger( "<> ^3Allies returned the Pit Bunker Door Codes.", Map.obj_pit_key_01_Returned );
+	OnTrigger( "<> ^3Allies returned the 2nd Fuel Can.", Map.obj_refuel_can_01_Returned );
+	OnTrigger( "<> ^3Allies returned the 3rd Fuel Can.", Map.obj_refuel_can_02_Returned );
+	OnTrigger( "<> ^3Allies returned the 4th Fuel Can.", Map.obj_refuel_can_03_Returned );
+	OnTrigger( "<> ^3Allies returned the 5th Fuel Can.", Map.obj_refuel_can_04_Returned );
+	OnTrigger( "<> ^3Allies returned the 6th Fuel Can.", Map.obj_refuel_can_05_Returned );
+	OnTrigger( "<> ^3The tank has enough ammo now.", Map.obj_ammo_01_Secured );
+	OnTrigger( "<> ^3The tank has enough ammo now.", Map.obj_ammo_02_Secured );
+	OnTrigger( "<> ^3Axis temporarily refueled the Tank !", Map.obj_fuel_can1_Secured );
+	OnTrigger( "<> ^3Axis unlocked the Pit Bunker !", Map.obj_pit_key_01_Secured );
+	OnTrigger( "<> ^3Axis Secured the 2nd Fuel Can !", Map.obj_refuel_can_01_Secured );
+	OnTrigger( "<> ^3Axis Secured the 3rd Fuel Can !", Map.obj_refuel_can_02_Secured );
+	OnTrigger( "<> ^3Axis Secured the 4th Fuel Can !", Map.obj_refuel_can_03_Secured );
+	OnTrigger( "<> ^3Axis Secured the 5th Fuel Can !", Map.obj_refuel_can_04_Secured );
+	OnTrigger( "<> ^3Axis Secured the 6th Fuel Can !", Map.obj_refuel_can_05_Secured );
+	OnTrigger( "<> ^3Axis captured the Castle!", Map.spawn_castle_flag_Axis_Captured );
+	OnTrigger( "<> ^3Allies reclaim the Castle!", Map.spawn_castle_flag_Allies_Captured );
+	OnTrigger( "<> ^3Axis placed the mountain path ladder", Map.ladder );
+	OnTrigger( "<> ^3Mobile Bridge hydrolics systems pressurising ...", Map.Mobile_system);
+	OnTrigger( "<> ^3Mobile Bridge Ready to deploy ! Enter the cabin to activate it !", Map.Mobile_ready );
+	OnTrigger( "<> ^3Mobile Bridge is deploying !", Map.Mobile_dead );
+	OnTrigger( "<> ^3AXIS are opening Laboratory Door #1 !", Map.Lab_door1_open );
+	OnTrigger( "<> ^3ALLIES are closing Laboratory Door #1 !", Map.Lab_door1_closed );
+	OnTrigger( "<> ^3The tank has passed Laboratory Door #1 !", Map.Lab_door1_dead );
+	OnTrigger( "<> ^3AXIS are opening Laboratory Door #2 !", Map.Lab_door2_open );
+	OnTrigger( "<> ^3ALLIES are closing Laboratory Door #2 !", Map.Lab_door2_closed );
+	OnTrigger( "<> ^3The tank has passed Laboratory Door #2 !", Map.Lab_door2_dead );
+	OnTrigger( "<> ^3Axis have disabled Lock #1 !", Map.Lock1_dead );
+	OnTrigger( "<> ^3Axis have disabled Lock #2 !", Map.Lock2_dead );
+	OnTrigger( "<> ^3Axis have disabled Lock #3 !", Map.Lock3_dead );
+	OnTrigger( "<> ^3Garage door is closed !", Map.Garage_open );
+	OnTrigger( "<> ^3Garage gate is open !", Map.Garage_closed );
+	OnTrigger( "<> ^3Axis secured the Depot Spawn", Map.Garage_dead );
+	OnTrigger( "<> ^3Axis secured the Garage !", Map.resupply );
+	OnTrigger( "bunker_monte_charge_goto", Map.lift );
+	OnTrigger( "<> ^3Axis secured the Pit Bunker",Map.bunkerlock );
+	OnTrigger( "<> ^7Security system : ^3Wait 25 seconds^7 before switching any other lock.",Map.locked );
+	OnTrigger( "<> ^7Security system : Lock levers can be switched again.",Map.lockunlock );
+	OnTrigger( "<> ^3 =  VICTORY ! AXIS HAVE DISCOVERED THE SECRET OF THE ALLIES !  =",Map.Axis_Win );
+	OnTrigger( "<> ^3Axis secured the Castle",Map.Axis_Castle );
+	OnTrigger( "<> ^3Axis secured the River Barracks",Map.River );
+	OnTrigger( "<> ^3Bunker front door is open.",Map.Bunkerfrontopen );
+	OnTrigger( "<> ^3Bunker front door is closed.",Map.Bunkerfrontclosed );
+	OnTrigger( "<> ^3Bunker back door is opened.",Map.Bunkerbackopen );
+	OnTrigger( "<> ^3Bunker back door is closed.",Map.Bunkerbackclosed );
+
+	//Region Trigers
+	outbunker = OnTriggerRegion(AABB(12896.360,503.767,-5988.475,13098.924,962.048,-5879.069),Map.tankoutbunker);
+	inbunker = OnTriggerRegion(AABB(12904.686,1271.315,-5982.875,13145.820,1628.629,-5864.516),Map.tankinbunker);
+	controlroom = OnTriggerRegion(AABB(12282.874,1535.125,-5982.875,12560.137,1662.397,-5906.875),RegionTrigger.DisableCombatMovement);
+	Train = OnTriggerRegion(AABB(11636.222,6279.126,-7358.875,11872.874,6489.652,-7276.875),Map.Tram);
+
+//Util.DisableGoal
+	Util.DisableGoal( ".*", true ); // all but routes
+	//~SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_.*" );
+	//~SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_.*" );
+	Util.DisableGoal( "RIDE.*" );
+//Util.RemoveGoal
+	Util.RemoveGoal( "BUILD_Castle_Gate" );
+	Util.RemoveGoal( "BUILD_Supply_Room_Door" );
+	Util.RemoveGoal( "BUILD_Laboratory_Safe_Door" );
+	Util.RemoveGoal( "BUILD_Pit_Bunker_Side_Gate" );
+	Util.RemoveGoal( "PLANT_Tank" );
+	Util.RemoveGoal( "PLANT_Tank_1" );
+	Util.RemoveGoal( "PLANT_Tank_2" );
+	Util.RemoveGoal( "PLANT_Pit_Bridge_1" );
+//Util.EnableGoal
+	Util.EnableGoal( "BUILD.*" ); //need to limit this
+	Util.EnableGoal( "PLANT.*" ); //need to limit this
+	Util.EnableGoal( "FLAG.*" );
+	// Util.EnableGoal( "RIDE.*" ); //put this in later
+//Util.SetGoalOffset
+	Util.SetGoalOffset( 0, 0, -50, "PLANT_Castle_Gate" );
+//SetGoalPriority
+	SetGoalPriority( "MOUNTMG42.*", 0.0, 0, CLASS.ENGINEER, true );
+	SetGoalPriority( "MOUNTMG42.*", 0.0, 0, CLASS.MEDIC, true );
+	SetGoalPriority( "PLANT_Castle_Gate", 0.82, TEAM.AXIS, CLASS.ENGINEER, true);
+	SetGoalPriority( "BUILD_assault_ladder", 0.91, TEAM.AXIS, CLASS.ENGINEER, true);
+//~SetAvailableMapGoals
+	//SetAvailableMapGoals( TEAM.AXIS, false, "GRENADE_control" );
+	//SetAvailableMapGoals( TEAM.AXIS, false, "RIDE_Tram" );
+	//SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_backdoor" ); //put this in later
+	//SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_fulegate" );
+	//SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_MG" );
+	//SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_wall" );
+	//SetAvailableMapGoals( TEAM.ALLIES, false, "GRENADE_fulegate" );
+//Util.AddUseWp
+	Util.AddUseWp( "PLANT_Castle_Gate", "gate1" );
+	Util.AddUseWp( "PLANT_Castle_Gate", "gate2" );
+	Util.AddUseWp( "PLANT_Castle_Gate", "gate3" );
+	Util.AddUseWp( "PLANT_Castle_Gate", "gate4" );
+	Util.AddUseWp( "PLANT_Castle_Gate", "gate5" );
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "ATTACK_.*" );
+	Util.SetMaxUsers( 1, "DEFEND_.*" );
+	Util.SetMaxUsers( 1, "GRENADE_.*" );
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+	Util.SetMaxUsers( 3, "CHECKPOINT.*" );
+	Util.SetMaxUsers( 1, "CAMP_.*" );
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+	SetMapGoalProperties( "MOBILEMG42_.*", {MinCampTime=10, MaxCampTime=60} );
+
+	Util.AddUseWp("PLANT_Supply_Room_Door", "supplydoor");
+	Util.AddUseWp("PLANT_Supply_Room_Door", "supplydoor1");
+
+	Util.UpdateSwitchData();
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.MaxViewDistance = 2400;
+	bot.IgnoreTarget(Map.NoMovers);
+};

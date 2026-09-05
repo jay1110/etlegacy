@@ -1,0 +1,301 @@
+//=============================================================================
+//
+//  D-Rush (Beta 2) - drush.gm
+//
+//  Who         When                What
+//-----------------------------------------------------------------------------
+//  Mateos       8 October 2019     Moved to nav
+//  Mateos      10   March 2014     Back to work
+//  Mateos      19  August 2012     Initial Script
+//
+//=============================================================================
+
+/****************************************************
+Path mapping and script by Mateos
+Correspondant WAY file size: 43,8 Ko (44 875 octets)
+Last Update: 8th October 2019
+****************************************************/
+
+/*
+ * FIXME:   The Hotel spawn is screwed: if the Axis own it while the Gate
+ *          is destroyed, it will stay Axis...
+ *          Try to see with the mapper for a update.
+ *
+ * Note:    ROUTE_gold1_node3 and ROUTE_gold1_node4 available for all Teams,
+ *          even if the Cave Wall isn't destroyed,
+ *          so disguised Allied Covert-Ops can use both ways.
+ */
+
+global Map =
+{
+    Gold_Crate1_Status = 0,     // Not stolen/secured
+    Gold_Crate2_Status = 0,     // Not stolen/secured
+
+    // *** TRIGGER CALLBACKS ***
+    Allied_Ladder_Built = function( trigger )
+    {
+        Util.MapDebugPrint( "Allied_Ladder_Built", true );
+    },
+
+    Allied_Ladder_Destroyed = function( trigger )
+    {
+        Util.MapDebugPrint( "Allied_Ladder_Destroyed", true );
+    },
+
+    Cave_Wall_Destroyed = function( trigger )
+    {
+        Util.MapDebugPrint( "Cave_Wall_Destroyed", true );
+    },
+
+    Gate_Destroyed = function( trigger )
+    {
+        // *** AXIS GOALS ***
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Alpha.*" );
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Charlie.*" );
+
+        // *** ALLIED GOALS ***
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Bravo.*" );
+        SetAvailableMapGoals( TEAM.ALLIES, true, {
+            "ATTACK_Charlie.*",
+            "CAPPOINT_Escape_Truck",
+            "FLAG_.*",
+            "PLANT_Cave_Wall",
+        });
+
+        Util.MapDebugPrint( "Gate_Destroyed" );
+    },
+
+    Gold_Crate_Taken_Dispatch = function( trigger )
+    {
+        entName = GetEntityName( trigger.Entity );
+        if ( entName == "gold_crate1" )
+        {
+            Map.gold_crate1_Taken( trigger );
+        }
+        else if ( entName == "gold_crate2" )
+        {
+            Map.gold_crate2_Taken( trigger );
+        }
+        else
+        {
+            // When dropped on ground then re-taken... null
+            Util.MapDebugPrint( "Unexpected entity name: " + entName, true );
+        }
+    },
+
+    gold_crate1_Taken = function( trigger )
+    {
+        Map.Gold_Crate1_Status = 1;
+
+        // Enable the CAMP goals around the Truck for both Teams
+        Util.EnableGoal( "CAMP_Truck.*" );
+
+        // Disable the 3 spots of FLAG_gold_crate1
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Charlie[123]" );
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Charlie.*" );
+
+        Util.MapDebugPrint( "gold_crate1_Taken" );
+    },
+
+    gold_crate2_Taken = function( trigger )
+    {
+        Map.Gold_Crate2_Status = 1;
+
+        // Enable the CAMP goals around the Truck for both Teams
+        Util.EnableGoal( "CAMP_Truck.*" );
+
+        // Disable the 3 spots of FLAG_gold_crate2
+        SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Charlie[456]" );
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_Charlie.*" );
+
+        Util.MapDebugPrint( "gold_crate2_Taken" );
+    },
+
+    gold_crate1_Returned = function( trigger )
+    {
+        Map.Gold_Crate1_Status = 0;
+
+        /*
+         * If both Crates are either returned or secured,
+         * disable the CAMP goals around the Truck
+         */
+        if ( Map.Gold_Crate2_Status == 0 )
+        {
+            Util.DisableGoal( "CAMP_Truck.*" );
+        }
+
+        // Re-enable the DEFEND goals around FLAG_gold_crate1
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Charlie[123]" );
+
+        Util.MapDebugPrint( "gold_crate1_Returned" );
+    },
+
+    gold_crate2_Returned = function( trigger )
+    {
+        Map.Gold_Crate2_Status = 0;
+
+        /*
+         * If both Crates are either returned or secured,
+         * disable the CAMP goals around the Truck
+         */
+        if ( Map.Gold_Crate1_Status == 0 )
+        {
+            Util.DisableGoal( "CAMP_Truck.*" );
+        }
+
+        // Re-enable the DEFEND goals around FLAG_gold_crate2
+        SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Charlie[456]" );
+
+        Util.MapDebugPrint( "gold_crate2_Returned" );
+    },
+
+    gold_crate1_Secured = function( trigger )
+    {
+        Map.Gold_Crate1_Status = 0;
+
+        Map.Handle_Camp_Spots_OnSecured();
+
+        Util.MapDebugPrint( "gold_crate1_Secured" );
+    },
+
+    gold_crate2_Secured = function( trigger )
+    {
+        Map.Gold_Crate2_Status = 0;
+
+        Map.Handle_Camp_Spots_OnSecured();
+
+        Util.MapDebugPrint( "gold_crate2_Secured" );
+    },
+
+    Handle_Camp_Spots_OnSecured = function()
+    {
+        if ( Map.Gold_Crate1_Status == 0 && Map.Gold_Crate2_Status == 0 )
+        {
+            Util.DisableGoal( "CAMP_Truck.*" );
+        }
+    },
+
+    flag_Axis_Captured = function( trigger )
+    {
+        Util.MapDebugPrint( "flag_Axis_Captured", true );
+    },
+
+    flag_Allies_Captured = function( trigger )
+    {
+        // If it has been reached once, be more aggressive
+        SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Bravo.*" );
+
+        Util.MapDebugPrint( "flag_Allies_Captured" );
+    },
+};
+
+global OnMapLoad = function()
+{
+    // *** TRIGGERS ***
+    OnTrigger( "Allies have constructed the Ladder!", Map.Allied_Ladder_Built );
+
+    OnTrigger( "Axis have destroyed the Ladder!", Map.Allied_Ladder_Destroyed );
+    OnTrigger( "The Allies have destroyed Cave Wall!", Map.Cave_Wall_Destroyed );
+    OnTrigger( "The Allies have destroyed the Gate and secured the Spawn!", Map.Gate_Destroyed );
+
+    // Most gold-related events need disambiguation...
+    // gold_crate1: East
+    // gold_crate2: North
+    OnTrigger( "Allies have stolen the Gold Crate!", Map.Gold_Crate_Taken_Dispatch );
+    OnTrigger( "Flag returned gold_crate1!", Map.gold_crate1_Returned );
+    OnTrigger( "Flag returned gold_crate2!", Map.gold_crate2_Returned );
+    OnTrigger( "Allies have secured a Gold crate!", Map.gold_crate1_Secured );
+    OnTrigger( "Allies have secured a Gold Crate!", Map.gold_crate2_Secured );
+
+    OnTrigger( "The Axis have reclaim the Flag!", Map.flag_Axis_Captured );
+    OnTrigger( "The Allies have captured the Flag!", Map.flag_Allies_Captured );
+
+    // *** CLEAR ALL GOALS FOR BOTH TEAMS ***
+    Util.DisableGoal( ".*", true ); // All but routes
+    Util.EnableGoal( "CHECKPOINT_flag" );
+
+    // Note: BUILD/PLANT_Allied_Ladder are unreachable in Beta 1/2
+
+    // *** AXIS GOALS ***
+    SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Alpha.*" );
+
+    // *** ALLIED GOALS ***
+    // All bots on the flag, thus no Attack spots
+    SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Gate" );
+
+    // *** GOALS PROPERTIES ***
+    // Not for CAMP goals since they're for both Teams :D
+    Util.SetMaxUsers( 1, "ATTACK_.*" );
+    Util.SetMaxUsers( 1, "DEFEND_.*" );
+
+    //Util.SetMaxUsers( 3, "CHECKPOINT_.*" );
+
+    SetGoalPriority( "CAMP_.*", 0.60 );                     // ATTACK/DEFEND goals are 0.50
+    Util.SetGoalOffset( -50, -100, -100, "PLANT_Gate" );    // A bit in the back and more on the right
+    Util.SetGoalOffset( -50, 0, -100, "PLANT_Cave_Wall" );  // They were planting the other side...
+
+    SetMapGoalProperties( "CAMP_.*",    { DisableCM = 1, MinCampTime = 20, MaxCampTime = 42 } );
+    SetMapGoalProperties( "ATTACK_.*",  { DisableCM = 1, MinCampTime = 20, MaxCampTime = 42 } );
+    SetMapGoalProperties( "DEFEND_.*",  { DisableCM = 1, MinCampTime = 20, MaxCampTime = 42 } );
+
+    Util.MapDebugPrint( "Omni-bot 0.8x map script for D-Rush (Beta 2) by Mateos executed." );
+};
+
+global InitializeRoutes = function()
+{
+    MapRoutes =
+    {
+        // For Axis, use the Cave way
+        CAMP_Truck1 =
+        {
+            ROUTE_AxisSpawn_FirstFloor =
+            {
+                ROUTE_gold1_node3 =
+                {
+                    ROUTE_gold1_node4 = {},
+                },
+            },
+            ROUTE_AxisSpawn_SecondFloor =
+            {
+                ROUTE_gold1_node3 =
+                {
+                    ROUTE_gold1_node4 = {},
+                },
+            },
+        },
+
+        // Use the Cave if its Wall is destroyed
+        CAPPOINT_Escape_Truck =
+        {
+			ROUTE_gold1_node1 =
+			{
+				ROUTE_gold1_node2 =
+				{
+					ROUTE_gold1_node3 =
+					{
+                        Weight = 2,     // Prefer ROUTE_gold1_node3 twice more
+						ROUTE_gold1_node4 = {},
+					},
+					ROUTE_gold2_node3 = {},
+				},
+			},
+			ROUTE_gold2_node1  =
+			{
+				ROUTE_gold2_node2  =
+				{
+					ROUTE_gold2_node3  = {},
+				},
+			},
+		},
+    };
+
+    // Copy routes
+	MapRoutes.CAMP_Truck2 = MapRoutes.CAMP_Truck1;
+    MapRoutes.CAMP_Truck3 = MapRoutes.CAMP_Truck1;
+    MapRoutes.CAMP_Truck4 = MapRoutes.CAMP_Truck1;
+    MapRoutes.CAMP_Truck5 = MapRoutes.CAMP_Truck1;
+
+    Util.Routes(MapRoutes);
+};

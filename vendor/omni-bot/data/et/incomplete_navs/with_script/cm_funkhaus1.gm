@@ -1,0 +1,82 @@
+//==========================================================================================
+//
+//	cm_funkhaus1.gm
+//
+//	Who                        	When		What
+//------------------------------------------------------------------------------------------
+//	^1C^2Y^3B^6E^5R^04^1W^2O^3L^6F	20 April 2022	Initial Script
+//	palota	9 June 2025
+//==========================================================================================
+//
+
+global Map =
+{
+	DispenseHealthTime = 10.0,
+	DispenseAmmoTime = 1.0,
+
+	Assault_Ramp_Built = function()
+	{
+		Util.MapDebugPrint( "Assault_Ramp_Built" );
+	},
+
+	Barricade_Built = function()
+	{
+		SetAvailableMapGoals( 0, false, "DEFEND_gen_out.*");
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Generator");
+		Util.MapDebugPrint( "Barricade_Built" );
+	},
+
+	Assault_Ramp_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Assault_Ramp_Destroyed" );
+	},
+
+	Barricade_Destroyed = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals( 0, true, "DEFEND_gen_out.*");
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Generator");
+		Util.MapDebugPrint( "Barricade_Destroyed" );
+	},
+
+	Blast_Door_Destroyed = function()
+	{
+		Wp.CheckBlockable();
+		SetAvailableMapGoals( 0, true, "DEFEND_gen_.");
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Barricade");
+		Util.MapDebugPrint( "Blast_Door_Destroyed" );
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "The Allies have built the Assault Ramp!", Map.Assault_Ramp_Built );
+	OnTrigger( "The Axis have built the Barricade!", Map.Barricade_Built );
+	OnTrigger( "Axis have destroyed the Assault Ramp!", Map.Assault_Ramp_Destroyed );
+	OnTrigger( "Allies have destroyed the Barricade!", Map.Barricade_Destroyed );
+	OnTrigger( "The Allies have destroyed the blastdoor!", Map.Blast_Door_Destroyed );
+
+	Util.DisableGoal( ".*", true );
+	Util.EnableGoal(".*_Command_Post");
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"DEFEND_roof.*",
+		"DEFEND_cp_area.*",
+		"PLANT_Assault_Ramp",
+		"BUILD_Barricade",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_Assault_Ramp",
+		"PLANT_Blast_Door",
+	});
+
+	SetGoalPriority("PLANT_Generator", 0.83);
+	SetGoalPriority("BUILD_Command_Post", 0.81);
+	SetGoalPriority("BUILD_Assault_Ramp", 0.81);
+	SetGoalPriority("PLANT_Command_Post", 0.5, 0, CLASS.ENGINEER);
+	SetGoalPriority("DEFUSE_Assault_Ramp.*", 0.8, TEAM.ALLIES, CLASS.ENGINEER, true);
+	SetGoalPriority("DEFUSE_Command_Post.*", 0.7, 0, CLASS.ENGINEER, true);
+
+	Util.MapDebugPrint( "^6ETS^4| ^2Custom ^1C ^04 ^1W ^3Omni-bot map script ^6Version ^11.01 ^3For the map: ^7" + GetMapName() + " executed." );
+};

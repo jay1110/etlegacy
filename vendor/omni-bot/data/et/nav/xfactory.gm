@@ -1,0 +1,88 @@
+//==========================================================================================
+//
+//	xfactory.gm
+//
+//	Who                  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	09 December 2017
+//	palota                  	17 March 2025
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	Wall_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_wall.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_panel.*");
+
+		SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_wall.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"PLANT_Control_Panel",
+			"ATTACK_panel.*",
+		});
+		Util.MapDebugPrint("Wall_Destroyed");
+	},
+
+	Control_Panel_Destroyed = function()
+	{
+		Util.MapDebugPrint("Control_Panel_Destroyed");
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("^6T^7he Wall is destroyed! ^6B^7lurpP", Map.Wall_Destroyed);
+	OnTrigger("^6T^7he Control Panel is destroyed! ^6B^7lurpP", Map.Control_Panel_Destroyed);
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal(".*CAB_.*");
+
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"PLANT_Wall",
+		"ATTACK_wall.*",
+	});
+
+	SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_wall.*");
+
+	SetGoalPriority("DEFEND_panel[16]", 0.51);
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_Wall =
+		{
+			ROUTE_allied_spawn = {
+				ROUTE_allied1 = {},
+				ROUTE_allied2 = {},
+			}
+		},
+		DEFEND_panel1 =
+		{
+			ROUTE_axis_spawn = {
+				ROUTE_axis1 = {},
+				ROUTE_axis2 = {},
+				ROUTE_axis3 = {},
+				ROUTE_axis4 = {},
+			}
+		}
+	};
+
+	MapRoutes["ATTACK_wall.*"] = MapRoutes.PLANT_Wall;
+	MapRoutes["DEFEND_panel.*"] = MapRoutes.DEFEND_panel1;
+	Util.Routes(MapRoutes);
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+	bot.ChangeSpawnPoint(3);
+};

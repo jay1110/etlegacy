@@ -1,0 +1,259 @@
+//==========================================================================================
+//
+//	alanbrooke_v1.gm
+//
+//	Who 	When		What
+//------------------------------------------------------------------------------------------
+//	^1Loffy	26 August 2018	Initial Script
+//	palota 14 January 2025	ATTACK_water, ROUTE_water_drop_3, fixed goals availability and priority
+//==========================================================================================
+//
+
+global Map =
+{
+// WATER FLAG POLE
+	gateflag_Axis_Captured = function()
+	{
+		Util.MapDebugPrint("gateflag_Axis_Captured");
+	},
+
+	gateflag_Allies_Captured = function()
+	{
+		Util.MapDebugPrint("gateflag_Allies_Captured");
+	},
+
+// ALLIED WATER GATE
+	Allied_gate_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("waterwall_0.", "closed", false);
+		Wp.SetWaypointFlag("central_0.", "closed", false);
+		Wp.SetWaypointFlag("central_plant_1.", "closed", false);
+		sleep(0.1);
+		Util.EnableGoal({
+			"CHECKPOINT_bankflag",
+			"DEFEND_central_.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_water.*");
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_water.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "PLANT_Command_Post");
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"PLANT_Side_Route",
+			"PLANT_Command_Post",
+			"BUILD_Ramp",
+		});
+		Util.MapDebugPrint("Allied_gate_Destroyed");
+	},
+
+// AXIS COVER
+	Cover_Built = function()
+	{
+		Wp.SetWaypointFlag("cover_0.", "closed", true);
+		Util.MapDebugPrint("Cover_Built");
+	},
+
+	Cover_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("cover_0.", "closed", false);
+		Util.MapDebugPrint("Cover_Destroyed");
+	},
+
+// AXIS RAMP
+	Ramp_Built = function()
+	{
+		Wp.SetWaypointFlag("ramp_01", "closed", false);
+		Util.MapDebugPrint("Ramp_Built");
+	},
+
+	Ramp_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("ramp_01", "closed", true);
+		Util.MapDebugPrint("Ramp_Destroyed");
+	},
+
+// CENTRAL FLAG POLE
+	bankflag_Axis_Captured = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "PLANT_Central_Wall");
+		Util.MapDebugPrint("bankflag_Axis_Captured");
+	},
+
+	bankflag_Allies_Captured = function()
+	{
+		Util.MapDebugPrint("bankflag_Allies_Captured");
+	},
+
+// ALLIED CENTRAL WALL
+	Central_Wall_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("central_door_.", "closed", false);
+		Wp.SetWaypointFlag("central_post_boom_.", "closed", false);
+		sleep(0.1);
+		Util.DisableGoal("DEFEND_central_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "PLANT_Ramp");
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"BUILD_Ramp",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_obj_.*");
+
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"PLANT_Radio_Side_Route",
+			"DEFEND_radio_.*",
+			"BUILD_Command_Post",
+			"FLAG_allied_goldbox",
+			"CAPPOINT_bring_docs_here",
+		});
+
+		Util.MapDebugPrint("Central_Wall_Destroyed");
+	},
+
+// AXIS SIDE ROUTE AT CENTRAL HALL
+	Side_Route_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("central_health_ammo_1", "closed", false);
+		SetAvailableMapGoals(TEAM.AXIS, true, ".*CAB_mcs_central");
+		Util.MapDebugPrint("Side_Route_Destroyed");
+	},
+
+// AXIS SIDE ROUTE AT RADIO
+	Radio_Side_Route_Destroyed = function()
+	{
+		Wp.SetWaypointFlag("radio_.", "closed", false);
+		Util.MapDebugPrint("Radio_Side_Route_Destroyed");
+	},
+
+// ALLIED DOCUMENTS
+	allied_goldbox_Taken = function()
+	{
+		Util.MapDebugPrint("allied_goldbox_Taken");
+	},
+
+	allied_goldbox_Returned = function()
+	{
+		Util.MapDebugPrint("allied_goldbox_Returned");
+	},
+
+	allied_goldbox_Secured = function()
+	{
+		Util.MapDebugPrint("allied_goldbox_Secured");
+	},
+};
+
+global OnMapLoad = function()
+{
+// ==================	SET TRIGGERS (WHEN MAP LOADS) ==========================
+
+// WATER FLAG POLE
+	OnTrigger("^1Axis reclaim the Gate Flag!", Map.gateflag_Axis_Captured);
+	OnTrigger("^1Allied Forces reclaim the Gate Flag!", Map.gateflag_Allies_Captured);
+// ALLIED WATER GATE
+	OnTrigger("^1The Axis have dynamited the Gate!", Map.Allied_gate_Destroyed);
+// AXIS COVER
+	OnTrigger("The Axis have constructed covers! (A satchel will destroy it.)", Map.Cover_Built);
+	OnTrigger("The Allies have destroyed the cover! (Axis can rebuild it.)", Map.Cover_Destroyed);
+// AXIS RAMP
+	OnTrigger("The Axis have constructed the Ramp! (A satchel will destroy it.)", Map.Ramp_Built);
+	OnTrigger("The Allies have destroyed the Ramp! (Axis can rebuild it.)", Map.Ramp_Destroyed);
+// CENTRAL FLAG POLE
+	OnTrigger("^1Axis reclaim the Central Flag!", Map.bankflag_Axis_Captured);
+	OnTrigger("^1Allied Forces reclaim the Central Flag!", Map.bankflag_Allies_Captured);
+// ALLIED CENTRAL WALL
+	OnTrigger("^1The Axis have dynamited the Central Wall.", Map.Central_Wall_Destroyed);
+// AXIS SIDE ROUTE AT CENTRAL HALL
+	OnTrigger("^1The Axis have dynamited the Side Route in the centre.", Map.Side_Route_Destroyed);
+// AXIS SIDE ROUTE AT RADIO
+	OnTrigger("^1The Axis have dynamited the second Side Route to the Radio.", Map.Radio_Side_Route_Destroyed);
+// ALLIED DOCUMENTS
+	OnTrigger("Axis have stolen the Documents!", Map.allied_goldbox_Taken);
+	OnTrigger("Allies have returned the Documents!", Map.allied_goldbox_Returned);
+	OnTrigger("^1Acta est fabula.", Map.allied_goldbox_Secured);
+
+// ==================	SET GOALS (WHEN MAP LOADS) ==========================
+	Util.DisableGoal(".*", true);
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"ATTACK_water.*",
+		"BUILD_Command_Post",
+	});
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"PLANT_Allied_gate",
+		".*CAB_mch_water",
+		"DEFEND_water_.*",
+	});
+	
+	SetGoalPriority("BUILD_Ramp", 0.81);
+	SetGoalPriority("PLANT_Radio_Side_Route", 0.85);
+	Util.SetMaxUsersInProgress(1, "BUILD_Command_Post");
+
+// ==================	SET SOME INDIVIDUAL WAYPOINTS (WHEN MAP LOADS) ==========================
+	Wp.SetWaypointFlag("waterwall_0.", "closed", true);
+	Wp.SetWaypointFlag("central_0.", "closed", true);
+	Wp.SetWaypointFlag("cover_0.", "closed", false);
+	Wp.SetWaypointFlag("ramp_01", "closed", true);
+	Wp.SetWaypointFlag("central_health_ammo_.", "closed", true);
+	Wp.SetWaypointFlag("central_door_.", "closed", true);
+	Wp.SetWaypointFlag("central_plant_1.", "closed", true);
+	Wp.SetWaypointFlag("central_post_boom_.", "closed", true);
+	Wp.SetWaypointFlag("radio_.", "closed", true);
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+	
+	sleep(17);
+	Util.EnableGoal("CHECKPOINT_gateflag");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.TargetBreakableDist = 90.0;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+// WATER FLAG POLE
+		CHECKPOINT_gateflag =
+		{
+			ROUTE_ax_spawn_1 =
+			{
+				ROUTE_water_drop_1a = {},
+				ROUTE_water_drop_2 = {},
+				ROUTE_water_drop_3 = {},
+			},
+		},
+
+// ALLIED WATER GATE
+		PLANT_Allied_gate =
+		{
+			ROUTE_ax_spawn_1 =
+			{
+				ROUTE_plant_water_1 = {},
+				ROUTE_water_drop_1 = {},
+			},
+		},
+
+// CENTRAL FLAG POLE
+		CHECKPOINT_bankflag =
+		{
+			ROUTE_ax_spawn_3 =
+			{
+				ROUTE_side_route_1 = {},
+				ROUTE_side_route_2 = {},
+				ROUTE_central_1 = {},
+				ROUTE_central_2 = {},
+			},
+		},
+
+// ALLIED DOCUMENTS
+		FLAG_allied_goldbox =
+		{
+			ROUTE_ax_spawn_4 =
+			{
+				ROUTE_obj_drop_doc_1 = {},
+				ROUTE_obj_drop_radio_1 = {},
+				ROUTE_obj_middle_1 = {},
+				ROUTE_obj_middle_2 = {},
+			},
+		},
+	};
+
+	Util.Routes(MapRoutes);
+};

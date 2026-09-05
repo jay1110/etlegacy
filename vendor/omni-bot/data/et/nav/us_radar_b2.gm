@@ -1,0 +1,302 @@
+//==========================================================================================
+//
+//	us_radar_b2.gm
+//
+//	Who		  	When		What
+//------------------------------------------------------------------------------------------
+//	maker@bigsighstudios.com	15 October 2017	Initial Script
+//	cyber4wolf 18 August 2019	added some missing strings
+//	19 August 2019  Goals organized and orderly, tweaked bot suiside locations.
+//	this may b a bad idea - Added 3 defend locations in the tower
+//	closest to axis first spawn. Fixed a few other things that were correct.
+//
+//	palota	06 August 2025	ATTACK, DEFEND, SNIPE, MOUNTMG42, routes, priorities, improved waypoints, fixed many bugs
+//==========================================================================================
+
+global Map =
+{
+	waterPump = 0,
+
+	Water_Pump_Built = function()
+	{
+		Map.waterPump = 1;
+		Util.MapDebugPrint("Water_Pump_Built");
+		sleep(35); //wait until water is pumped out
+		if(Map.waterPump){
+			Util.EnableGoal("ROUTE_water");
+			SetAvailableMapGoals(TEAM.AXIS, 1, "PLANT_Bunker_Doors", true);
+			Util.MapDebugPrint("Bunker_Doors_Available");
+		}
+	},
+
+	Water_Pump_Destroyed = function()
+	{
+		Map.waterPump = 0;
+		Util.DisableGoal("ROUTE_water");
+		SetAvailableMapGoals(TEAM.AXIS, 0, "PLANT_Bunker_Doors", true);
+		Util.MapDebugPrint("Water_Pump_Destroyed");
+	},
+
+	Water_Pump_Planted = function()
+	{
+		Util.SetMaxUsers(1, "DEFUSE_Water_Pump.*");
+		Util.SetGoalRange("DEFUSE_Water_Pump.*", 2800);
+		Util.MapDebugPrint( "Water_Pump_Planted" );
+	},
+
+	Roof_Top_Ladder_Built = function()
+	{
+		Util.EnableGoal("ROUTE_ladder");
+		Util.MapDebugPrint("Roof_Top_Ladder_Built");
+	},
+
+	Roof_Top_Ladder_Destroyed = function()
+	{
+		Util.DisableGoal("ROUTE_ladder");
+		Util.MapDebugPrint("Roof_Top_Ladder_Destroyed");
+	},
+
+	US_Radar_Base_Door_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.AXIS, 0,
+			"ATTACK_base.*");
+		SetAvailableMapGoals(TEAM.AXIS, 1, {
+			"PLANT_US_Radar_Doors",
+			"PLANT_Allied_Command_Post",
+			"PLANT_Sealed_Grid",
+			"ATTACK_door.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, 0,
+			"DEFEND_base.*");
+		SetAvailableMapGoals(TEAM.ALLIES, 1, {
+			"DEFEND_door.*",
+		});
+		SetGoalPriority("BUILD_Axis_Command_Post", 0.81);
+
+		Util.MapDebugPrint("US_Radar_Base_Door_Destroyed");
+	},
+
+	US_Radar_Doors_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.AXIS, 0,
+			"ATTACK_door.*");
+		SetAvailableMapGoals(TEAM.AXIS, 1, {
+			"PLANT_US_Radar",
+			"ATTACK_radar.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, 0,
+			"PLANT_Water_Pump");
+		SetAvailableMapGoals(TEAM.ALLIES, 1, {
+			".*MG42_radar",
+			"DEFEND_radar.*",
+		});
+		Util.SetMaxUsersInProgress(1, "CHECKPOINT_forwardspawn1_flag");
+		SetGoalPriority("MOUNTMG42_tower.*", 0.5);
+		SetGoalPriority("DEFEND_door.*", 0.4);
+		SetGoalPriority("BUILD.*", 0.81);
+		Util.RandomSpawn(TEAM.ALLIES, 4);
+		Util.MapDebugPrint("US_Radar_Doors_Destroyed");
+	},
+
+	forwardspawn1_flag_Axis_Captured = function()
+	{
+		Util.LimitToTeam(TEAM.AXIS, ".*MG42_bunker1");
+		GetGoal("MOUNTMG42_bunker1").AimVectors[1] = Vec3(-0.929, 0.369, -0.017);
+		SetAvailableMapGoals(TEAM.ALLIES, 0, "PLANT_Roof_Top_Ladder");
+		Util.MapDebugPrint("forwardspawn1_flag_Axis_Captured");
+	},
+
+	forwardspawn1_flag_Allies_Captured = function()
+	{
+		Util.LimitToTeam(TEAM.ALLIES, ".*MG42_bunker1");
+		GetGoal("MOUNTMG42_bunker1").AimVectors[1] = null;
+		SetAvailableMapGoals(TEAM.ALLIES, 1, "PLANT_Roof_Top_Ladder");
+		Util.MapDebugPrint("forwardspawn1_flag_Allies_Captured");
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint("Allied_Command_Post_Built");
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint("Axis_Command_Post_Built");
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint("Allied_Command_Post_Destroyed");
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint("Axis_Command_Post_Destroyed");
+	},
+
+	Sealed_Grid_Destroyed = function()
+	{
+		Util.MapDebugPrint("Sealed_Grid_Destroyed");
+	},
+
+	Bunker_Doors_Destroyed = function()
+	{
+		Util.MapDebugPrint("Bunker_Doors_Destroyed");
+	},
+
+	US_Radar_Destroyed = function()
+	{
+		Util.MapDebugPrint("US_Radar_Destroyed");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built);
+	OnTrigger("Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built);
+	OnTrigger("Axis have built the Roof top ladder!", Map.Roof_Top_Ladder_Built);
+	OnTrigger("Axis have built the Oasis Water Pump!", Map.Water_Pump_Built);
+	OnTrigger( "Planted at the Water Pump.", Map.Water_Pump_Planted );
+	OnTrigger("Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed);
+	OnTrigger("Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed);
+	OnTrigger("The axis team have destroyed the Bunker doors!", Map.Bunker_Doors_Destroyed);
+	OnTrigger("Allies have destroyed the roof top ladder!", Map.Roof_Top_Ladder_Destroyed);
+	OnTrigger("The axis team have destroyed the Sealed Grid!", Map.Sealed_Grid_Destroyed);
+	OnTrigger("The axis team have destroyed US Radar!", Map.US_Radar_Destroyed);
+	OnTrigger("The axis team have destroyed the US Radar base doors!", Map.US_Radar_Base_Door_Destroyed);
+	OnTrigger("US Radar Doors Destroyed.", Map.US_Radar_Doors_Destroyed);
+	OnTrigger("Allies have damaged the Radio centers tunnle Water Pump!", Map.Water_Pump_Destroyed);
+	OnTrigger("Axis capture the Forward Spawn!", Map.forwardspawn1_flag_Axis_Captured);
+	OnTrigger("Allies capture the Forward Spawn!", Map.forwardspawn1_flag_Allies_Captured);
+
+	OnTriggerRegion(Vec3(-293,-843,352), 350, RegionTrigger.DisableCombatMovement);
+
+	Util.DisableGoal(".*", true);
+	Util.DisableGoal({"ROUTE_ladder", "ROUTE_water"});
+	Util.EnableGoal({
+		"AMMOCAB.*",
+		"HEALTHCAB.*",
+		"CHECKPOINT.*",
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, 0, ".*cabinet_2");
+
+	SetAvailableMapGoals(TEAM.AXIS, 1, {
+		"BUILD_Axis_Command_Post",
+		"BUILD_Water_Pump",
+		"BUILD_Roof_Top_Ladder",
+		"PLANT_US_Radar_Base_Door",
+		"ATTACK_base.*",
+		"SNIPE_x.*",
+	});
+
+	SetAvailableMapGoals(TEAM.ALLIES, 1, {
+		"BUILD_Allied_Command_Post",
+		"PLANT_Axis_Command_Post",
+		"PLANT_Roof_Top_Ladder",
+		"PLANT_Water_Pump",
+		".*MG42_bunker1",
+		".*MG42_tower.*",
+		"DEFEND_base.*",
+	});
+
+	SetGoalPriority("SNIPE.*", 0.81);
+	SetGoalPriority("PLANT_Water_Pump", 0.7);
+	SetGoalPriority("PLANT_Axis_Command_Post", 0.7);
+	SetGoalPriority("PLANT_Roof_Top_Ladder", 0.7);
+	SetGoalPriority("DEFUSE_Bunker.*", 0, 0, 0, true);
+
+	Util.ExcludeClass({"PLANT_.*Command_Post", "PLANT_Roof_Top_Ladder"}, 0, CLASS.ENGINEER);
+
+	Util.AddUsePoint("PLANT_Sealed_Grid", Vec3(-1314, 756, 57));
+	Util.AddUsePoint("PLANT_Water_Pump", Vec3(1284, -1286, 32));
+
+	SetMapGoalProperties("ATTACK.*", {MinCampTime=10, MaxCampTime=40});
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=30, MaxCampTime=90});
+	SetMapGoalProperties("MOUNTMG42_.*", {MinCampTime=40, MaxCampTime=80});
+	SetMapGoalProperties("SNIPE.*", {MinCampTime=20, MaxCampTime=90});
+
+	Util.SetMaxUsersInProgress(4, "CHECKPOINT_forwardspawn1_flag");
+	Util.SetMaxUsers(1, {
+		"BUILD.*",
+		"MOUNTMG42.*",
+		"PLANT_Water_Pump",
+		"PLANT_Bunker_Doors",
+	});
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_forwardspawn1_flag =
+		{
+			ROUTE_axis_spawn =
+			{
+				ROUTE_ladder ={},
+				ROUTE_axis_gate ={Weight=5},
+				ROUTE_water ={Weight=3},
+			},
+		},
+		PLANT_US_Radar =
+		{
+			ROUTE_axis_spawn =
+			{
+				ROUTE_ladder =
+				{
+					ROUTE_base =
+					{
+						ROUTE_radar1l =
+						{
+							ROUTE_radar2l ={},
+						},
+						ROUTE_radar1r =
+						{
+							ROUTE_radar2r ={},
+						},
+					},
+				},
+				ROUTE_axis_gate =
+				{
+					Weight=2,
+					ROUTE_base ={},
+				},
+				ROUTE_water =
+				{
+					ROUTE_base ={},
+				},
+			},
+			ROUTE_forward_spawn =
+			{
+				ROUTE_base ={},
+			},
+		},
+		PLANT_US_Radar_Base_Door =
+		{
+			ROUTE_axis_spawn =
+			{
+				ROUTE_ladder ={},
+				ROUTE_axis_gate ={Weight=2},
+			},
+		},
+		PLANT_US_Radar_Doors =
+		{
+			ROUTE_axis_spawn =
+			{
+				ROUTE_axis_gate ={},
+				ROUTE_water ={},
+			},
+		},
+	};
+	MapRoutes["ATTACK_radar.*"] = MapRoutes.PLANT_US_Radar;
+	MapRoutes["ATTACK_door.*"] = MapRoutes.PLANT_US_Radar_Doors;
+	MapRoutes["ATTACK_base.*"] = MapRoutes.PLANT_US_Radar_Base_Door;
+	Util.Routes(MapRoutes);
+};

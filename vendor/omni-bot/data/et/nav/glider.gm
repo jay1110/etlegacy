@@ -1,0 +1,1508 @@
+//==================================================================================================
+//
+//	Glider 3.0.2 - glider.gm
+//
+//	Who			When					What
+//--------------------------------------------------------------------------------------------------
+//	Mateos		11th May 2016			Moved to nav
+//	Mateos		6th December 2010		Initial Script -> Last Update
+//	Tardis		27th November 2010		Custom Plant Goal + Paththrough on Generator Ladder
+//										+ Some script clearing
+//
+//==================================================================================================
+// DON'T NEED CLASS.COVERTOPS SELECTED, JUST EDIT GOAL (PLANT) AND SET TO SATCHEL ONLY // Done Tardis
+// OK, thank you :)
+
+/****************************************************
+Path mapping and script by Mateos
+Correspondant WAY file hash: -
+Last update: 3rd July 2024
+****************************************************/
+
+/*
+ * TODO:
+ *	- Not much concerning for me but worth noting: while Axis Split is on, Axis mortar can potentially spawn at the Island while Guardpost is available
+ *	---
+ *	- Manage the Nebelwerfer (Compound)?
+ *	  * Multiple rocket launcher to take down the Glider; max load: 6; hits to take down the Glider: 3; not very accurate
+ *	  * Panzer can also do this, perhaps have a bot on this?
+ */
+
+global MapStep =
+{
+	START = 0,
+	ALLIED_CP_BUILT_ONCE = 1,
+	GENERATOR_DESTROYED = 2,
+	TANK_PAST_FIRST_BARRIER = 3, // For spawn management
+	GUARDPOST_REACHED = 4,
+	ME109_AIRSTRIKES_AVAILABLE = 5, // run_43 (tank_range_check)
+	ME109_AIRSTRIKES_UNAVAILABLE = 6 // run_83 (tank_range_check)
+};
+
+global Spawn =
+{
+	PARACHUTE	= 1, // Only available at start, mirror of Outpost team owning; unavailable once Allied CP built once
+	OUTPOST		= 2, // Capturable at first, both teams can spawn, then unavailable upon Allied PC built once, then Axis-only once Guardpost reached
+	RUINS		= 3, // Allied spawn, unlocked definitively upon building related CP, unavailable once Guardpost reached
+	GUARDPOST	= 4, // Capturable, both teams can spawn; then Allied-only once Guardpost reached
+	COMPOUND	= 5, // Axis spawn at start, unavailable once Guardpost reached
+	ISLAND		= 6, // Capturable, Axis spawning only
+	TANK_GARAGE	= 7, // Capturable once Generator destroyed, Allied spawning only, unavailable once Guardpost reached
+
+	Init = function()
+	{
+		if ( Spawn.InitDone ) { return; }
+
+		Spawn.Axis		= Spawn.OUTPOST;
+		Spawn.Allies	= Spawn.PARACHUTE;
+
+		Spawn.GuardpostOwner	= TEAM.ALL;
+		Spawn.IslandOwner		= TEAM.ALLIES;
+		Spawn.OutpostOwner		= TEAM.AXIS;
+		Spawn.TankGarageOwner	= TEAM.AXIS;
+
+		Spawn.AxisSplit = false;
+
+		Util.MapDebugPrint( "Spawn-related variables initialized", true );
+
+		Spawn.InitDone = true;
+
+		Spawn.MoveTeam( TEAM.AXIS ); // If they were spawning at the Compound before a map_restart...
+	},
+
+	Manage = function()
+	{
+		previousAxis = Spawn.Axis;
+		previousAllies = Spawn.Allies;
+
+		previousAxisSplit = Spawn.AxisSplit;
+
+		// We ignore the steps where there's no much important choice about spawning, or it is handled by the map itself
+		// Thus, the focus of this function is between Tank past 1st barrier and Guardpost reached
+		if ( Map.Step == MapStep.TANK_PAST_FIRST_BARRIER )
+		{
+			// Each team has between 1 and 3 spawn(s) available during this phase
+			// Axis: Compound, Island, Guardpost
+			// Allies: Ruins, Tank Garage, Guardpost
+			// ---
+			// Axis should spawn at Guardpost or Island, to be in position (possible spawn split if both owned)
+			// Allies should spawn at the closest spawn to the Tank, either Tank Garage or Guardpost
+			Spawn.AxisSplit = false;
+			axisScore = Spawn.GetAxisScore();
+			switch ( axisScore )
+			{
+				case 1: { Spawn.Axis = Spawn.COMPOUND; }
+				case 3: { Spawn.Axis = Spawn.ISLAND; }
+				case 5: { Spawn.Axis = Spawn.GUARDPOST; }
+				case 7:
+				{
+					Spawn.Axis = Spawn.GUARDPOST;
+					Spawn.AxisSplit = DistanceBetweenSpawnPolesAndTankTracker.currentClosestSpawn == Spawn.TANK_GARAGE;
+				}
+				default: { Error( "Unexpected Axis score: " + axisScore ); }
+			}
+
+			alliesScore = Spawn.GetAlliesScore();
+			switch ( alliesScore )
+			{
+				case 1: { Spawn.Allies = Spawn.RUINS; }
+				case 3: { Spawn.Allies = Spawn.TANK_GARAGE; }
+				case 5: { Spawn.Allies = Spawn.GUARDPOST; }
+				case 7: { Spawn.Allies = DistanceBetweenSpawnPolesAndTankTracker.currentClosestSpawn; }
+				default: { Error( "Unexpected Allies score: " + alliesScore ); }
+			}
+		}
+		else if ( Map.Step == MapStep.GENERATOR_DESTROYED )
+		{
+			// This step only matters for Allies
+			if ( Spawn.TankGarageOwner == TEAM.ALLIES )
+			{
+				Spawn.Allies = Spawn.TANK_GARAGE;
+			}
+			else
+			{
+				Spawn.Allies = Spawn.RUINS;
+			}
+		}
+		else if ( Map.Step == MapStep.GUARDPOST_REACHED )
+		{
+			// This step mainly matters for Axis, if they spawn at the Island
+			Spawn.Axis		= Spawn.OUTPOST;
+			Spawn.Allies	= Spawn.GUARDPOST;
+		}
+
+		//Util.MapDebugPrint( Spawn.GetName( previousAxis ) + " -> " + Spawn.GetName( Spawn.Axis ), true );
+		//Util.MapDebugPrint( Spawn.GetName( previousAllies ) + " -> " + Spawn.GetName( Spawn.Allies ), true );
+
+		if ( Spawn.Axis != previousAxis || Spawn.AxisSplit != previousAxisSplit )
+		{
+			Spawn.MoveTeam( TEAM.AXIS );
+		}
+
+		if ( Spawn.Allies != previousAllies )
+		{
+			Spawn.MoveTeam( TEAM.ALLIES );
+		}
+	},
+
+	GetAxisScore = function()
+	{
+		score = 1; // Compound-only
+		if ( Spawn.IslandOwner == TEAM.AXIS ) { score += 2; }
+		if ( Spawn.GuardpostOwner == TEAM.AXIS ) { score += 4; }
+		return score;
+	},
+
+	GetAlliesScore = function()
+	{
+		score = 1; // Ruins-only
+		if ( Spawn.TankGarageOwner == TEAM.ALLIES ) { score += 2; }
+		if ( Spawn.GuardpostOwner == TEAM.ALLIES ) { score += 4; }
+		return score;
+	},
+
+	MoveTeam = function( team )
+	{
+		if ( Map.Debug )
+		{
+			spawnName;
+			if ( team == TEAM.AXIS ) { spawnName = Spawn.GetName( Spawn.Axis ); } else { spawnName = Spawn.GetName( Spawn.Allies ); }
+			print( Util.DebugColorString + "Moving " + Util.TeamName( team ) + " to " + spawnName + " spawn" );
+			if ( team == TEAM.AXIS) { print( Util.DebugColorString + "=> Axis split: " + ToString( Spawn.AxisSplit ) ); }
+		}
+
+		foreach ( bot in BotTable )
+		{
+			if ( bot.GetTeam() != team ) { continue; }
+			Spawn.MoveBot( bot );
+		}
+	},
+
+	MoveBot = function( bot )
+	{
+		if ( bot.GetTeam() == TEAM.AXIS )
+		{
+			if ( !Spawn.AxisSplit ) { bot.ChangeSpawnPoint( Spawn.Axis ); }
+			else
+			{
+				spawn;
+				if ( RandInt( 0, 9 ) < 5 ) { spawn = Spawn.GUARDPOST; } else { spawn = Spawn.ISLAND; }
+				bot.ChangeSpawnPoint( spawn );
+			}
+		}
+		else
+		{
+			bot.ChangeSpawnPoint( Spawn.Allies );
+		}
+	},
+
+	GetName = function( spawnId )
+	{
+		switch ( spawnId )
+		{
+			case Spawn.PARACHUTE:	{ return "Parachute"; }
+			case Spawn.OUTPOST:		{ return "Outpost"; }
+			case Spawn.RUINS:		{ return "Ruins"; }
+			case Spawn.GUARDPOST:	{ return "Guardpost"; }
+			case Spawn.COMPOUND:	{ return "Compound"; }
+			case Spawn.ISLAND:		{ return "Island"; }
+			case Spawn.TANK_GARAGE:	{ return "Tank Garage"; }
+		}
+
+		return "{Unknown spawn ID: " + spawnId + "}";
+	}
+};
+
+global Map =
+{
+	Step = MapStep.START,
+
+	IsTankDestroyed = false,
+
+	/**
+	 * Function which handles Axis classes,
+	 * once the Tank has passed the Guardpost and is in sight
+	 * It does override the default configuration from et_autoexec.gm,
+	 * but just for Axis, and just for the end of this map
+	 */
+	AxisClassManager = function()
+	{
+		nbAxisBots = Server.Team[TEAM.AXIS].NumBots;
+
+		if ( nbAxisBots < 4 )
+		{
+			return;
+		}
+
+		if ( nbAxisBots > 16 )
+		{
+			nbAxisBots = 16;
+		}
+
+		switch( nbAxisBots )
+		{
+			case  4: { Map.ChangeAxisMinClassCount( 0, 1, 1, 1, 1 ); }
+			case  5: { Map.ChangeAxisMinClassCount( 0, 1, 2, 1, 1 ); }
+			case  6: { Map.ChangeAxisMinClassCount( 0, 2, 2, 1, 1 ); }
+			case  7: { Map.ChangeAxisMinClassCount( 0, 2, 2, 1, 2 ); }
+			case  8: { Map.ChangeAxisMinClassCount( 1, 2, 2, 1, 2 ); }
+			case  9: { Map.ChangeAxisMinClassCount( 1, 2, 3, 1, 2 ); }
+			case 10: { Map.ChangeAxisMinClassCount( 1, 3, 3, 1, 2 ); }
+			case 11: { Map.ChangeAxisMinClassCount( 1, 3, 3, 2, 2 ); }
+			case 12: { Map.ChangeAxisMinClassCount( 1, 3, 3, 2, 3 ); }
+			case 13: { Map.ChangeAxisMinClassCount( 1, 3, 4, 2, 3 ); }
+			case 14: { Map.ChangeAxisMinClassCount( 1, 4, 4, 2, 3 ); }
+			case 15: { Map.ChangeAxisMinClassCount( 1, 4, 4, 3, 3 ); }
+			case 16: { Map.ChangeAxisMinClassCount( 1, 4, 4, 4, 3 ); }
+		}
+	},
+
+	/**
+	 * Sets the MinClassCount value of the Axis for each class
+	 * No value check since this is just used here...
+	 * Each param is explicitely named
+	 */
+	ChangeAxisMinClassCount = function( soldierCount, medicCount, engineerCount, fieldopsCount, covertopsCount )
+	{
+		Server.MinClassCount[TEAM.AXIS][CLASS.SOLDIER]		= soldierCount;
+		Server.MinClassCount[TEAM.AXIS][CLASS.MEDIC]		= medicCount;
+		Server.MinClassCount[TEAM.AXIS][CLASS.ENGINEER]		= engineerCount;
+		Server.MinClassCount[TEAM.AXIS][CLASS.FIELDOPS]		= fieldopsCount;
+		Server.MinClassCount[TEAM.AXIS][CLASS.COVERTOPS]	= covertopsCount;
+	},
+
+	Movers =
+	{
+		"MOVER_glider_sm"
+	},
+
+	// Navigation ladder
+	Navigation =
+	{
+		// Generator Room Ladder
+		// /bot waypoint_setproperty paththrough Navigation_PT:bunkerladderf
+		bunkerladderf =
+		{
+			navigate = function(_this)
+			{
+				if ( !Map.BunkerLadderFacing )
+				{
+					Map.BunkerLadderFacing = Util.WpNameInfo("LD1");
+				}
+
+				_this.AddAimRequest(Priority.High, "facing", Map.BunkerLadderFacing.facing);
+				_this.Bot.HoldButton( BTN.FORWARD, 4 );
+
+				Map.BunkerLadderFacing = null;
+
+				sleep( 4 ); // For how ever long the bot should keep the aim request
+			}
+		},
+
+		// Make Axis jump through a window at the Compound
+		window_jump =
+		{
+			navigate = function(_this)
+			{
+				_this.Bot.HoldButton( BTN.JUMP, 1 );
+				sleep( .5 );
+				_this.Bot.HoldButton( BTN.CROUCH, 1 );
+				sleep( 1 );
+			}
+		}
+	},
+
+	// ---
+
+	// *** TRIGGER CALLBACKS ***
+
+	Allied_Command_Post_Built = function()
+	{
+		if ( Map.Step >= MapStep.ALLIED_CP_BUILT_ONCE )
+		{
+			Util.MapDebugPrint( "Allied_Command_Post_Built", true );
+			return;
+		}
+
+		Map.Step = MapStep.ALLIED_CP_BUILT_ONCE;
+
+		// ---
+
+		Spawn.Axis = Spawn.COMPOUND;
+		Spawn.Allies = Spawn.RUINS;
+
+		// Saw them still spawn at the Outpost...
+		Spawn.MoveTeam( TEAM.AXIS );
+		Spawn.MoveTeam( TEAM.ALLIES );
+
+		// Make all bots under Ruins Hill self kill and spawn at Allied CP/Axis Base
+		// Thanks crapshoot :)
+		Map.Kill_Bots_Upon_Allied_CP_First_Built();
+
+		// ---
+
+		Util.DisableGoal( ".*", true ); // All but routes
+		Map.Enable_Cabinets();
+
+		// Open the falling ways near Ruins, base side,
+		// so Allies can reach bottom spots
+		Wp.SetWaypointFlag( "ruins[34]", "closed", false );
+
+		// Let the game update the waypoints flags
+		Wp.CheckBlockable();
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"CHECKPOINT_guardpost_flag",
+			"DEFEND_GA.*",
+			"BUILD_Tank_Barrier_1",
+			"MOUNTMG42_Compound_MG42_2",
+			"REPAIRMG42_Compound_MG42_2"
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"DEFEND_CP1",
+			"DEFEND_CP3",
+			"DEFEND_CP6",
+			"DEFEND_CP7",
+			"BUILD_Assault_Ramp",
+			"MOBILEMORTAR_AlliedCP"
+		});
+
+		Util.SetMaxUsers( 1, "CHECKPOINT_.*" ); // Only 1 Axis going for Guardpost
+
+		Util.MapDebugPrint( "Allied_Command_Post_First_Built" );
+	},
+
+	Kill_Bots_Upon_Allied_CP_First_Built = function()
+	{
+		foreach ( bot in BotTable )
+		{
+			if ( bot.Health <= 0 ) { continue; }
+			if ( bot.GetPosition().y >= 8445 ) { continue; }
+			thread( Map.Kill_Bot, bot );
+		}
+	},
+
+	Kill_Bot = function( bot )
+	{
+		while ( bot.GetPosition().y < 8445 && bot.Health > 0 )
+		{
+			bot.ExecCommand( "kill" );
+
+			// Revive/Spawn invulnerability
+			sleep( 1 );
+		}
+	},
+
+	Allied_Command_Post_Planted = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Planted", true );
+	},
+
+	Allied_Command_Post_Defused = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Defused", true );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed", true );
+	},
+
+	Assault_Ramp_Built = function()
+	{
+		if ( Map.Step == MapStep.ALLIED_CP_BUILT_ONCE )
+		{
+			Server.MinClassCount[TEAM.AXIS][CLASS.COVERTOPS]	= 1;
+			Server.MinClassCount[TEAM.ALLIES][CLASS.COVERTOPS]	= 2;
+
+			// Prioritizing some goals
+			SetGoalPriority( "DEFEND_CP[467]", 0.6 );
+			SetGoalPriority( "DEFEND_GA1", 0.6 );
+			SetGoalPriority( "PLANT_Generator", 0.9 );
+
+			// Disable the custom PLANT goal for Engineers
+			SetGoalPriority( "PLANT_Generator_CovertOnly", 0.0, TEAM.ALLIES, CLASS.ENGINEER );
+			SetGoalPriority( "PLANT_Generator_CovertOnly", 0.95, TEAM.ALLIES, CLASS.COVERTOPS );
+
+			// Let the game update the blockbridge flags
+			Wp.CheckBlockable();
+
+			SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Assault_Ramp" );
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"DEFEND_CP2",
+				"DEFEND_CP4",
+				"DEFEND_CP5",
+				"DEFEND_GA1",
+				"MOUNTMG42_Compound_MG42_2",
+				"PLANT_Generator",
+				"PLANT_Generator_CovertOnly"
+			});
+
+			// Make the Allied Covert-Ops stay at the top and throw his satchel from there
+			// Thanks to d00d, Nativer12 and palota for their help :)
+			Util.AddUsePoint( "PLANT_Generator_CovertOnly", Vec3( 9260, 10740, 0.4 ) );
+		}
+
+		Util.MapDebugPrint( "Assault_Ramp_Built" );
+	},
+
+	Assault_Ramp_Planted = function()
+	{
+		Util.MapDebugPrint( "Assault_Ramp_Planted", true );
+	},
+
+	Assault_Ramp_Defused = function()
+	{
+		Util.MapDebugPrint( "Assault_Ramp_Defused", true );
+	},
+
+	Assault_Ramp_Destroyed = function()
+	{
+		// Custom BUILD/PLANT goals status has to be kept up to date
+		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Assault_Ramp" );
+		SetAvailableMapGoals( TEAM.ALLIES, Map.Step == MapStep.ALLIED_CP_BUILT_ONCE, "BUILD_Assault_Ramp" );
+
+		if ( Map.Step == MapStep.ALLIED_CP_BUILT_ONCE )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, {
+				"DEFEND_CP2",
+				"DEFEND_CP4",
+				"DEFEND_CP5",
+			});
+		}
+
+		Util.MapDebugPrint( "Assault_Ramp_Destroyed" );
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Built", true );
+	},
+
+	Axis_Command_Post_Planted = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Planted", true );
+	},
+
+	Axis_Command_Post_Defused = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Defused", true );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed", true );
+	},
+
+	Generator_Planted = function()
+	{
+		Util.MapDebugPrint( "Generator_Planted", true );
+	},
+
+	Generator_Defused = function()
+	{
+		Util.MapDebugPrint( "Generator_Defused", true );
+	},
+
+	Generator_Destroyed = function()
+	{
+		Map.Step = MapStep.GENERATOR_DESTROYED;
+
+		// Reset
+		Server.MinClassCount[TEAM.AXIS][CLASS.COVERTOPS]	= 0;
+		Server.MinClassCount[TEAM.ALLIES][CLASS.COVERTOPS]	= 0;
+		Util.SetMaxUsers( 3, "CHECKPOINT_.*" );
+
+		Util.DisableGoal( ".*" ); // Will also disable extra DEFUSE goals
+		Map.Enable_Cabinets();
+
+		// Open the falling ways near Ruins
+		Wp.SetWaypointFlag("ruins[1-5]", "closed", false);
+
+		// Flags
+		Util.EnableGoal( "CHECKPOINT_island_flag" );
+		SetGoalPriority( "CHECKPOINT_island_flag", 0.4 );
+
+		Util.EnableGoal( "CHECKPOINT_guardpost_flag" );
+		SetGoalPriority( "CHECKPOINT_guardpost_flag", 0.4 );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"BUILD_Tank_Barrier_1",
+			"DEFEND_Alpha.*",
+			"MOUNTMG42_Compound_MG42",
+			"MOUNTMG42_Compound_MG42_2",
+			"REPAIRMG42_Compound_MG42",
+			"REPAIRMG42_Compound_MG42_2"
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"DEFEND_Alpha1",
+			"DEFEND_CP1",
+			"DEFEND_CP3",
+			"DEFEND_CP6",
+			"DEFEND_GA5",
+			"MOBILEMORTAR_AlliedCP",
+			"MOUNTMG42_Compound_MG42_2",
+			"PLANT_Tank_Barrier_1"
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Generator_CovertOnly" );
+
+		// The time the gate opens up
+		sleep( 6 );
+
+		Util.EnableGoal( "CHECKPOINT_garage_flag" );
+		SetGoalPriority( "CHECKPOINT_garage_flag", 0.79 );	// Same level as ESCORT/MOUNT goals
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ATTACK_Flag_of_Tank_Garage",
+			"BUILD_Tank",
+			"DEFEND_Alpha6",
+			"DEFEND_Alpha7",
+			"DEFEND_Alpha8",
+			"ESCORT_Tank",
+			"MOUNT_Tank"
+		});
+
+		// Tank related stuff
+		ETUtil.SetStartIndex( "BUILD_Tank", 0 ); // Behind
+		SetGoalPriority( "PLANT_Tank_Barrier_1", 0.95 );
+
+		Util.MapDebugPrint( "Generator_Destroyed" );
+	},
+
+	Glider_crates_Built = function()
+	{
+		//Map.Target.Glider_crates.Enabled = true;
+
+		SetAvailableMapGoals( TEAM.AXIS, Map.Step == MapStep.START, "GRENADE_Glider" );
+		SetAvailableMapGoals( TEAM.ALLIES, Map.Step == MapStep.START, "RIDE_Glider" );
+
+		Util.MapDebugPrint( "Glider_crates_Built" );
+	},
+
+	Glider_crates_Destroyed = function()
+	{
+		//Map.Target.Glider_crates.Enabled = false;
+
+		SetAvailableMapGoals( TEAM.ALLIES, Map.Step == MapStep.START, "BUILD_Glider_crates" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "RIDE_Glider" );
+
+		Util.MapDebugPrint ( "Glider_crates_Destroyed" );
+	},
+
+	Guardpost_MG42_Built = function()
+	{
+		Util.MapDebugPrint( "Guardpost_MG42_Built", true );
+	},
+
+	Guardpost_MG42_Planted = function()
+	{
+		Util.MapDebugPrint( "Guardpost_MG42_Planted", true );
+	},
+
+	Guardpost_MG42_Defused = function()
+	{
+		Util.MapDebugPrint( "Guardpost_MG42_Defused", true );
+	},
+
+	Guardpost_MG42_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Guardpost_MG42_Destroyed", true );
+	},
+
+	Hopper_Pump_Built = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, Map.Step == MapStep.START, "BUILD_Glider_crates" );
+
+		Util.MapDebugPrint( "Hopper_Pump_Built" );
+	},
+
+	Hopper_Pump_Planted = function()
+	{
+		Util.SetGoalRange( "DEFUSE_Hopper_Pump.*", Map.HopperPumpDefuseRange );
+
+		Util.MapDebugPrint( "Hopper_Pump_Planted", true );
+	},
+
+	Hopper_Pump_Defused = function()
+	{
+		Util.MapDebugPrint( "Hopper_Pump_Defused", true );
+	},
+
+	Hopper_Pump_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Hopper_Pump_Destroyed", true );
+	},
+
+	Outpost_MG42_Built = function()
+	{
+		Util.MapDebugPrint( "Outpost_MG42_Built", true );
+	},
+
+	Outpost_MG42_Planted = function()
+	{
+		Util.MapDebugPrint( "Outpost_MG42_Planted", true );
+	},
+
+	Outpost_MG42_Defused = function()
+	{
+		Util.MapDebugPrint( "Outpost_MG42_Defused", true );
+	},
+
+	Outpost_MG42_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Outpost_MG42_Destroyed", true );
+	},
+
+	Tank_Built = function()
+	{
+		Map.IsTankDestroyed = false;
+
+		if ( Map.Step == MapStep.ME109_AIRSTRIKES_AVAILABLE )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, true, "CAMP_AxisRadio" );
+		}
+
+		Util.MapDebugPrint( "Tank_Built", true );
+	},
+
+	Tank_Destroyed = function()
+	{
+		Map.IsTankDestroyed = true;
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "CAMP_AxisRadio" );
+
+		Util.MapDebugPrint( "Tank_Destroyed", true );
+	},
+
+	Tank_Barrier_1_Built = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_1_Built", true );
+	},
+
+	Tank_Barrier_1_Planted = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_1_Planted", true );
+	},
+
+	Tank_Barrier_1_Defused = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_1_Defused", true );
+	},
+
+	Tank_Barrier_1_Destroyed = function()
+	{
+		Map.Abort_Defusing( TEAM.AXIS, "PLANT_Tank_Barrier_1" );
+
+		Util.MapDebugPrint( "Tank_Barrier_1_Destroyed", true );
+	},
+
+	Tank_Barrier_2_Built = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_2_Built", true );
+	},
+
+	Tank_Barrier_2_Planted = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_2_Planted", true );
+	},
+
+	Tank_Barrier_2_Defused = function()
+	{
+		Util.MapDebugPrint( "Tank_Barrier_2_Defused", true );
+	},
+
+	Tank_Barrier_2_Destroyed = function()
+	{
+		Map.Abort_Defusing( TEAM.AXIS, "PLANT_Tank_Barrier_2" );
+
+		Util.MapDebugPrint( "Tank_Barrier_2_Destroyed", true );
+	},
+
+	garage_flag_Axis_Captured = function()
+	{
+		Spawn.TankGarageOwner = TEAM.AXIS;
+
+		Spawn.Manage();
+
+		Util.MapDebugPrint( "garage_flag_Axis_Captured", true );
+	},
+
+	garage_flag_Allies_Captured = function()
+	{
+		Spawn.TankGarageOwner = TEAM.ALLIES;
+
+		Spawn.Manage();
+
+		Util.MapDebugPrint( "garage_flag_Allies_Captured", true );
+	},
+
+	guardpost_flag_Axis_Captured = function()
+	{
+		Spawn.GuardpostOwner = TEAM.AXIS;
+
+		Spawn.Manage();
+
+		Util.MapDebugPrint( "guardpost_flag_Axis_Captured", true );
+	},
+
+	guardpost_flag_Allies_Captured = function()
+	{
+		Spawn.GuardpostOwner = TEAM.ALLIES;
+
+		Spawn.Manage();
+
+		Util.MapDebugPrint( "guardpost_flag_Allies_Captured", true );
+	},
+
+	island_flag_Axis_Captured = function()
+	{
+		Spawn.IslandOwner = TEAM.AXIS;
+
+		Spawn.Manage();
+
+		Util.MapDebugPrint( "island_flag_Axis_Captured", true );
+	},
+
+	island_flag_Allies_Captured = function()
+	{
+		Spawn.IslandOwner = TEAM.ALLIES;
+
+		Spawn.Manage();
+
+		Util.MapDebugPrint( "island_flag_Allies_Captured", true );
+	},
+
+	outpost_flag_Axis_Captured = function()
+	{
+		Spawn.OutpostOwner = TEAM.AXIS;
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"GRENADE_Outpost_MG42",
+			"PLANT_Outpost_MG42",
+			"SNIPE_AlliedStartSnipe"
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"DEFEND_AxisOutpost[235]",
+			"MOUNTMG42_Outpost_MG42"
+		});
+
+		Util.MapDebugPrint( "outpost_flag_Axis_Captured" );
+	},
+
+	outpost_flag_Allies_Captured = function()
+	{
+		Spawn.OutpostOwner = TEAM.ALLIES;
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"DEFEND_AxisOutpost[235]",
+			"MOUNTMG42_Outpost_MG42"
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"GRENADE_Outpost_MG42",
+			"PLANT_Outpost_MG42",
+			"SNIPE_AlliedStartSnipe"
+		});
+
+		Util.MapDebugPrint( "outpost_flag_Allies_Captured" );
+	},
+
+	Glider_Took_Off =
+	{
+		Name = "Glider_Took_Off",
+		TriggerOnClass = CLASS.VEHICLE_HVY,
+		OnEnter = function( ent )
+		{
+			SetAvailableMapGoals( TEAM.AXIS, false, "GRENADE_Glider" );
+
+			Util.MapDebugPrint( "Glider_Took_Off" );
+		}
+	},
+
+	Glider_Has_Landed =
+	{
+		Name = "Glider_Has_Landed",
+		TriggerOnClass = CLASS.VEHICLE_HVY,
+		OnEnter = function( ent )
+		{
+			sleep( 1 );
+			Wp.CheckBlockable();
+
+			SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_Command_Post" );
+			SetAvailableMapGoals( TEAM.ALLIES, false, "RIDE_Glider" );
+
+			Util.MapDebugPrint( "Glider_Has_Landed" );
+		}
+	},
+
+	Tank_Stolen = function()
+	{
+		ETUtil.SetStartIndex( "BUILD_Tank", 1 ); // Front
+
+		Util.MapDebugPrint( "Tank_Stolen", true );
+	},
+
+	Tank_At_First_Barrier = function()
+	{
+		ETUtil.SetStartIndex( "BUILD_Tank", 2 ); // Right
+
+		Util.MapDebugPrint( "Tank_At_First_Barrier", true );
+	},
+
+	// Note: Crates are removed 2 splines before the broadcast announcement
+	Tank_Past_First_Barrier = function()
+	{
+		Map.Step = MapStep.TANK_PAST_FIRST_BARRIER;
+
+		DistanceBetweenSpawnPolesAndTankTracker.Start();
+		VehicleTrackingSystem.Start( "MOVER_tank", "MOBILEMORTAR_CompoundRoad" );
+
+		Spawn.Manage();
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"BUILD_Guardpost_MG42",
+			"DEFEND_Bravo.*",
+			"DEFEND_Charlie.*",
+			"MOUNTMG42_Guardpost_MG42",
+			"REPAIRMG42_Guardpost_MG42",
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"BUILD_Tank_Barrier_1",		// Still available for some reason
+			"DEFEND_Alpha.*",
+			"MOUNTMG42_Compound_MG42_2",
+			"REPAIRMG42_Compound_MG42_2",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Guardpost_MG42" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"MOBILEMORTAR_AlliedCP",
+			"MOUNTMG42_Compound_MG42_2",
+		});
+
+		// The Guardpost flag is now quite important, same priority as the Garage one
+		// Don't forget to reset the Island one...
+		SetGoalPriority( "CHECKPOINT_guardpost_flag", 0.79 );
+		SetGoalPriority( "CHECKPOINT_island_flag", 0.7 );
+
+		// And two of its DEFEND spots
+		SetGoalPriority( "DEFEND_Charlie1", 0.6 );
+		SetGoalPriority( "DEFEND_Charlie2", 0.6 );
+
+		Util.MapDebugPrint( "Tank_Past_First_Barrier" );
+	},
+
+	Guardpost_Reached = function()
+	{
+		Map.Step = MapStep.GUARDPOST_REACHED;
+
+		VehicleTrackingSystem.Stop();
+
+		Spawn.GuardpostOwner = TEAM.ALLIES;
+		Spawn.OutpostOwner = TEAM.AXIS;
+
+		Spawn.Manage(); // Prevent Axis from potentially spawning at the Island
+
+		// First goals...
+		Util.DisableGoal( ".*", true ); // All but routes
+		Map.Enable_Cabinets();
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"BUILD_Axis_Command_Post",
+			"BUILD_Tank_Barrier_2",
+			"DEFEND_Delta.*",
+			"MOBILEMORTAR_Delta1",
+			"SNIPE_Delta.*"
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"ARTILLERY_D_AlliedGuardPost.*",
+			"ATTACK_Alpha.*",
+			"BUILD_Tank",
+			"CALLARTILLERY_AlliedGuardPost",
+			"ESCORT_Tank",
+			"MOBILEMORTAR_AlliedGuardPost",
+			"MOUNT_Tank",
+			"PLANT_Tank_Barrier_2",
+			"SNIPE_AlliedGuardPost"
+		});
+
+		// Then Axis team
+		Map.AxisClassManager();
+
+		// Now that the classes are managed, self kill to spawn at the Outpost
+		foreach ( id and bot in BotTable )
+		{
+			if ( bot.GetTeam() == TEAM.AXIS )
+			{
+				bot.ExecCommand( "kill" );
+			}
+		}
+
+		// Also force an Allied soldier if Allies have at least 8 bots
+		if ( Server.Team[TEAM.ALLIES].NumBots >= 8 &&
+			Server.MinClassCount[TEAM.ALLIES][CLASS.SOLDIER] < 1 )
+		{
+			Server.MinClassCount[TEAM.ALLIES][CLASS.SOLDIER] = 1;
+		}
+
+		// Move the BUILD_Tank offset to a more safe place
+		ETUtil.SetStartIndex( "BUILD_Tank", 0 ); // Behind
+
+		// Only 2 spots, same as ESCORT/MOUNT_Tank
+		SetGoalPriority( "ATTACK_Alpha.*", 0.79 );
+
+		// Make the Allied Covert-Ops use his SNIPE goal
+		// MOUNT and ESCORT goals are 0.79
+		SetGoalPriority( "SNIPE_AlliedGuardPost", 0.8 );
+
+		Util.MapDebugPrint ( "Guardpost_Reached" );
+	},
+
+	Tank_In_Sight = function()
+	{
+		Map.Step = MapStep.ME109_AIRSTRIKES_AVAILABLE;
+
+		// High-priority CAMP spot for Axis Fops only at the Outpost radio
+		// It is on or off depending on Tank status after this trigger
+		SetAvailableMapGoals( TEAM.AXIS, true, "CAMP_AxisRadio" );
+		Util.LimitToClass( "CAMP_AxisRadio", TEAM.AXIS, CLASS.FIELDOPS );
+		SetGoalPriority( "CAMP_AxisRadio", 0.81, TEAM.AXIS, CLASS.FIELDOPS ); // Artillery goals are 0.80
+
+		Util.MapDebugPrint( "Tank_In_Sight" );
+	},
+
+	Tank_Past_Second_Barrier = function()
+	{
+		VehicleTrackingSystem.Start( "MOVER_tank", "MOBILEMORTAR_AxisEnd" );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"DEFEND_Delta.*",
+			"MOBILEMORTAR_Delta1"
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_AxisOutpost9",
+			"DEFEND_Delta[56]",
+			"DEFEND_Echo.*"
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_Bravo.*" );
+
+		// The SNIPE_AlliedGuardPost goal is still relevant, but not the Mortar
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"ARTILLERY_D_AlliedGuardPost.*",
+			"ATTACK_Alpha1",
+			"CALLARTILLERY_AlliedGuardPost",
+			"MOBILEMORTAR_AlliedGuardPost"
+		});
+
+		// Only 2 spots, a bit above ESCORT/MOUNT_Tank
+		SetGoalPriority( "ATTACK_Bravo.*", 0.8 );
+
+		Util.MapDebugPrint( "Tank_Past_Second_Barrier" );
+	},
+
+	ME109_Airstrikes_Unavailable = function()
+	{
+		Map.Step = MapStep.ME109_AIRSTRIKES_UNAVAILABLE;
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"ARTILLERY_S_AxisEnd",
+			"CALLARTILLERY_AxisEnd.*"
+		});
+		SetAvailableMapGoals( TEAM.AXIS, false, "CAMP_AxisRadio" );
+
+		Util.MapDebugPrint( "ME109_Airstrikes_Unavailable" );
+	},
+
+	Abort_Defusing = function( team, plantGoal )
+	{
+		defuseGoals = "DEFUSE_" + plantGoal.Right( plantGoal.Length() - "PLANT_".Length() ) + ".*";
+		foreach ( defuseGoal in Util.GoalTable( defuseGoals, team ) )
+		{
+			defuseGoal.SetAvailable( team, false );
+			Util.MapDebugPrint( defuseGoal.GetName() + " made unavailable, since " + plantGoal + " is gone", true );
+		}
+	},
+
+	Enable_Cabinets = function()
+	{
+		Util.EnableGoal( ".*CAB_.*" );
+	},
+
+	// Warning displayed between 4 and 8 seconds (l. 1276)
+	// Airstrike sound during 12 seconds (l. 1281)
+	// 4 bombs are detonated, between 0.5 and 1.5 seconds between each (not after last one) (rangeX triggers)
+	// Finally, 5 seconds before reset (l. 1308)
+	// ---
+	// Minimum length: 4+12+3*0.5+5 = 22.5 seconds
+	// Maximum length: 8+12+3*1.5+5 = 29.5 seconds
+	// Average is then 26 seconds
+	// ---
+	// This function is called upon the wm_announce indicating the map airstrike is beginning (tank_range_check)
+	lock = false,
+	Manage_Map_Airstrike = function()
+	{
+		if ( Map.lock ) { return; }
+
+		Map.lock = true;
+
+		Util.MapDebugPrint( "Turning off Axis Radio while map airstrike in progress...", true );
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "CAMP_AxisRadio" );
+
+		elapsedTime = 0;
+		maxWait = 26;
+		while ( elapsedTime < maxWait && Map.Step != MapStep.ME109_AIRSTRIKES_UNAVAILABLE )
+		{
+			sleep( 2 );
+			elapsedTime += 2;
+		}
+
+		if ( Map.IsTankDestroyed )
+		{
+			Util.MapDebugPrint( "Tank currently destroyed, not turning back on Axis Radio", true );
+		}
+		else if ( Map.Step != MapStep.ME109_AIRSTRIKES_UNAVAILABLE )
+		{
+			Util.MapDebugPrint( "Turning back on Axis Radio...", true );
+			SetAvailableMapGoals( TEAM.AXIS, true, "CAMP_AxisRadio" );
+		}
+		else
+		{
+			Util.MapDebugPrint( "Tank now out of range, cancelling Axis Radio management", true );
+		}
+
+		Map.lock = false;
+	},
+
+	Set_Hopper_Pump_Defuse_Range = function()
+	{
+		h = Util.GetMapGoalPosition( "PLANT_Hopper_Pump" );
+		g = Util.GetMapGoalPosition( "BUILD_Glider_crates" );
+		raw = Floor( DistanceBetween( h, g ) );
+		m = raw % 1000;
+		Map.HopperPumpDefuseRange = ToInt( raw - m ); // goal.SetRange() takes an integer, not a float!
+	}
+};
+
+global OnMapLoad = function()
+{
+	Spawn.Init();
+
+	// *** TRIGGERS ***
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "^3The Allies have built a Glider!", Map.Glider_crates_Built );
+	OnTrigger( "^3Axis have built the Guardpost MG42!", Map.Guardpost_MG42_Built );
+	OnTrigger( "^3The Allies have repaired the Hopper Pump!", Map.Hopper_Pump_Built );
+	OnTrigger( "^3Axis have built the Outpost MG42!", Map.Outpost_MG42_Built );
+	OnTrigger( "The Tank has been repaired!", Map.Tank_Built );
+	OnTrigger( "The Tank has been damaged!", Map.Tank_Destroyed );
+	OnTrigger( "Tank Barrier #1 has been constructed.", Map.Tank_Barrier_1_Built );
+	OnTrigger( "Tank Barrier #2 has been constructed.", Map.Tank_Barrier_2_Built );
+
+	OnTrigger( "Planted at the Allied Command Post.", Map.Allied_Command_Post_Planted );
+	OnTrigger( "Planted at the Axis Command Post.", Map.Axis_Command_Post_Planted );
+	OnTrigger( "Planted at the Generator.", Map.Generator_Planted );
+	OnTrigger( "Planted at the Guardpost MG42.", Map.Guardpost_MG42_Planted );
+	OnTrigger( "Planted at the Hopper Pump.", Map.Hopper_Pump_Planted );
+	OnTrigger( "Planted at the Outpost MG42.", Map.Outpost_MG42_Planted );
+	OnTrigger( "Planted at Tank Barrier #1.", Map.Tank_Barrier_1_Planted );
+	OnTrigger( "Planted at the Tank Barrier #2.", Map.Tank_Barrier_2_Planted );
+	OnTrigger( "Planted at the Assault Ramp", Map.Assault_Ramp_Planted );
+
+	OnTrigger( "Defused at the Allied Command Post.", Map.Allied_Command_Post_Defused );
+	OnTrigger( "Defused at the Axis Command Post.", Map.Axis_Command_Post_Defused );
+	OnTrigger( "Defused at the Generator.", Map.Generator_Defused );
+	OnTrigger( "Defused at the Guardpost MG42.", Map.Guardpost_MG42_Defused );
+	OnTrigger( "Defused at the Hopper Pump.", Map.Hopper_Pump_Defused );
+	OnTrigger( "Defused at the Outpost MG42.", Map.Outpost_MG42_Defused );
+	OnTrigger( "Defused at Tank Barrier #1.", Map.Tank_Barrier_1_Defused );
+	OnTrigger( "Defused at the Tank Barrier #2.", Map.Tank_Barrier_2_Defused );
+	OnTrigger( "Defused at the Assault Ramp", Map.Assault_Ramp_Defused );
+
+	OnTrigger( "Axis have destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Allies have destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "^3Time limit extended by 14 minutes!", Map.Generator_Destroyed );
+	OnTrigger( "^3The Glider has been destroyed!", Map.Glider_crates_Destroyed );
+	OnTrigger( "^3Allies have destroyed the Guardpost MG42!", Map.Guardpost_MG42_Destroyed );
+	OnTrigger( "^3Axis have destroyed the Hopper Pump!", Map.Hopper_Pump_Destroyed );
+	OnTrigger( "^3Allies have destroyed the Outpost MG42!", Map.Outpost_MG42_Destroyed );
+	OnTrigger( "Tank Barrier #1 has been destroyed.", Map.Tank_Barrier_1_Destroyed );
+	OnTrigger( "Tank Barrier #2 has been destroyed.", Map.Tank_Barrier_2_Destroyed );
+	OnTrigger( "^3Axis have retaken the Tank Garage!", Map.garage_flag_Axis_Captured );
+	OnTrigger( "^3Allies have captured the Tank Garage!", Map.garage_flag_Allies_Captured );
+	OnTrigger( "^3Axis are in control of the Guardpost!", Map.guardpost_flag_Axis_Captured );
+	OnTrigger( "^3Allies are in control of the Guardpost!", Map.guardpost_flag_Allies_Captured );
+	OnTrigger( "^3Axis have claimed the Island!", Map.island_flag_Axis_Captured );
+	OnTrigger( "^3Allies have liberated the Island!", Map.island_flag_Allies_Captured );
+	OnTrigger( "^3Axis have reclaimed the Outpost!", Map.outpost_flag_Axis_Captured );
+	OnTrigger( "^3Allies have captured the Outpost!", Map.outpost_flag_Allies_Captured );
+
+	OnTrigger( "battery_allies_built_ramp", Map.Assault_Ramp_Built );
+	OnTrigger( "battery_allies_dest_ramp", Map.Assault_Ramp_Destroyed );
+
+	OnTrigger( "The Allies have stolen the Tank!", Map.Tank_Stolen );
+	OnTrigger( "Allies have ^3permanently ^7claimed the Guardpost!", Map.Guardpost_Reached );
+
+	OnTrigger( "Tank can be shot by air raid!", Map.Manage_Map_Airstrike );
+
+	// *** CLEAR ALL GOALS FOR BOTH TEAMS ***
+	Util.DisableGoal( ".*" ); // There's no ROUTE goal
+	Map.Enable_Cabinets();
+
+	// *** AXIS GOALS ***
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"BUILD_Axis_Command_Post",
+		"BUILD_Outpost_MG42",
+		"CHECKPOINT_outpost_flag",
+		"DEFEND_AxisOutpost[1-59]", // 6/7/8 are outside
+		"MOUNTMG42_Outpost_MG42",
+		"PLANT_Hopper_Pump",
+		"REPAIRMG42_Outpost_MG42"
+	});
+
+	// *** ALLIED GOALS ***
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"ATTACK_AlliedStart.*",
+		"BUILD_Hopper_Pump",
+		"CHECKPOINT_outpost_flag",
+		"GRENADE_Outpost_MG42",
+		"PLANT_Axis_Command_Post",
+		"PLANT_Outpost_MG42",
+		"SNIPE_AlliedStartSnipe"
+	});
+
+	// *** GOALS PROPERTIES ***
+	Util.SetMaxUsers( 1, "ATTACK_.*" );
+	Util.SetMaxUsers( 1, "DEFEND_.*" );
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+	Util.SetMaxUsers( 3, "CHECKPOINT_.*" );
+	Util.ExcludeClass( "MOUNTMG42_.*", TEAM.AXIS, CLASS.MEDIC, CLASS.ENGINEER );
+	Util.ExcludeClass( "MOUNTMG42_.*", TEAM.ALLIES, CLASS.MEDIC, CLASS.ENGINEER );
+
+	// Closing falling ways of Ruins Spawn
+	Wp.SetWaypointFlag( "ruins[1-5]", "closed", true );
+
+	// Default BUILD priority is 0.9
+	SetGoalPriority( "BUILD_Glider_crates", 0.91 );
+	SetGoalPriority( "BUILD_Allied_Command_Post", 0.92 );
+	SetGoalPriority( "BUILD_Hopper_Pump", 0.93 );
+
+	// Two for the Glider materials, one next to the MG42
+	SetGoalPriority( "DEFEND_AxisOutpost[145]", 0.6 );
+
+	SetGoalPriority( "GRENADE_Glider", 0.91 ); // Above BUILD
+
+	// Because CHECKPOINT goal has a priority of 0.7, and ATTACK is 0.5
+	SetGoalPriority( "PLANT_.*_MG42", 0.65, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_.*_MG42", 0.65, TEAM.ALLIES, CLASS.ENGINEER );
+
+	// Avoid Allied Engineer falling from the Glider to defuse a dynamite...
+	// DEFUSE goals have a priority of 1, setting a priority of 1.01
+	Util.SetMaxUsers( 1, "RIDE_Glider" );
+	Util.LimitToClass( "RIDE_Glider", TEAM.ALLIES, CLASS.ENGINEER ); // Thanks Micky :)
+	SetGoalPriority( "RIDE_Glider", 1.01, TEAM.ALLIES, CLASS.ENGINEER );
+
+	// End spots in the open, should be 30/60 at least
+	SetMapGoalProperties( "ATTACK_Alpha.*",		{ mincamptime = 30, maxcamptime = 60 } );
+	SetMapGoalProperties( "DEFEND_Delta.*",		{ mincamptime = 30, maxcamptime = 60 } );
+
+	// Tactical position for Engineers while building
+	Util.AddUsePoint( "BUILD_Axis_Command_Post",	Vec3( 1713, 1350, -344 ) );
+	Util.AddUsePoint( "BUILD_Glider_crates",		Vec3( 1115, 1010,  175 ) );
+	Util.AddUsePoint( "BUILD_Hopper_Pump",			Vec3( 2195, 3745, -790 ) );
+	Util.AddUsePoint( "BUILD_Outpost_MG42",			Vec3( 1544, 1624, -344 ) );
+	Util.AddUsePoint( "BUILD_Tank_Barrier_1",		Vec3( 9426, 9028, -775 ) );
+	Util.AddUsePoint( "BUILD_Tank_Barrier_2",		Vec3( 5242, 1097, -745 ) );
+
+	// While for the planting goals, moving the offset itself
+	Util.SetGoalOffset( -140, -50, -30, "PLANT_Tank_Barrier_1" );
+	Util.SetGoalOffset( 225, -250, 0, "PLANT_Tank_Barrier_2" );
+
+	OnTriggerRegion( AABB( 1854.000,  1154.000, 170.000, 1856.000,  1156.000, 173.000 ), Map.Glider_Took_Off );
+	OnTriggerRegion( AABB( 8474.420, 11899.900, 367.368, 8476.420, 11901.900, 370.368 ), Map.Glider_Has_Landed );
+
+	Util.OnTriggerPosition( "MOVER_tank", Vector3( 8900.0, 9400.0, -775.0 ), 200.0, Map.Tank_At_First_Barrier );
+	Util.OnTriggerPosition( "MOVER_tank", "region0", 200.0, Map.Tank_Past_First_Barrier );
+	Util.OnTriggerPosition( "MOVER_tank", Vector3( 10355.0, 2045.0, -860.0 ), 200.0, Map.Tank_In_Sight );
+	Util.OnTriggerPosition( "MOVER_tank", Vector3( 5355.0, 1680.0, -790.0 ), 200.0, Map.Tank_Past_Second_Barrier );
+	Util.OnTriggerPosition( "MOVER_tank", Vector3( 3145.0, 2740.0, -800.0 ), 250.0, Map.ME109_Airstrikes_Unavailable );
+
+	OnTriggerRegion( AABB( 1679.935, 1759.125, -626.044, 2178.823, 1927.177, -500.875 ), RegionTrigger.DisableCombatMovement ); // Outpost ground
+	OnTriggerRegion( AABB( 8642.992, 10551.125, -22.875, 9448.875, 10760.875, 181.565 ), RegionTrigger.DisableCombatMovement ); // Assault Ramp
+
+	Map.Set_Hopper_Pump_Defuse_Range();
+
+	Util.MapDebugPrint( "Omni-bot map script for Glider 3.0.2 by Mateos" );
+};
+
+global OnBotJoin = function( bot )
+{
+	// For the window at the Axis Compound spawn
+	bot.TargetBreakableDist = 90.0;
+
+	Spawn.Init();
+	Spawn.MoveBot( bot );
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_guardpost_flag =
+		{
+			ROUTE_AxisCompoundSpawn =
+			{
+				ROUTE_AxisGuardPost1 =
+				{
+					ROUTE_AxisGuardPost2 = {}
+				}
+			}
+		},
+
+		ATTACK_Alpha1 =
+		{
+			ROUTE_GuardPostSpawn =
+			{
+				ROUTE_AlliedEndSaferPath = {}
+			}
+		}
+	};
+
+	// Copy routes
+	MapRoutes.ATTACK_Alpha2 = MapRoutes.ATTACK_Alpha1;
+	MapRoutes.ATTACK_Bravo1 = MapRoutes.ATTACK_Alpha1;
+	MapRoutes.ATTACK_Bravo2 = MapRoutes.ATTACK_Alpha1;
+
+	Util.Routes(MapRoutes);
+};
+
+// Evaluates which spawn (pole) is the clostest to the current Tank position between Tank Garage and Guardpost
+global DistanceBetweenSpawnPolesAndTankTracker =
+{
+	Start = function()
+	{
+		DistanceBetweenSpawnPolesAndTankTracker.Init();
+		thread( DistanceBetweenSpawnPolesAndTankTracker.TrackTankMovement );
+	},
+
+	Init = function()
+	{
+		DistanceBetweenSpawnPolesAndTankTracker.TANK_ENTITY = GetGoal( "MOVER_tank" ).GetEntity();
+		DistanceBetweenSpawnPolesAndTankTracker.GUARDPOST_POLE_POSITION = Util.GetMapGoalPosition( "CHECKPOINT_guardpost_flag" );
+		DistanceBetweenSpawnPolesAndTankTracker.TANK_GARAGE_POLE_POSITION = Util.GetMapGoalPosition( "CHECKPOINT_garage_flag" );
+		DistanceBetweenSpawnPolesAndTankTracker.currentClosestSpawn = Spawn.TANK_GARAGE;
+		DistanceBetweenSpawnPolesAndTankTracker.run = true;
+	},
+
+	TrackTankMovement = function()
+	{
+		while ( DistanceBetweenSpawnPolesAndTankTracker.run )
+		{
+			tankCurrentPosition = GetEntPosition( DistanceBetweenSpawnPolesAndTankTracker.TANK_ENTITY );
+			if ( tankCurrentPosition != DistanceBetweenSpawnPolesAndTankTracker.tankPreviousPosition )
+			{
+				DistanceBetweenSpawnPolesAndTankTracker.tankPreviousPosition = tankCurrentPosition;
+				DistanceBetweenSpawnPolesAndTankTracker.Evaluate();
+			}
+
+			sleep( 1 );
+		}
+	},
+
+	Evaluate = function()
+	{
+		guardpostCurDist =
+			DistanceBetween(
+				DistanceBetweenSpawnPolesAndTankTracker.tankPreviousPosition,
+				DistanceBetweenSpawnPolesAndTankTracker.GUARDPOST_POLE_POSITION );
+		tankGarageCurDist =
+			DistanceBetween(
+				DistanceBetweenSpawnPolesAndTankTracker.tankPreviousPosition,
+				DistanceBetweenSpawnPolesAndTankTracker.TANK_GARAGE_POLE_POSITION );
+		if ( guardpostCurDist < tankGarageCurDist )
+		{
+			// Here happens the switch
+			Util.MapDebugPrint( "Guardpost is now closer to the Tank than the Tank Garage, switching Allied spawn...", true );
+			DistanceBetweenSpawnPolesAndTankTracker.currentClosestSpawn = Spawn.GUARDPOST;
+			Spawn.Manage();
+			DistanceBetweenSpawnPolesAndTankTracker.run = false;
+
+			// Extra
+			SetAvailableMapGoals( TEAM.AXIS, false, {
+				"CHECKPOINT_garage_flag",
+				"MOUNTMG42_Compound_MG42",
+				"REPAIRMG42_Compound_MG42"
+			});
+		}
+	}
+};
+
+global VehicleTrackingSystem =
+{
+	/** Entity to track the position of */
+	ENTITY,
+
+	/** MapGoal name for prints */
+	MAP_GOAL_NAME,
+
+	/** Mortar MapGoal */
+	MORTAR_GOAL,
+
+	/** Check interval */
+	CHECK_INTERVAL,
+
+	/** Team for which handle the goals availability */
+	TEAM,
+
+	/** Entity last position, to detect if it's either moving or not */
+	entityPreviousPosition,
+
+	mortarTargetPos,
+
+	/** Flag that indicates if the thread can run or not */
+	run,
+
+	// *************************************************************************
+
+	Start = function( vehicleMapGoalName, mortarMapGoalName )
+	{
+		VehicleTrackingSystem.Init( vehicleMapGoalName, mortarMapGoalName );
+		thread( VehicleTrackingSystem.TrackMovement );
+	},
+
+	Init = function( vehicleMapGoalName, mortarMapGoalName )
+	{
+		VehicleTrackingSystem.ENTITY = GetGoal( vehicleMapGoalName ).GetEntity();
+
+		VehicleTrackingSystem.MAP_GOAL_NAME = GetGoal( vehicleMapGoalName ).GetName();
+
+		// Note: No need to force DontShootMortar, as it is not saved in _goals.gm file
+		VehicleTrackingSystem.MORTAR_GOAL = GetGoal( mortarMapGoalName );
+
+		VehicleTrackingSystem.CHECK_INTERVAL = 0.1;
+
+		VehicleTrackingSystem.TEAM = TEAM.AXIS;
+
+		// ---
+
+		VehicleTrackingSystem.run = true;
+	},
+
+	TrackMovement = function()
+	{
+		Util.MapDebugPrint(
+			format( "Starting %s tracking system thread", VehicleTrackingSystem.MAP_GOAL_NAME ),
+			true );
+
+		SetAvailableMapGoals( VehicleTrackingSystem.TEAM, true, VehicleTrackingSystem.MORTAR_GOAL.GetName() );
+
+		while ( VehicleTrackingSystem.run )
+		{
+			entityCurrentPosition = GetEntPosition( VehicleTrackingSystem.ENTITY );
+			if ( entityCurrentPosition != VehicleTrackingSystem.entityPreviousPosition )
+			{
+				VehicleTrackingSystem.entityPreviousPosition = entityCurrentPosition;
+				VehicleTrackingSystem.ManageMortar();
+			}
+
+			VehicleTrackingSystem.DrawMortar();
+
+			sleep( VehicleTrackingSystem.CHECK_INTERVAL );
+		}
+
+		Util.MapDebugPrint(
+			format( "Stopping %s tracking system thread...", VehicleTrackingSystem.MAP_GOAL_NAME ),
+			true );
+
+		SetAvailableMapGoals( VehicleTrackingSystem.TEAM, false, VehicleTrackingSystem.MORTAR_GOAL.GetName() );
+
+		Util.MapDebugPrint(
+			format( "%s tracking system thread stopped", VehicleTrackingSystem.MAP_GOAL_NAME ),
+			true );
+	},
+
+	ManageMortar = function()
+	{
+		// Have the target in front of the vehicle: add on y axis
+		VehicleTrackingSystem.mortarTargetPos =
+			GroundPoint( GetEntityWorldSpace( VehicleTrackingSystem.ENTITY, Vec3( 0, 150, 0 ) ) );
+		tbl =
+			CalcTrajectory(
+				VehicleTrackingSystem.MORTAR_GOAL.GetPosition() + Vector3( 0,0,32 ),
+				VehicleTrackingSystem.mortarTargetPos,
+				2350,
+				1 );
+		if ( tbl )
+		{
+			dir = tbl[ tableCount( tbl ) - 1 ];
+			playerFace = Vec3FromSpherical( dir.GetYaw(), dir.GetPitch() - DegToRad( 60 ) );
+			VehicleTrackingSystem.MORTAR_GOAL.MortarAim[ 0 ] = playerFace;
+			//Util.MapDebugPrint( VehicleTrackingSystem.MORTAR_GOAL.GetName() + " aim set to " + ToString( playerFace ), true );
+			VehicleTrackingSystem.MORTAR_GOAL.AdjustOrientation();
+		}
+		else
+		{
+			// Log warning
+			Util.MapDebugPrint(
+				format(
+					"%s %s %s",
+					"^8Mortar trajectory not found for target",
+					VehicleTrackingSystem.MAP_GOAL_NAME,
+					ToString( GetEntPosition( VehicleTrackingSystem.ENTITY ) ) ),
+				2 );
+		}
+	},
+
+	// Adapted from mapgoal_mobilemortar.Render
+	DrawMortar = function()
+	{
+		goalBasePos	= VehicleTrackingSystem.MORTAR_GOAL.GetPosition();
+		goalPos		= goalBasePos + Vector3( 0, 0, 64 );
+		firePos		= goalBasePos + Vector3( 0, 0, 32 );
+
+		color = COLOR.CYAN;
+
+		DrawRadius(
+			goalBasePos,
+			VehicleTrackingSystem.MORTAR_GOAL.GetRadius(),
+			color,
+			VehicleTrackingSystem.CHECK_INTERVAL );
+
+		DrawLine(
+			goalPos,
+			goalBasePos,
+			color,
+			VehicleTrackingSystem.CHECK_INTERVAL );
+
+		dir			= VehicleTrackingSystem.MORTAR_GOAL.MortarAim[ 0 ];
+		yaw			= dir.GetYaw();
+		pitch		= dir.GetPitch() + DegToRad( 60 );
+		mortarDir	= Vec3FromSpherical( yaw, pitch );
+
+		trajectory = {};
+		trajectory.Velocity =
+			Vector3(
+				mortarDir.x * 3000.0 * 1.1,
+				mortarDir.y * 3000.0 * 1.1,
+				mortarDir.z * 1500.0 * 1.1 );
+		trajectory.Position = firePos;
+		//trajectory.StopAtHit = true;
+		trajectory.TraceBounce = false;
+		trajectory.Duration = 30;
+		trajectory.Interval = 0.25;
+
+		DrawTrajectory(
+			trajectory,
+			color,
+			VehicleTrackingSystem.CHECK_INTERVAL );
+	},
+
+	Stop = function()
+	{
+		VehicleTrackingSystem.run = false;
+	}
+};

@@ -1,0 +1,1115 @@
+//==========================================================================================
+//
+//  caen_4.gm
+//
+//            Who                When		        What
+//------------------------------------------------------------------------------------------
+// ^U/^5/^D/^TXP^D*Captain	28 December 2025	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+    //set status' for conditionals
+	FlagStatus = 0, //0 none, 1 axis, 2 allies
+	HouseMG42Status = 0,
+	GateStatus = 1, //intact
+	AllyCpStatus = 0,
+	AxisCpStatus = 0,
+	TownSecured = 0, //tank at home
+	BridgeStatus = 1, //intact
+	TankBarrierStatus = 0, //not built
+	MG42BridgeStatus = 0,
+    TankPassBridge = 0,
+	WallIsBreached = 0, //intact
+	MapsStatus = 0, //home
+	TankStatus = 0, //
+	TankCrossedBarrier = 0,
+
+	Allied_Command_Post_Built = function()
+	{
+	Map.AllyCpStatus = 1;
+	
+		  if ( Map.TownSecured )
+		  {
+	      SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Command_Post" );
+		  }
+	      SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Command_Post" );
+
+	      SetAvailableMapGoals( TEAM.ALLIES, false, {
+		  "BUILD_Command_Post",
+		  "PLANT_Command_Post"
+		  } );
+
+		  Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+	
+	Allied_Command_Post_Destroyed = function()
+	{
+	Map.AllyCpStatus = 0;
+	
+		  if ( Map.FlagStatus == 2 && !Map.TownSecured )
+		  {
+	      SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+		  SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Command_Post" );
+		  }
+		  else
+		  {
+		  SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+		  }
+	      SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+
+          SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+		  
+	      Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+	Map.AxisCpStatus = 1;
+	
+		  if ( Map.FlagStatus == 2 && !Map.TownSecured )
+		  {
+		  SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+		  }
+		  SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Command_Post" );
+
+	      SetAvailableMapGoals( TEAM.AXIS, false, {
+		  "BUILD_Command_Post",
+		  "PLANT_Command_Post"
+		  } );
+		  
+	      Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+	Map.AxisCpStatus = 0;
+	
+		  if ( Map.FlagStatus == 2 && !Map.TownSecured )
+		  {
+		  SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+		  }
+		  else
+		  {
+		  SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+		  }
+	      SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Command_Post" );
+		  
+	      SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Command_Post" );
+
+	      Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+	Allies_Capture_Flag = function()
+	{
+	Map.FlagStatus = 2;
+	
+	if ( !Map.AllyCpStatus && Map.AxisCpStatus  )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+	}
+	else
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+	}
+	if ( !Map.HouseMG42Status )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_House_MG42" );
+	}
+	if ( !Map.GateStatus )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"BUILD_Gate",
+	"DEFEND_Gate"
+	} );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"PLANTMINE_Gate.*",
+	"PLANTMINE_Tank.*",
+	"PLANTMINE_Road.*",
+	"ARTILLERY_S_Road_Gate"
+	} );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_cityflag" );
+	
+	SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_cityflag" );
+	SetAvailableMapGoals( TEAM.AXIS, false, ".*CAB_north.*cabinet" );
+	
+		Util.MapDebugPrint("Allies_Capture_Flag");
+	},
+	
+	Axis_Capture_Flag = function()
+	{
+	Map.FlagStatus = 1;
+	
+	SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_cityflag" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+	"PLANTMINE_Gate.*",
+	"PLANTMINE_Tank.*",
+	"PLANTMINE_Road.*",
+	"ARTILLERY_S_Road_Gate",
+	"DEFEND_Gate.*",
+	"Build_Gate.*"
+	} );
+	
+	SetAvailableMapGoals( TEAM.AXIS, true, ".*CAB_north.*cabinet" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_cityflag" );
+	
+		Util.MapDebugPrint("Axis_Capture_Flag");
+	},
+	
+	Gate_Built = function()
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+	"BUILD_Gate",
+	"DEFEND_Gate.*"
+	} );
+	
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Gate" );
+	
+		Util.MapDebugPrint("Gate_Built");
+	},
+	
+	Gate_Planted = function()
+    {
+	if ( !Map.TownSecured )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "DEFUSE_Gate.*" );
+	}
+	    Util.SetMaxUsers( 1, "DEFUSE_Gate.*" );
+		
+		Util.MapDebugPrint("Gate_Planted");
+	},
+	
+	Gate_Destroyed = function()
+	{
+	if ( !Map.TownSecured )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"BUILD_Gate",
+	"DEFEND_Gate.*" 
+	} );
+	}
+		Util.MapDebugPrint("Gate_Destroyed");
+	},
+	
+	House_MG42_Built = function()
+	{
+	Map.HouseMG42Status = 1;
+	
+	if ( Map.FlagStatus == 2 && !Map.TownSecured )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "MOUNTMG42_House_MG42" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_House_MG42" );
+	
+	SetAvailableMapGoals( TEAM.AXIS, true, {"PLANT_House_MG42"} );
+	
+		Util.MapDebugPrint("House_MG42_Built");
+	},
+	
+	House_MG42_Destroyed = function()
+	{
+	Map.HouseMG42Status = 0;
+	
+	if ( Map.FlagStatus == 2 && !Map.TownSecured )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_House_MG42" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_House_MG42" );
+	
+		Util.MapDebugPrint("House_MG42_Destroyed");
+	},
+	
+	Tank_Built = function()
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "MOUNT_Allied_Tank" );
+	
+	SetAvailableMapGoals( TEAM.AXIS, true, "MOUNT_Axis_Tank" );
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Tank" );
+	
+		Util.MapDebugPrint("Tank_Built");
+	},
+
+	Tank_Damaged = function()
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "MOUNT_Allied_Tank" );
+	if ( !Map.WallIsBreached )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Tank" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "MOUNT_Axis_Tank" );
+	
+		Util.MapDebugPrint("Tank_Damaged");
+	},
+	
+	Axis_Secured_Town = function()
+	{
+	Map.TownSecured = 1;
+	
+	if ( !Map.TankBarrierStatus )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank_Barrier" );
+	}
+	if ( !Map.MG42BridgeStatus )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Bridge_MG42" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+    "DEFEND_Road_Bridge.*",
+	".*CAB_north.*cabinet_1",
+	"ARTILLERY_S_Before_Bridge"
+	} );
+	
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+	"CHECKPOINT_cityflag",
+	".*CAB_north.*cabinet", 
+	".*House_MG42.*",
+	"DEFEND.*Town.*",
+	"DEFEND_Gate.*",
+	"BUILD_Gate.*",
+	"PLANTMINE.*",
+	"ARTILLERY_S_Road_Gate",
+	".*Command_Post" 
+	} );
+
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+	"CHECKPOINT_cityflag",
+	"ATTACK_Town.*"
+	} );
+	
+	if ( Map.AllyCpStatus )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Command_Post" );
+	}
+	else
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+	}
+	if ( !Map.BridgeStatus )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Bridge" );
+	}
+	else
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+	}
+	if ( !Map.BridgeStatus )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Bridge" );
+	}
+    SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Bridge.*" );
+	
+	   Util.MapDebugPrint("Axis_Secured_Town");
+		
+	},
+	
+	// Tank_Pass_Church_Corner
+	Tank_Pass_Church_Corner =
+	{
+	    Name="Tank_Before_Bridge",
+ 		TriggerOnEntity = GetGoal("MOVER_tank").GetEntity(),
+		OnEnter = function(ent)
+		{
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"PLANTMINE_TB.*",
+		"AIRSTRIKE_Bridge", 
+		"ARTILLERY_S_Before_Bridge" 
+		} );
+			
+		Util.MapDebugPrint( "Tank_Before_Bridge" );
+		},
+
+		OnExit = function(ent)
+		{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Bridge.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+	    "DEFEND_Road_Bridge.*",
+		"ARTILLERY_S_Before_Bridge",
+		"DEFEND_Cappoint.*"
+		} );
+		
+		Util.MapDebugPrint( "Tank_On_Bridge" );
+		},
+	},
+	
+	Bridge_Built = function()
+	{
+	if ( !Map.TankPassBridge )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Bridge" );
+	}
+	else
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Bridge" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Bridge" );
+	
+	// Disable Jump/Sprint With Bridge Built
+	Wp.SetWaypointFlag( "Bridge_1", "jump", false );
+	Wp.SetWaypointFlag( "Bridge_1", "sprint", false );
+	Wp.SetWaypointFlag( "Bridge_2", "jump", false );
+	Wp.SetWaypointFlag( "Bridge_2", "sprint", false );
+	
+		Util.MapDebugPrint("Bridge_Built");
+	},
+	
+	Bridge_Planted = function()
+    {
+	if ( !Map.TownSecured )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFUSE_Bridge.*" );
+	}
+	else
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFUSE_Bridge.*" );
+	}
+	    Util.SetMaxUsers( 1, "DEFUSE_Bridge.*" );
+		Util.MapDebugPrint("Bridge_Planted");
+	},
+	
+	Defused_Bridge = function()
+	{
+    SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Bridge.*" );
+	
+		Util.MapDebugPrint( "Defused_Bridge" );
+	},
+	
+	Bridge_Destroyed = function()
+	{
+	Map.BridgeStatus = 0;
+	
+	SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Bridge" );
+	
+	if ( Map.TownSecured )
+	{
+    SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Bridge" );
+	} 
+
+    // Enable Jump/Sprint With Bridge Destroyed
+	Wp.SetWaypointFlag( "Bridge_1", "jump", true );
+	Wp.SetWaypointFlag( "Bridge_1", "sprint", true );
+	Wp.SetWaypointFlag( "Bridge_2", "jump", true );
+	Wp.SetWaypointFlag( "Bridge_2", "sprint", true );
+
+		Util.MapDebugPrint("Bridge_Destroyed");
+	},
+	
+	Bridge_Planted = function()
+    {
+	if ( !Map.TownSecured )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFUSE_Bridge.*" );
+	}
+	else
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFUSE_Bridge.*" );
+	}
+	    Util.SetMaxUsers( 1, "DEFUSE_Bridge.*" );
+		Util.MapDebugPrint("Bridge_Planted");
+	},
+	
+	Bridge_MG42_Built = function()
+	{
+	Map.MG42BridgeStatus = 1;
+	
+	if ( Map.TownSecured )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"REPAIRMG42_Bridge_MG42",
+	"MOUNTMG42_Bridge_MG42"
+	} );
+	
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Bridge_MG42" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Bridge_MG42" );
+		
+		Util.MapDebugPrint("Bridge_MG42_Built");
+	},
+	
+	Bridge_MG42_Destroyed = function()
+	{
+	Map.MG42BridgeStatus = 0;
+	
+	if ( Map.TownSecured )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Bridge_MG42" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+	"MOUNTMG42_Bridge_MG42",
+	"REPAIRMG42_Bridge_MG42"
+	} );
+	
+		Util.MapDebugPrint("Bridge_MG42_Destroyed");
+	},
+
+	Tank_Over_The_Bridge = function()
+	{
+	Map.TankPassBridge = 1;
+	
+	if ( Map.TankBarrierStatus )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Tank_Barrier" );
+	}
+	if ( Map.MG42BridgeStatus )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Bridge_MG42" );
+	}
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"DEFEND_Barrier.*",
+	"PLANTMINE_Alley.*",
+	"ARTILLERY_S_Tank_Barrier",
+	"AIRSTRIKE_Tank_Barrier"
+	} );
+	
+	SetAvailableMapGoals( TEAM.ALLIES, false, "AIRSTRIKE_Bridge" );
+	
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+	"ATTACK_Barrier.*",
+	".*CAB_north.*_1"
+	} );
+	SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Bridge.*" );
+	
+		Util.MapDebugPrint("Tank_Over_The_Bridge");
+	},
+
+	Tank_Barrier_Built = function()
+	{
+	Map.TankBarrierStatus = 1;
+	
+	if ( Map.TankPassBridge && Map.TankCrossedBarrier )
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Tank_Barrier" );
+	}
+
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Tank_Barrier" );
+	
+		Util.MapDebugPrint("Tank_Barrier_Built");
+	},
+	
+	Tank_Barrier_Destroyed = function()
+	{
+	Map.TankBarrierStatus = 0;
+	
+	if ( Map.TankPassBridge )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank_Barrier" );
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Tank_Barrier" );
+	
+		Util.MapDebugPrint("Tank_Barrier_Destroyed");
+	},
+	
+	Planted_Barrier = function()
+	{
+        Util.SetMaxUsers( 1, "DEFUSE_Barrier.*" );
+		Util.MapDebugPrint( "Planted_Barrier" );
+	},
+
+	Defused_Tank_Barrier = function()
+	{
+    SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Tank_Barrier" );
+	
+		Util.MapDebugPrint( "Defused_Tank_Barrier" );
+	},
+	
+	// Tank_Crossed_Barrier
+	Tank_Has_Crossed_Barrier =
+	{
+	    Name="Tank_Has_Crossed_Barrier",
+ 		TriggerOnEntity = GetGoal("MOVER_tank").GetEntity(),
+		OnEnter = function(ent)
+		{
+		Map.TankCrossedBarrier = 1;
+	
+	    SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"PLANTMINE_TB.*",
+		"DEFEND_Bridge"
+		} );
+		
+		Util.MapDebugPrint( "Tank_Has_Crossed_Barrier" );
+		},
+
+		OnExit = function(ent)
+		{
+		Map.TankCrossedBarrier = 0;
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"AIRSTRIKE_Tank_Barrier",
+		"ARTILLERY_S_Tank_Barrier", 
+		} );
+		
+		Util.MapDebugPrint( "The_Tank_Pass_The Barrier" );
+		},
+	},
+
+	Wall_Breach = function()
+	{
+	Map.WallIsBreached = 1;
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"DEFEND_Maps.*",
+	"PLANTMINE_BH.*",
+	} );
+	
+	SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Bridge.*" );
+	
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+	"ATTACK_Maps.*",
+    "Flag_maps"
+	} );
+	SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Barrier.*" );
+	
+	SetAvailableMapGoals( TEAM.AXIS, true, "Flag_maps" );
+	// Disable Team Allies/Door At Battalion Headquarters
+	Wp.SetWaypointFlag( "Door_BH1", "door", false );
+	Wp.SetWaypointFlag( "Door_BH2", "door", false );
+	Wp.SetWaypointFlag( "Door_BH1", "allies", false );
+	Wp.SetWaypointFlag( "Door_BH2", "allies", false );
+	
+		Util.MapDebugPrint( "Wall_Breach" );
+	},
+	
+	Maps_Taken = function()
+	{
+	if ( Map.WallIsBreached )
+	{
+	sleep(1.0);
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"DEFEND_Road_Bridge.*",
+	"DEFEND_Cappoint.*",
+	"ARTILLERY_S_Cappoint",
+	"ARTILLERY_S_Before_Bridge"
+	} );
+	
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+	"DEFEND_Barrier.*",
+	"DEFEND_Maps.*",
+	"PLANTMINE_BH.*",
+	"PLANTMINE_Alley.*"
+	} );
+	
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+	"ATTACK_Bridge.*",
+	"CAPPOINT_708"
+	} );
+	SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Maps.*");
+	}
+	SetAvailableMapGoals( TEAM.AXIS, false, "Flag_maps" );
+	
+		Util.MapDebugPrint("Maps_Taken");
+	},
+
+	Maps_Returned = function()
+	{
+	if ( Map.WallIsBreached )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"DEFEND_Maps.*",
+	"PLANTMINE_BH.*",
+	"DEFEND_Barrier.*",
+	"PLANTMINE_Alley.*"
+	} );
+	
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+	"DEFEND_Road_Bridge.*",
+	"DEFEND_Cappoint.*",
+	"ARTILLERY_S_Cappoint",
+	"ARTILLERY_S_Before_Bridge"
+	} );
+	
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+	"ATTACK_Maps.*",
+    "Flag_maps"
+	} );
+	
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+	"ATTACK_Bridge.*",
+	"CAPPOINT_708"
+	} );
+	
+    }
+		Util.MapDebugPrint("Maps_Returned");
+	},
+
+	Maps_Secured = function()
+	{
+		Util.MapDebugPrint("Maps_Secured");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Allied team has rebuilt the gate!", Map.Gate_Built );
+	OnTrigger( "Planted at the Gate.", Map.Gate_Planted  );
+	OnTrigger( "Axis team has destroyed the gate!", Map.Gate_Destroyed );
+	OnTrigger( "Allies reclaim the Town!", Map.Allies_Capture_Flag );
+	OnTrigger( "allies_capture_cityflag", Map.Allies_Capture_Flag );
+	OnTrigger( "Axis capture the Town!", Map.Axis_Capture_Flag );
+	OnTrigger( "Allied team has built the house mg42!", Map.House_MG42_Built );
+	OnTrigger( "Axis team has destroyed the house mg42!", Map.House_MG42_Destroyed );
+	OnTrigger( "The Tank has been repaired!", Map.Tank_Built );
+	OnTrigger( "The Axis are moving the Tank and secured the Town!", Map.Axis_Secured_Town );
+	OnTrigger( "The Tank has been damaged!", Map.Tank_Damaged );
+	OnTrigger( "The bridge has been repaired.", Map.Bridge_Built );
+	OnTrigger( "The bridge has been damaged.", Map.Bridge_Destroyed );
+	OnTrigger( "Planted at the Bridge.", Map.Bridge_Planted );
+	OnTrigger( "Defused at the Bridge.", Map.Defused_Bridge );
+	OnTrigger( "Allied team has built the bridge mg42!", Map.Bridge_MG42_Built );
+	OnTrigger( "Axis team has destroyed the bridge mg42!", Map.Bridge_MG42_Destroyed );
+	OnTrigger( "The Axis have escorted the Tank over the Bridge!", Map.Tank_Over_The_Bridge );
+	OnTrigger( "The Tank Barrier has been constructed!", Map.Tank_Barrier_Built );
+	OnTrigger( "The Tank Barrier has been destroyed!", Map.Tank_Barrier_Destroyed );
+	OnTrigger( "Planted at the Tank Barrier.", Map.Planted_Barrier );
+	OnTrigger( "Defused at the Tank Barrier.", Map.Defused_Tank_Barrier );
+	OnTrigger( "Axis team has broken into Battalion Headquarters!", Map.Wall_Breach );
+	OnTrigger( "Axis have stolen The Combat Maps!", Map.Maps_Taken);
+	OnTrigger( "Flag returned maps!", Map.Maps_Returned);
+	OnTrigger( "MISSING_STRING", Map.Maps_Secured);
+	
+	// *** VEHICLE & DCM TRIGGERS ***
+	Tank_Church_Corner = OnTriggerRegion(AABB(4.837,2524.813,248.240,438.477,2660.244,325.776), Map.Tank_Pass_Church_Corner);
+    DCM = OnTriggerRegion(AABB(368.291,789.730,449.125,557.875,1317.345,523.128), RegionTrigger.DisableCombatMovement);
+	DCM = OnTriggerRegion(AABB(-1763.872,5613.125,545.125,-1194.125,5761.637,706.875), RegionTrigger.DisableCombatMovement);
+	Tank_Has_Crossed_Barrier = OnTriggerRegion(AABB(-406.871,4603.946,264.125,-368.871,4641.946,338.125), Map.Tank_Has_Crossed_Barrier);
+	
+	Util.DisableGoal(".*", true);
+	
+	//activation ALLIES
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"DEFEND.*Town.*",
+	"CALLARTILLERY.*",
+	".*CAB_north.*cabinet",
+	"CHECKPOINT_cityflag",
+	"BUILD_House_MG42",
+	"BUILD_Bridge_MG42",
+	"BUILD_Tank_Barrier",
+	"PLANTMINE_Tank.*",
+	"PLANTMINE_Gate.*",
+	"PLANTMINE_Road_Town.*",
+	"PLANT_Bridge",
+	"REPAIRMG42_House_MG42"
+	});
+	
+	//activation AXIS
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+    "CHECKPOINT_cityflag",
+	".*CAB_north.*cabinet",
+	"PLANT_Gate",
+	"ATTACK_Town.*",
+	"BUILD_Tank"
+	});
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "MOUNT.*" );
+	Util.SetMaxUsers( 2, "ARTILLERY.*" );
+	Util.SetMaxUsers( 2, "AIRSTRIKE.*" );
+	Util.SetMaxUsers( 1, "CHECKPOINT.*" );
+	Util.SetMaxUsers( 2, "BUILD.*" );
+	Util.SetMaxUsers( 1, "ATTACK.*" );
+	Util.SetMaxUsers( 1, "DEFEND.*" );
+	Util.SetMaxUsers( 1, "PLANT.*" );
+	Util.SetMaxUsers( 2, "FLAG_maps.*" );
+	Util.SetMaxUsers( 3, "PLANTMINE.*" );
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42.*", {MinCampTime=30, MaxCampTime=90} );
+    SetMapGoalProperties( "ATTACK.*", {MinCampTime=60, MaxCampTime=90} );
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=60, MaxCampTime=90} );
+	SetMapGoalProperties( "CALLARTILLERY.*", {MinCampTime=6, MaxCampTime=8} );
+	
+	
+	// Offset Plant Fix
+	Util.SetGoalOffset( 0, 160, 140, "PLANT_Bridge" );
+	Util.SetGoalOffset( 0, -30, -100, "PLANT_House_MG42" );
+	Util.SetGoalOffset( 0, 60, 0, "BUILD_Tank_Barrier" );
+	Util.SetGoalOffset( 0, 40, 0, "BUILD_Bridge_MG42" );
+	Util.SetGoalOffset( -150, -325, 0, "PLANT_Tank_Barrier" );
+	Util.SetGoalOffset( 0, -70, 0, "BUILD_Bridge" );
+	
+	
+    // Disable Jump/Sprint With Bridge Built
+	Wp.SetWaypointFlag( "Bridge_1", "jump", false );
+	Wp.SetWaypointFlag( "Bridge_1", "sprint", false );
+	Wp.SetWaypointFlag( "Bridge_2", "jump", false );
+	Wp.SetWaypointFlag( "Bridge_2", "sprint", false );
+	
+	// Disable Team Allies/Door At Battalion Headquarters
+	Wp.SetWaypointFlag( "Door_BH1", "door", true );
+	Wp.SetWaypointFlag( "Door_BH2", "door", true );
+	Wp.SetWaypointFlag( "Door_BH1", "allies", true );
+	Wp.SetWaypointFlag( "Door_BH2", "allies", true );
+	
+	// SetPriority
+	SetGoalPriority( "BUILD_Command_Post", 0.92, TEAM.AXIS );
+	SetGoalPriority( "PLANT_Gate", 0.93, TEAM.AXIS );
+	SetGoalPriority( "BUILD_Bridge", 0.93, TEAM.AXIS );
+	SetGoalPriority( "PLANT_House_MG42", 0.92, TEAM.AXIS );
+	SetGoalPriority( "CHECKPOINT_cityflag", 0.95, TEAM.AXIS );
+	SetGoalPriority( "CHECKPOINT_cityflag", 0.95, TEAM.ALLIES );
+	SetGoalPriority( "DEFEND_Gate.*", 0.96, TEAM.ALLIES );
+	SetGoalPriority( "ARTILLERY.*", 0.98, TEAM.ALLIES );
+	SetGoalPriority( "PLANT_Bridge", 0.92, TEAM.ALLIES );
+	SetGoalPriority( "BUILD_Gate", 0.96, TEAM.ALLIES );
+	SetGoalPriority( "BUILD_House_MG42", 0.93, TEAM.ALLIES );
+	SetGoalPriority( "BUILD_Tank_Barrier", 0.98, TEAM.ALLIES );
+	SetGoalPriority( "BUILD_Command_Post", 0.92, TEAM.ALLIES );
+	SetGoalPriority( "BUILD_House_MG42", 0.95, TEAM.ALLIES );
+	
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	//bot.TargetBreakableDist = 150;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		CHECKPOINT_cityflag = 
+		{
+			ROUTE_Axis_S_House  = 
+			{
+				ROUTE_Axis_Right  = 
+				{
+					ROUTE_Road_Truck  = 
+					{
+						ROUTE_House_MG42  = 
+						{
+						},
+						ROUTE_Road_Gate  = 
+						{
+							ROUTE_Road_Gate_2  = 
+							{
+							},
+						},
+						ROUTE_Town_Mid  = 
+						{
+							ROUTE_Town_Door  = 
+							{
+							},
+							ROUTE_Town_Left_Flag  = 
+							{
+							},
+						},
+					},
+				},
+				ROUTE_Town_Left  = 
+				{
+					ROUTE_Town_Left_2  = 
+					{
+						ROUTE_Town_Mid  = 
+						{
+						},
+					},
+				},
+			},
+		},
+		FLAG_maps = 
+		{
+			ROUTE_Flag_Spawn  = 
+			{
+				ROUTE_Stairs_CP  = 
+				{
+					ROUTE_Church  = 
+					{
+						ROUTE_Church_2  = 
+						{
+							ROUTE_Church_Road_5  = 
+							{
+								ROUTE_Church_Road_6  = 
+								{
+									ROUTE_Bridge_Tank_Barrier  = 
+									{
+										ROUTE_Rubble  = 
+										{
+											ROUTE_Flag_Maps  = 
+											{
+											},
+										},
+										ROUTE_Back_alley_2  = 
+										{
+											ROUTE_Back_Alley_3  = 
+											{
+												ROUTE_House_Cab_Maps  = 
+												{
+													ROUTE_Roof_Maps  = 
+													{
+														ROUTE_Flag_Maps  = 
+														{
+														},
+													},
+												},
+												ROUTE_Flag_Maps  = 
+												{
+												},
+											},
+										},
+									},
+								},
+								ROUTE_SW_Bridge  = 
+								{
+									ROUTE_Bridge_Tank_Barrier  = 
+									{
+									},
+								},
+							},
+							ROUTE_West_Alley  = 
+							{   Weight = 4,
+								ROUTE_House_Broken_Door  = 
+								{
+									ROUTE_Barrier_House  = 
+									{
+										ROUTE_Rubble  = 
+										{
+										},
+									},
+								},
+								ROUTE_Pier  = 
+								{   Weight = 3,
+									ROUTE_Pier_2  = 
+									{
+										ROUTE_Rubble  = 
+										{
+										},
+										ROUTE_Back_alley_2  = 
+										{
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Church_Road_1  = 
+				{
+					ROUTE_Church_Road_3  = 
+					{
+						ROUTE_Church_Road_6  = 
+						{
+						},
+						ROUTE_Church_Road_4  = 
+						{   Weight = 3,
+							ROUTE_East_River  = 
+							{
+								ROUTE_East_River_Alley  = 
+								{
+									ROUTE_Bridge_Tank_Barrier  = 
+									{
+									},
+									ROUTE_Back_Alley  = 
+									{
+										ROUTE_Back_alley_2  = 
+										{
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Church_Road_2  = 
+				{   Weight = 4,
+					ROUTE_Church_Road_4  = 
+					{   
+						ROUTE_East_River  = 
+						{   Weight = 4,
+							ROUTE_Back_Alley  = 
+							{
+								ROUTE_Bridge_Tank_Barrier  = 
+								{
+								},
+								ROUTE_Back_alley_2  = 
+								{
+								},
+							},
+						},
+						ROUTE_Church_Road_6  = 
+						{
+						},
+						ROUTE_Church_Road_5  = 
+						{
+						},
+					},
+				},
+			},
+		},
+        DEFEND_Road_Town_00 =
+		{
+			ROUTE_Ally_Spawn_2  = 
+			{
+				ROUTE_Ally_S2_Left  = 
+				{
+					ROUTE_Pier  = 
+					{
+						ROUTE_Pier_2  = 
+						{   Weight = 3,
+							ROUTE_West_Alley  = 
+							{
+								ROUTE_Church_2  = 
+								{
+									ROUTE_Church  = 
+									{
+										ROUTE_Stairs_CP  = 
+										{
+											ROUTE_Flag_Spawn  = 
+											{
+											},
+										},
+									},
+								},
+							},
+						},
+						ROUTE_SW_Bridge  = 
+						{   Weight = 3,
+							ROUTE_Church_Road_5  = 
+							{
+								ROUTE_Church_Road_3  = 
+								{
+									ROUTE_Stairs_CP  = 
+									{
+										ROUTE_Flag_Spawn  = 
+										{
+										},
+									},
+									ROUTE_Flag_Spawn  = 
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Ally_S2_Right  = 
+				{
+					ROUTE_Pier  = 
+					{
+						ROUTE_Pier_2  = 
+						{
+							ROUTE_West_Alley  = 
+							{
+								ROUTE_Church_2  = 
+								{
+									ROUTE_Church  = 
+									{
+										ROUTE_Stairs_CP  = 
+										{
+											ROUTE_Flag_Spawn  = 
+											{
+											},
+										},
+									},
+								},
+							},
+						},
+						ROUTE_SW_Bridge  = 
+						{
+							ROUTE_Church_Road_5  = 
+							{
+								ROUTE_Church_Road_3  = 
+								{
+									ROUTE_Flag_Spawn  = 
+									{
+									},
+								},
+								ROUTE_Stairs_CP  = 
+								{
+									ROUTE_Flag_Spawn  = 
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		CAPPOINT_708 = 
+		{
+			ROUTE_Flag_Maps  = 
+			{   Weight = 3,
+				ROUTE_Roof_Maps  = 
+				{
+					ROUTE_House_Cab_Maps  = 
+					{
+						ROUTE_Back_Alley_3  = 
+						{
+							ROUTE_Back_alley_2  = 
+							{
+								ROUTE_Back_Alley  = 
+								{
+									ROUTE_East_River_Alley  = 
+									{
+										ROUTE_East_River  = 
+										{
+											ROUTE_Church_Road_5  = 
+											{
+												ROUTE_West_Alley  = 
+												{
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					ROUTE_Back_Alley_3  = 
+					{   Weight = 2,
+						ROUTE_Back_alley_2  = 
+						{
+							ROUTE_Back_Alley  = 
+							{
+								ROUTE_East_River_Alley  = 
+								{
+									ROUTE_Bridge_Tank_Barrier  = 
+									{
+										ROUTE_Barrier_House  = 
+										{
+											ROUTE_House_Broken_Door  = 
+											{
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Rubble  = 
+				{
+					ROUTE_Pier_2  = 
+					{
+						ROUTE_Pier  = 
+						{
+						},
+					},
+					ROUTE_Barrier_House  = 
+					{
+						ROUTE_House_Broken_Door  = 
+						{
+						},
+					},
+				},
+			},
+		},
+	};
+	
+	MapRoutes["ATTACK_Town.*"] = MapRoutes.CHECKPOINT_cityflag;
+	MapRoutes["ATTACK_Bridge.*"] = MapRoutes.FLAG_maps;
+	MapRoutes["ATTACK_Barrier.*"] = MapRoutes.FLAG_maps;
+	MapRoutes["ATTACK_Maps.*"] = MapRoutes.FLAG_maps;
+	MapRoutes["ATTACK_Barrier.*"] = MapRoutes.FLAG_maps;
+	MapRoutes["DEFEND_Road_Town.*"] = MapRoutes.DEFEND_Road_Town_00;
+	MapRoutes["DEFEND_Town.*"] = MapRoutes.DEFEND_Road_Town_00;
+	MapRoutes["DEFEND_Gate.*"] = MapRoutes.DEFEND_Road_Town_00;
+	Util.Routes(MapRoutes);
+};

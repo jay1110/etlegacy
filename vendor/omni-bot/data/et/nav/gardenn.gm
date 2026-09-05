@@ -1,0 +1,282 @@
+//==========================================================================================
+//
+//  gardenn.gm
+//
+// Who   	When		What
+//------------------------------------------------------------------------------------------
+//	^1[UJE]^3Niek	23 May 2015	waypoints without script
+//	palota	29 June 2025	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	defenseCount=0,
+	bigDoorDestroyed=0,
+	ladderBuilt=0,
+	spawn=0,
+
+	Navigation =
+	{
+		ladder =
+		{
+			navigate = function()
+			{
+				this.AddAimRequest(Priority.High, "facing", Vec3(0.353, 0.020, 0.935));
+				sleep(4);
+			},
+		},
+	},
+
+	SetRoof = function()
+	{
+		Wp.CheckBlockable();
+		if (!Map.engineDestroyed){
+			b = Map.bigDoorDestroyed || Map.ladderBuilt;
+			SetAvailableMapGoals(TEAM.ALLIES, b, {"PLANT_Engine_defense.*", "DEFEND_roof.*"});
+			SetAvailableMapGoals(TEAM.ALLIES, b && Map.defenseCount < 2, "PLANT_Engine");
+			if(b) { SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_roof.*"); }
+			if(Map.defenseCount==2){ p=0.81; }else{ p=0; }
+			SetGoalPriority("PLANT_Engine_defense.*", p, 0, CLASS.ENGINEER);
+		}
+		Wp.SetWaypointFlag("ladder", "closed", !Map.ladderBuilt);
+	},
+
+	Defense_Built = function(trigger)
+	{
+		if (trigger.Entity == Map.doorDefenseEnt)
+		{
+			Util.MapDebugPrint("Door_Defense_Built");
+		}else
+		{
+			++Map.defenseCount;
+			Map.SetRoof();
+			Util.MapDebugPrint("Engine_Defense_Built");
+		}
+	},
+
+	Defense_Destroyed = function(trigger)
+	{
+		if (trigger.Entity == Map.doorDefenseEnt)
+		{
+			Util.MapDebugPrint("Door_Defense_Destroyed");
+		}else
+		{
+			--Map.defenseCount;
+			Map.SetRoof();
+			Util.MapDebugPrint("Engine_Defense_Destroyed");
+		}
+	},
+
+	Big_Door_Destroyed = function()
+	{
+		Map.bigDoorDestroyed = 1;
+		sleep(0.1);
+		Map.SetRoof();
+		Util.EnableGoal("ROUTE_big_door");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_door.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "GRENADE_mg.*");
+		Util.MapDebugPrint("Big_Door_Destroyed");
+	},
+
+	grille_Destroyed = function()
+	{
+		Util.EnableGoal("ROUTE_grille");
+		Util.MapDebugPrint("grille_Destroyed");
+	},
+
+	Ladder_Built = function()
+	{
+		Map.ladderBuilt=1;
+		Map.SetRoof();
+		SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_ladder.*");
+		Util.MapDebugPrint("Ladder_Built");
+	},
+
+	Ladder_Destroyed = function()
+	{
+		Map.ladderBuilt=0;
+		Map.SetRoof();
+		if (!Map.engineDestroyed){
+			SetAvailableMapGoals(TEAM.ALLIES, true, "ATTACK_ladder.*");
+		}
+		Util.MapDebugPrint("Ladder_Destroyed");
+	},
+
+	Engine_Destroyed = function()
+	{
+		Map.engineDestroyed = 1;
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"DEFEND_roof.*",
+			"BUILD_Engine_defense.*",
+			"PLANT_Ladder",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"PLANT_Engine.*",
+			"DEFEND_roof.*",
+		});
+		sleep(3);
+		Wp.CheckBlockable();
+		SetAvailableMapGoals(TEAM.AXIS, true,
+			"DEFEND_doc.*"
+		);
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"FLAG_secretdocs",
+			"CAPPOINT_secretdocs",
+			"PLANT_door_defense",
+		});
+		SetGoalPriority("BUILD_door_defense", 0.85);
+
+		Util.MapDebugPrint("Engine_Destroyed");
+	},
+
+	secretdocs_Taken = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_doc.*");
+		Util.EnableGoal("DEFEND_cap.*");
+		Util.MapDebugPrint("secretdocs_Taken");
+	},
+
+	secretdocs_Returned = function()
+	{
+		Util.DisableGoal("DEFEND_cap.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_doc.*");
+		Util.MapDebugPrint("secretdocs_Returned");
+	},
+
+	secretdocs_Secured = function()
+	{
+		Util.MapDebugPrint("secretdocs_Secured");
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("Axis have built the defense door!", Map.Defense_Built);
+	OnTrigger("Allies have destroy the defense door!", Map.Defense_Destroyed);
+	OnTrigger("Allies have destroy the engine Door are open!!!", Map.Engine_Destroyed);
+	OnTrigger("Allies have breached the Great door!", Map.Big_Door_Destroyed);
+	OnTrigger("Allies have breached the grille!", Map.grille_Destroyed);
+	OnTrigger("Allies have built the Ladder!", Map.Ladder_Built);
+	OnTrigger("Axes have destroy the Ladder!", Map.Ladder_Destroyed);
+	OnTrigger("Allies have stolen secret documents!", Map.secretdocs_Taken);
+	OnTrigger("Flag returned secretdocs!", Map.secretdocs_Returned);
+	OnTrigger("Allied team escaped with secret documents!", Map.secretdocs_Secured);
+
+	Util.DisableGoal( ".*", true );
+	Util.DisableGoal("ROUTE_grille", "ROUTE_big_door");
+	Util.EnableGoal({
+		"AMMOCAB.*",
+		"HEALTHCAB.*",
+	});
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+		"BUILD_Engine_defense_one",
+		"BUILD_Engine_defense_two",
+		"BUILD_axis_Command_Post",
+		"BUILD_door_defense",
+		"PLANT_Allied_Command_Post",
+		"PLANT_Ladder",
+		"MOUNTMG42.*",
+		"REPAIRMG42.*",
+		"DEFEND_door.*",
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"BUILD_Ladder",
+		"PLANT_Big_Door",
+		"PLANT_grille",
+		"BUILD_Allied_Command_Post",
+		"PLANT_axis_Command_Post",
+		"ATTACK_door.*",
+		"ATTACK_ladder.*",
+		"GRENADE_mg.*",
+	});
+
+	SetGoalPriority("BUILD_axis_Command_Post", 0.85);
+	SetGoalPriority("PLANT_Engine", 0.91);
+	SetGoalPriority("REPAIRMG.*", 0.85);
+	SetGoalPriority("BUILD_door_defense", 0.81);
+	SetGoalPriority("PLANT_axis_Command_Post", 0.8);
+	SetGoalPriority("BUILD_Ladder", 0.81);
+	SetGoalPriority("PLANT_Ladder", 0.5, 0, CLASS.ENGINEER);
+	SetGoalPriority("DEFEND_door.*", 0.4, 0, CLASS.ENGINEER);
+	SetGoalPriority("DEFEND_cap.*", 0.7);
+	SetGoalPriority("DEFUSE_Allied_Command_Post.*", 0, 0, 0, true);
+	SetGoalPriority("DEFUSE_Ladder.*", 0.81, 0, 0, true);
+
+	Util.SetMaxUsers(1, ".*Command_Post");
+	Util.SetMaxUsers(1, "MOUNTMG42.*");
+	Util.SetMaxUsers(1, "PLANT_grille");
+	Util.SetMaxUsers(1, "DEFEND.*");
+	Util.SetMaxUsers(1, "GRENADE.*");
+	Util.SetMaxUsersInProgress(3, "DEFEND_cap.*");
+
+	SetMapGoalProperties( "ATTACK.*", {MinCampTime=20, MaxCampTime=40});
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=20, MaxCampTime=60});
+	SetMapGoalProperties( "MOUNTMG.*", {MinCampTime=30, MaxCampTime=120});
+
+	Util.AddUsePoint("PLANT_Ladder", Vec3(1876,1514,40));
+
+	Map.SetRoof();
+
+	Map.doorDefenseEnt = GetGoal("PLANT_door_defense").GetEntity();
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global OnBotJoin = function(bot)
+{
+	bot.TargetBreakableDist = 80;
+	bot.MaxViewDistance = 3100;
+
+	if(bot.GetTeam()==TEAM.ALLIES){
+		bot.ChangeSpawnPoint(++Map.spawn % 2 + 2);
+	}
+};
+
+global InitializeRoutes = function()
+{
+	rDoc =
+	{
+		ROUTE_doc1 = {},
+		ROUTE_doc2 = {},
+		ROUTE_doc3 = {},
+	};
+	MapRoutes =
+	{
+		PLANT_Big_Door =
+		{
+			ROUTE_allied_spawnN =
+			{
+				ROUTE_g2 = {},
+				ROUTE_g3 = {},
+				ROUTE_g4 = {},
+			},
+			ROUTE_allied_spawnS =
+			{
+				ROUTE_g5 = {},
+				ROUTE_g6 = {},
+				ROUTE_g7 = {},
+			},
+		},
+		FLAG_secretdocs =
+		{
+			ROUTE_allied_spawnN = rDoc,
+			ROUTE_allied_spawnS = rDoc,
+		},
+		CAPPOINT_secretdocs =
+		{
+			ROUTE_doc =
+			{
+				ROUTE_grille = { Weight=3 },
+				ROUTE_big_door =
+				{
+					ROUTE_g3 = {},
+				},
+			},
+		},
+	};
+	MapRoutes["ATTACK_door.*"] = MapRoutes.PLANT_Big_Door;
+	Util.Routes(MapRoutes);
+};

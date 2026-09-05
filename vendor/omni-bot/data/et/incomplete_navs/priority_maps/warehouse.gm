@@ -1,0 +1,547 @@
+//==========================================================================================
+//
+//	warehouse.gm
+//
+//	Who  	When		What
+//------------------------------------------------------------------------------------------
+//	^4Tardis	24 June 2014	Initial Script
+//	^4Tardis	03 Mar 2015	Defend Spots, Switches ,attack spots, movers, goals -ect
+//    TO DO Routes
+//==========================================================================================
+//
+
+global Map =
+{
+	Talk = true, //set Talk to false if you don't want the bots to cheer after winning game:
+
+	Bomb_Dyno = 0,
+	Command_Post_Dyno = 0,
+	MG42_Dyno = 0,
+	Security_Doors_Dyno = 0,
+	Service_Door_Dyno = 0,
+
+	Movers =
+	{
+		"MOVER_door_left",
+		"MOVER_door_right",
+		"MOVER_hatch",
+	},
+
+	main_door = false, //closed
+	hatch_door = false, //closed
+
+	//door
+	main_door = function( trigger )
+	{
+		Util.MapDebugPrint("main_door moving", true);
+		Map.Switches.maindoor.Enabled = false;
+		Map.Switches.maindoora.Enabled = false;
+		sleep(6);
+
+		y = ToVector(trigger.Action).y;
+		if (y > 0)
+		{
+			Util.MapDebugPrint("main_door OPEN", true);
+			sleep(6);
+			Map.Switches.maindoor.Enabled = false;
+			Map.Switches.maindoora.Enabled = true;
+			Map.main_door = true;
+			SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_maindoorA" );
+			SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_maindoor" );
+
+		}
+		else if (y < 0)
+		{
+			Util.MapDebugPrint("main_door CLOSED", true);
+			sleep(6);
+			Map.Switches.maindoor.Enabled = true;
+			Map.Switches.maindoora.Enabled = false;
+			Map.main_door = false;
+			SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_maindoorA" );
+			SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_maindoor" );
+		}
+	},
+	//hatch
+	hatch = function(trigger)
+	{
+		Util.MapDebugPrint("hatch moving", true);
+		Map.Switches.door.Enabled = false;
+		sleep(3);
+
+		z = ToVector(trigger.Action).z;
+		if (z < 0)
+		{
+			Util.MapDebugPrint("HATCH OPEN", true);
+			sleep(3);
+			Map.Switches.door.Enabled = true;
+			Map.hatch_door = true;
+			SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_door" );
+
+		}
+		else if (z > 0)
+		{
+			Util.MapDebugPrint("HATCH CLOSED", true);
+			sleep(3);
+			Map.Switches.door.Enabled = false;
+			Map.hatch_door = false;
+			SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_door" );
+		}
+	},
+
+	hatch_door = function( trigger )
+	{
+		if ( trigger.Action == true )
+		{
+			Map.Switches.door.Enabled = true;
+			SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_door" );
+			Util.MapDebugPrint("HATCH Door is Open", true);
+		}
+		else if ( trigger.Action == false )
+		{
+			Map.Switches.door.Enabled = false;
+			SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_door" );
+			Util.MapDebugPrint("HATCH Door is Open", true);
+
+			Util.MapDebugPrint("HATCH Door is Closed", true);
+		}
+	},
+	//switches
+	Switches =
+	{
+		door =
+		{
+			Enabled = false,
+			WaypointName = "door",
+			LimitTeam = 0, // disabled initially.
+			LimitClass = (1<<CLASS.COVERTOPS) | (1<<CLASS.FIELDOPS) | (1<<CLASS.SOLDIER),
+			LimitBots = 1,
+			Priority = 0, // leave for paththrough
+		},
+
+		maindoor =
+		{
+			Enabled = false,
+			WaypointName = "maindoor",
+			LimitTeam = 0, // disabled initially.
+			LimitClass = (1<<CLASS.COVERTOPS) | (1<<CLASS.FIELDOPS) | (1<<CLASS.SOLDIER),
+			LimitBots = 1,
+			Priority = 0, // leave for paththrough
+		},
+
+		maindoora =
+		{
+			Enabled = false,
+			WaypointName = "maindoora",
+			LimitTeam = 0, // disabled initially.
+			LimitClass = (1<<CLASS.COVERTOPS) | (1<<CLASS.FIELDOPS) | (1<<CLASS.SOLDIER),
+			LimitBots = 1,
+			Priority = 0, // leave for paththrough
+		},
+
+		maindoortop =
+		{
+			Enabled = false,
+			WaypointName = "maindoortop",
+			LimitTeam = 0, // disabled initially.
+			LimitClass = (1<<CLASS.COVERTOPS) | (1<<CLASS.FIELDOPS) | (1<<CLASS.SOLDIER),
+			LimitBots = 1,
+			Priority = 0, // leave for paththrough
+		},
+	},
+
+	// some dedicated defenders
+	Roles =
+	{
+		AXIS =
+		{
+			DEFENDER =
+			{
+				numbots = 3,
+			},
+		},
+	},
+
+	// spawn a few axis bots back when a disguised covert op gets through the door
+	covert =
+	{
+		Name = "covert",
+		TriggerOnClass = CLASS.COVERTOPS,
+		OnEnter = function(ent)
+		{
+			// only for allied covert ops in disguise
+			if ( !GetEntFlags(ent, ENTFLAG.DISGUISED) || GetEntTeam(ent) != TEAM.ALLIES ) {
+				return;
+			}
+
+			// NOTE: they will not shift forward after they do this since it's highly likely
+			// that humans will keep trying to exploit it. the special camps will be disabled
+			// on door breach.
+
+			// spawn few axis back to defend
+			ETUtil.SuicideSpawn( TEAM.AXIS, 2, -1, CLASS.ENGINEER );
+			ETUtil.SuicideSpawn( TEAM.AXIS, 2, -1, CLASS.SOLDIER );
+			ETUtil.SuicideSpawn( TEAM.AXIS, 2, -1, CLASS.MEDIC );
+			// and defend the bomb
+			SetAvailableMapGoals( TEAM.AXIS, true, {
+				"BUILD_MG42",
+				"MOUNT_MG42",
+				"MOBILEMG42_bomb.*",
+				"DEFEND_bomb.*",
+			});
+
+		},
+	},
+
+	AlliedEnter1 =
+	{
+		Name = "MainWay",
+		TriggerOnClass = CLASS.ENGINEER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				// Let the Axis Team Know Allies are coming
+				Util.BotChat(TEAM.AXIS, "vsay", VOICE.INCOMING, 1);
+				Util.BotChat(TEAM.AXIS, "sayteam", "^1The Allies are coming Main Way Defend The BOMB !", 1);
+				// and defend the bomb
+
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+				"MOBILEMG42_bomb.*",
+				"DEFEND_bomb.*",
+				});
+				SetAvailableMapGoals( TEAM.AXIS, false, {
+				"BUILD_MG42",
+				"MOUNT_MG42",
+				"BUILD_Command_Post",
+				"PLANT_Command_Post",
+				});
+			}
+		},
+	},
+
+	AlliedEnter2 =
+	{
+		Name = "HatchSide",
+		TriggerOnClass = CLASS.ENGINEER,
+		OnEnter = function(ent)
+		{
+			if( GetEntTeam(ent) == TEAM.ALLIES )
+			{
+				// Let the Axis Team Know Allies are coming
+				Util.BotChat(TEAM.AXIS, "vsay", VOICE.INCOMING, 1);
+				Util.BotChat(TEAM.AXIS, "sayteam", "^1The Allies are coming Hatch Side Defend The BOMB !", 1);
+				// and defend the bomb
+
+				SetAvailableMapGoals( TEAM.AXIS, true, {
+				"MOBILEMG42_bomb.*",
+				"DEFEND_bomb.*",
+				});
+				SetAvailableMapGoals( TEAM.AXIS, false, {
+				"BUILD_MG42",
+				"MOUNT_MG42",
+				"BUILD_Command_Post",
+				"PLANT_Command_Post",
+				});
+			}
+		},
+	},
+
+	Allied_Command_Post_Built = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Command_Post" );
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+	Allied_Command_Post_Planted = function( trigger )
+	{
+		Map.Command_Post_Dyno += 1;
+		Util.MapDebugPrint( "Allied_Command_Post_Planted" );
+	},
+
+	Allied_Command_Post_Defused = function( trigger )
+	{
+		Map.Command_Post_Dyno -= 1;
+		Util.MapDebugPrint( "Allied_Command_Post_Defused" );
+	},
+
+	Allied_Command_Post_Destroyed = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Command_Post" );
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed" );
+	},
+
+	Axis_Command_Post_Built = function( trigger )
+	{
+		if ( Map.Security_Doors_Destroyed )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Command_Post" );
+		}
+
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Axis_Command_Post_Planted = function( trigger )
+	{
+		Map.Command_Post_Dyno += 1;
+		Util.MapDebugPrint( "Axis_Command_Post_Planted" );
+	},
+
+	Axis_Command_Post_Defused = function( trigger )
+	{
+		Map.Command_Post_Dyno -= 1;
+		Util.MapDebugPrint( "Axis_Command_Post_Defused" );
+	},
+
+	Axis_Command_Post_Destroyed = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Command_Post" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Command_Post" );
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+	MG42_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "MG42_Built" );
+	},
+
+	Service_Door_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Service_Door_Built" );
+	},
+
+	Bomb_Planted = function( trigger )
+	{
+		Map.Bomb_Dyno += 1;
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_maindoortop" );
+		Wp.SetWaypointFlag("bridge","open",true);
+		Wp.SetWaypointFlag("bridge1","open",true);
+
+		Util.MapDebugPrint( "Bomb_Planted" );
+	},
+
+	MG42_Planted = function( trigger )
+	{
+		Map.MG42_Dyno += 1;
+		Util.MapDebugPrint( "MG42_Planted" );
+	},
+
+	Security_Doors_Planted = function( trigger )
+	{
+		Map.Security_Doors_Dyno += 1;
+
+		Util.MapDebugPrint( "Security_Doors_Planted" );
+	},
+
+	Service_Door_Planted = function( trigger )
+	{
+		Map.Service_Door_Dyno += 1;
+		Util.MapDebugPrint( "Service_Door_Planted" );
+	},
+
+	Bomb_Defused = function( trigger )
+	{
+		Map.Bomb_Dyno -= 1;
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_maindoortop" );
+		Wp.SetWaypointFlag("bridge","closed",true);
+		Wp.SetWaypointFlag("bridge1","closed",true);
+
+		Util.MapDebugPrint( "Bomb_Defused" );
+	},
+
+
+	MG42_Defused = function( trigger )
+	{
+		Map.MG42_Dyno -= 1;
+		Util.MapDebugPrint( "MG42_Defused" );
+	},
+
+	Security_Doors_Defused = function( trigger )
+	{
+		Map.Security_Doors_Dyno -= 1;
+		Util.MapDebugPrint( "Security_Doors_Defused" );
+	},
+
+	Service_Door_Defused = function( trigger )
+	{
+		Map.Service_Door_Dyno -= 1;
+		Util.MapDebugPrint( "Service_Door_Defused" );
+	},
+
+	Bomb_Destroyed = function( trigger )
+	{
+		Map.Bomb_Dyno = 0;
+
+		//Game Over
+
+		if ( Map.Talk && MAP_TALK )
+		{
+			ETUtil.WinningChat( TEAM.ALLIES );
+			ETUtil.LosingChat( TEAM.AXIS );
+		}
+
+		Util.MapDebugPrint( "Bomb_Destroyed" );
+	},
+
+	MG42_Destroyed = function( trigger )
+	{
+		Map.MG42_Dyno = 0;
+
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_MG42" );
+
+		Util.MapDebugPrint( "MG42_Destroyed" );
+	},
+
+	Security_Doors_Destroyed = function( trigger )
+	{
+		Map.Security_Doors_Dyno = 0;
+
+		SetAvailableMapGoals( TEAM.ALLIES, false,{
+			"CHECKPOINT_.*",
+			"PLANT_Service_Door",
+			"PLANT_MG42",
+		});
+
+
+		SetAvailableMapGoals( TEAM.AXIS, false, {
+			"CHECKPOINT_.*",
+			"BUILD_Service_Door",
+			"MOUNT_MG42",
+			"BUILD_MG42",
+			"BUILD_Command_Post",
+			"PLANT_Command_Post",
+			"AMMOCAB_.*",
+			"HEALTHCAB_.*",
+			"DEFEND_sec.*",
+			"SNIPE_.*",
+		});
+
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_bomb.*",
+			"MOBILEMG42_bomb.*",
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"AMMOCAB_.*",
+			"HEALTHCAB_.*",
+			"PLANT_bomb",
+			"BUILD_Command_Post" ,
+			"PLANT_Command_Post",
+			"SWITCH_maindoorA",
+			"ATTACK_bomb.*",
+
+		});
+
+		Util.MapDebugPrint( "Security_Doors_Destroyed" );
+	},
+
+	Service_Door_Destroyed = function( trigger )
+	{
+		Map.Service_Door_Dyno = 0;
+
+		Util.MapDebugPrint( "Service_Door_Destroyed" );
+	},
+
+	officeflag_Axis_Captured = function( trigger )
+	{
+		Util.MapDebugPrint( "officeflag_Axis_Captured" );
+	},
+
+	officeflag_Allies_Captured = function( trigger )
+	{
+		Util.MapDebugPrint( "officeflag_Allies_Captured" );
+	},
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+
+	OnTrigger( "Axis team has built the mg42!", Map.MG42_Built );
+	OnTrigger( "Axis team has rebuilt the Service Door!", Map.Service_Door_Built );
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "Planted at the Bomb.", Map.Bomb_Planted );
+	OnTrigger( "Planted at the MG42.", Map.MG42_Planted );
+	OnTrigger( "Planted at the Security Doors.", Map.Security_Doors_Planted );
+	OnTrigger( "Planted at the Service Door.", Map.Service_Door_Planted );
+	OnTrigger( "Planted at the Allied Command Post!", Map.Allied_Command_Post_Planted );
+	OnTrigger( "Planted at the Axis Command Post!", Map.Axis_Command_Post_Planted );
+	OnTrigger( "Defused at the Bomb.", Map.Bomb_Defused );
+	OnTrigger( "Defused at the Axis Command Post.", Map.Axis_Command_Post_Defused );
+	OnTrigger( "Defused at the Allied Command Post.", Map.Allied_Command_Post_Defused );
+	OnTrigger( "Defused at the MG42.", Map.MG42_Defused );
+	OnTrigger( "Defused at the Security Doors.", Map.Security_Doors_Defused );
+	OnTrigger( "Defused at the Service Door.", Map.Service_Door_Defused );
+	OnTrigger( "Allies have disabled the bomb", Map.Bomb_Destroyed );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "Allied team has destroyed the mg42!", Map.MG42_Destroyed );
+	OnTrigger( "Allies have breached the security door", Map.Security_Doors_Destroyed );
+	OnTrigger( "Allied team has destroyed the Service Door!", Map.Service_Door_Destroyed );
+	OnTrigger( "Axis reclaim the offices!", Map.officeflag_Axis_Captured );
+	OnTrigger( "Allies capture the offices!", Map.officeflag_Allies_Captured );
+	OnTrigger( "hatch_start", Map.hatch );
+	OnTrigger( "door_left_goto", Map.main_door );
+	AlliedEnter1 = OnTriggerRegion(AABB(2623.125,1438.907,-266.875,2912.875,1624.592,-59.278), Map.AlliedEnter1);
+	AlliedEnter2 = OnTriggerRegion(AABB(2079.125,2281.793,9.125,2181.521,2436.486,152.058), Map.AlliedEnter2);
+	covert = OnTriggerRegion(AABB(-640.875,-145.230,9.125,-447.125,338.368,130.779), Map.covert);
+
+	Util.DisableGoal( ".*", true ); // all but routes
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "DEFEND_.*" );
+	Util.SetMaxUsers( 1, "GRENADE_.*" );
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+	Util.SetMaxUsers( 2, "BUILD_.*" );
+	Util.SetMaxUsers( 2, "PLANT_.*" );
+	Util.SetMaxUsers( 2, "CHECKPOINT_.*");
+
+	// Dyno on Truck Barrier
+	Util.AddUseWp("PLANT_Security_Doors", "secdoor");
+	Util.AddUseWp("PLANT_Security_Doors", "secdoor1");
+	Util.AddUseWp("PLANT_Security_Doors", "secdoor2");
+	//bridge
+	Wp.SetWaypointFlag("bridge","closed",true);
+	Wp.SetWaypointFlag("bridge1","closed",true);
+
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"SNIPE_.*",
+		"DEFEND_sec.*",
+		"BUILD_Service_Door",
+		"CHECKPOINT_.*",
+		"BUILD_Command_Post",
+	});
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"PLANT_Service_Door",
+		"PLANT_Security_Doors",
+		"CHECKPOINT_.*",
+		"GRENADE_fence"
+	});
+
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+	SetMapGoalProperties( "MOBILEMG42_.*", {MinCampTime=60, MaxCampTime=180} );
+	SetMapGoalProperties( "DEFEND_.*", {mincamptime=120, maxcamptime=240});
+	SetMapGoalProperties( "SNIPE_.*", {mincamptime=60, maxcamptime=120});
+	//SetGoalPriority
+	SetGoalPriority( "MOUNTMG42_.*", 0.0, 0, CLASS.MEDIC, true  );
+	SetGoalPriority( "MOUNTMG42_.*", 0.0, 0, CLASS.ENGINEER, true );
+	SetGoalPriority( "BUILD_Service_Door", 0.81, TEAM.AXIS, CLASS.ENGINEER, true );
+	SetGoalPriority( "SWITCH_.*", 0.0, 0, CLASS.ENGINEER, true );
+	//Add Use Wp
+	Util.AddUseWp("PLANT_Bomb", "bomb");
+
+	Util.UpdateSwitchData();
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+	bot.MaxViewDistance = 2400;
+};

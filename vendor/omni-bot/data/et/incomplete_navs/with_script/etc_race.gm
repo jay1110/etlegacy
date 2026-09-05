@@ -1,0 +1,98 @@
+//==========================================================================================
+//
+//	etc_race.gm
+//
+//	Who              	When		What
+//------------------------------------------------------------------------------------------
+//	^1W^4OLF ^1E^4NSTEIN	26 March 2021
+//	palota	26 June 2025	optimized script, routes
+//==========================================================================================
+
+global Map =
+{
+	allied_carpet = 0,
+	axis_carpet = 0,
+
+	allies_gold_Taken = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "FLAG_allies_gold");
+		Util.MapDebugPrint("allies_gold_Taken");
+	},
+
+	axis_gold_Taken = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, false, "FLAG_axis_gold");
+		Util.MapDebugPrint("axis_gold_Taken");
+	},
+
+	allies_gold_Returned = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "FLAG_allies_gold");
+		Util.MapDebugPrint("allies_gold_Returned");
+	},
+
+	axis_gold_Returned = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, true, "FLAG_axis_gold");
+		Util.MapDebugPrint("axis_gold_Returned");
+	},
+
+	allies_gold_Secured = function()
+	{
+		Util.MapDebugPrint("Allied_Fuel_Secured_" + Map.allied_carpet);
+		SetAvailableMapGoals(TEAM.ALLIES, false, "CAPPOINT_allied_carpet_" + Map.allied_carpet, true);
+		++Map.allied_carpet;
+		SetAvailableMapGoals(TEAM.ALLIES, true, "CAPPOINT_allied_carpet_" + Map.allied_carpet, true);
+		SetAvailableMapGoals(TEAM.ALLIES, true, "FLAG_axis_gold");
+	},
+
+	axis_gold_Secured = function()
+	{
+		Util.MapDebugPrint("Axis_Fuel_Secured_" + Map.axis_carpet);
+		SetAvailableMapGoals(TEAM.AXIS, false, "CAPPOINT_axis_carpet_" + Map.axis_carpet, true);
+		++Map.axis_carpet;
+		SetAvailableMapGoals(TEAM.AXIS, true, "CAPPOINT_axis_carpet_" + Map.axis_carpet, true);
+		SetAvailableMapGoals(TEAM.AXIS, true, "FLAG_allies_gold");
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("^1The Axis have stolen The Gold!", Map.allies_gold_Taken);
+	OnTrigger("^4The Allies have stolen The Gold!", Map.axis_gold_Taken);
+	OnTrigger("Flag returned allies_gold!", Map.allies_gold_Returned);
+	OnTrigger("Flag returned axis_gold!", Map.axis_gold_Returned);
+	OnTrigger("The allies carpet has new fuel", Map.allies_gold_Secured);
+	OnTrigger("The axis carpet has new fuel", Map.axis_gold_Secured);
+
+	Util.DisableGoal("CAPPOINT.*");
+	Map.axis_gold_Secured();
+	Map.allies_gold_Secured();
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		FLAG_axis_gold =
+		{
+			ROUTE_allied_spawn =
+			{
+				ROUTE_center1 = {},
+				ROUTE_allied_tunnel = {Weight=3},
+			},
+		},
+		FLAG_allies_gold =
+		{
+			ROUTE_axis_spawn =
+			{
+				ROUTE_center2 = {},
+				ROUTE_axis_tunnel = {Weight=3},
+			},
+		},
+	};
+	
+	Util.Routes(MapRoutes);
+};
