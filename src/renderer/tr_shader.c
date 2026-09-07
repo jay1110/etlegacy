@@ -3813,6 +3813,72 @@ static void BuildShaderChecksumLookup(void)
 	}
 }
 
+/* Keep only complete name/{...} definitions before joining shader files.
+ * Some distributed maps contain bare ShaderCleaner header lines. Feeding
+ * those to SkipBracedSection loses brace synchronization and can hide shaders
+ * from unrelated PK3s. A malformed tail must also stop at its own file boundary.
+ * Compact in place; accepted shader bodies and their ordering are unchanged. */
+static int PrepareShaderFile(char *text, const char *filename)
+{
+	char *scan = text, *write = text;
+	qboolean warned = qfalse;
+
+	while (scan && *scan)
+	{
+		char *start = scan, *afterName, *body;
+		char *token = COM_ParseExt(&scan, qtrue);
+		int depth;
+
+		if (!token[0])
+		{
+			break;
+		}
+		afterName = scan;
+		body = scan;
+		if (!strcmp(token, "{") || !strcmp(token, "}") ||
+		    strcmp(COM_ParseExt(&body, qtrue), "{"))
+		{
+			if (!warned)
+			{
+				Ren_Warning("Ignoring text outside shader definitions in %s\n", filename);
+				warned = qtrue;
+			}
+			/* Do not consume the lookahead: it may be a real shader name. */
+			scan = afterName;
+			continue;
+		}
+
+		depth = 1;
+		while (body && depth)
+		{
+			token = COM_ParseExt(&body, qtrue);
+			if (!token[0])
+			{
+				break;
+			}
+			if (!strcmp(token, "{"))
+			{
+				depth++;
+			}
+			else if (!strcmp(token, "}"))
+			{
+				depth--;
+			}
+		}
+		if (depth)
+		{
+			Ren_Warning("Ignoring unterminated shader definition in %s\n", filename);
+			break;
+		}
+
+		memmove(write, start, body - start);
+		write += body - start;
+		scan = body;
+	}
+	*write = '\0';
+	return (int)(write - text);
+}
+
 #define MAX_SHADER_FILES    4096
 /**
  * @brief Finds and loads all .shader files, combining them into
@@ -3853,11 +3919,12 @@ static void ScanAndLoadShaderFiles(void)
 		Com_sprintf(filename, sizeof(filename), "scripts/%s", shaderFiles[i]);
 		Ren_Developer("...loading '%s'\n", filename);
 		buffersize[i] = ri.FS_ReadFile(filename, (void **)&buffers[i]);
-		sum          += buffersize[i];
 		if (!buffers[i])
 		{
 			Ren_Drop("ScanAndLoadShaderFiles: Couldn't load %s", filename);
 		}
+		buffersize[i] = PrepareShaderFile(buffers[i], filename);
+		sum += buffersize[i];
 	}
 
 	// build single large buffer

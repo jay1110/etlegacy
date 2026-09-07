@@ -97,6 +97,12 @@ static qboolean restoreSavedCvars = qtrue;
 // for restarting playback
 static char savedPlaybackDemonameVal[MAX_OSPATH] = "";
 static char *savedPlaybackDemoname               = savedPlaybackDemonameVal;
+static char savedPlaybackArgument[MAX_OSPATH];
+
+const char *SV_DemoPendingPlayback(void)
+{
+	return sv_demoState && (sv_demoState->integer == DS_WAITINGPLAYBACK || sv_demoState->integer == DS_RESTART) ? savedPlaybackArgument : "";
+}
 
 // arbitrary limit
 #define MAX_DEMO_AUTOPLAY 10
@@ -1234,6 +1240,7 @@ static void SV_DemoStartPlayback(void)
 		// we need to copy the value because since we may spawn a new server (if the demo is played client-side OR if we change fs_game), we will lose all sv. vars
 		// savedPlaybackDemoname is used to restart the playback
 		Q_strncpyz(savedPlaybackDemoname, Cmd_Cmd(), MAX_OSPATH);
+		Q_strncpyz(savedPlaybackArgument, Cmd_Argv(1), sizeof(savedPlaybackArgument));
 
 		// FIXME: game_restart is not implemented
 

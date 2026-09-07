@@ -722,7 +722,7 @@ void Sys_OpenURL(const char *url, qboolean doexit)
  * @return qtrue if the page took the map change over (the caller must not
  *         spawn the server), qfalse to carry on as usual
  */
-qboolean Sys_WebRestartServer(const char *mapname)
+qboolean Sys_WebRestartServer(const char *mapname, const char *demoName)
 {
 	int handled;
 
@@ -735,19 +735,20 @@ qboolean Sys_WebRestartServer(const char *mapname)
 	// interpreted as code.
 	handled = EM_ASM_INT({
 		var map = UTF8ToString($0);
+		var demo = $1 ? UTF8ToString($1) : "";
 		if (typeof window.etlRestartHostedGame !== 'function')
 		{
 			return 0;
 		}
 		try
 		{
-			return window.etlRestartHostedGame(map) ? 1 : 0;
+			return window.etlRestartHostedGame(map, demo) ? 1 : 0;
 		}
 		catch (e)
 		{
 			return 0;               // the page failed us - let the engine try
 		}
-	}, mapname);
+	}, mapname, demoName);
 
 	return handled ? qtrue : qfalse;
 }

@@ -424,6 +424,7 @@ extern vm_t           *gvm;                 ///< game virtual machine
 // sv_demo.c
 void SV_DemoAutoDemoRecord(void);
 void SV_DemoRestartPlayback(void);
+const char *SV_DemoPendingPlayback(void);
 qboolean SV_DemoReadFrame(void);
 void SV_DemoWriteFrame(void);
 qboolean SV_DemoClientCommandCapture(client_t *client, const char *msg);

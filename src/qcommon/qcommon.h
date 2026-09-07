@@ -1550,7 +1550,7 @@ void Sys_OpenURL(const char *url, qboolean doexit);
 #ifdef __EMSCRIPTEN__
 // Hand a map change of a browser-hosted game to the web page, which reloads
 // itself instead of starting a second map in the same page (see sys_web.c)
-qboolean Sys_WebRestartServer(const char *mapname);
+qboolean Sys_WebRestartServer(const char *mapname, const char *demoName);
 #endif
 
 #ifndef _WIN32

@@ -710,7 +710,7 @@ void SV_SpawnServer(const char *server)
 	// the new map from scratch instead, keeping the hosted game alive across
 	// the reload. Only a server that is already running is handed over - the
 	// first map of the page is spawned normally.
-	if (com_sv_running && com_sv_running->integer && Sys_WebRestartServer(server))
+	if (com_sv_running && com_sv_running->integer && Sys_WebRestartServer(server, SV_DemoPendingPlayback()))
 	{
 		Com_Printf("Restarting the page to load %s.\n", server);
 		return;

@@ -5009,7 +5009,10 @@
                 args.push('+set', 'cl_wwwDownload', '1');
             }
             var mapParam = params.get('map');
-            if (mapParam) {
+            var serverDemoParam = params.get('serverdemo');
+            if (serverDemoParam && /^[A-Za-z0-9_./-]+$/.test(serverDemoParam) && serverDemoParam.indexOf('..') < 0) {
+                args.push('+demo_play', serverDemoParam);
+            } else if (mapParam) {
                 args.push('+map', mapParam);
             }
             // An invite link (?join=<roomId>) points at a game hosted in
@@ -9627,13 +9630,30 @@
             // the server respawn (sv_maxclients).
             var restartingHostedGame = false;
 
-            window.etlRestartHostedGame = function (map) {
+            window.etlRestartHostedGame = function (map, demo) {
                 // The engine hands us the map it was about to spawn; it is used
                 // to build a command line again, so it is filtered down to what
                 // a map name can be.
                 var clean = String(map || '').slice(0, 64);
                 if (!safeMapName(clean) || mapNames().indexOf(clean) === -1) { return false; }
                 if (restartingHostedGame) { return true; }   // already on the way
+                if (demo && /^[A-Za-z0-9_./-]+$/.test(demo) && demo.indexOf('..') < 0) {
+                    restartingHostedGame = true;
+                    // A fresh page must start playback before loading its first
+                    // map. Flush the just-closed recording before navigating.
+                    queueSyncFs(false).then(function (error) {
+                        if (error) {
+                            restartingHostedGame = false;
+                            gameMessage('Could not save demo before playback: ' + error);
+                            return;
+                        }
+                        var next = new URL(location.href);
+                        next.searchParams.set('map', clean);
+                        next.searchParams.set('serverdemo', demo);
+                        location.href = next.pathname + next.search;
+                    });
+                    return true;
+                }
 
                 var settings = gameSettings();
                 if (!session || session.role === 'client' || !settings) {

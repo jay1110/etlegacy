@@ -353,6 +353,11 @@ qboolean Sys_WritePIDFile(void)
  */
 NORETURN_MSVC static _attribute((noreturn)) void Sys_Exit(int exitCode)
 {
+#ifdef __EMSCRIPTEN__
+	// A live browser runtime can retain its frame callback after exit(). Stop
+	// scheduling frames before shutdown leaves engine services unavailable.
+	emscripten_cancel_main_loop();
+#endif
 	CON_Shutdown();
 
 #ifndef DEDICATED
