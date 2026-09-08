@@ -85,6 +85,81 @@ void Sys_SyncFilesystem(void)
 	});
 }
 
+/* Database requests deliberately do not call syncfs or block the browser
+ * thread. The caller must retain its operation and poll on subsequent frames;
+ * only status 2 is a durable commit, and status 3 needs a fresh merge/retry. */
+int Sys_WebDatabaseSupported(void)
+{
+	return EM_ASM_INT({ return Module['etlDatabaseStorage'] && Module['etlDatabaseStorage'].indexedDB ? 1 : 0; });
+}
+
+void Sys_WebDatabaseReset(void)
+{
+	EM_ASM({ if (Module['etlDatabaseStorage']) Module['etlDatabaseStorage'].reset(); });
+}
+
+int Sys_WebDatabaseRequest(int operation, const char *qpath, int revision, const void *image, int length)
+{
+	char key[MAX_OSPATH];
+	if ((operation != 1 && operation != 2) || !FS_WebDatabaseKey(qpath, key, sizeof(key)) ||
+	    (operation == 2 && (!image || length < 100 || length > 64 * 1024 * 1024 || revision < 0))) return 0;
+	return EM_ASM_INT({
+		var store = Module['etlDatabaseStorage'];
+		if (!store) return 0;
+		try {
+			return store.request($0 === 1 ? 'read' : 'cas', UTF8ToString($1 >>> 0), $2,
+				$0 === 2 ? HEAPU8.subarray($3 >>> 0, ($3 >>> 0) + $4) : undefined);
+		} catch (_) { return 0; }
+	}, operation, key, revision, image, length);
+}
+
+int Sys_WebDatabasePoll(int token, int *revision, int *length, char *error, int errorSize)
+{
+	if (revision) *revision = 0;
+	if (length) *length = 0;
+	if (error && errorSize > 0) error[0] = '\0';
+	if (token <= 0 || !revision || !length || errorSize < 0 || (errorSize && !error)) return -3;
+	return EM_ASM_INT({
+		var store = Module['etlDatabaseStorage'];
+		var info = store && store.poll($0);
+		if (!info) return -3;
+		HEAP32[$1 >>> 2] = info.revision;
+		HEAP32[$2 >>> 2] = info.length;
+		if ($4 > 0) stringToUTF8(info.error, $3 >>> 0, $4);
+		if (info.status === 'pending') return 0;
+		if (info.status === 'read') return 1;
+		if (info.status === 'committed') return 2;
+		if (info.status === 'conflict') return 3;
+		if (info.status === 'cancelled') return -2;
+		return -1;
+	}, token, revision, length, error, errorSize);
+}
+
+int Sys_WebDatabaseCopy(int token, void *image, int capacity)
+{
+	if (token <= 0 || !image || capacity < 0 || capacity > 64 * 1024 * 1024) return -1;
+	return EM_ASM_INT({
+		var store = Module['etlDatabaseStorage'];
+		return store ? store.copy($0, HEAPU8.subarray($1 >>> 0, ($1 >>> 0) + $2)) : -1;
+	}, token, image, capacity);
+}
+
+int Sys_WebDatabaseRelease(int token)
+{
+	return EM_ASM_INT({
+		var store = Module['etlDatabaseStorage'];
+		return store && store.release($0) ? 1 : 0;
+	}, token);
+}
+
+int Sys_WebDatabaseCancel(int token)
+{
+	return EM_ASM_INT({
+		var store = Module['etlDatabaseStorage'];
+		return store && store.cancel($0) ? 1 : 0;
+	}, token);
+}
+
 /**
  * @brief Sys_Milliseconds
  * @return Current time in milliseconds using emscripten_get_now()

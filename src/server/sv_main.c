@@ -1634,6 +1634,11 @@ void SV_Frame(int msec)
 
 	svcls.realtime += msec;
 
+#ifdef __EMSCRIPTEN__
+    /* Retain the VM and its callback contexts across browser frames. */
+    if(SV_NitmodDatabaseFrame()) return;
+#endif
+
 	// the menu kills the server with this cvar
 	if (sv_killserver->integer)
 	{
@@ -1694,11 +1699,17 @@ void SV_Frame(int msec)
 	if (sv.time > 0x70000000)
 	{
 		Q_strncpyz(mapname, sv_mapname->string, MAX_QPATH);
+#ifdef __EMSCRIPTEN__
+        /* One typed map continuation retains the reload while DB drains.
+         * The hosted browser resets its clock in the normal spawn handoff. */
+        SV_NitmodDatabaseMap(mapname,qfalse);
+#else
 		SV_Shutdown("Restarting server due to time wrapping");
 		// there won't be a map_restart if you have shut down the server
 		// since it doesn't restart a non-running server
 		// instead, re-run the current map
 		Cbuf_AddText(va("map %s\n", mapname));
+#endif
 		return;
 	}
 
@@ -1706,9 +1717,15 @@ void SV_Frame(int msec)
 	if (svs.nextSnapshotEntities >= 0x7FFFFFFE - svs.numSnapshotEntities)
 	{
 		Q_strncpyz(mapname, sv_mapname->string, MAX_QPATH);
+#ifdef __EMSCRIPTEN__
+        /* One typed map continuation retains the reload while DB drains.
+         * The hosted browser resets its clock in the normal spawn handoff. */
+        SV_NitmodDatabaseMap(mapname,qfalse);
+#else
 		SV_Shutdown("Restarting server due to numSnapshotEntities wrapping");
 		// TTimo see above
 		Cbuf_AddText(va("map %s\n", mapname));
+#endif
 		return;
 	}
 

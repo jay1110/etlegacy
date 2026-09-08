@@ -100,6 +100,34 @@ static client_t *SV_GetPlayerByName(void)
 /**
  * @brief Restart the server on a different map
  */
+/* Shared by the console entry and the deferred browser continuation. */
+void SV_NitmodDatabaseMap(const char *mapname,qboolean cheat)
+{
+#ifdef __EMSCRIPTEN__
+    if(SV_NitmodDatabaseDefer(NITMOD_DB_MAP,mapname,cheat)) return;
+#endif
+	Cvar_Set("gamestate", va("%i", GS_INITIALIZE)); // reset gamestate on map/devmap
+	Cvar_Set("g_currentRound", "0");                // reset the current round
+	Cvar_Set("g_nextTimeLimit", "0");               // reset the next time limit
+
+	// start up the map
+	SV_SpawnServer(mapname);
+
+	// set the cheat value
+	// if the level was started with "map <mapname>", then
+	// cheats will not be allowed.
+	// If started with "devmap <mapname>"
+	// then cheats will be allowed
+	if (cheat)
+	{
+		Cvar_Set("sv_cheats", "1");
+	}
+	else
+	{
+		Cvar_Set("sv_cheats", "0");
+	}
+}
+
 static void SV_Map_f(void)
 {
 	char     *cmd;
@@ -126,9 +154,6 @@ static void SV_Map_f(void)
 		return;
 	}
 
-	Cvar_Set("gamestate", va("%i", GS_INITIALIZE)); // reset gamestate on map/devmap
-	Cvar_Set("g_currentRound", "0");                // reset the current round
-	Cvar_Set("g_nextTimeLimit", "0");               // reset the next time limit
 
 	if (!Q_stricmp(cmd, "devmap"))
 	{
@@ -149,22 +174,7 @@ static void SV_Map_f(void)
 		*c = tolower(*c);
 	}
 
-	// start up the map
-	SV_SpawnServer(mapname);
-
-	// set the cheat value
-	// if the level was started with "map <mapname>", then
-	// cheats will not be allowed.
-	// If started with "devmap <mapname>"
-	// then cheats will be allowed
-	if (cheat)
-	{
-		Cvar_Set("sv_cheats", "1");
-	}
-	else
-	{
-		Cvar_Set("sv_cheats", "0");
-	}
+	SV_NitmodDatabaseMap(mapname,cheat);
 }
 
 /**
@@ -245,67 +255,20 @@ static void SV_FieldInfo_f(void)
  * @brief Completely restarts a level, but doesn't send a new gamestate to the clients.
  * This allows fair starts with variable load times.
  */
-static void SV_MapRestart_f(void)
+void SV_NitmodDatabaseRestart(int newGameState)
 {
-	int         i;
-	client_t    *client;
-	char        *denied;
-	qboolean    isBot;
-	int         delay = 0;
-	gamestate_t new_gs, old_gs;
-
-	// make sure we aren't restarting twice in the same frame
-	if (com_frameTime == sv.serverId)
-	{
-		return;
-	}
-
-	// make sure server is running
-	if (!com_sv_running->integer)
-	{
-		Com_Printf("Server is not running.\n");
-		return;
-	}
-
-	if (svclc.demo.playing)
-	{
-		svclc.demo.fastForwardTime = 0;
-	}
-
-	if (Cmd_Argc() > 1)
-	{
-		delay = Q_atoi(Cmd_Argv(1));
-	}
-
-	if (delay)
-	{
-		sv.restartTime = sv.time + delay * 1000;
-
-		if (sv.restartTime == 0)
-		{
-			sv.restartTime = 1;
-		}
-
-		SV_SetConfigstring(CS_WARMUP, va("%i", sv.restartTime));
-		return;
-	}
-
-	// read in gamestate or just default to GS_PLAYING
-	old_gs = Q_atoi(Cvar_VariableString("gamestate"));
-
-	if (Cmd_Argc() > 2)
-	{
-		new_gs = Q_atoi(Cmd_Argv(2));
-	}
-	else
-	{
-		new_gs = GS_PLAYING;
-	}
-
-	if (!SV_TransitionGameState(new_gs, old_gs, delay))
-	{
-		return;
-	}
+    int i;
+    client_t *client;
+    char *denied;
+    qboolean isBot;
+    /* The console entry validated and accepted the state transition before
+     * handing over this continuation. Do not validate it a second time:
+     * a warmup restart would then compare equal and leave the VM frozen. */
+#ifdef __EMSCRIPTEN__
+    if(SV_NitmodDatabaseDefer(NITMOD_DB_RESTART,"",newGameState)) return;
+#else
+    (void)newGameState;
+#endif
 
 	// check for changes in variables that can't just be restarted
 	// check for maxclients change
@@ -380,7 +343,7 @@ static void SV_MapRestart_f(void)
 			SV_DropClient(client, denied);
 			if (!isBot)
 			{
-				Com_Printf("SV_MapRestart_f(%d): dropped client %i - denied!\n", delay, i);   // bk010125
+				Com_Printf("SV_MapRestart_f(%d): dropped client %i - denied!\n", 0, i);   // bk010125
 			}
 
 			continue;
@@ -407,6 +370,72 @@ static void SV_MapRestart_f(void)
 	VM_Call(gvm, GAME_RUN_FRAME, sv.time);
 	sv.time  += FRAMETIME;
 	svs.time += FRAMETIME;
+}
+
+static void SV_MapRestart_f(void)
+{
+	int         delay = 0;
+	gamestate_t new_gs,old_gs;
+
+#ifdef __EMSCRIPTEN__
+    /* This query does not prepare/freeze an invalid first request. Keep all
+     * later requests from changing the accepted continuation's state. */
+    if(SV_NitmodDatabasePendingTransition())
+    {
+        Com_Printf("[SQLite] Server transition already waiting for database commit.\n");
+        return;
+    }
+#endif
+
+	// make sure we aren't restarting twice in the same frame
+	if (com_frameTime == sv.serverId)
+	{
+		return;
+	}
+
+	// make sure server is running
+	if (!com_sv_running->integer)
+	{
+		Com_Printf("Server is not running.\n");
+		return;
+	}
+
+	if (svclc.demo.playing)
+	{
+		svclc.demo.fastForwardTime = 0;
+	}
+
+	if (Cmd_Argc() > 1)
+	{
+		delay = Q_atoi(Cmd_Argv(1));
+	}
+
+	if (delay)
+	{
+		sv.restartTime = sv.time + delay * 1000;
+
+		if (sv.restartTime == 0)
+		{
+			sv.restartTime = 1;
+		}
+
+		SV_SetConfigstring(CS_WARMUP, va("%i", sv.restartTime));
+		return;
+	}
+
+
+	if (Cmd_Argc() > 2)
+	{
+		new_gs = Q_atoi(Cmd_Argv(2));
+	}
+	else
+	{
+		new_gs = GS_PLAYING;
+	}
+
+    old_gs=Q_atoi(Cvar_VariableString("gamestate"));
+    if(!SV_TransitionGameState(new_gs,old_gs,0)) return;
+	SV_NitmodDatabaseRestart(new_gs);
 }
 
 //===============================================================

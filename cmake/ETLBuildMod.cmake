@@ -136,7 +136,11 @@ if(EMSCRIPTEN AND BUILD_CLIENT_MOD AND TARGET etl)
 	)
 	target_link_options(etl PRIVATE
 		"SHELL:--shell-file ${CMAKE_CURRENT_BINARY_DIR}/shell.html"
+		"SHELL:--pre-js ${PROJECT_SOURCE_DIR}/src/web/database_storage.js"
 	)
+	# Changes to the asynchronous storage bridge must relink the engine glue.
+	set_property(TARGET etl APPEND PROPERTY LINK_DEPENDS
+		"${PROJECT_SOURCE_DIR}/src/web/database_storage.js")
 	# Single source of truth for the mod pk3 filename so external packaging
 	# (e.g. .github/workflows/emscripten.yml) can ship a matching pk3.
 	file(GENERATE

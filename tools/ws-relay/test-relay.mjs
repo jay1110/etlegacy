@@ -234,7 +234,11 @@ function opened(ws) {
 
 function nextMessage(ws) {
 	return new Promise((resolve, reject) => {
-		ws.once('message', resolve);
+		const onMessage = (data, binary) => {
+			if (!binary) return; // optional engine control frames are not UDP packets
+			ws.off('message', onMessage); resolve(data);
+		};
+		ws.on('message', onMessage);
 		ws.once('error', reject);
 		ws.once('close', (code) => reject(new Error('closed (' + code + ') before a message arrived')));
 	});
@@ -266,7 +270,7 @@ function text(buffer) {
 /** Resolve to false if a message arrives within `ms`, true if none does. */
 function noMessageWithin(ws, ms) {
 	return new Promise((resolve) => {
-		const onMessage = () => { cleanup(); resolve(false); };
+		const onMessage = (data, binary) => { if (binary) { cleanup(); resolve(false); } };
 		const cleanup = () => {
 			clearTimeout(timer);
 			ws.off('message', onMessage);

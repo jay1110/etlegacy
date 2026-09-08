@@ -704,6 +704,8 @@ void SV_SpawnServer(const char *server)
 #endif
 
 #ifdef __EMSCRIPTEN__
+	if(SV_NitmodDatabaseDefer(NITMOD_DB_SPAWN,server,0)) return;
+
 	// A browser page cannot load a second map: everything below tears the
 	// client down and builds it back up again, which the wasm build does not
 	// survive (see Sys_WebRestartServer). The page reloads itself and starts
@@ -1336,6 +1338,10 @@ void SV_FinalCommand(const char *cmd, qboolean disconnect)
  */
 void SV_Shutdown(const char *finalmsg)
 {
+#ifdef __EMSCRIPTEN__
+    if(SV_NitmodDatabaseDefer(NITMOD_DB_SHUTDOWN,finalmsg?finalmsg:"",0)) return;
+#endif
+
 #if defined(FEATURE_IRC_SERVER) && defined(DEDICATED)
 	IRC_InitiateShutdown();
 #endif

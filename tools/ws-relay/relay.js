@@ -52,6 +52,7 @@ const http = require('http');
 const https = require('https');
 const net = require('net');
 const { WebSocketServer } = require('ws');
+const { NxACRelay } = require('./nxac');
 
 // Configuration
 const DEFAULT_PORT = 8080;
@@ -178,6 +179,7 @@ function closeConnection(conn, code, reason, logMessage) {
     if (conn.closed) {
         return;
     }
+    if (conn.nxac) conn.nxac.close();
     conn.closed = true;
 
     connections.delete(conn.id);
@@ -873,6 +875,7 @@ wss.on('connection', (ws, req) => {
     };
 
     connections.set(connId, connection);
+    connection.nxac = new NxACRelay(connection);
 
     // Forward WebSocket messages to UDP
     const sendToServer = (buffer) => {
@@ -895,12 +898,14 @@ wss.on('connection', (ws, req) => {
         }
     };
 
-    ws.on('message', (data) => {
+    ws.on('message', (data, isBinary) => {
+        if (!isBinary) { connection.nxac.onText(data); return; }
         connection.lastActivity = Date.now();
         connection.isAlive = true;
 
         if (Buffer.isBuffer(data) || data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
             const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
+            if (buffer.length >= 6 && buffer.readUInt32LE(0) !== 0xffffffff) connection.sequenced = true;
 
             // Packets that arrive before bind() completed are queued instead of
             // being dropped, so the initial handshake is never lost.
@@ -939,6 +944,7 @@ wss.on('connection', (ws, req) => {
         }
 
         connection.lastActivity = Date.now();
+        if (msg.length >= 4 && msg.readUInt32LE(0) !== 0xffffffff) connection.receivedSequenced = true;
 
         if (ws.readyState === ws.OPEN) {
             ws.send(msg, { binary: true }, (err) => {

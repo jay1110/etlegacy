@@ -15,6 +15,7 @@ FILE(GLOB COMMON_SRC_REMOVE
 	"src/qcommon/dl_main_stubs.c"
 	"src/qcommon/dl_main_web.c"
 	"src/qcommon/net_web.c"
+	"src/qcommon/net_nxac_web.c"
 	"src/qcommon/i18n.c"
 	"src/qcommon/i18n_*"
 	"src/qcommon/auth.c"
@@ -31,7 +32,8 @@ LIST(REMOVE_ITEM COMMON_SRC ${COMMON_SRC_REMOVE})
 
 # Add Emscripten-specific networking source
 if(EMSCRIPTEN)
-	LIST(APPEND COMMON_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/qcommon/net_web.c")
+	LIST(APPEND COMMON_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/qcommon/net_web.c"
+		"${CMAKE_CURRENT_SOURCE_DIR}/src/qcommon/net_nxac_web.c")
 endif()
 
 # Platform specific code for server and client

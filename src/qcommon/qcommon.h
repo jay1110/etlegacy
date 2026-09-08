@@ -1497,6 +1497,18 @@ char *Sys_DefaultHomePath(void);
 #ifdef __EMSCRIPTEN__
 // Request persistence of the browser virtual filesystem (IDBFS).
 void Sys_SyncFilesystem(void);
+// Asynchronous, revisioned database image transport. Request returns a token,
+// never a commit acknowledgement. Poll: 0 pending, 1 read, 2 committed,
+// 3 conflict, -1 error, -2 cancelled, -3 invalid token. Operation: 1 read, 2 CAS.
+qboolean FS_WebDatabaseKey(const char *qpath, char *key, int keySize);
+int Sys_WebDatabaseSupported(void);
+void Sys_WebDatabaseReset(void);
+int Sys_WebDatabaseRequest(int operation, const char *qpath, int revision, const void *image, int length);
+int Sys_WebDatabasePoll(int token, int *revision, int *length, char *error, int errorSize);
+int Sys_WebDatabaseCopy(int token, void *image, int capacity);
+int Sys_WebDatabaseRelease(int token);
+int Sys_WebDatabaseCancel(int token);
+
 #endif
 const char *Sys_Basename(char *path);
 const char *Sys_Dirname(char *path);

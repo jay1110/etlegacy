@@ -543,6 +543,17 @@ svEntity_t *SV_SvEntityForGentity(sharedEntity_t *gEnt);
 sharedEntity_t *SV_GEntityForSvEntity(svEntity_t *svEnt);
 void SV_InitGameProgs(void);
 void SV_ShutdownGameProgs(void);
+#ifdef __EMSCRIPTEN__
+/* Advertises that every ordinary server transition drains the async DB. */
+#define NITMOD_WEB_DB_LIFECYCLE 1
+enum { NITMOD_DB_MAP=1, NITMOD_DB_RESTART, NITMOD_DB_SPAWN, NITMOD_DB_SHUTDOWN };
+qboolean SV_NitmodDatabasePendingTransition(void);
+qboolean SV_NitmodDatabaseDefer(int action,const char *text,int value);
+qboolean SV_NitmodDatabaseFrame(void);
+void SV_NitmodDatabaseMap(const char *mapname,qboolean cheat);
+void SV_NitmodDatabaseRestart(int newGameState);
+#endif
+
 void SV_RestartGameProgs(void);
 qboolean SV_inPVS(const vec3_t p1, const vec3_t p2);
 qboolean SV_GetTag(int clientNum, int tagFileNumber, char *tagname, orientation_t *orientation);

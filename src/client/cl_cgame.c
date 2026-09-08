@@ -36,6 +36,10 @@
 #include "client.h"
 #include "../sys/sys_local.h"
 #include "../botlib/botlib.h"
+#ifdef __EMSCRIPTEN__
+#include "../qcommon/net_nxac_web.h"
+#include <emscripten/heap.h>
+#endif
 
 #define TRAP_EXTENSIONS_LIST cg_extensionTraps
 #include "../qcommon/vm_ext.h"
@@ -47,6 +51,9 @@ static ext_trap_keys_t cg_extensionTraps[] =
 	{ "trap_CmdBackup_Ext_Legacy",      CG_CMDBACKUP_EXT,        qfalse },
 	{ "trap_MatchPaused_Legacy",        CG_MATCHPAUSED,          qfalse },
 	{ "trap_CvarSetDescription_Legacy", CG_CVAR_SET_DESCRIPTION, qfalse },
+#ifdef __EMSCRIPTEN__
+	{ "trap_NitmodNxACTransport1", CG_NITMOD_NXAC_TRANSPORT, qfalse },
+#endif
 	{ NULL,                             -1,                      qfalse }
 };
 
@@ -685,6 +692,9 @@ void CL_ShutdownCGame(void)
 		return;
 	}
 	VM_Call(cgvm, CG_SHUTDOWN);
+#ifdef __EMSCRIPTEN__
+	NET_NxACWebReset(NXWEB_CGAME);
+#endif
 	VM_Free(cgvm);
 	cgvm = NULL;
 }
@@ -943,8 +953,18 @@ intptr_t CL_CgameSystemCalls(intptr_t *args)
 	case CG_GETUSERCMD:
 		return CL_GetUserCmd(args[1], VMA(2));
 	case CG_SETUSERCMDVALUE:
-		CL_SetUserCmdValue(args[1], args[2], MASK_CGAMEFLAGS_SHOWGAMEVIEW, VMF(3), args[4]);
+	{
+		int mask = MASK_CGAMEFLAGS_SHOWGAMEVIEW;
+		const char *info = cl.gameState.stringData + cl.gameState.stringOffsets[CS_SERVERINFO];
+		/* Original Nitmod transmits its detected violations through usercmd.flags.
+		 * Keep ET:Legacy's serverTimeDelta bits under engine ownership. */
+		if (!Q_stricmp(Info_ValueForKey(info, "gamename"), "nitmod"))
+		{
+			mask |= MASK_CGAMEFLAGS_NITMOD_NXAC;
+		}
+		CL_SetUserCmdValue(args[1], args[2], mask, VMF(3), args[4]);
 		return 0;
+	}
 	case CG_SETCLIENTLERPORIGIN:
 		CL_SetClientLerpOrigin(VMF(1), VMF(2), VMF(3));
 		return 0;
@@ -1132,6 +1152,33 @@ intptr_t CL_CgameSystemCalls(intptr_t *args)
 	case CG_CVAR_SET_DESCRIPTION:
 		return Cvar_SetDescriptionByName(VMA(1), VMA(2));
 
+#ifdef __EMSCRIPTEN__
+	case CG_NITMOD_NXAC_TRANSPORT:
+	{
+		void *buffer = NULL;
+		if (!VM_Ext_IsActive(CG_NITMOD_NXAC_TRANSPORT) || args[1] < 0 || args[1] > 8)
+		{
+			return -1;
+		}
+		if (args[1] == 3 || args[1] == 5 || args[1] == 6)
+		{
+			size_t heapSize = emscripten_get_heap_size();
+			uintptr_t address;
+			if (args[4] < 1 || args[4] > 16384 || (args[1] == 3 && args[4] != 24))
+			{
+				return -1;
+			}
+			buffer = VMA(3);
+			address = (uintptr_t)buffer;
+			if (!address || address >= heapSize || (size_t)args[4] > heapSize - address)
+			{
+				return -1;
+			}
+		}
+		return NET_NxACWebCall(NXWEB_CGAME, &clc.serverAddress, args[1], args[2], buffer, args[4], args[5]);
+	}
+#endif
+
 	default:
 		// A trap number this engine does not implement means the loaded cgame
 		// module was not built against this API. On the web build it is usually
@@ -1283,6 +1330,9 @@ void CL_InitCGame(void)
 
 	// mark all extensions as inactive
 	VM_Ext_ResetActive();
+#ifdef __EMSCRIPTEN__
+	NET_NxACWebReset(NXWEB_CGAME);
+#endif
 
 	// load the dll
 	cgvm = VM_Create("cgame", qtrue, CL_CgameSystemCalls, VMI_NATIVE);

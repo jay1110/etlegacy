@@ -203,6 +203,43 @@ players.
 Raise `--timeout` if you want idle spectators to stay connected longer; lower it
 to reclaim sockets faster.
 
+## Nitmod NxAC stream transport
+
+Ship `nxac.js` alongside `relay.js`. An updated browser engine discovers the
+optional `nxac1 ready` capability on the existing game WebSocket. The original
+UDP game packets remain binary WebSocket frames; NxAC controls are text frames.
+Older clients ignore these text frames and keep using the UDP relay normally.
+
+The stream can open only after bidirectional sequenced game traffic. Its TCP
+host is the same resolved game-server IP. A fresh random challenge in a UDP
+`getstatus` query verifies that server's `gamename=nitmod` and advertised `nport`
+before connecting; the client cannot provide a separate target address or an
+unadvertised TCP port. Status results are cached for at most five seconds.
+The returned source port is the actual TCP socket's local port, which the mod
+publishes as `cnport`. Original `hb`, `ift`, file bytes and `fl` are unchanged.
+
+Protocol version 1 uses `open <id> <port>`, `opened <id> <localPort>`,
+`data <id> <base64>`, `close <id>`, `eof <id>` and `error <id> <reason>`, each
+prefixed by `nxac1 `. IDs are scoped to the game connection. There is one active
+stream per WebSocket, with 16 KiB binary chunks, bounded queues, an 8 MiB file
+limit, inactivity/overall deadlines and cleanup when the game socket closes.
+Backpressure is not acknowledged as delivered data. Neither this relay nor the
+browser queues confirm screenshot storage; that remains the Nitmod server's
+`ftc` response after file validation.
+
+The browser's same-process localhost server uses a separate internal engine
+stream. This does not provide a public TCP listener for a browser-hosted game
+or NxAC transport to remote WebRTC/P2P clients. The current client, engine and
+relay must be updated together for dedicated-server NxAC; a mod-only update
+cannot enable browser TCP.
+
+Offline transport check (synthetic ET status boundary, real UDP/TCP/WebSocket,
+no live game or renderer):
+
+```bash
+node tools/ws-relay/test-nxac.mjs
+```
+
 ## Tests
 
 `test-relay.mjs` exercises the whole path - WebSocket client → relay → UDP game

@@ -583,6 +583,7 @@ enum cgameFlagsMaskEnum
 	MASK_CGAMEFLAGS_SHOWGAMEVIEW             = 0x1, // 0b00000001
 	MASK_CGAMEFLAGS_SERVERTIMEDELTA_FORWARD  = 0x2, // 0b00000010
 	MASK_CGAMEFLAGS_SERVERTIMEDELTA_BACKWARD = 0x4, // 0b00000100
+	MASK_CGAMEFLAGS_NITMOD_NXAC              = 0xe0, // Nitmod client integrity flags; independent of engine delta bits
 };
 
 void CL_ClearKeys(void);

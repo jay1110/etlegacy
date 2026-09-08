@@ -35,6 +35,10 @@
 
 #include "server.h"
 #include "../botlib/botlib.h"
+#ifdef __EMSCRIPTEN__
+#include "../qcommon/net_nxac_web.h"
+#include <emscripten/heap.h>
+#endif
 
 #ifdef FEATURE_TRACKER
 #include "sv_tracker.h"
@@ -51,6 +55,10 @@ static ext_trap_keys_t g_extensionTraps[] =
 	{ "trap_SnapshotCallbackExt_Legacy",   G_SNAPSHOT_CALLBACK_EXT,  qfalse },
 	{ "trap_SnapshotSetClientMask_Legacy", G_SNAPSHOT_SETCLIENTMASK, qfalse },
 	{ "trap_CvarSetDescription_Legacy",    G_CVAR_SET_DESCRIPTION,   qfalse },
+#ifdef __EMSCRIPTEN__
+	{ "trap_NitmodNxACTransport1", G_NITMOD_NXAC_TRANSPORT, qfalse },
+	{ "trap_NitmodDatabaseStorage1", G_NITMOD_DATABASE_STORAGE, qfalse },
+#endif
 	{ NULL,                                -1,                       qfalse }
 };
 
@@ -720,6 +728,65 @@ intptr_t SV_GameSystemCalls(intptr_t *args)
 	case G_CVAR_SET_DESCRIPTION:
 		return Cvar_SetDescriptionByName(VMA(1), VMA(2));
 
+#ifdef __EMSCRIPTEN__
+	case G_NITMOD_DATABASE_STORAGE:
+	{
+#ifndef NITMOD_WEB_DB_LIFECYCLE
+        /* Do not activate asynchronous persistence without a host lifecycle
+         * that drains before every destructive map/module transition. */
+        return args[1] == 0 ? 0 : -1;
+#else
+		void *buffer = NULL;
+		const char *path = NULL;
+		size_t heapSize = emscripten_get_heap_size();
+		uintptr_t address;
+		if (!VM_Ext_IsActive(G_NITMOD_DATABASE_STORAGE) || args[1] < 0 || args[1] > 6) return -1;
+		if (args[1] == 0) return Sys_WebDatabaseSupported();
+		if (args[1] == 1 || args[1] == 2)
+		{
+			path = VMA(3); address = (uintptr_t)path;
+			if (!address || address >= heapSize || !memchr(path, 0, MIN((size_t)MAX_QPATH, heapSize - address))) return -1;
+		}
+		if (args[1] == 2 || args[1] == 3 || args[1] == 4)
+		{
+			if (args[6] < 1 || args[6] > 64 * 1024 * 1024 || (args[1] == 3 && args[6] != 2 * sizeof(int))) return -1;
+			buffer = VMA(5); address = (uintptr_t)buffer;
+			if (!address || address >= heapSize || (size_t)args[6] > heapSize - address ||
+			    (args[1] == 3 && address % sizeof(int))) return -1;
+		}
+		if (args[1] == 1 || args[1] == 2) return Sys_WebDatabaseRequest(args[1], path, args[4], buffer, args[6]);
+		if (args[1] == 3) return Sys_WebDatabasePoll(args[2], (int *)buffer, (int *)buffer + 1, NULL, 0);
+		if (args[1] == 4) return Sys_WebDatabaseCopy(args[2], buffer, args[6]);
+		if (args[1] == 5) return Sys_WebDatabaseRelease(args[2]);
+		return Sys_WebDatabaseCancel(args[2]);
+#endif
+	}
+	case G_NITMOD_NXAC_TRANSPORT:
+	{
+		void *buffer = NULL;
+		if (!VM_Ext_IsActive(G_NITMOD_NXAC_TRANSPORT) || args[1] < 0 || args[1] > 8)
+		{
+			return -1;
+		}
+		if (args[1] == 3 || args[1] == 5 || args[1] == 6)
+		{
+			size_t heapSize = emscripten_get_heap_size();
+			uintptr_t address;
+			if (args[4] < 1 || args[4] > 16384 || (args[1] == 3 && args[4] != 24))
+			{
+				return -1;
+			}
+			buffer = VMA(3);
+			address = (uintptr_t)buffer;
+			if (!address || address >= heapSize || (size_t)args[4] > heapSize - address)
+			{
+				return -1;
+			}
+		}
+		return NET_NxACWebCall(NXWEB_QAGAME, NULL, args[1], args[2], buffer, args[4], args[5]);
+	}
+#endif
+
 	default:
 		Com_Error(ERR_DROP, "Bad game system trap: %ld", (long int) args[0]);
 		break;
@@ -727,6 +794,59 @@ intptr_t SV_GameSystemCalls(intptr_t *args)
 
 	return -1;
 }
+
+#ifdef __EMSCRIPTEN__
+/* Version-1 private export; call only after the matching storage trap was
+ * negotiated. Unrelated game modules retain their original export ABI. */
+#define GAME_NITMOD_DB_PRE_SHUTDOWN 0x4e444201
+static struct { int action,value; char text[MAX_STRING_CHARS]; } nitmodDbDeferred;
+/* Console admission must not mutate a transition already waiting on DB. */
+qboolean SV_NitmodDatabasePendingTransition(void)
+{
+    return nitmodDbDeferred.action != 0;
+}
+static int SV_NitmodDatabasePrepare(void)
+{
+    if(!gvm || !VM_Ext_IsActive(G_NITMOD_DATABASE_STORAGE)) return 1;
+    return VM_Call(gvm,GAME_NITMOD_DB_PRE_SHUTDOWN);
+}
+qboolean SV_NitmodDatabaseDefer(int action,const char *text,int value)
+{
+    if(com_errorEntered || !gvm || !VM_Ext_IsActive(G_NITMOD_DATABASE_STORAGE)) return qfalse;
+    if(nitmodDbDeferred.action)
+    {
+        if(action!=nitmodDbDeferred.action || value!=nitmodDbDeferred.value ||
+           strcmp(text?text:"",nitmodDbDeferred.text))
+            Com_Printf("[SQLite] Server transition already waiting for database commit.\n");
+        return qtrue;
+    }
+    if(SV_NitmodDatabasePrepare()!=2) return qfalse;
+    nitmodDbDeferred.action=action; nitmodDbDeferred.value=value;
+    Q_strncpyz(nitmodDbDeferred.text,text?text:"",sizeof(nitmodDbDeferred.text));
+    Com_Printf("[SQLite] Waiting for pending commits before server transition.\n");
+    return qtrue;
+}
+qboolean SV_NitmodDatabaseFrame(void)
+{
+    int action,value;
+    char text[MAX_STRING_CHARS];
+    if(!nitmodDbDeferred.action) return qfalse;
+    if(SV_NitmodDatabasePrepare()==2) return qtrue;
+    action=nitmodDbDeferred.action; value=nitmodDbDeferred.value;
+    Q_strncpyz(text,nitmodDbDeferred.text,sizeof(text));
+    memset(&nitmodDbDeferred,0,sizeof(nitmodDbDeferred));
+    /* Resume directly. Map names and messages remain data, never commands. */
+    switch(action)
+    {
+    case NITMOD_DB_MAP: SV_NitmodDatabaseMap(text,value); break;
+    case NITMOD_DB_RESTART: SV_NitmodDatabaseRestart(value); break;
+    case NITMOD_DB_SPAWN: SV_SpawnServer(text); break;
+    case NITMOD_DB_SHUTDOWN: SV_Shutdown(text); break;
+    default: break;
+    }
+    return qtrue;
+}
+#endif
 
 /**
  * @brief Called every time a map changes
@@ -738,11 +858,24 @@ void SV_ShutdownGameProgs(void)
 		return;
 	}
 
+#ifdef __EMSCRIPTEN__
+    /* Normal transitions drained before their destructive boundary. Forced
+     * Hunk_Clear/error teardown cannot await IndexedDB: detach requests
+     * below, without claiming that they were committed or rolled back. */
+    if(SV_NitmodDatabasePrepare()==2)
+        Com_Printf("[SQLite] Forced VM shutdown with unfinished persistence; no completion is reported.\n");
+#endif
+
 	// stop any demos
 	SV_DemoStopAll();
 
 	// shutdown game
 	VM_Call(gvm, GAME_SHUTDOWN, qfalse);
+#ifdef __EMSCRIPTEN__
+	Sys_WebDatabaseReset();
+	memset(&nitmodDbDeferred,0,sizeof(nitmodDbDeferred));
+	NET_NxACWebReset(NXWEB_QAGAME);
+#endif
 	VM_Free(gvm);
 	gvm = NULL;
 
@@ -780,8 +913,14 @@ static void SV_InitGameVM(qboolean restart)
 		}
 	}
 
+#ifdef __EMSCRIPTEN__
+	memset(&nitmodDbDeferred,0,sizeof(nitmodDbDeferred));
+#endif
 	// mark all extensions as inactive
 	VM_Ext_ResetActive();
+#ifdef __EMSCRIPTEN__
+	NET_NxACWebReset(NXWEB_QAGAME);
+#endif
 
 	// use the current msec count for a random seed
 	// init for this gamestate
@@ -797,7 +936,14 @@ void SV_RestartGameProgs(void)
 	{
 		return;
 	}
+#ifdef __EMSCRIPTEN__
+    if(SV_NitmodDatabasePrepare()==2)
+        Com_Printf("[SQLite] Forced VM restart with unfinished persistence; no completion is reported.\n");
+#endif
 	VM_Call(gvm, GAME_SHUTDOWN, qtrue);
+#ifdef __EMSCRIPTEN__
+    Sys_WebDatabaseReset();
+#endif
 
 	// do a restart instead of a free
 	gvm = VM_Restart(gvm);

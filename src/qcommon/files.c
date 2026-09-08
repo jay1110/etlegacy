@@ -646,6 +646,36 @@ char *FS_BuildOSPath(const char *base, const char *game, const char *qpath)
 	return ospath[toggle];
 }
 
+#ifdef __EMSCRIPTEN__
+/* The database namespace is exactly the writable engine filesystem namespace.
+ * Do not derive fs_game from the launcher or reuse a pak/basepath read name. */
+qboolean FS_WebDatabaseKey(const char *qpath, char *key, int keySize)
+{
+	const char *path;
+	char *src, *dst;
+	size_t needed;
+	if (!key || keySize < 1) return qfalse;
+	key[0] = '\0';
+	if (!fs_searchpaths || !fs_homepath || !fs_homepath->string[0] || !qpath || !qpath[0] ||
+	    strlen(qpath) >= MAX_QPATH || qpath[0] == '/' || strchr(qpath, '\\') ||
+	    strchr(qpath, ':') || strstr(qpath, "..") || strstr(qpath, "//") ||
+	    !strcmp(qpath, ".") || !strncmp(qpath, "./", 2) || strstr(qpath, "/./")) return qfalse;
+	needed = strlen(fs_homepath->string) + strlen(fs_gamedir) + strlen(qpath) + 3;
+	if (needed > MAX_OSPATH || needed > (size_t)keySize) return qfalse;
+	path = FS_BuildOSPath(fs_homepath->string, fs_gamedir, qpath);
+	if (path[0] != '/' || strstr(path, "/../") || strstr(path, "/./")) return qfalse;
+	Q_strncpyz(key, path, keySize);
+	/* fs_homepath may end in '/'; those aliases name the same physical file. */
+	for (src = key, dst = key; *src; ++src)
+	{
+		if (*src == '/' && dst != key && dst[-1] == '/') continue;
+		*dst++ = *src;
+	}
+	*dst = '\0';
+	return qtrue;
+}
+#endif
+
 /**
  * @brief Creates any directories needed to store the given fileName
  * @param[in] OSPath

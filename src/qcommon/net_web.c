@@ -41,6 +41,7 @@
 
 #include "q_shared.h"
 #include "qcommon.h"
+#include "net_nxac_web.h"
 
 #include <emscripten.h>
 #include <emscripten/websocket.h>
@@ -446,6 +447,32 @@ static void WS_P2PPump(void)
 /**
  * @brief WebSocket message callback
  */
+qboolean NET_WebNxACSend(const netadr_t *to, const char *text)
+{
+	int i;
+	size_t length;
+	if (!to || !text || (length = strlen(text)) >= 21920)
+	{
+		return qfalse;
+	}
+	for (i = 0; i < MAX_WS_CONNECTIONS; ++i)
+	{
+		wsConnection_t *conn = &wsConnections[i];
+		size_t buffered = 0;
+		if (!conn->active || !conn->open || !conn->sequenced || !NET_CompareAdr(to, &conn->remoteAddr))
+		{
+			continue;
+		}
+		if (emscripten_websocket_get_buffered_amount(conn->socket, &buffered) != EMSCRIPTEN_RESULT_SUCCESS ||
+		    buffered + length > 131072)
+		{
+			return qfalse;
+		}
+		return emscripten_websocket_send_utf8_text(conn->socket, text) == EMSCRIPTEN_RESULT_SUCCESS;
+	}
+	return qfalse;
+}
+
 static EM_BOOL WS_OnMessage(int eventType, const EmscriptenWebSocketMessageEvent *wsEvent, void *userData)
 {
 	wsConnection_t *conn = (wsConnection_t *)userData;
@@ -458,6 +485,15 @@ static EM_BOOL WS_OnMessage(int eventType, const EmscriptenWebSocketMessageEvent
 		return EM_FALSE;
 	}
 
+	if (wsEvent->isText && wsEvent->numBytes > 0 && wsEvent->numBytes < 21920)
+	{
+		/* Bound and terminate the control frame independently of browser ABI.
+		 * Old socket callbacks were rejected above before resolving its address. */
+		char text[21920];
+		memcpy(text, wsEvent->data, wsEvent->numBytes);
+		text[wsEvent->numBytes] = '\0';
+		NET_NxACWebRelayMessage(&conn->remoteAddr, text);
+	}
 	if (!wsEvent->isText && wsEvent->numBytes > 0)
 	{
 		conn->lastUsed = Sys_Milliseconds();
@@ -517,6 +553,7 @@ static EM_BOOL WS_OnClose(int eventType, const EmscriptenWebSocketCloseEvent *ws
 	if (conn && conn->active && wsEvent && wsEvent->socket == conn->socket)
 	{
 		EMSCRIPTEN_WEBSOCKET_T socket = conn->socket;
+		NET_NxACWebRelayClosed(&conn->remoteAddr);
 
 		Com_DPrintf("WebSocket closed: %s (code: %d)\n", conn->url, wsEvent->code);
 		conn->active       = qfalse;
@@ -548,6 +585,10 @@ static void WS_CloseConnection(wsConnection_t *conn)
 		return;
 	}
 
+	if (conn->active)
+	{
+		NET_NxACWebRelayClosed(&conn->remoteAddr);
+	}
 	if (conn->socket > 0)
 	{
 		emscripten_websocket_close(conn->socket, 1000, "recycled");
