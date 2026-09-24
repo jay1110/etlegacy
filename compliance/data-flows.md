@@ -56,9 +56,19 @@ Nginx access log. WebRTC negotiation may reveal network addresses to the
 participating peers and configured STUN/TURN operators. When direct WebRTC is
 unavailable, game packets may pass through the lobby fallback relay.
 
+The repository service definition starts the lobby without `--ice`,
+`--turn-user` or `--turn-pass`. Unless the production unit or environment
+overrides that configuration, the lobby therefore advertises Google's public
+STUN endpoint `stun:stun.l.google.com:19302`, uses no TURN server, and relies on
+the built-in WebSocket fallback relay when a direct WebRTC path cannot be made.
+The production systemd configuration still needs to be checked because it can
+override all three values outside this repository.
+
 Questions to complete:
 
 - complete Nginx access-log configuration and retention;
+- whether production overrides `ETL_LOBBY_ICE` or the service command line;
+- whether TURN credentials are configured (record only that they exist, never the secret);
 - STUN and TURN operators and their privacy terms;
 - room metadata exposed publicly;
 - signalling and fallback-relay logging;
