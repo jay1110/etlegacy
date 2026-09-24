@@ -31,10 +31,18 @@ The data archive therefore remains a separate provenance and permission item.
 ## Material unresolved issues
 
 1. Obtain an authoritative licence for the exact Omni-bot source snapshot.
-   The 26-byte placeholder is not a usable grant or notice.
-2. Obtain and review the Wild Magic 3 licence agreement referenced by the
-   compiled source files. Do not infer permission from the files merely being
-   publicly obtainable.
+   The 26-byte placeholder is not a usable grant or notice. Git history shows
+   the placeholder already existed in the initial import
+   `771b16ad0eab8a39dd460ae2688699a3b30dfd16` (2010-08-26) and remained in the
+   stable-branch import `0b114a2e6912a215eb3af1436715565e37baf431`
+   (2013-03-04). The original `omni-bot-0.93.zip` contains dependency and game
+   SDK licences, but no separate main Omni-bot licence.
+2. Obtain an authoritative copy of the Wild Magic 3 version 1.0c licence and
+   preserve it with the source. A contemporary Debian legal-list archive
+   reproduces terms allowing use, modification, copying and distribution for
+   non-commercial products, which appears consistent with this deployment,
+   but the original PDF URL is no longer available and the repository does
+   not contain the agreement itself.
 3. Establish redistribution terms and provenance for the shipped ET scripts
    and navigation meshes.
 4. Determine whether the vendored LZMA sources were modified. If modified,
@@ -47,3 +55,9 @@ Per the operator's instruction, this review does not disable Omni-bot. Its
 release status remains `permission-needed` until the two missing grants and
 the runtime-data provenance are resolved.
 
+## Outreach prepared
+
+- `outreach/omnibot-licence-request.md` is ready to post as an issue in the
+  authoritative Omni-bot repository.
+- `outreach/wildmagic3-licence-request.md` is ready to email to Geometric
+  Tools. No message has been sent from this repository review.

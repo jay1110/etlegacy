@@ -21,6 +21,8 @@ questions can be resolved deliberately.
   the information still required before public legal notices can be finalised.
 - `omnibot-review.md` records the licence evidence from the exact source files
   compiled into the separately distributed Omni-bot WebAssembly module.
+- `outreach/` contains prepared requests for missing authoritative licence
+  information; these drafts are not evidence that a request was sent.
 - `components.yml` is the central component and licence review register.
 - `dependencies.yml` records code dependencies, their exact use in the web
   build or production services, and dependencies explicitly excluded from the
