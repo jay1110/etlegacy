@@ -27,14 +27,19 @@ configuration and retention period still need to be documented.
 
 ## WebSocket-to-UDP relay
 
-The relay can observe the browser connection's IP address, target game-server
-address, connection times and relayed traffic metadata. It forwards game
-traffic to third-party Enemy Territory servers, which independently receive
-game-protocol identifiers and player information.
+The public relay endpoint is
+`wss://et.clan-etc.de/ws-relay/<host>:<port>`. Nginx terminates the public
+connection and proxies it to `ws://127.0.0.1:8080/<host>:<port>`. The reverse
+proxy can observe the browser connection's IP address, target game-server
+address, connection times and relayed traffic metadata. With the currently
+documented proxy headers the Node relay itself receives Nginx as its direct
+peer; no `X-Forwarded-For` or `X-Real-IP` header is configured in this location.
+It forwards game traffic to third-party Enemy Territory servers, which
+independently receive game-protocol identifiers and player information.
 
 Questions to complete:
 
-- production endpoint(s), reverse proxy and hosting provider;
+- hosting provider and complete Nginx access-log configuration;
 - access/application log fields and retention;
 - abuse prevention data and ban lists;
 - whether payloads are ever persisted;
@@ -42,15 +47,18 @@ Questions to complete:
 
 ## P2P lobby and fallback relay
 
-The lobby is hosted at `etclan.de` (`135.125.189.21`); its public scheme, port
-and path still need confirmation. It processes room metadata and WebSocket
-connection information. WebRTC negotiation may reveal network addresses to the
+The lobby is publicly available at
+`wss://et.clan-etc.de/p2p-lobby/` (`135.125.189.21`). Nginx proxies it to
+`ws://127.0.0.1:8081/`. It processes room metadata and WebSocket connection
+information. With the currently documented proxy headers the lobby sees Nginx
+as its direct WebSocket peer, while the public client address can remain in the
+Nginx access log. WebRTC negotiation may reveal network addresses to the
 participating peers and configured STUN/TURN operators. When direct WebRTC is
 unavailable, game packets may pass through the lobby fallback relay.
 
 Questions to complete:
 
-- exact public lobby URL;
+- complete Nginx access-log configuration and retention;
 - STUN and TURN operators and their privacy terms;
 - room metadata exposed publicly;
 - signalling and fallback-relay logging;
@@ -78,4 +86,3 @@ deployment configuration. Those hosts receive the user's IP address and HTTP
 metadata unless the download is routed through the deployment's same-origin
 proxy. The final privacy notice must identify the categories of recipients and
 explain when a direct third-party request occurs.
-
