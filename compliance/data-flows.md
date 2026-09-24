@@ -25,8 +25,14 @@ HTTP operation exposes at least the requesting IP address, timestamp, requested
 path and user-agent to the web host or reverse proxy. The actual access-log
 configuration confirms separate HTTP and HTTPS proxy access/error logs for both
 `et.clan-etc.de` and `etclan.de` below `/var/www/vhosts/system/<domain>/logs/`.
-The effective log format, rotation/retention period and whether the WebSocket
-locations inherit the virtual host's access log still need to be documented.
+The WebSocket locations do not disable access logging and therefore inherit
+the HTTPS virtual host's access log. Ten compressed `processed` generations
+were observed for both HTTP and HTTPS access logs. Their dates span multiple
+months, so this is not a simple daily retention window. Proxy error-log
+archives reach back into 2025, and other error-log archives were observed from
+2023. `/etc/logrotate.d/nginx` only covers `/var/log/nginx/*.log`; Plesk manages
+these per-vhost logs separately. The effective Plesk rotation thresholds and a
+proportionate maximum retention period remain to be established.
 
 ## WebSocket-to-UDP relay
 
@@ -69,7 +75,7 @@ override all three values outside this repository.
 
 Questions to complete:
 
-- complete Nginx access-log configuration and retention;
+- effective Plesk rotation thresholds and maximum retention;
 - whether production overrides `ETL_LOBBY_ICE` or the service command line;
 - whether TURN credentials are configured (record only that they exist, never the secret);
 - STUN and TURN operators and their privacy terms;
