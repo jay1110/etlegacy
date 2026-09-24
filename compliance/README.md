@@ -25,6 +25,8 @@ questions can be resolved deliberately.
   records every distributed file, its size, SHA-256 digest and classification.
 - `../tools/compliance/generate-distribution-inventory.mjs` generates the
   inventory without modifying the build.
+- `../tools/compliance/generate-third-party-notices.mjs` creates the notice
+  file shipped with the browser build from the authoritative licence texts.
 
 ## Generate an inventory
 
@@ -37,6 +39,13 @@ node tools/compliance/generate-distribution-inventory.mjs \
 
 For a local CMake build the first argument can also be `build-wasm`. The script
 only reads that directory and writes the requested JSON file.
+
+Generate the third-party notices with:
+
+```sh
+node tools/compliance/generate-third-party-notices.mjs \
+  dist/etlegacy-web/THIRD_PARTY_NOTICES.txt
+```
 
 ## Review status
 
