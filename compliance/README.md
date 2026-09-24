@@ -18,6 +18,9 @@ questions can be resolved deliberately.
 - `data-flows.md` is the technical data-flow register used to prepare an
   accurate privacy notice and retention policy.
 - `components.yml` is the central component and licence review register.
+- `dependencies.yml` records code dependencies, their exact use in the web
+  build or production services, and dependencies explicitly excluded from the
+  current Emscripten build.
 - `distribution-inventory.json` is generated from a concrete web build and
   records every distributed file, its size, SHA-256 digest and classification.
 - `../tools/compliance/generate-distribution-inventory.mjs` generates the
