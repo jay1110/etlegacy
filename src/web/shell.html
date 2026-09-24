@@ -2337,6 +2337,11 @@
                     <button class="control-btn" type="button" id="game-map-add">Add</button>
                 </div>
                 <div id="game-rotation" class="rotation-list"></div>
+                <label for="game-mapmode">Map start mode</label>
+                <select id="game-mapmode">
+                    <option value="map">Normal: map oasis</option>
+                    <option value="devmap">Developer: devmap oasis (sv_cheats 1)</option>
+                </select>
                 <label for="game-name">Room name</label>
                 <input id="game-name" type="text" maxlength="64" autocomplete="off">
                 <label for="game-maxplayers">Max players (2 - 32)</label>
@@ -2737,6 +2742,15 @@
                         <button class="control-btn" type="button" id="host-map-add">Add</button>
                     </div>
                     <div id="host-rotation" class="rotation-list"></div>
+                    <label for="host-mapmode">Map start mode</label>
+                    <select id="host-mapmode">
+                        <option value="map" selected>Normal: map oasis</option>
+                        <option value="devmap">Developer: devmap oasis (sv_cheats 1)</option>
+                    </select>
+                    <div class="setting-hint">
+                        Developer mode loads every map with <code>devmap</code> and
+                        enables <code>sv_cheats 1</code> for the entire rotation.
+                    </div>
                     <label for="host-name">Room name</label>
                     <input id="host-name" type="text" value="ET:Legacy Web Host" maxlength="64" autocomplete="off">
                     <label for="host-maxclients">Max players (2 - 32)</label>
@@ -10235,6 +10249,7 @@
                     configLine('sv_hostname', settings.name),
                     configLine('sv_maxclients', settings.maxPlayers),
                     configLine('sv_pure', '0'),
+                    configLine('sv_cheats', settings.developerMode ? '1' : '0'),
                     configLine('g_gametype', '2'),
                     configLine('g_userTimeLimit', settings.timeLimit),
                     configLine('g_teamForceBalance', settings.balancedTeams ? '1' : '0'),
@@ -10305,6 +10320,7 @@
                             '+set', 'g_gametype', '2',
                             '+set', 'sv_pure', '0',
                             '+set', 'sv_allowDownload', '1',
+                            '+set', 'sv_cheats', settings.developerMode ? '1' : '0',
                             '+set', 'g_userTimeLimit', String(settings.timeLimit)];
 
                 // Advanced settings. They are plain server cvars, so they are
@@ -10381,7 +10397,7 @@
                     if (mine) {
                         args.push('+exec', HOST_UI_CFG);
                     }
-                    args.push('+map', settings.map);
+                    args.push(settings.developerMode ? '+devmap' : '+map', settings.map);
                     return args;
                 });
             }
@@ -10495,13 +10511,18 @@
             // Write the rotation into the engine. startIndex is the entry that
             // is being played right now, so the *next* match continues with the
             // one after it.
-            function applyRotationToEngine(rotation, startIndex) {
+            function mapLoadCommand(map, developerMode) {
+                return (developerMode ? 'devmap ' : 'map ') + map;
+            }
+
+            function applyRotationToEngine(rotation, startIndex, developerMode) {
                 if (!rotation || !rotation.length) { return; }
 
                 rotation.forEach(function (map, index) {
                     var next = 'vstr etl_rot' + ((index + 1) % rotation.length);
                     etlSendCommand('set etl_rot' + index +
-                        ' "map ' + map + '; set nextmap ' + next + '"');
+                        ' "' + mapLoadCommand(map, developerMode) +
+                        '; set nextmap ' + next + '"');
                 });
 
                 var from = (startIndex >= 0 && startIndex < rotation.length) ? startIndex : 0;
@@ -10567,6 +10588,7 @@
                     bots: bots,
                     timeLimit: timeLimit,
                     private: !!el('private').checked,
+                    developerMode: !!(el('mapmode') && el('mapmode').value === 'devmap'),
                     mod: mod,
                     balancedTeams: bool('balancedteams', false),
                     doWarmup: bool('dowarmup', true),
@@ -10603,6 +10625,7 @@
                 setValue('bots', settings.bots);
                 setValue('timelimit', settings.timeLimit);
                 setChecked('private', settings.private);
+                setValue('mapmode', settings.developerMode ? 'devmap' : 'map');
                 if (el('map') && settings.map) { el('map').value = settings.map; }
                 if (el('mod')) { el('mod').value = settings.mod; }
                 setChecked('balancedteams', settings.balancedTeams);
@@ -10652,6 +10675,7 @@
                     bots: settings.bots,
                     timeLimit: settings.timeLimit,
                     private: !!settings.private,
+                    developerMode: !!settings.developerMode,
                     mod: settings.mod || DEFAULT_MOD,
                     balancedTeams: !!settings.balancedTeams,
                     doWarmup: settings.doWarmup !== false,
@@ -10791,6 +10815,7 @@
                         bots: bots,
                         timeLimit: num('timeLimit', 0, 0, 1440),
                         private: bool('private', false),
+                        developerMode: bool('developerMode', false),
                         mod: modKey,
                         balancedTeams: bool('balancedTeams', false),
                         doWarmup: bool('doWarmup', true),
@@ -11203,6 +11228,8 @@
                     byId('game-bots').max = String(settings.maxPlayers - 1);
                     byId('game-timelimit').value = String(settings.timeLimit);
                     byId('game-private').checked = !!settings.private;
+                    byId('game-mapmode').value = settings.developerMode
+                        ? 'devmap' : 'map';
 
                     // The advanced settings of the running game. They are the
                     // ones the host page offers, minus the mod: that one is
@@ -11476,6 +11503,7 @@
                     timeLimit: Math.max(0, Math.min(1440,
                         parseInt(byId('game-timelimit').value, 10) || 0)),
                     private: !!byId('game-private').checked,
+                    developerMode: byId('game-mapmode').value === 'devmap',
                     // The mod is the one exception: fs_game is picked when the
                     // engine starts, so a running game keeps the one it has.
                     mod: settings.mod || DEFAULT_MOD,
@@ -11524,6 +11552,7 @@
                               next.alliedRespawn !== settings.alliedRespawn ||
                               next.axisRespawn !== settings.axisRespawn ||
                               cvarUpdate.latched;
+                var mapModeChanged = next.developerMode !== !!settings.developerMode;
 
                 etlSendCommand('sv_hostname "' + next.name.replace(/["\\]/g, '') + '"');
                 etlSendCommand('g_userTimeLimit ' + next.timeLimit);
@@ -11561,16 +11590,22 @@
                     });
                     persist();
                 }
-                if (restart) {
+                if (restart && !mapModeChanged) {
                     etlSendCommand('map_restart');
                 }
 
                 // Re-program the rotation, continuing after the map that is
                 // being played right now - or, while a map outside the rotation
                 // is being played, after the last rotation map that was.
-                applyRotationToEngine(next.rotation, next.rotationIndex);
+                applyRotationToEngine(next.rotation, next.rotationIndex,
+                    next.developerMode);
 
                 session.settings = next;
+                if (mapModeChanged) {
+                    etlSendCommand('set sv_cheats "' +
+                        (next.developerMode ? '1' : '0') + '"');
+                    etlSendCommand(mapLoadCommand(next.map, next.developerMode));
+                }
                 reportedSlots = humanPlayers() + next.bots;
                 if (p2p && session.roomId) {
                     updateRoomQuietly({
@@ -11711,9 +11746,14 @@
                 ensureMapInstalled(map).then(function () {
                     var rotation = settings.rotation || [map];
                     setCurrentMap(map);
+                    var developerMode = byId('game-mapmode')
+                        ? byId('game-mapmode').value === 'devmap'
+                        : !!settings.developerMode;
                     applyRotationToEngine(rotation,
-                        rotationIndexFor(rotation, map, settings.rotationIndex));
-                    etlSendCommand('map ' + map);
+                        rotationIndexFor(rotation, map, settings.rotationIndex),
+                        developerMode);
+                    etlSendCommand('set sv_cheats "' + (developerMode ? '1' : '0') + '"');
+                    etlSendCommand(mapLoadCommand(map, developerMode));
                     gameMessage('Changing the map to "' + map + '"...');
                 }).catch(function (err) {
                     gameMessage('Could not load "' + map + '": ' +
@@ -11961,7 +12001,8 @@
                     settings.rotation = sanitiseRotation(settings.rotation, settings.map);
                     settings.rotationIndex = rotationIndexFor(settings.rotation,
                         settings.map, settings.rotationIndex);
-                    applyRotationToEngine(settings.rotation, settings.rotationIndex);
+                    applyRotationToEngine(settings.rotation, settings.rotationIndex,
+                        settings.developerMode);
 
                     // "Server: <map>" is printed by SV_SpawnServer for every
                     // map the server starts (src/server/sv_init.c).
