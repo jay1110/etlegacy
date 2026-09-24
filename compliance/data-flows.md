@@ -23,7 +23,10 @@ Questions to complete:
 The three known web deployments deliver the application and game data. Normal
 HTTP operation exposes at least the requesting IP address, timestamp, requested
 path and user-agent to the web host or reverse proxy. The actual access-log
-configuration and retention period still need to be documented.
+configuration confirms separate HTTP and HTTPS proxy access/error logs for both
+`et.clan-etc.de` and `etclan.de` below `/var/www/vhosts/system/<domain>/logs/`.
+The effective log format, rotation/retention period and whether the WebSocket
+locations inherit the virtual host's access log still need to be documented.
 
 ## WebSocket-to-UDP relay
 
