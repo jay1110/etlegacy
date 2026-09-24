@@ -13,6 +13,10 @@ questions can be resolved deliberately.
 
 - `distribution-surfaces.yml` lists every known public service and download
   surface that forms part of the deployment.
+- `operations.yml` records non-publication-sensitive facts about the operator
+  and the outstanding provider-information/privacy review.
+- `data-flows.md` is the technical data-flow register used to prepare an
+  accurate privacy notice and retention policy.
 - `components.yml` is the central component and licence review register.
 - `distribution-inventory.json` is generated from a concrete web build and
   records every distributed file, its size, SHA-256 digest and classification.
