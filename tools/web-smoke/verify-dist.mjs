@@ -258,6 +258,32 @@ if (mapListPresent) {
     }
 }
 
+// 9. Every published binary package must retain the project licence, the
+//    third-party notices generated from the vendored licence texts and a link
+//    to the exact corresponding source revision used by CI.
+for (const file of ['COPYING.txt', 'SOURCE_CODE.txt', 'THIRD_PARTY_NOTICES.txt']) {
+    check(exists(file), `compliance file present: ${file}`);
+}
+if (exists('COPYING.txt')) {
+    const copying = fs.readFileSync(path.join(dir, 'COPYING.txt'), 'utf8');
+    check(copying.includes('GNU GENERAL PUBLIC LICENSE'),
+        'COPYING.txt contains the GNU GPL');
+}
+if (exists('SOURCE_CODE.txt')) {
+    const source = fs.readFileSync(path.join(dir, 'SOURCE_CODE.txt'), 'utf8');
+    check(/https:\/\/[^\s]+\/tree\/[0-9a-f]{40}\b/i.test(source),
+        'SOURCE_CODE.txt links to an exact 40-character commit');
+}
+if (exists('THIRD_PARTY_NOTICES.txt')) {
+    const notices = fs.readFileSync(path.join(dir, 'THIRD_PARTY_NOTICES.txt'), 'utf8');
+    for (const component of ['cJSON', 'libjpeg-turbo', 'libpng', 'MiniZip',
+                             'zlib', 'gl4es', 'SDL2 Emscripten port',
+                             'findlocale', 'Paul E. Jones SHA-1 implementation']) {
+        check(notices.includes(component),
+            `THIRD_PARTY_NOTICES.txt covers ${component}`);
+    }
+}
+
 if (exists('etl.html')) {
     const html = fs.readFileSync(path.join(dir, 'etl.html'), 'utf8');
     check(/<script[^>]+src="etl-p2p\.js"/.test(html),
