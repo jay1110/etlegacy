@@ -2988,6 +2988,9 @@
                 <div class="file-actions">
                     <button class="control-btn" type="button" id="file-upload">Upload files</button>
                     <input id="file-upload-input" type="file" multiple hidden>
+                    <button class="control-btn" type="button" id="file-new-folder">New folder</button>
+                    <button class="control-btn" type="button" id="file-new-text">New text file</button>
+                    <button class="control-btn" type="button" id="file-rename" disabled>Rename</button>
                     <button class="control-btn" type="button" id="file-download" disabled>Download</button>
                     <button class="control-btn" type="button" id="file-delete" disabled>Delete</button>
                     <button class="control-btn" type="button" id="file-edit" disabled>Edit text</button>
@@ -6932,6 +6935,20 @@
                 return FILE_BROWSER_ROOTS.indexOf(path) !== -1;
             }
 
+            function validFileBrowserName(value) {
+                value = String(value === null || value === undefined ? '' : value).trim();
+                if (!value || value === '.' || value === '..' || value.length > 255 ||
+                    /[\/\\\x00-\x1f\x7f]/.test(value)) {
+                    return '';
+                }
+                return value;
+            }
+
+            function fileBrowserEntryExists(path) {
+                try { Module.FS.stat(path); return true; }
+                catch (e) { return false; }
+            }
+
             function humanFileSize(size) {
                 if (size < 1024) { return size + ' B'; }
                 if (size < 1024 * 1024) { return (size / 1024).toFixed(1) + ' KB'; }
@@ -6949,6 +6966,8 @@
                 var one = selected.length === 1 ? selected[0] : null;
                 document.getElementById('file-download').disabled = !one || one.directory;
                 document.getElementById('file-delete').disabled = !selected.length;
+                document.getElementById('file-rename').disabled = !one ||
+                    fileBrowserIsRoot(one.path);
                 document.getElementById('file-edit').disabled = !one || one.directory ||
                     !/\.(cfg|config|txt|json|menu|script|arena|campaign|shader|log)$/i.test(one.path);
             }
@@ -6985,11 +7004,10 @@
                         row.className = 'file-row';
                         var checkbox = document.createElement('input');
                         checkbox.type = 'checkbox';
-                        checkbox.disabled = item.directory;
                         checkbox.checked = !!fileBrowserSelections[item.path];
                         checkbox.setAttribute('aria-label', 'Select ' + item.name);
                         checkbox.onchange = function () {
-                            setFileBrowserSelection(item.path, false, checkbox.checked);
+                            setFileBrowserSelection(item.path, item.directory, checkbox.checked);
                             row.style.background = checkbox.checked ? '#303052' : '';
                         };
                         var name = document.createElement('span');
@@ -12837,6 +12855,58 @@
                     };
                     document.getElementById('file-path').onkeydown = function (event) {
                         if (event.key === 'Enter') { renderFileBrowser(this.value); }
+                    };
+                    document.getElementById('file-new-folder').onclick = function () {
+                        var name = validFileBrowserName(window.prompt('Folder name:', 'new-folder'));
+                        if (!name) { return; }
+                        var path = fileBrowserPath + '/' + name;
+                        try {
+                            if (fileBrowserEntryExists(path)) {
+                                throw new Error('an item with this name already exists');
+                            }
+                            Module.FS.mkdir(path);
+                            persistBrowserFiles('Created folder ' + path + '.');
+                        } catch (e) {
+                            document.getElementById('file-hint').textContent =
+                                'Could not create folder: ' + (e.message || e);
+                        }
+                    };
+                    document.getElementById('file-new-text').onclick = function () {
+                        var name = validFileBrowserName(window.prompt('Text file name:', 'new-file.txt'));
+                        if (!name) { return; }
+                        var path = fileBrowserPath + '/' + name;
+                        try {
+                            if (fileBrowserEntryExists(path)) {
+                                throw new Error('an item with this name already exists');
+                            }
+                            Module.FS.writeFile(path, '');
+                            persistBrowserFiles('Created text file ' + path + '.');
+                        } catch (e) {
+                            document.getElementById('file-hint').textContent =
+                                'Could not create text file: ' + (e.message || e);
+                        }
+                    };
+                    document.getElementById('file-rename').onclick = function () {
+                        var selected = selectedBrowserFiles();
+                        var item = selected.length === 1 ? selected[0] : null;
+                        if (!item || fileBrowserIsRoot(item.path)) { return; }
+                        var oldName = item.path.slice(item.path.lastIndexOf('/') + 1);
+                        var name = validFileBrowserName(window.prompt('New name:', oldName));
+                        if (!name || name === oldName) { return; }
+                        var destination = fileBrowserPath + '/' + name;
+                        try {
+                            if (fileBrowserEntryExists(destination)) {
+                                throw new Error('an item with this name already exists');
+                            }
+                            Module.FS.rename(item.path, destination);
+                            fileBrowserSelections = {};
+                            document.getElementById('file-editor').style.display = 'none';
+                            document.getElementById('file-editor-actions').style.display = 'none';
+                            persistBrowserFiles('Renamed ' + oldName + ' to ' + name + '.');
+                        } catch (e) {
+                            document.getElementById('file-hint').textContent =
+                                'Rename failed: ' + (e.message || e);
+                        }
                     };
                     var browserUpload = document.getElementById('file-upload-input');
                     document.getElementById('file-upload').onclick = function () {
