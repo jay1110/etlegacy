@@ -56,6 +56,15 @@ Questions to complete:
 - whether payloads are ever persisted;
 - technical and organisational access controls.
 
+The production relay runs as PM2 application `relay` under the `root` account.
+Its stdout log has reached approximately 6.1 MB and no PM2 log-rotation module
+or retention setting was detected. The relay logs the requested target server,
+connection counters and download target URLs. Because Nginx does not forward
+the public client address into this location, the application-level address is
+normally the local reverse-proxy address; Nginx separately records the public
+address. Running the network service as root and keeping an unbounded log are
+both remediation items.
+
 ## P2P lobby and fallback relay
 
 The lobby is publicly available at
@@ -74,8 +83,13 @@ environment
 overrides that configuration, the lobby therefore advertises Google's public
 STUN endpoint `stun:stun.l.google.com:19302`, uses no TURN server, and relies on
 the built-in WebSocket fallback relay when a direct WebRTC path cannot be made.
-The production PM2 configuration still needs to be checked because it can
-override all three values outside this repository.
+The production PM2 process has no script arguments and no ICE/TURN environment
+override. Google STUN is therefore confirmed active, TURN is not configured,
+and the built-in WebSocket fallback relay is used when direct WebRTC fails.
+The lobby runs as PM2 application `lobby` under the `root` account. No bounded
+PM2 log-retention configuration was detected, although the observed lobby logs
+are currently small. Migration to an unprivileged account and explicit log
+rotation are remediation items.
 
 Questions to complete:
 
