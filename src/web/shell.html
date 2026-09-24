@@ -849,13 +849,14 @@
         }
         .file-row {
             display: grid;
-            grid-template-columns: minmax(160px, 1fr) auto auto;
+            grid-template-columns: auto minmax(160px, 1fr) auto auto;
             gap: 8px;
             align-items: center;
             padding: 7px 9px;
             border-bottom: 1px solid #333;
         }
         .file-row:last-child { border-bottom: 0; }
+        .file-row input[type="checkbox"] { margin: 0; width: auto; }
         .file-name {
             color: #ddd;
             overflow-wrap: anywhere;
@@ -877,6 +878,12 @@
             font-family: monospace;
             line-height: 1.35;
         }
+        .cleaner-list { max-height:46vh; overflow:auto; border:1px solid #444; background:#171729; margin:10px 0; }
+        .cleaner-row { display:flex; gap:9px; align-items:center; padding:7px 9px; border-bottom:1px solid #333; }
+        .cleaner-row input { width:auto; margin:0; }
+        .cleaner-path { flex:1; overflow-wrap:anywhere; font-family:monospace; font-size:.78rem; }
+        .omni-settings-group { margin-top:12px; }
+        .omni-settings-group > h4 { color:#e2bd48; margin:12px 0 6px; }
         #launcher-guide, #launcher-servers {
             width: min(920px, 100%);
         }
@@ -2329,6 +2336,12 @@
                 </div>
                 <div class="host-note" id="game-mod-note" style="display:none"></div>
 
+                <div class="panel-section" id="game-omnibot-section">
+                    <div class="panel-section-head"><h3>Omni-Bot settings</h3></div>
+                    <div class="setting-hint">MinBots and MaxBots follow the Bots value in the Basic tab.</div>
+                    <div id="game-omnibot-settings"></div>
+                </div>
+
                 <div class="check-row">
                     <input id="game-balancedteams" type="checkbox">
                     <label for="game-balancedteams">g_balancedTeams</label>
@@ -2559,10 +2572,20 @@
                             Player profile
                             <span class="launcher-btn-sub">Create or change your in-game profile (player name) before starting.</span>
                         </button>
-                        <button class="launcher-btn" type="button" id="menu-files">
+                        <button class="launcher-btn" type="button" id="menu-files-home">
                             <span class="launcher-btn-icon" aria-hidden="true">&#128193;</span>
-                            Browser files
-                            <span class="launcher-btn-sub">Manage downloaded pk3/module files and edit local configs.</span>
+                            Homepath
+                            <span class="launcher-btn-sub">Manage your Game Folder.</span>
+                        </button>
+                        <button class="launcher-btn" type="button" id="menu-files-base">
+                            <span class="launcher-btn-icon" aria-hidden="true">&#128193;</span>
+                            Basepath
+                            <span class="launcher-btn-sub">Manage your Game Folder.</span>
+                        </button>
+                        <button class="launcher-btn" type="button" id="menu-pk3-cleaner">
+                            <span class="launcher-btn-icon" aria-hidden="true">&#129529;</span>
+                            PK3 Cleaner
+                            <span class="launcher-btn-sub">Game lags or behaves strangely? Click this button.</span>
                         </button>
                         <button class="launcher-btn" type="button" id="menu-guide">
                             <span class="launcher-btn-icon" aria-hidden="true">&#9432;</span>
@@ -2574,7 +2597,7 @@
                            rel="noopener noreferrer">
                             <span class="launcher-btn-icon" aria-hidden="true">&#11015;</span>
                             Download full game
-                            <span class="launcher-btn-sub">The native ET: Legacy client for Windows, macOS and Linux - more compatibility than the browser version.</span>
+                            <span class="launcher-btn-sub">&#129695; Windows &middot; &#128039; Linux &middot; &#127822; macOS &middot; &#129302; Android</span>
                         </a>
                     </section>
                 </div>
@@ -2725,6 +2748,12 @@
                         afterwards and wins over it.
                     </div>
 
+                    <div class="panel-section" id="host-omnibot-section">
+                        <div class="panel-section-head"><h3>Omni-Bot settings</h3></div>
+                        <div class="setting-hint">MinBots and MaxBots always follow the Bots value in the Basic tab, so the two sections cannot conflict.</div>
+                        <div id="host-omnibot-settings"></div>
+                    </div>
+
                     <div class="check-row">
                         <input id="host-balancedteams" type="checkbox">
                         <label for="host-balancedteams" style="margin:0">g_balancedTeams</label>
@@ -2855,7 +2884,7 @@
 
         <!-- Browser-visible view of the persistent Emscripten filesystem. -->
         <div class="launcher-panel" id="launcher-files">
-            <h2>Browser files</h2>
+            <h2>Game Folder</h2>
             <div class="panel-body">
                 <div class="file-toolbar">
                     <button class="control-btn" type="button" id="file-up">Up</button>
@@ -2884,6 +2913,19 @@
             </div>
             <div class="launcher-actions">
                 <button class="control-btn" type="button" id="files-back">Back</button>
+            </div>
+        </div>
+
+        <div class="launcher-panel" id="launcher-cleaner">
+            <h2>PK3 Cleaner</h2>
+            <div class="panel-body">
+                <div class="host-note">The selected PK3 and .so files will be removed from browser storage. Clear any files you want to keep. Required game files will be downloaded again when needed.</div>
+                <div class="cleaner-list" id="cleaner-list"></div>
+                <div class="launcher-hint" id="cleaner-hint"></div>
+            </div>
+            <div class="launcher-actions">
+                <button class="control-btn" type="button" id="cleaner-back">Cancel</button>
+                <button class="control-btn" type="button" id="cleaner-delete">Delete selected files</button>
             </div>
         </div>
 
@@ -2924,8 +2966,9 @@
                 <section class="guide-block">
                     <h3>Downloads and local files</h3>
                     <p>Missing retail packages, maps and mod files are downloaded
-                       when needed and cached in the browser. <strong>Browser files</strong>
-                       lets you upload, download or delete PK3 and WASM-SO files.
+                       when needed and cached in the browser. <strong>Homepath</strong>
+                       and <strong>Basepath</strong>
+                       let you upload, download or delete PK3 and WASM-SO files.
                        Config, menu, script, JSON and text files can be edited
                        directly. Your player profile, name and settings remain
                        available after restarting the browser.</p>
@@ -6383,6 +6426,118 @@
                 });
             }
 
+            var OMNIBOT_SETTINGS = [
+                ['Debug', 'DumpFileEnable', 'b', false, 0, 1, 'Create a crash dump (Windows only).'],
+                ['Debug', 'DumpFileDialog', 'b', false, 0, 1, 'Show a crash dialog (Windows only).'],
+                ['Script', 'LiveUpdate', 'b', false, 0, 1, 'Reload changed weapon properties automatically.'],
+                ['ServerManager', 'BalanceTeams', 'i', 0, 0, 1, 'Let bots balance the teams.'],
+                ['ServerManager', 'SaveConfigChanges', 'i', 1, 0, 1, 'Save changes made with bot commands.'],
+                ['ServerManager', 'CountSpectators', 'i', 0, 0, 1, 'Wait until a human joins a team before removing a bot.'],
+                ['ServerManager', 'SleepBots', 'i', 0, 0, 1, 'Save CPU time while no human is connected.'],
+                ['Difficulty', 'CurrentDifficulty', 'i', 4, 0, 6, '0 poorest, 4 standard, 6 uber.'],
+                ['Difficulty', 'AdjustAim', 'i', 1, 0, 1, 'Adjust aim to the selected difficulty.'],
+                ['CombatMovement', 'moveskill', 'i', 3, 0, 4, '0 off, 1 easy, 2 medium, 3 hard, 4 random.'],
+                ['HeavyWeapons', 'MinPlayersForMortar', 'i', -1, -1, 64, '-1 disables the limit.'],
+                ['HeavyWeapons', 'MinPlayersForMobileMG', 'i', -1, -1, 64, '-1 disables the limit.'],
+                ['Log', 'LogInfo', 'b', false, 0, 1, 'Enable informational logging.'],
+                ['Log', 'LogWarnings', 'b', false, 0, 1, 'Enable warning logging.'],
+                ['Log', 'LogErrors', 'b', false, 0, 1, 'Enable error logging.'],
+                ['Log', 'LogCriticalErrors', 'b', false, 0, 1, 'Enable critical-error logging.'],
+                ['XP', 'Reset', 'i', -1, -1, 1, 'Automatically reset bot XP (-1 disabled, 0/1 supported by Omni-Bot).'],
+                ['XP', 'Max', 'i', 10000, 0, 100000000, 'Bot XP value at which the reset applies.'],
+                ['FireTeam', 'enabled', 'i', 0, 0, 1, 'Enable fire-team goals.'],
+                ['Versus', 'BotTeam', 'i', -1, -1, 2, '-1 off, 1 Axis, 2 Allies.'],
+                ['Versus', 'HumanTeam', 'i', 1, 1, 2, '1 Axis, 2 Allies.'],
+                ['Versus', 'BotsPerHuman', 'i', 3, 0, 32, 'Number of bots added for each human.']
+            ];
+
+            function omniBotDefaults() {
+                var values = {};
+                OMNIBOT_SETTINGS.forEach(function (entry) { values[entry[0] + '.' + entry[1]] = entry[3]; });
+                return values;
+            }
+
+            function cleanOmniBotSettings(raw, warnings) {
+                var clean = omniBotDefaults();
+                raw = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+                OMNIBOT_SETTINGS.forEach(function (entry) {
+                    var key = entry[0] + '.' + entry[1];
+                    if (!Object.prototype.hasOwnProperty.call(raw, key)) { return; }
+                    var value = raw[key];
+                    if (entry[2] === 'b') {
+                        if (typeof value === 'boolean') { clean[key] = value; }
+                        else if (warnings) { warnings.push('Omni-Bot "' + key + '" is not true or false.'); }
+                        return;
+                    }
+                    value = Number(value);
+                    if (!isFinite(value)) {
+                        if (warnings) { warnings.push('Omni-Bot "' + key + '" is not a number.'); }
+                        return;
+                    }
+                    value = Math.max(entry[4], Math.min(entry[5], Math.round(value)));
+                    if (key === 'Versus.BotTeam' && value === 0) { value = -1; }
+                    clean[key] = value;
+                });
+                return clean;
+            }
+
+            function renderOmniBotSettings(prefix, values, modKey, bots) {
+                var box = document.getElementById(prefix + 'omnibot-settings');
+                var section = document.getElementById(prefix + 'omnibot-section');
+                if (!box || !section) { return; }
+                section.style.display = modKey === 'etjump' ? 'none' : 'block';
+                values = cleanOmniBotSettings(values);
+                box.innerHTML = '';
+                var currentCategory = '';
+                var group = null;
+                OMNIBOT_SETTINGS.forEach(function (entry, index) {
+                    if (entry[0] !== currentCategory) {
+                        currentCategory = entry[0];
+                        group = document.createElement('div');
+                        group.className = 'omni-settings-group';
+                        var heading = document.createElement('h4');
+                        heading.textContent = '[' + currentCategory + ']';
+                        group.appendChild(heading); box.appendChild(group);
+                        if (currentCategory === 'ServerManager') {
+                            var count = document.createElement('div');
+                            count.className = 'setting-hint';
+                            count.textContent = 'MinBots = ' + bots + ' and MaxBots = ' + bots + ' (controlled by Basic > Bots).';
+                            group.appendChild(count);
+                        }
+                    }
+                    var key = entry[0] + '.' + entry[1];
+                    var id = prefix + 'omnibot-' + index;
+                    var row = document.createElement('div');
+                    row.className = entry[2] === 'b' ? 'check-row' : 'setting-row';
+                    var input = document.createElement('input');
+                    input.id = id; input.dataset.omniKey = key;
+                    if (entry[2] === 'b') {
+                        input.type = 'checkbox'; input.checked = !!values[key];
+                        row.appendChild(input);
+                    }
+                    var label = document.createElement('label');
+                    label.htmlFor = id; label.textContent = entry[1];
+                    row.appendChild(label);
+                    if (entry[2] !== 'b') {
+                        input.type = 'number'; input.min = String(entry[4]); input.max = String(entry[5]);
+                        input.value = String(values[key]); row.appendChild(input);
+                    }
+                    group.appendChild(row);
+                    var hint = document.createElement('div'); hint.className = 'setting-hint';
+                    hint.textContent = entry[6]; group.appendChild(hint);
+                });
+            }
+
+            function readOmniBotSettings(prefix) {
+                var raw = {};
+                OMNIBOT_SETTINGS.forEach(function (entry, index) {
+                    var input = document.getElementById(prefix + 'omnibot-' + index);
+                    if (!input) { return; }
+                    raw[entry[0] + '.' + entry[1]] = entry[2] === 'b' ? !!input.checked : Number(input.value);
+                });
+                return cleanOmniBotSettings(raw);
+            }
+
             // Give Omni-bot's server manager the bot count the player asked for
             // in the launcher. Without one it defaults to MinBots -1 ("do not
             // add any"), which would leave the player alone on the map.
@@ -6393,32 +6548,28 @@
             // The launcher's choice is authoritative, so an existing file has
             // its two counts rewritten in place - everything else Omni-bot may
             // have stored there (and the player's other settings) is kept.
-            function writeOmniBotConfig(bots) {
+            function writeOmniBotConfig(bots, options) {
                 var cfg = HOME_ETL_DIR + '/omni-bot.cfg';
-                var existing = null;
-                try {
-                    if (Module.FS.analyzePath(cfg).exists) {
-                        existing = Module.FS.readFile(cfg, { encoding: 'utf8' });
-                    }
-                } catch (e) { /* unreadable - write a fresh one below */ }
-
                 try {
                     Module.FS.mkdirTree(HOME_ETL_DIR);
-                    if (existing !== null && /^\s*MinBots\s*=/mi.test(existing)) {
-                        // A function replacement keeps '$' sequences in the file
-                        // from being interpreted as replacement patterns.
-                        existing = existing
-                            .replace(/^\s*MinBots\s*=.*$/mi, function () { return 'MinBots=' + bots; })
-                            .replace(/^\s*MaxBots\s*=.*$/mi, function () { return 'MaxBots=' + bots; });
-                        Module.FS.writeFile(cfg, existing);
-                        return;
-                    }
-                    Module.FS.writeFile(cfg,
-                        '; Written by the ET: Legacy web launcher.\n' +
-                        '; Change the bot count in-game with "/bot minbots <n>".\n' +
-                        '[ServerManager]\n' +
-                        'MinBots=' + bots + '\n' +
-                        'MaxBots=' + bots + '\n');
+                    options = cleanOmniBotSettings(options);
+                    var categories = [];
+                    OMNIBOT_SETTINGS.forEach(function (entry) {
+                        if (categories.indexOf(entry[0]) === -1) { categories.push(entry[0]); }
+                    });
+                    var lines = ['# Written by the ET: Legacy web launcher.'];
+                    categories.forEach(function (category) {
+                        lines.push('', '[' + category + ']');
+                        if (category === 'ServerManager') {
+                            lines.push('MaxBots=' + bots, 'MinBots=' + bots);
+                        }
+                        OMNIBOT_SETTINGS.forEach(function (entry) {
+                            if (entry[0] !== category) { return; }
+                            var value = options[category + '.' + entry[1]];
+                            lines.push(entry[1] + '=' + (entry[2] === 'b' ? (value ? 'true' : 'false') : value));
+                        });
+                    });
+                    Module.FS.writeFile(cfg, lines.join('\n') + '\n');
                 } catch (e) {
                     if (console && console.warn) {
                         console.warn('Could not write ' + cfg + ': ' + (e && e.message || e));
@@ -6441,12 +6592,12 @@
             // than not at all (the engine would otherwise sit in a map with an
             // Omni-bot that cannot load its scripts).
             var omniBotInstall = null;
-            function setupOmniBot(bots) {
+            function setupOmniBot(bots, options) {
                 if (omniBotInstall) {
                     // Already installed (or being installed): only the bot count
                     // may have changed since, so apply that and reuse the rest.
                     return omniBotInstall.then(function (ready) {
-                        if (ready) { writeOmniBotConfig(bots); }
+                        if (ready) { writeOmniBotConfig(bots, options); }
                         return ready;
                     });
                 }
@@ -6481,7 +6632,7 @@
                 }).then(function () {
                     return unzipInto(Module.FS.readFile(packCache), OMNIBOT_DIR);
                 }).then(function () {
-                    writeOmniBotConfig(bots);
+                    writeOmniBotConfig(bots, options);
                     return true;
                 }).catch(function (err) {
                     if (console && console.warn) {
@@ -6637,7 +6788,7 @@
             // hidden and cannot accidentally be removed from this panel.
             var FILE_BROWSER_ROOTS = [INSTALL_DIR, HOME_ETL_DIR];
             var fileBrowserPath = HOME_ETL_DIR;
-            var fileBrowserSelection = null;
+            var fileBrowserSelections = {};
             var FILE_EDITOR_LIMIT = 2 * 1024 * 1024;
 
             function normaliseFileBrowserPath(value) {
@@ -6665,12 +6816,26 @@
                 return (size / (1024 * 1024)).toFixed(1) + ' MB';
             }
 
-            function setFileBrowserSelection(path, isDir) {
-                fileBrowserSelection = path ? { path: path, directory: !!isDir } : null;
-                document.getElementById('file-download').disabled = !path || isDir;
-                document.getElementById('file-delete').disabled = !path || fileBrowserIsRoot(path);
-                document.getElementById('file-edit').disabled = !path || isDir ||
-                    !/\.(cfg|config|txt|json|menu|script|arena|campaign|shader|log)$/i.test(path);
+            function selectedBrowserFiles() {
+                return Object.keys(fileBrowserSelections).map(function (path) {
+                    return fileBrowserSelections[path];
+                });
+            }
+
+            function updateFileBrowserActions() {
+                var selected = selectedBrowserFiles();
+                var one = selected.length === 1 ? selected[0] : null;
+                document.getElementById('file-download').disabled = !one || one.directory;
+                document.getElementById('file-delete').disabled = !selected.length;
+                document.getElementById('file-edit').disabled = !one || one.directory ||
+                    !/\.(cfg|config|txt|json|menu|script|arena|campaign|shader|log)$/i.test(one.path);
+            }
+
+            function setFileBrowserSelection(path, isDir, selected) {
+                if (!path) { fileBrowserSelections = {}; updateFileBrowserActions(); return; }
+                if (selected === false) { delete fileBrowserSelections[path]; }
+                else { fileBrowserSelections[path] = { path: path, directory: !!isDir }; }
+                updateFileBrowserActions();
             }
 
             function renderFileBrowser(path) {
@@ -6696,18 +6861,21 @@
                     }).forEach(function (item) {
                         var row = document.createElement('div');
                         row.className = 'file-row';
+                        var checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.disabled = item.directory;
+                        checkbox.checked = !!fileBrowserSelections[item.path];
+                        checkbox.setAttribute('aria-label', 'Select ' + item.name);
+                        checkbox.onchange = function () {
+                            setFileBrowserSelection(item.path, false, checkbox.checked);
+                            row.style.background = checkbox.checked ? '#303052' : '';
+                        };
                         var name = document.createElement('span');
                         name.className = 'file-name' + (item.directory ? ' directory' : '');
                         name.textContent = (item.directory ? '\uD83D\uDCC1 ' : '') + item.name;
                         name.onclick = function () {
                             if (item.directory) { renderFileBrowser(item.path); }
-                            else {
-                                Array.prototype.forEach.call(list.children, function (child) {
-                                    child.style.background = '';
-                                });
-                                row.style.background = '#303052';
-                                setFileBrowserSelection(item.path, false);
-                            }
+                            else { checkbox.checked = !checkbox.checked; checkbox.onchange(); }
                         };
                         var size = document.createElement('span');
                         size.className = 'file-size';
@@ -6715,9 +6883,9 @@
                         var pick = document.createElement('button');
                         pick.className = 'control-btn small';
                         pick.type = 'button';
-                        pick.textContent = item.directory ? 'Open' : 'Select';
+                        pick.textContent = item.directory ? 'Open' : 'Toggle';
                         pick.onclick = name.onclick;
-                        row.appendChild(name); row.appendChild(size); row.appendChild(pick);
+                        row.appendChild(checkbox); row.appendChild(name); row.appendChild(size); row.appendChild(pick);
                         list.appendChild(row);
                     });
                     if (!list.children.length) {
@@ -6744,6 +6912,59 @@
                 return persist().then(function () {
                     renderFileBrowser(fileBrowserPath);
                     document.getElementById('file-hint').textContent = message;
+                });
+            }
+
+            function collectCleanerFiles(path, found) {
+                found = found || [];
+                var stat;
+                try { stat = Module.FS.stat(path); } catch (e) { return found; }
+                if (!Module.FS.isDir(stat.mode)) {
+                    if (/\.(pk3|so)$/i.test(path)) { found.push(path); }
+                    return found;
+                }
+                Module.FS.readdir(path).forEach(function (name) {
+                    if (name !== '.' && name !== '..') {
+                        collectCleanerFiles(path.replace(/\/$/, '') + '/' + name, found);
+                    }
+                });
+                return found;
+            }
+
+            function renderPk3Cleaner() {
+                var list = document.getElementById('cleaner-list');
+                var files = [];
+                FILE_BROWSER_ROOTS.forEach(function (root) { collectCleanerFiles(root, files); });
+                files = files.filter(function (path, index) { return files.indexOf(path) === index; }).sort();
+                list.innerHTML = '';
+                files.forEach(function (path) {
+                    var row = document.createElement('label'); row.className = 'cleaner-row';
+                    var checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox'; checkbox.checked = true; checkbox.value = path;
+                    var text = document.createElement('span'); text.className = 'cleaner-path'; text.textContent = path;
+                    row.appendChild(checkbox); row.appendChild(text); list.appendChild(row);
+                });
+                document.getElementById('cleaner-hint').textContent = files.length ?
+                    files.length + ' PK3/.so file(s) found. All are selected by default.' :
+                    'No PK3 or .so files were found.';
+                document.getElementById('cleaner-delete').disabled = !files.length;
+            }
+
+            function deleteCleanerSelection() {
+                var selected = Array.prototype.filter.call(
+                    document.querySelectorAll('#cleaner-list input[type="checkbox"]'),
+                    function (input) { return input.checked; });
+                if (!selected.length) {
+                    document.getElementById('cleaner-hint').textContent = 'No files are selected.';
+                    return;
+                }
+                selected.forEach(function (input) {
+                    try { Module.FS.unlink(input.value); } catch (e) { /* report through remaining list */ }
+                });
+                persist().then(function () {
+                    renderPk3Cleaner();
+                    document.getElementById('cleaner-hint').textContent =
+                        selected.length + ' file(s) deleted. Required files will be downloaded again when needed.';
                 });
             }
 
@@ -6821,7 +7042,7 @@
             // stall via window.etlLauncherWaiting.
             var LAUNCHER_PANELS = ['launcher-setup', 'launcher-menu',
                 'launcher-quick', 'launcher-servers', 'launcher-host',
-                'launcher-join', 'launcher-profile', 'launcher-files',
+                'launcher-join', 'launcher-profile', 'launcher-files', 'launcher-cleaner',
                 'launcher-guide'];
 
             // Which panel is on screen right now ('' while the launcher is
@@ -8376,7 +8597,7 @@
                     // Legacy Omni-bot side module. Do not fetch, mount, or
                     // enable it for an ETJump browser host.
                     if (!supportsOmniBot) { return false; }
-                    return setupOmniBot(settings.bots);
+                    return setupOmniBot(settings.bots, settings.omniBot);
                 }).then(function (ready) {
                     if (!ready) {
                         // Omni-bot could not be installed: the game starts
@@ -8608,7 +8829,8 @@
                     // default (see renderModCvars). The in-game panel has a list
                     // of its own, so the container is looked up by prefix here
                     // as well.
-                    cvars: readModCvars(document.getElementById(prefix + 'cvars'), mod)
+                    cvars: readModCvars(document.getElementById(prefix + 'cvars'), mod),
+                    omniBot: readOmniBotSettings(prefix)
                 };
             }
 
@@ -8644,6 +8866,8 @@
                 // mod with it, and with it a different set of settings.
                 renderModCvars(el('cvars'), settings.mod || DEFAULT_MOD,
                     settings.cvars, prefix + 'cvar-');
+                renderOmniBotSettings(prefix, settings.omniBot,
+                    settings.mod || DEFAULT_MOD, settings.bots);
             }
 
             // --- Settings import / export ----------------------------------
@@ -8686,7 +8910,8 @@
                     warmup: settings.warmup,
                     alliedRespawn: settings.alliedRespawn,
                     axisRespawn: settings.axisRespawn,
-                    cvars: cleanCvarSet(settings.cvars, settings.mod || DEFAULT_MOD)
+                    cvars: cleanCvarSet(settings.cvars, settings.mod || DEFAULT_MOD),
+                    omniBot: cleanOmniBotSettings(settings.omniBot)
                 };
             }
 
@@ -8827,7 +9052,8 @@
                         // Checked against the table of that mod: a name that is
                         // not in it, or a value that is not a number or a short
                         // piece of text, never reaches the engine.
-                        cvars: cleanCvarSet(own('cvars'), modKey, warnings)
+                        cvars: cleanCvarSet(own('cvars'), modKey, warnings),
+                        omniBot: cleanOmniBotSettings(own('omniBot'), warnings)
                     },
                     warnings: warnings,
                     error: ''
@@ -9248,6 +9474,8 @@
                     // The mod's own server settings, rebuilt from what the game
                     // is running with every time the panel is opened.
                     renderGameCvars(settings.cvars);
+                    renderOmniBotSettings('game-', settings.omniBot,
+                        modKey, settings.bots);
                     showModLogicNote(modKey);
                     updateQuickActions();
                 }
@@ -9513,7 +9741,8 @@
                     // Where the rotation stands. "Apply" never changes the map,
                     // so the position it carries on from stays what it is.
                     rotationIndex: 0,
-                    cvars: readModCvars(byId('game-cvars'), settings.mod || DEFAULT_MOD)
+                    cvars: readModCvars(byId('game-cvars'), settings.mod || DEFAULT_MOD),
+                    omniBot: readOmniBotSettings('game-')
                 };
                 next.bots = Math.min(next.bots, next.maxPlayers - 1);
                 if (next.mod === 'xmod') {
@@ -9573,7 +9802,15 @@
                     // these two bounds and adds/kicks bots accordingly.
                     etlSendCommand('bot maxbots ' + next.bots);
                     etlSendCommand('bot minbots ' + next.bots);
-                    writeOmniBotConfig(next.bots);
+                }
+                if (next.mod !== 'etjump') {
+                    writeOmniBotConfig(next.bots, next.omniBot);
+                    OMNIBOT_SETTINGS.forEach(function (entry) {
+                        var value = next.omniBot[entry[0] + '.' + entry[1]];
+                        etlSendCommand('bot ' + entry[1] + ' ' +
+                            (entry[2] === 'b' ? (value ? 'true' : 'false') : value));
+                    });
+                    persist();
                 }
                 if (restart) {
                     etlSendCommand('map_restart');
@@ -9959,6 +10196,13 @@
                 };
 
                 setupMapSearch('game-map-search', 'game-map', true);
+                byId('game-bots').oninput = function () {
+                    var settings = gameSettings();
+                    if (!settings || settings.mod === 'etjump') { return; }
+                    renderOmniBotSettings('game-', readOmniBotSettings('game-'),
+                        settings.mod || DEFAULT_MOD,
+                        Math.max(0, parseInt(byId('game-bots').value, 10) || 0));
+                };
 
                 // Program the rotation into the running game (a single map
                 // simply restarts, exactly as before) and follow the engine
@@ -10263,6 +10507,8 @@
                         document.getElementById('host-cvars-title').textContent =
                             'Server settings of ' + HOST_MODS[mod].name +
                             ' (' + modCvarList(mod).length + ')';
+                        renderOmniBotSettings('host-', readOmniBotSettings('host-'),
+                            mod, parseInt(document.getElementById('host-bots').value, 10) || 0);
                     }
 
                     hostModSelect.onchange = function () { renderHostCvars(); };
@@ -10287,6 +10533,8 @@
                         if (parseInt(hostBots.value, 10) > max - 1) {
                             hostBots.value = String(max - 1);
                         }
+                        renderOmniBotSettings('host-', readOmniBotSettings('host-'),
+                            hostModKey(), parseInt(hostBots.value, 10) || 0);
                     }
                     hostMaxPlayers.oninput = clampHostBots;
                     hostBots.oninput = clampHostBots;
@@ -10474,12 +10722,27 @@
 
                     // Persistent browser filesystem: upload/download game files,
                     // remove stale pk3/side modules and edit text configs.
-                    document.getElementById('menu-files').onclick = function () {
+                    function openFileManager(path) {
+                        fileBrowserPath = path;
                         showLauncherPanel('launcher-files');
                         document.getElementById('file-editor').style.display = 'none';
                         document.getElementById('file-editor-actions').style.display = 'none';
                         renderFileBrowser(fileBrowserPath);
+                    }
+                    document.getElementById('menu-files-home').onclick = function () {
+                        openFileManager(HOME_ETL_DIR);
                     };
+                    document.getElementById('menu-files-base').onclick = function () {
+                        openFileManager(INSTALL_DIR);
+                    };
+                    document.getElementById('menu-pk3-cleaner').onclick = function () {
+                        renderPk3Cleaner();
+                        showLauncherPanel('launcher-cleaner');
+                    };
+                    document.getElementById('cleaner-back').onclick = function () {
+                        showLauncherPanel('launcher-menu');
+                    };
+                    document.getElementById('cleaner-delete').onclick = deleteCleanerSelection;
                     document.getElementById('menu-guide').onclick = function () {
                         showLauncherPanel('launcher-guide');
                     };
@@ -10530,6 +10793,8 @@
                         });
                     };
                     document.getElementById('file-download').onclick = function () {
+                        var selected = selectedBrowserFiles();
+                        var fileBrowserSelection = selected.length === 1 ? selected[0] : null;
                         if (!fileBrowserSelection || fileBrowserSelection.directory) { return; }
                         try {
                             var bytes = Module.FS.readFile(fileBrowserSelection.path);
@@ -10546,18 +10811,23 @@
                         }
                     };
                     document.getElementById('file-delete').onclick = function () {
-                        if (!fileBrowserSelection || fileBrowserIsRoot(fileBrowserSelection.path)) { return; }
-                        var target = fileBrowserSelection.path;
-                        if (!window.confirm('Delete "' + target + '" from browser storage?')) { return; }
+                        var selected = selectedBrowserFiles();
+                        if (!selected.length) { return; }
+                        if (!window.confirm('Delete ' + selected.length + ' selected item(s) from browser storage?')) { return; }
                         try {
-                            removeBrowserFsEntry(target);
-                            persistBrowserFiles('Deleted ' + target + '.');
+                            selected.forEach(function (item) {
+                                if (!fileBrowserIsRoot(item.path)) { removeBrowserFsEntry(item.path); }
+                            });
+                            fileBrowserSelections = {};
+                            persistBrowserFiles('Deleted ' + selected.length + ' selected item(s).');
                         } catch (e) {
                             document.getElementById('file-hint').textContent =
                                 'Delete failed: ' + (e.message || e);
                         }
                     };
                     document.getElementById('file-edit').onclick = function () {
+                        var selected = selectedBrowserFiles();
+                        var fileBrowserSelection = selected.length === 1 ? selected[0] : null;
                         if (!fileBrowserSelection || fileBrowserSelection.directory) { return; }
                         try {
                             var stat = Module.FS.stat(fileBrowserSelection.path);
@@ -10574,6 +10844,8 @@
                         }
                     };
                     document.getElementById('file-save').onclick = function () {
+                        var selected = selectedBrowserFiles();
+                        var fileBrowserSelection = selected.length === 1 ? selected[0] : null;
                         if (!fileBrowserSelection) { return; }
                         try {
                             Module.FS.writeFile(fileBrowserSelection.path,
