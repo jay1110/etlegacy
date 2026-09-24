@@ -884,6 +884,16 @@
         .cleaner-path { flex:1; overflow-wrap:anywhere; font-family:monospace; font-size:.78rem; }
         .omni-settings-group { margin-top:12px; }
         .omni-settings-group > h4 { color:#e2bd48; margin:12px 0 6px; }
+        .custom-cvar-row {
+            display: grid;
+            grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) auto;
+            gap: 7px;
+            align-items: center;
+            margin-bottom: 7px;
+        }
+        .custom-cvar-row input { margin: 0; }
+        .custom-cvar-row .control-btn { padding: 7px 10px; }
+        .custom-cvar-empty { color:#888; font-size:.78rem; margin:7px 0; }
         #launcher-guide, #launcher-servers {
             width: min(920px, 100%);
         }
@@ -2414,10 +2424,10 @@
                 </div>
 
                 <div class="panel-section">
-                    <div class="panel-section-head">
-                        <h3 id="game-cvars-title">Server settings of the mod</h3>
-                        <button class="control-btn small" type="button"
-                                id="game-cvars-reset">Reset to defaults</button>
+                        <div class="panel-section-head">
+                            <h3 id="game-cvars-title">Server settings of the mod</h3>
+                            <button class="control-btn small" type="button"
+                                    id="game-cvars-reset">Reset to defaults</button>
                     </div>
                 <label for="game-warmup">g_warmup</label>
                 <input id="game-warmup" type="number" min="1" max="3600">
@@ -2450,6 +2460,16 @@
                         Every server setting this mod knows. "Apply" hands the ones
                         you changed to the running server; the others keep what the
                         mod - or the preset config of this deployment - set.
+                    </div>
+                    <div class="panel-section-head">
+                        <h3>Custom settings</h3>
+                        <button class="control-btn small" type="button"
+                                id="game-custom-cvar-add">Add setting</button>
+                    </div>
+                    <div id="game-custom-cvars"></div>
+                    <div class="setting-hint">
+                        Add a server cvar that is not listed above. Names and values
+                        are validated before they are sent to the game.
                     </div>
                 </div>
 
@@ -2842,8 +2862,12 @@
                     <div class="panel-section">
                         <div class="panel-section-head">
                             <h3 id="host-cvars-title">Server settings of the mod</h3>
-                            <button class="control-btn small" type="button"
-                                    id="host-cvars-reset">Reset to defaults</button>
+                            <div class="settings-actions">
+                                <button class="control-btn small" type="button"
+                                        id="host-cvars-reset">Reset server defaults</button>
+                                <button class="control-btn small" type="button"
+                                        id="host-settings-reset">Reset host settings</button>
+                            </div>
                         </div>
                     <label for="host-warmup">g_warmup</label>
                     <input id="host-warmup" type="number" value="60" min="1" max="3600">
@@ -2879,6 +2903,16 @@
                             everything else keeps what the mod (or the preset config of
                             this deployment) sets. Settings marked "restart" are only
                             read when a match starts.
+                        </div>
+                        <div class="panel-section-head">
+                            <h3>Custom settings</h3>
+                            <button class="control-btn small" type="button"
+                                    id="host-custom-cvar-add">Add setting</button>
+                        </div>
+                        <div id="host-custom-cvars"></div>
+                        <div class="setting-hint">
+                            Add any server cvar that the selected mod supports but
+                            does not list above. It is saved with this mod's host profile.
                         </div>
                     </div>
 
@@ -9637,6 +9671,119 @@
                 return lines;
             }
 
+            var MAX_CUSTOM_CVARS = 64;
+
+            function cleanCustomCvarSet(raw, warnings) {
+                var out = {};
+                if (raw === undefined || raw === null) { return out; }
+                if (typeof raw !== 'object' || Array.isArray(raw)) {
+                    if (warnings) { warnings.push('"customCvars" is not an object.'); }
+                    return out;
+                }
+                Object.keys(raw).slice(0, MAX_CUSTOM_CVARS).forEach(function (name) {
+                    if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(name)) {
+                        if (warnings) { warnings.push('Invalid custom cvar "' + String(name).slice(0, 32) + '".'); }
+                        return;
+                    }
+                    var value = raw[name];
+                    if (typeof value !== 'string' && typeof value !== 'number' &&
+                        typeof value !== 'boolean') { return; }
+                    value = String(typeof value === 'boolean' ? (value ? 1 : 0) : value)
+                        .replace(/[\x00-\x1f\x7f"\\;$]/g, '').slice(0, MAX_CVAR_TEXT);
+                    out[name] = value;
+                });
+                return out;
+            }
+
+            function customCvarCommands(values) {
+                var clean = cleanCustomCvarSet(values);
+                return Object.keys(clean).map(function (name) {
+                    return 'set ' + name + ' "' + clean[name] + '"';
+                });
+            }
+
+            function customCvarChanges(before, after) {
+                before = cleanCustomCvarSet(before);
+                after = cleanCustomCvarSet(after);
+                var names = {};
+                Object.keys(before).forEach(function (name) { names[name] = true; });
+                Object.keys(after).forEach(function (name) { names[name] = true; });
+                return Object.keys(names).filter(function (name) {
+                    return before[name] !== after[name];
+                }).map(function (name) {
+                    return 'set ' + name + ' "' +
+                        (Object.prototype.hasOwnProperty.call(after, name)
+                            ? after[name] : '') + '"';
+                });
+            }
+
+            function readCustomCvars(prefix) {
+                var raw = {};
+                var box = document.getElementById(prefix + 'custom-cvars');
+                if (!box) { return raw; }
+                Array.prototype.forEach.call(box.querySelectorAll('.custom-cvar-row'),
+                    function (row) {
+                        var name = row.querySelector('.custom-cvar-name').value.trim();
+                        var value = row.querySelector('.custom-cvar-value').value;
+                        if (name) { raw[name] = value; }
+                    });
+                return cleanCustomCvarSet(raw);
+            }
+
+            function renderCustomCvars(prefix, values) {
+                var box = document.getElementById(prefix + 'custom-cvars');
+                if (!box) { return; }
+                values = cleanCustomCvarSet(values);
+                box.innerHTML = '';
+                var names = Object.keys(values);
+                if (!names.length) {
+                    var empty = document.createElement('div');
+                    empty.className = 'custom-cvar-empty';
+                    empty.textContent = 'No custom settings added.';
+                    box.appendChild(empty);
+                    return;
+                }
+                names.forEach(function (name) {
+                    var row = document.createElement('div');
+                    row.className = 'custom-cvar-row';
+                    var nameInput = document.createElement('input');
+                    nameInput.className = 'custom-cvar-name';
+                    nameInput.type = 'text'; nameInput.maxLength = 64;
+                    nameInput.placeholder = 'cvar_name'; nameInput.value = name;
+                    var valueInput = document.createElement('input');
+                    valueInput.className = 'custom-cvar-value';
+                    valueInput.type = 'text'; valueInput.maxLength = MAX_CVAR_TEXT;
+                    valueInput.placeholder = 'value'; valueInput.value = values[name];
+                    var remove = document.createElement('button');
+                    remove.type = 'button'; remove.className = 'control-btn small';
+                    remove.textContent = 'Remove';
+                    remove.onclick = function () {
+                        row.remove();
+                        if (!box.querySelector('.custom-cvar-row')) {
+                            renderCustomCvars(prefix, {});
+                        }
+                        box.dispatchEvent(new Event('change', { bubbles: true }));
+                    };
+                    row.appendChild(nameInput); row.appendChild(valueInput);
+                    row.appendChild(remove); box.appendChild(row);
+                });
+            }
+
+            function addCustomCvarRow(prefix) {
+                var values = readCustomCvars(prefix);
+                var base = 'custom_setting';
+                var name = base;
+                var suffix = 2;
+                while (Object.prototype.hasOwnProperty.call(values, name)) {
+                    name = base + '_' + suffix++;
+                }
+                values[name] = '';
+                renderCustomCvars(prefix, values);
+                var rows = document.getElementById(prefix + 'custom-cvars')
+                    .querySelectorAll('.custom-cvar-row');
+                if (rows.length) { rows[rows.length - 1].querySelector('input').select(); }
+            }
+
             // --- The mod settings in the panels -------------------------------
             // Both host panels (the launcher's "Host game" page and the gear
             // panel of a running game) show the same list, so it is built here
@@ -10387,6 +10534,7 @@
                     var mine = writeHostCvarConfig(assets,
                         hostSetupCommands(settings, botsReady)
                             .concat(cvarCommands(settings.mod, settings.cvars))
+                            .concat(customCvarCommands(settings.customCvars))
                             .concat(forcedModHostCommands(settings.mod)));
                     // The preset is the baseline a deployment sets up, so it
                     // comes first; the settings picked in the panel are execed
@@ -10601,6 +10749,7 @@
                     // of its own, so the container is looked up by prefix here
                     // as well.
                     cvars: readModCvars(document.getElementById(prefix + 'cvars'), mod),
+                    customCvars: readCustomCvars(prefix),
                     omniBot: readOmniBotSettings(prefix)
                 };
             }
@@ -10638,6 +10787,7 @@
                 // mod with it, and with it a different set of settings.
                 renderModCvars(el('cvars'), settings.mod || DEFAULT_MOD,
                     settings.cvars, prefix + 'cvar-');
+                renderCustomCvars(prefix, settings.customCvars);
                 renderOmniBotSettings(prefix, settings.omniBot,
                     settings.mod || DEFAULT_MOD, settings.bots);
             }
@@ -10684,8 +10834,34 @@
                     alliedRespawn: settings.alliedRespawn,
                     axisRespawn: settings.axisRespawn,
                     cvars: cleanCvarSet(settings.cvars, settings.mod || DEFAULT_MOD),
+                    customCvars: cleanCustomCvarSet(settings.customCvars),
                     omniBot: cleanOmniBotSettings(settings.omniBot)
                 };
+            }
+
+            var HOST_PROFILE_FILE = 'etl-host-settings.json';
+
+            function hostProfilePath(modKey) {
+                var mod = HOST_MODS[modKey] || HOST_MODS[DEFAULT_MOD];
+                return HOME_ETL_DIR + '/' + mod.fsGame + '/' + HOST_PROFILE_FILE;
+            }
+
+            function saveHostProfileSnapshot(settings) {
+                if (!settings || !settings.mod) { return; }
+                try {
+                    var path = hostProfilePath(settings.mod);
+                    Module.FS.mkdirTree(path.slice(0, path.lastIndexOf('/')));
+                    Module.FS.writeFile(path,
+                        JSON.stringify(etlSettingsToJson(settings), null, 2) + '\n');
+                    persist();
+                } catch (err) {
+                    var hint = document.getElementById('host-io-hint');
+                    if (hint) {
+                        hint.textContent = 'Could not save host settings: ' +
+                            (err.message || err);
+                    }
+                    console.warn('Could not save host settings:', err);
+                }
             }
 
             // Returns { settings, warnings, error }. settings is null when the
@@ -10827,6 +11003,7 @@
                         // not in it, or a value that is not a number or a short
                         // piece of text, never reaches the engine.
                         cvars: cleanCvarSet(own('cvars'), modKey, warnings),
+                        customCvars: cleanCustomCvarSet(own('customCvars'), warnings),
                         omniBot: cleanOmniBotSettings(own('omniBot'), warnings)
                     },
                     warnings: warnings,
@@ -11246,6 +11423,7 @@
                     byId('game-warmup').value = String(settings.warmup || 60);
                     byId('game-alliedrespawn').value = String(settings.alliedRespawn || 0);
                     byId('game-axisrespawn').value = String(settings.axisRespawn || 0);
+                    renderCustomCvars('game-', settings.customCvars);
 
                     // The mod's own server settings, rebuilt from what the game
                     // is running with every time the panel is opened.
@@ -11519,6 +11697,7 @@
                     // so the position it carries on from stays what it is.
                     rotationIndex: 0,
                     cvars: readModCvars(byId('game-cvars'), settings.mod || DEFAULT_MOD),
+                    customCvars: readCustomCvars('game-'),
                     omniBot: readOmniBotSettings('game-')
                 };
                 next.bots = Math.min(next.bots, next.maxPlayers - 1);
@@ -11568,6 +11747,10 @@
                 cvarUpdate.commands.forEach(function (command) {
                     etlSendCommand(command);
                 });
+                customCvarChanges(settings.customCvars, next.customCvars)
+                    .forEach(function (command) {
+                    etlSendCommand(command);
+                });
                 if (next.mod === 'xmod') {
                     etlSendCommand('set jxac_enable "0"');
                     etlSendCommand('set g_spectator "7"');
@@ -11601,6 +11784,7 @@
                     next.developerMode);
 
                 session.settings = next;
+                saveHostProfileSnapshot(next);
                 if (mapModeChanged) {
                     etlSendCommand('set sv_cheats "' +
                         (next.developerMode ? '1' : '0') + '"');
@@ -11983,6 +12167,9 @@
                     renderEditedRotation();
                     gameMessage('Press "Apply" to use the new rotation.');
                 };
+                byId('game-custom-cvar-add').onclick = function () {
+                    addCustomCvarRow('game-');
+                };
 
                 setupMapSearch('game-map-search', 'game-map', true);
                 byId('game-bots').oninput = function () {
@@ -12250,6 +12437,7 @@
                             hostRotation, hostRotation[0], function (next) {
                                 hostRotation = next;
                                 renderHostRotation();
+                                scheduleHostAutosave();
                             });
                     }
 
@@ -12266,15 +12454,16 @@
                         }
                         hostRotation.push(map);
                         renderHostRotation();
+                        scheduleHostAutosave();
                     };
 
                     document.getElementById('menu-host').onclick = function () {
-                        renderHostRotation();
-                        renderHostCvars();
+                        loadHostProfile(hostModKey());
                         showLauncherPanel('launcher-host');
                         document.getElementById('host-name').focus();
                     };
                     document.getElementById('host-back').onclick = function () {
+                        saveHostProfileSnapshot(readHostSettings('host-', hostRotation));
                         showLauncherPanel('launcher-menu');
                     };
 
@@ -12307,7 +12496,9 @@
                             mod, parseInt(document.getElementById('host-bots').value, 10) || 0);
                     }
 
-                    hostModSelect.onchange = function () { renderHostCvars(); };
+                    hostModSelect.onchange = function () {
+                        loadHostProfile(hostModKey());
+                    };
                     hostCvarSearch.oninput = function () {
                         filterModCvars(hostCvarBox, hostCvarSearch.value);
                     };
@@ -12316,6 +12507,11 @@
                         document.getElementById('host-hint').textContent =
                             'All server settings of ' + HOST_MODS[hostModKey()].name +
                             ' are back at the defaults of the mod.';
+                        scheduleHostAutosave();
+                    };
+                    document.getElementById('host-custom-cvar-add').onclick = function () {
+                        addCustomCvarRow('host-');
+                        scheduleHostAutosave();
                     };
 
                     // Bots can only fill the slots the players leave over, so
@@ -12334,6 +12530,81 @@
                     }
                     hostMaxPlayers.oninput = clampHostBots;
                     hostBots.oninput = clampHostBots;
+
+                    var hostAutosaveTimer = null;
+
+                    function defaultHostProfile(modKey) {
+                        var firstMap = mapNames().indexOf('oasis') !== -1
+                            ? 'oasis' : mapNames()[0];
+                        return {
+                            name: 'ET:Legacy Web Host', map: firstMap,
+                            rotation: firstMap ? [firstMap] : [], rotationIndex: 0,
+                            maxPlayers: 8, bots: modKey === 'etjump' ? 0 : 4,
+                            timeLimit: 0, private: false, developerMode: false,
+                            mod: modKey, balancedTeams: false, doWarmup: true,
+                            friendlyFire: true, warmup: 60, alliedRespawn: 0,
+                            axisRespawn: 0, cvars: {}, customCvars: {},
+                            omniBot: omniBotDefaults()
+                        };
+                    }
+
+                    function applyHostProfile(settings) {
+                        hostModSelect.value = settings.mod;
+                        hostRotation = (settings.rotation || [settings.map]).slice();
+                        writeHostSettings('host-', settings);
+                        renderHostRotation();
+                        renderHostCvars(settings.cvars || {});
+                        clampHostBots();
+                    }
+
+                    function scheduleHostAutosave() {
+                        var snapshot = readHostSettings('host-', hostRotation);
+                        if (hostAutosaveTimer) { clearTimeout(hostAutosaveTimer); }
+                        hostAutosaveTimer = setTimeout(function () {
+                            hostAutosaveTimer = null;
+                            saveHostProfileSnapshot(snapshot);
+                        }, 300);
+                    }
+
+                    function loadHostProfile(modKey) {
+                        var settings = null;
+                        try {
+                            var text = Module.FS.readFile(hostProfilePath(modKey),
+                                { encoding: 'utf8' });
+                            var parsed = etlSettingsFromJson(text);
+                            if (parsed.settings && parsed.settings.rotation.length) {
+                                settings = parsed.settings;
+                                settings.mod = modKey;
+                            }
+                        } catch (err) { /* first use of this mod */ }
+                        applyHostProfile(settings || defaultHostProfile(modKey));
+                    }
+
+                    document.getElementById('launcher-host').addEventListener('change',
+                        function (event) {
+                            if (event.target === hostModSelect ||
+                                event.target === hostCvarSearch) { return; }
+                            scheduleHostAutosave();
+                        });
+                    document.getElementById('launcher-host').addEventListener('input',
+                        function (event) {
+                            if (event.target === hostCvarSearch) { return; }
+                            scheduleHostAutosave();
+                        });
+
+                    document.getElementById('host-settings-reset').onclick = function () {
+                        var modKey = hostModKey();
+                        if (hostAutosaveTimer) {
+                            clearTimeout(hostAutosaveTimer);
+                            hostAutosaveTimer = null;
+                        }
+                        try { Module.FS.unlink(hostProfilePath(modKey)); } catch (err) { /* absent */ }
+                        applyHostProfile(defaultHostProfile(modKey));
+                        persist();
+                        document.getElementById('host-io-hint').textContent =
+                            'Host settings for ' + HOST_MODS[modKey].name +
+                            ' were reset and the saved profile was removed.';
+                    };
 
                     // Basic / Advanced switcher of the host page.
                     var hostTabs = [
@@ -12405,6 +12676,7 @@
                             writeHostSettings('host-', result.settings);
                             renderHostCvars(result.settings.cvars);
                             clampHostBots();
+                            scheduleHostAutosave();
                             hint.textContent = result.warnings.length
                                 ? ('Settings imported. ' + result.warnings.join(' '))
                                 : 'Settings imported.';
@@ -12686,7 +12958,9 @@
                         }
                     };
                     document.getElementById('host-start').onclick = function () {
-                        startFlow(startHosting(readHostSettings('host-', hostRotation)),
+                        var settings = readHostSettings('host-', hostRotation);
+                        saveHostProfileSnapshot(settings);
+                        startFlow(startHosting(settings),
                             'launcher-host', 'host-hint');
                     };
 
