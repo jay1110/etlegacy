@@ -697,8 +697,6 @@ void SV_SpawnServer(const char *server)
 {
 	int          i;
 	unsigned int checksum;
-	qboolean     isBot;
-	const char   *p;
 #ifdef __EMSCRIPTEN__
 	unsigned int hunkClearGeneration;
 #endif
@@ -854,6 +852,22 @@ void SV_SpawnServer(const char *server)
 		sv.time += FRAMETIME;
 	}
 
+#ifdef __EMSCRIPTEN__
+    if(SV_NitmodDatabaseWaitBoot(NITMOD_DB_FINISH_SPAWN,hunkClearGeneration)) return;
+    SV_NitmodDatabaseFinishSpawn(hunkClearGeneration);
+#else
+    SV_NitmodDatabaseFinishSpawn(0);
+#endif
+}
+
+void SV_NitmodDatabaseFinishSpawn(unsigned int hunkClearGeneration)
+{
+    int i;
+    qboolean isBot;
+    const char *p;
+#ifndef __EMSCRIPTEN__
+    (void)hunkClearGeneration;
+#endif
 	// create a baseline for more efficient communications
 	SV_CreateBaseline();
 

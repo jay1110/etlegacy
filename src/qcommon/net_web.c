@@ -444,6 +444,47 @@ static void WS_P2PPump(void)
 	}
 }
 
+/* NxAC has its own channel and queue; never feed these frames into the
+ * game's sequenced packet path. Only transport events establish readiness. */
+static void WS_P2PNxACPump(void)
+{
+ char text[21920];
+ netadr_t from;
+ int guard, peer, length;
+ for (guard = 0; guard < WS_PACKET_QUEUE_SIZE; ++guard)
+ {
+  peer = 0;
+  length = EM_ASM_INT({
+   var api = (typeof ETLP2P !== 'undefined') ? ETLP2P :
+             ((typeof window !== 'undefined') ? window.ETLP2P : null);
+   if (!api || typeof api.receiveNxAC !== 'function') return 0;
+   var pkt;
+   try { pkt = api.receiveNxAC(); } catch (e) { return 0; }
+   if (!pkt) return 0;
+   if (!Number.isInteger(pkt.peer) || pkt.peer < 1 || pkt.peer > 250) return -4;
+   HEAP32[$2 >> 2] = pkt.peer;
+   if (pkt.closed === true) return -2;
+   if (pkt.ready === true && pkt.data === undefined) return -3;
+   var data = pkt.data;
+   if (!(data instanceof Uint8Array) || data.length < 1 || data.length > $1) return -2;
+   for (var i = 0; i < data.length; ++i) {
+    if (data[i] === 0 || data[i] > 127) return -2;
+   }
+   HEAPU8.set(data, $0);
+   return data.length;
+  }, text, (int)sizeof(text) - 1, &peer);
+  if (!length) break;
+  if (peer < 1 || peer > WS_MAX_P2P_PEERS) continue;
+  WS_AdrForP2PPeer(peer, &from);
+  if (length == -3) NET_NxACWebPeerReady(&from);
+  else if (length < 0) NET_NxACWebRelayClosed(&from);
+  else {
+   text[length] = '\0';
+   NET_NxACWebRelayMessage(&from, text);
+  }
+ }
+}
+
 /**
  * @brief WebSocket message callback
  */
@@ -454,6 +495,18 @@ qboolean NET_WebNxACSend(const netadr_t *to, const char *text)
 	if (!to || !text || (length = strlen(text)) >= 21920)
 	{
 		return qfalse;
+	}
+	if (WS_IsP2PAdr(to))
+	{
+		int peer = WS_P2PPeerForAdr(to);
+		if (!peer || !length) return qfalse;
+		return (qboolean)EM_ASM_INT({
+			var api = (typeof ETLP2P !== 'undefined') ? ETLP2P :
+			          ((typeof window !== 'undefined') ? window.ETLP2P : null);
+			if (!api || typeof api.sendNxAC !== 'function') return 0;
+			try { return api.sendNxAC($0, HEAPU8.slice($1, $1 + $2)) ? 1 : 0; }
+			catch (e) { return 0; }
+		}, peer, text, (int)length);
 	}
 	for (i = 0; i < MAX_WS_CONNECTIONS; ++i)
 	{
@@ -1234,6 +1287,7 @@ void NET_Event(fd_set *fdr)
 	// The WebSocket transport queues from its own callbacks; the peer-to-peer
 	// transport is a JavaScript object the engine has to poll, so drain it here
 	// before anything is dispatched.
+	WS_P2PNxACPump();
 	WS_P2PPump();
 
 	while (1)

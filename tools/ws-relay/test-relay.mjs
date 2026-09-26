@@ -442,6 +442,12 @@ async function testDownloadProxy() {
 	check(head.status === 200 && head.body.length === 0,
 		'download proxy supports HEAD without returning a body');
 
+	const arbitraryExe = await deadline(requestOnce(relayBase + encodeURIComponent(
+		'http://localhost:' + mirror.port + '/untrusted.exe')),
+		'the download proxy to reject an arbitrary executable');
+	check(arbitraryExe.status === 403,
+		'download proxy still rejects executable URLs outside the exact retail allowlist');
+
 	relay.proc.kill('SIGTERM');
 }
 

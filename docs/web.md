@@ -14,15 +14,17 @@ open the page.
  ┌───────────────────────────┐               ┌──────────────────────────┐
  │ engine (MAIN_MODULE)       │  wss:// / ws  │ ws-relay (tools/ws-relay)│
  │  + cgame/ui (SIDE_MODULE)  │◀────────────▶│        │                 │
- │  downloads pak0-2.pk3      │               │        │ UDP             │
+ │  extracts pak0-2 from the  │               │        │ UDP             │
+ │  official ET installers    │               │        │                 │
  │  + legacy_<ver>.pk3        │               │   etlded (dedicated srv) │
  └───────────────────────────┘               └──────────────────────────┘
 ```
 
 - The **engine** is built as an Emscripten `MAIN_MODULE`; the game logic
   (`cgame`, `ui`) is built as `SIDE_MODULE`s loaded with `dlopen`.
-- The **retail paks** (`pak0.pk3`, `pak1.pk3`, `pak2.pk3`) and the **mod pk3**
-  (`legacy_<version>.pk3`) are downloaded by the page at startup and cached in
+- The **retail paks** (`pak0.pk3`, `pak1.pk3`, `pak2.pk3`) are extracted in the
+  browser from the official WolfET Wise installers. The **mod pk3**
+  (`legacy_<version>.pk3`) is downloaded by the page at startup. Both are cached in
   IndexedDB. They are not embedded in the build.
 - The browser joins a **native dedicated server** through the
   **WebSocket→UDP relay** in `tools/ws-relay`.
@@ -116,17 +118,12 @@ If either cannot be fetched the game still starts, just without bots.
 `legacy/etl-host.cfg` is optional and only used when a game is hosted in the
 browser — see [Preset server configs](#preset-server-configs).
 
-Copy `pak0.pk3`, `pak1.pk3`, `pak2.pk3` from a retail Wolfenstein: Enemy
-Territory install into `etmain/`. **These are not included and may not be
-redistributed.**
-
-The project GitHub Pages deployment defaults to the ETc mirror
-`https://etclan.de/etl/etmain/` for these retail paks and to its `xmod/` and
-`jaymod/` folders when hosting those optional mods. Cross-origin asset requests
-are sent through the configured relay's `/download?url=...` endpoint, which
-adds the browser CORS response header. Deploy the matching updated relay when
-using that default. A self-contained deployment can instead serve its own
-assets next to the page, where no proxy or CORS policy is needed.
+The retail PK3 files are not included. On first use, the browser downloads the
+original `WolfET.exe` and `ET_Patch_2_60.exe` Wise installers through the relay,
+uses the bundled REWise WebAssembly helper to extract pak0/pak1/pak2 locally,
+and persists only those paks in IndexedDB. Deploy the matching updated relay:
+it permits exactly these two installer URLs while continuing to reject other
+executables. The optional hosted mods still come from the configured ETc mirror.
 
 Alternatively, you do not have to host the retail paks at all: the loading
 screen has a **"Load local game files (pak0-2.pk3)"** button that lets each
@@ -351,9 +348,9 @@ Notes:
 
 ## 6. Open the game and connect
 
-On first load the page asks how to provide the game data: **download
-pak0.pk3** (fetched together with pak1/pak2 and cached in the browser) or
-**use a local pak0.pk3** picked from your own installation. Once the data is
+On first load the page asks how to provide the game data: **install original
+game data** (extract pak0/pak1/pak2 from the official installers and cache them
+in the browser) or **use local game files** picked from your own installation. Once the data is
 set, the start page offers: a **quick single game** (choose the map and how many
 bots play — the server is sized to fit, e.g. 10 bots means 11 slots), **starting
 the game** to the main menu without connecting anywhere, the **dedicated
@@ -388,7 +385,7 @@ or from the in-page **Connect…** panel (controls bar at the top edge):
 | Parameter | Purpose | Example |
 |-----------|---------|---------|
 | `mirror`  | Base URL of the retail/XMod/Jaymod asset mirror | `?mirror=https://etclan.de/etl/` |
-| `assets`  | Base URL for `pak0-2.pk3` | `?assets=https://example.com/etmain/` |
+| `assets`  | Legacy asset-base override; retail paks come from the official installers | `?assets=https://example.com/etmain/` |
 | `legacy`  | Base URL for the mod pk3 | `?legacy=https://example.com/legacy/` |
 | `mod`     | Override which mod pk3(s) to fetch | `?mod=legacy_2.84.0.pk3` |
 | `modpk3`  | Backward-compatible override of the pk3(s) of a *hosted* mod (XMod, Jaymod) | `?modpk3=xmod-2.0.4.pk3` |

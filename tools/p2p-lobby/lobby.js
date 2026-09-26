@@ -531,10 +531,10 @@ function linkPeers(a, b) {
 
 function unlinkPeers(a, b) {
 	if (a) {
-		a.partners.delete(b.id);
+		a.partners.delete(b.id); a.nxacPartners.delete(b.id);
 	}
 	if (b) {
-		b.partners.delete(a.id);
+		b.partners.delete(a.id); b.nxacPartners.delete(a.id);
 	}
 }
 
@@ -659,6 +659,7 @@ function handleControl(conn, msg) {
 		sendJson(conn, {
 			t: 'welcome',
 			peer: conn.id,
+			nxacRelay: 1,
 			ice: iceServers,
 			rooms: publicRoomCount()
 		});
@@ -891,6 +892,9 @@ function handleControl(conn, msg) {
 
 		sendJson(conn, { t: 'joined', roomId: room.roomId, host: room.hostPeer, room: roomRecord(room, false) });
 		sendJson(hostConn, { t: 'peer', peer: conn.id, name: conn.name });
+		conn.nxacPartners.add(hostConn.id); hostConn.nxacPartners.add(conn.id);
+		nxacSend(conn, {t:'nxac',op:'ready',from:hostConn.id});
+		nxacSend(hostConn, {t:'nxac',op:'ready',from:conn.id});
 		break;
 	}
 
@@ -931,6 +935,34 @@ function handleControl(conn, msg) {
  * size limited, and packets between peers with no join relationship are
  * dropped silently so the relay cannot be used as a generic mailbox.
  */
+// Reliable typed stream, never multiplexed into game packet bytes.
+function nxacSend(conn, obj) {
+ const text=JSON.stringify(obj);
+ if(conn.closed || conn.ws.readyState!==1) return false;
+ if(conn.ws.bufferedAmount+Buffer.byteLength(text)>1048576) {
+  conn.ws.close(1013,'NxAC backpressure'); cleanupConnection(conn); return false;
+ }
+ try { conn.ws.send(text, {binary:false}, function(err){if(err){conn.ws.close();cleanupConnection(conn);}});return true; }
+ catch(err){conn.ws.close();cleanupConnection(conn);return false;}
+}
+function nxacClose(conn,target) {
+ conn.nxacPartners.delete(target.id); target.nxacPartners.delete(conn.id);
+ nxacSend(conn,{t:'nxac',op:'close',from:target.id});
+ nxacSend(target,{t:'nxac',op:'close',from:conn.id});
+}
+function handleNxAC(conn,msg) {
+ const target=peers.get(msg.to);
+ if(!target || !conn.partners.has(msg.to) || !target.partners.has(conn.id)) return;
+ if(!conn.nxacPartners.has(msg.to) || !target.nxacPartners.has(conn.id)) return;
+ if(msg.op==='ready') return; // Server initializes exactly once per join.
+ if(msg.op==='close'){nxacClose(conn,target);return;}
+ const data=msg.data;
+ if(msg.op!=='data' || typeof data!=='string' || !data.length || data.length>29228 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data)) {nxacClose(conn,target);return;}
+ const bytes=Buffer.from(data,'base64');
+ if(!bytes.length || bytes.length>21919 || bytes.toString('base64')!==data){nxacClose(conn,target);return;}
+ nxacSend(target,{t:'nxac',op:'data',from:conn.id,data});
+}
+
 function handleBinary(conn, buffer) {
 	if (buffer.length < BINARY_HEADER || buffer.length > MAX_BINARY) {
 		stats.binaryDropped++;
@@ -982,7 +1014,7 @@ function cleanupConnection(conn) {
 	conn.partners.forEach(function (peerId) {
 		const other = peers.get(peerId);
 		if (other) {
-			other.partners.delete(conn.id);
+			other.partners.delete(conn.id); other.nxacPartners.delete(conn.id);
 		}
 	});
 	conn.partners.clear();
@@ -1009,6 +1041,7 @@ function onConnection(ws, req) {
 		missedPongs: 0,
 		roomId: null,        // room this connection hosts
 		joinedRoomId: null,  // room this connection joined
+		nxacPartners: new Set(),
 		partners: new Set(), // peer ids with an active signalling/data link
 		subscribed: false,
 		msgTimes: []
@@ -1041,14 +1074,9 @@ function onConnection(ws, req) {
 
 		// Text control message.
 		const text = data.toString();
-		if (text.length > MAX_JSON) {
-			// Oversized control frame - ignore without parsing.
-			return;
-		}
-		if (rateLimited(conn)) {
-			try {
-				ws.close(1008, 'rate limit exceeded');
-			} catch (err) { /* ignore */ }
+		if (text.length > 30000) {
+			// An oversized possible stream frame cannot be silently lost.
+			ws.close(1009, 'frame too large'); cleanupConnection(conn);
 			return;
 		}
 		let obj;
@@ -1056,6 +1084,14 @@ function onConnection(ws, req) {
 			obj = JSON.parse(text);
 		} catch (err) {
 			sendError(conn, 'badrequest', 'invalid JSON');
+			return;
+		}
+		if(obj && obj.t==='nxac'){handleNxAC(conn,obj);return;}
+		if(text.length>MAX_JSON)return;
+		if (rateLimited(conn)) {
+			try {
+				ws.close(1008, 'rate limit exceeded');
+			} catch (err) { /* ignore */ }
 			return;
 		}
 		try {

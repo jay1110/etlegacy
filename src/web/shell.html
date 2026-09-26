@@ -847,11 +847,34 @@
             max-height: 34vh;
             overflow: auto;
         }
-        .file-row {
+        .file-list-head, .file-row {
             display: grid;
-            grid-template-columns: auto minmax(160px, 1fr) auto auto;
+            grid-template-columns: auto minmax(180px, 1.6fr) minmax(105px, .7fr)
+                minmax(145px, .9fr) minmax(145px, .9fr) auto auto;
             gap: 8px;
             align-items: center;
+        }
+        .file-list-head {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            padding: 6px 9px;
+            background: #24243d;
+            border-bottom: 1px solid #555;
+        }
+        .file-sort {
+            appearance: none;
+            border: 0;
+            padding: 3px 0;
+            background: transparent;
+            color: #aaa;
+            text-align: left;
+            cursor: pointer;
+            font: inherit;
+            font-size: .75rem;
+        }
+        .file-sort.active { color: #e2bd48; }
+        .file-row {
             padding: 7px 9px;
             border-bottom: 1px solid #333;
         }
@@ -863,7 +886,13 @@
             cursor: pointer;
         }
         .file-name.directory { color: #e2bd48; }
-        .file-size { color: #888; font-size: .78rem; white-space: nowrap; }
+        .file-size, .file-type, .file-date { color: #888; font-size: .75rem; white-space: nowrap; }
+        @media (max-width: 780px) {
+            .file-list-head, .file-row {
+                grid-template-columns: auto minmax(150px, 1fr) minmax(90px, auto) auto auto;
+            }
+            .file-created, .file-modified { display: none; }
+        }
         #file-editor {
             display: none;
             width: 100%;
@@ -2513,6 +2542,8 @@
             <option value="noquarter">No Quarter</option>
             <option value="etbloat">ETBloat</option>
             <option value="nitmod">Nitmod experimental</option>
+            <option value="silent">silEnT</option>
+            <option value="etrun">ETrun 2.0.1</option>
         </select>
         <div class="hint">The page asks the server which mod it runs before starting. Choose a mod here only when that query is blocked or the server does not answer it.</div>
         <div class="panel-actions">
@@ -2540,8 +2571,8 @@
                     start. How do you want to provide it?
                 </p>
                 <button class="launcher-btn" type="button" id="setup-download-btn">
-                    Download pak0.pk3 (included with the game)
-                    <span class="launcher-btn-sub">Fetches pak0.pk3 (and pak1/pak2) automatically. ~250 MB, cached in the browser.</span>
+                    Install original game data
+                    <span class="launcher-btn-sub">Downloads the official WolfET installers and extracts pak0, pak1 and pak2 locally. About 276 MB; the paks are cached in your browser.</span>
                 </button>
                 <button class="launcher-btn" type="button" id="setup-local-btn">
                     Use my local pak0.pk3 (choose file)
@@ -2612,7 +2643,8 @@
                         </div>
                         <div class="home-section-desc">
                             Join Public Servers. Available mods: Legacy, Nitmod,
-                            ETJump, ETPub, No Quarter, XMod, ETBloat and Jaymod.
+                            ETJump, ETPub, No Quarter, XMod, ETBloat, Jaymod,
+                            silEnT and ETrun.
                         </div>
                         <div class="home-compact-row two">
                             <button class="launcher-btn" type="button" id="menu-servers">
@@ -2701,6 +2733,7 @@
                     <button class="control-btn server-filter-state" id="server-filter-full" type="button" data-state="0">Full: all</button>
                     <button class="control-btn server-filter-state" id="server-filter-password" type="button" data-state="0">Password: all</button>
                     <button class="control-btn server-filter-state" id="server-filter-bots" type="button" data-state="0">Bots: all</button>
+                    <button class="control-btn server-filter-state" id="server-filter-compatible" type="button" data-state="0">Compatible: all</button>
                     <select id="server-filter-mod" aria-label="Filter by mod"><option value="">All mods</option></select>
                     <select id="server-filter-country" aria-label="Filter by country"><option value="">All countries</option></select>
                     <input id="server-filter-search" type="search" placeholder="Server, map, address..." autocomplete="off">
@@ -2721,6 +2754,8 @@
                     <option value="noquarter">No Quarter</option>
                     <option value="etbloat">ETBloat</option>
                     <option value="nitmod">Nitmod experimental</option>
+                    <option value="silent">silEnT</option>
+                    <option value="etrun">ETrun 2.0.1</option>
                 </select>
                 <div class="launcher-hint" id="servers-hint">
                     The server's mod is normally detected before the game starts.
@@ -2807,6 +2842,8 @@
                         <option value="etbloat">ETBloat</option>
                         <option value="etpub">ETPub</option>
                         <option value="nitmod">Nitmod experimental</option>
+                        <option value="silent">silEnT</option>
+                        <option value="etrun">ETrun 2.0.1</option>
                     </select>
                     <div class="setting-hint" id="host-mod-hint">
                         The mod the hosted game runs. It is downloaded the first
@@ -2984,7 +3021,18 @@
                     <button class="control-btn" type="button" id="file-open">Open</button>
                     <button class="control-btn" type="button" id="file-refresh">Refresh</button>
                 </div>
-                <div id="file-list"></div>
+                <div id="file-list">
+                    <div class="file-list-head" id="file-list-head">
+                        <span aria-hidden="true"></span>
+                        <button class="file-sort active" type="button" data-sort="name">Name &#9650;</button>
+                        <button class="file-sort" type="button" data-sort="type">Type</button>
+                        <button class="file-sort file-created" type="button" data-sort="created">Created</button>
+                        <button class="file-sort file-modified" type="button" data-sort="modified">Modified</button>
+                        <button class="file-sort" type="button" data-sort="size">Size</button>
+                        <span aria-hidden="true"></span>
+                    </div>
+                    <div id="file-list-entries"></div>
+                </div>
                 <div class="file-actions">
                     <button class="control-btn" type="button" id="file-upload">Upload files</button>
                     <input id="file-upload-input" type="file" multiple hidden>
@@ -3055,6 +3103,8 @@
                         <li><strong>No Quarter</strong> &ndash; uses the <code>nq</code> mod folder with the required data packages and WASM modules.</li>
                         <li><strong>ETBloat</strong> &ndash; includes its own game code for clients and browser hosts.</li>
                         <li><strong>Nitmod experimental</strong> &ndash; an experimental browser port using <code>nitmod_2.3.5.pk3</code>.</li>
+                        <li><strong>silEnT 0.9.0</strong> &ndash; includes its own client, UI and server game code for WebAssembly.</li>
+                        <li><strong>ETrun 2.0.1</strong> &ndash; a timerun mod using <code>ETrun-2.0.1.pk3</code> and its own WebAssembly game modules.</li>
                     </ul>
                 </section>
                 <section class="guide-block">
@@ -3088,6 +3138,8 @@
                         <a href="https://github.com/jay1110/WET-NoQuarter" target="_blank" rel="noopener noreferrer">No Quarter WASM</a>
                         <a href="https://gitlab.com/Exagone313/etbloat" target="_blank" rel="noopener noreferrer">ETBloat (GitLab)</a>
                         <a href="https://github.com/jay1110/nitmod-master" target="_blank" rel="noopener noreferrer">Nitmod experimental</a>
+                        <a href="https://mygamingtalk.com/" target="_blank" rel="noopener noreferrer">silEnT / MyGamingTalk</a>
+                        <a href="https://github.com/ETrun/ETrun" target="_blank" rel="noopener noreferrer">ETrun</a>
                     </div>
                 </section>
             </div>
@@ -3534,8 +3586,8 @@
                     '\u2022 etl.wasm failed to download (check the ' +
                     'Network tab \u2013 it must load with HTTP 200 and be ' +
                     'served as application/wasm).\n' +
-                    '\u2022 The retail paks (pak0-2.pk3) could not be fetched ' +
-                    'from the etmain/ folder next to etl.html.\n' +
+                    '\u2022 The official WolfET installer could not be downloaded ' +
+                    'or its retail paks could not be extracted.\n' +
                     '\u2022 The mod pk3 could not be fetched from the legacy/ ' +
                     'folder next to etl.html.\n' +
                     '\u2022 WebGL is unavailable or disabled in this browser.');
@@ -4697,19 +4749,15 @@
         ----------------------------------------
         A browser build ships no game data and cannot open raw UDP sockets, so
         before the engine starts we:
-          1. Download the etmain paks (pak0-2.pk3) into the in-browser
-             filesystem (cached in IndexedDB so they are fetched once). By
-             default they come from the configured ETc mirror through the
-             relay's CORS-enabled download endpoint.
+          1. Download the original WolfET Wise installers and extract their
+             etmain paks (pak0-2.pk3) into the in-browser filesystem. Only the
+             paks are cached in IndexedDB; the installer bytes are discarded.
           2. Download the ET: Legacy mod pk3 (game logic cgame/ui + ui menus)
              into the in-browser filesystem from a "legacy/" folder next to this
              page. The engine mounts it and extracts + loads cgame/ui from it.
           3. Optionally point the client at a WebSocket->UDP relay and auto-join
              a server, driven by URL query parameters:
-               ?mirror=<base-url>   override the ETc asset mirror used for
-                                    retail paks and hosted-mod files.
-               ?assets=<base-url>   override where the retail paks are
-                                    downloaded from.
+               ?mirror=<base-url>   override the ETc hosted-mod asset mirror.
                ?legacy=<base-url>   override where the mod pk3 is downloaded from.
                ?mod=<a.pk3,b.pk3>   override which mod pk3(s) to download.
                ?relay=<ws-url>      WebSocket relay (see tools/ws-relay).
@@ -4718,7 +4766,7 @@
                ?connect=<host:port> game server to join through the relay. May
                                     be a hostname - the relay resolves it.
                ?connectmod=<mod>    optional known mod for that server
-                                    (legacy, xmod or jaymod). The page normally
+                                    (for example legacy, silent or etjump). The page normally
                                     detects it with an OOB getinfo request.
                ?touch=0|1           force the on-screen touch controls off/on
                                     (they default to on-screen-capable devices)
@@ -4736,6 +4784,10 @@
          layer (src/qcommon/net_web.c). Loaded before the launcher, which only
          uses it when it is present. -->
     <script src="etl-p2p.js"></script>
+    <!-- GPL-3.0 REWise, compiled as a separate WebAssembly module. It extracts
+         the original retail paks from the official Wise installers without
+         executing Windows code in the browser. -->
+    <script src="retail-extractor.js"></script>
     <script>
         (function () {
             var params = new URLSearchParams(window.location.search);
@@ -4746,31 +4798,17 @@
             // page: it is built together with this exact engine and cannot be
             // substituted by an arbitrary mirror revision.
             //
-            // ?mirror= changes this default mirror, while ?assets= remains a
-            // direct override for pak0-2 only.
+            // ?mirror= changes this default mirror. Retail paks are deliberately
+            // not taken from the mirror; they come from the official installers.
             var ETL_MIRROR_BASE = params.get('mirror') || 'https://etclan.de/etl/';
             if (ETL_MIRROR_BASE.charAt(ETL_MIRROR_BASE.length - 1) !== '/') {
                 ETL_MIRROR_BASE += '/';
             }
 
-            // Where to download the retail etmain data from. A remote .pk3 is
-            // passed through the configured relay download endpoint below, so
-            // this also works when the mirror does not expose CORS headers to
-            // GitHub Pages. Override with ?assets=<url>.
-            var ASSET_BASE = params.get('assets');
-            if (ASSET_BASE) {
-                // Normalise a user-supplied override to end in a single slash.
-                if (ASSET_BASE.charAt(ASSET_BASE.length - 1) !== '/') {
-                    ASSET_BASE += '/';
-                }
-            } else {
-                ASSET_BASE = ETL_MIRROR_BASE + 'etmain/';
-            }
-
             // Resolve a download link against this page and align its protocol
             // with the page's own. Deployments that are reachable over both
             // http:// and https:// otherwise only work over one of them: the
-            // links in maplist.json (and in ?assets=/?legacy= overrides) are
+            // links in maplist.json (and in ?legacy= overrides) are
             // usually written as absolute https:// URLs, and the scheme is part
             // of the origin - so fetching such a link from a page that was
             // opened over http:// is a cross-origin request that fails unless
@@ -4805,20 +4843,30 @@
                 return resolved.href;
             }
 
-            // True when ASSET_BASE resolves to a different origin than this page.
-            // Such paks are normally requested through downloadFetchUrl().
-            function assetsAreCrossOrigin() {
-                try {
-                    return new URL(resolveDownloadUrl(ASSET_BASE), window.location.href).origin !==
-                        window.location.origin;
-                } catch (e) {
-                    return false;
-                }
-            }
-
-            // Retail paks required to run. These are NOT redistributed with
-            // ET: Legacy; they are fetched from ASSET_BASE at runtime.
+            // Retail paks required to run. They are NOT redistributed by this
+            // site. As ET: Legacy's native installer does, the launcher obtains
+            // them from id Software's original Wise installers and extracts
+            // only the required files locally in the browser.
             var PAK_FILES = ['pak0.pk3', 'pak1.pk3', 'pak2.pk3'];
+            var RETAIL_INSTALLERS = [
+                {
+                    label: 'WolfET.exe',
+                    url: 'https://et.clan-etc.de/wolffiles_backup/ET/Full-Version/WolfET.exe',
+                    filter: '*pak0.pk3',
+                    outputs: [
+                        { source: '/out/MAINDIR/etmain/pak0.pk3', name: 'pak0.pk3', size: 228138631 }
+                    ]
+                },
+                {
+                    label: 'ET_Patch_2_60.exe',
+                    url: 'https://et.clan-etc.de/wolffiles_backup/ET/Patches/ET_Patch_2_60.exe',
+                    filter: '*pak*.pk3',
+                    outputs: [
+                        { source: '/out/MAINDIR/etmain/pak1.pk3', name: 'pak1.pk3', size: 51616 },
+                        { source: '/out/MAINDIR/etmain/pak2.pk3', name: 'pak2.pk3', size: 89910 }
+                    ]
+                }
+            ];
 
             var INSTALL_DIR = '/etlegacy';       // must match Sys_SetDefaultInstallPath()
             var ETMAIN_DIR = INSTALL_DIR + '/etmain';
@@ -5361,6 +5409,7 @@
                     tri('server-filter-full', max > 0 && real >= max) &&
                     tri('server-filter-password', Number(server.needpass || 0) !== 0) &&
                     tri('server-filter-bots', bots > 0) &&
+                    tri('server-filter-compatible', !!liveServerMod(server)) &&
                     (!mod || String(server.gamename || '').toLowerCase() === mod) &&
                     (!country || String(server.country || '').toUpperCase() === country) &&
                     (!query || haystack.indexOf(query) !== -1);
@@ -5699,8 +5748,107 @@
                 });
             }
 
-            function downloadPak(name) {
-                return downloadInto(ASSET_BASE + name, ETMAIN_DIR + '/' + name, name);
+            // Fetch a large installer as bytes. The .exe only exists in the
+            // extractor's temporary filesystem and is never persisted as game
+            // data in IndexedDB.
+            function fetchRetailInstaller(spec) {
+                return fetch(downloadFetchUrl(spec.url), { cache: 'no-cache' }).then(function (response) {
+                    if (!response.ok) {
+                        throw new Error('Failed to download ' + spec.label + ': HTTP ' + response.status);
+                    }
+                    var total = parseInt(response.headers.get('content-length') || '0', 10);
+                    if (!response.body || !response.body.getReader) {
+                        return response.arrayBuffer().then(function (buffer) {
+                            statusFor(spec.label, buffer.byteLength, total);
+                            return new Uint8Array(buffer);
+                        });
+                    }
+                    var reader = response.body.getReader();
+                    // The relay preserves Content-Length. Allocate once for
+                    // the 270 MB full installer so streaming does not briefly
+                    // retain both a chunk list and a second combined copy.
+                    var bytes = total > 0 ? new Uint8Array(total) : null;
+                    var chunks = bytes ? null : [];
+                    var received = 0;
+                    return (function pump() {
+                        return reader.read().then(function (result) {
+                            if (!result.done) {
+                                if (bytes) {
+                                    if (received + result.value.length > bytes.length) {
+                                        throw new Error(spec.label + ' is larger than its declared size.');
+                                    }
+                                    bytes.set(result.value, received);
+                                } else {
+                                    chunks.push(result.value);
+                                }
+                                received += result.value.length;
+                                statusFor(spec.label, received, total);
+                                return pump();
+                            }
+                            if (bytes && received !== bytes.length) {
+                                throw new Error(spec.label + ' download ended early.');
+                            }
+                            if (!bytes) {
+                                bytes = new Uint8Array(received);
+                                var offset = 0;
+                                chunks.forEach(function (chunk) {
+                                    bytes.set(chunk, offset);
+                                    offset += chunk.length;
+                                });
+                            }
+                            return bytes;
+                        });
+                    }());
+                });
+            }
+
+            function pakExists(name) {
+                try { return Module.FS.analyzePath(ETMAIN_DIR + '/' + name).exists; }
+                catch (e) { return false; }
+            }
+
+            function extractRetailInstaller(spec) {
+                var needed = spec.outputs.filter(function (output) { return !pakExists(output.name); });
+                if (!needed.length) { return Promise.resolve(); }
+                if (typeof createREWiseModule !== 'function') {
+                    return Promise.reject(new Error('The retail game-data extractor is missing.'));
+                }
+
+                return fetchRetailInstaller(spec).then(function (installerBytes) {
+                    Module.setStatus('Extracting ' + needed.map(function (o) { return o.name; }).join(', ') + '...');
+                    return createREWiseModule({
+                        noInitialRun: true,
+                        locateFile: function (path) { return new URL(path, window.location.href).href; },
+                        print: function (line) { if (console && console.log) { console.log('REWise: ' + line); } },
+                        printErr: function (line) { if (console && console.warn) { console.warn('REWise: ' + line); } }
+                    }).then(function (extractor) {
+                        try { extractor.FS.mkdir('/out'); } catch (e) { /* exists */ }
+                        try { extractor.FS.mkdir('/tmp'); } catch (e) { /* exists */ }
+                        extractor.FS.writeFile('/installer.exe', installerBytes);
+                        installerBytes = null;
+                        var result = extractor.callMain([
+                            '-s', '-t', '/tmp', '-x', '/out', '-f', spec.filter, '/installer.exe'
+                        ]);
+                        if (result !== 0) {
+                            throw new Error('REWise could not extract ' + spec.label + ' (exit ' + result + ').');
+                        }
+                        needed.forEach(function (output) {
+                            var data = extractor.FS.readFile(output.source);
+                            if (data.length !== output.size || data[0] !== 0x50 || data[1] !== 0x4b) {
+                                throw new Error(output.name + ' extracted from ' + spec.label + ' is invalid.');
+                            }
+                            Module.FS.writeFile(ETMAIN_DIR + '/' + output.name, data);
+                        });
+                    });
+                });
+            }
+
+            function installRetailPaks() {
+                return RETAIL_INSTALLERS.reduce(function (chain, spec) {
+                    return chain.then(function () { return extractRetailInstaller(spec); });
+                }, Promise.resolve()).then(function () {
+                    return persist();
+                });
             }
 
             // Download one file of a mod's folder into that mod's directory.
@@ -6580,11 +6728,18 @@
                 return clean;
             }
 
+            function modSupportsOmniBot(modKey) {
+                // Neither ETJump nor ETrun links the Legacy Omni-bot bridge.
+                // Loading it into either mod's qagame would be misleading and
+                // can fail across their distinct game-module ABIs.
+                return modKey !== 'etjump' && modKey !== 'etrun';
+            }
+
             function renderOmniBotSettings(prefix, values, modKey, bots) {
                 var box = document.getElementById(prefix + 'omnibot-settings');
                 var section = document.getElementById(prefix + 'omnibot-section');
                 if (!box || !section) { return; }
-                section.style.display = modKey === 'etjump' ? 'none' : 'block';
+                section.style.display = modSupportsOmniBot(modKey) ? 'block' : 'none';
                 values = cleanOmniBotSettings(values);
                 var oldSelect = document.getElementById(prefix + 'omnibot-category');
                 var selectedCategory = oldSelect ? oldSelect.value : OMNIBOT_CATEGORY_ORDER[0];
@@ -6914,6 +7069,7 @@
             var FILE_BROWSER_ROOTS = [INSTALL_DIR, HOME_ETL_DIR];
             var fileBrowserPath = HOME_ETL_DIR;
             var fileBrowserSelections = {};
+            var fileBrowserSort = { key: 'name', direction: 1 };
             var FILE_EDITOR_LIMIT = 2 * 1024 * 1024;
 
             function normaliseFileBrowserPath(value) {
@@ -6955,6 +7111,39 @@
                 return (size / (1024 * 1024)).toFixed(1) + ' MB';
             }
 
+            function fileBrowserTimestamp(value) {
+                if (value instanceof Date) { return value.getTime(); }
+                if (typeof value === 'number') { return value; }
+                var parsed = value ? new Date(value).getTime() : 0;
+                return isNaN(parsed) ? 0 : parsed;
+            }
+
+            function fileBrowserDate(value) {
+                return value ? new Date(value).toLocaleString() : '-';
+            }
+
+            function fileBrowserType(name, directory) {
+                if (directory) { return 'Folder'; }
+                var extension = (String(name).match(/\.([^.]+)$/) || [])[1];
+                if (!extension) { return 'File'; }
+                var labels = {
+                    pk3: 'PK3 archive', so: 'WASM module', cfg: 'Config',
+                    config: 'Config', json: 'JSON', txt: 'Text', log: 'Log',
+                    menu: 'Menu', script: 'Script', arena: 'Arena',
+                    campaign: 'Campaign', shader: 'Shader'
+                };
+                return labels[extension.toLowerCase()] || extension.toUpperCase() + ' file';
+            }
+
+            function updateFileSortHeader() {
+                Array.prototype.forEach.call(document.querySelectorAll('#file-list-head .file-sort'), function (button) {
+                    var active = button.dataset.sort === fileBrowserSort.key;
+                    var label = button.dataset.sort.charAt(0).toUpperCase() + button.dataset.sort.slice(1);
+                    button.classList.toggle('active', active);
+                    button.textContent = label + (active ? (fileBrowserSort.direction > 0 ? ' \u25b2' : ' \u25bc') : '');
+                });
+            }
+
             function selectedBrowserFiles() {
                 return Object.keys(fileBrowserSelections).map(function (path) {
                     return fileBrowserSelections[path];
@@ -6981,7 +7170,7 @@
 
             function renderFileBrowser(path) {
                 var hint = document.getElementById('file-hint');
-                var list = document.getElementById('file-list');
+                var list = document.getElementById('file-list-entries');
                 path = normaliseFileBrowserPath(path);
                 try {
                     var stat = Module.FS.stat(path);
@@ -6990,16 +7179,29 @@
                     document.getElementById('file-path').value = path;
                     list.innerHTML = '';
                     setFileBrowserSelection(null, false);
-                    Module.FS.readdir(path).filter(function (name) {
+                    var entries = Module.FS.readdir(path).filter(function (name) {
                         return name !== '.' && name !== '..';
                     }).map(function (name) {
                         var full = path.replace(/\/$/, '') + '/' + name;
                         var itemStat = Module.FS.stat(full);
+                        var modified = fileBrowserTimestamp(itemStat.mtime);
+                        var created = fileBrowserTimestamp(itemStat.birthtime || itemStat.ctime) || modified;
+                        var directory = Module.FS.isDir(itemStat.mode);
                         return { name: name, path: full,
-                            directory: Module.FS.isDir(itemStat.mode), size: itemStat.size || 0 };
+                            directory: directory, size: itemStat.size || 0,
+                            type: fileBrowserType(name, directory),
+                            created: created, modified: modified };
                     }).sort(function (a, b) {
-                        return (b.directory - a.directory) || a.name.localeCompare(b.name);
-                    }).forEach(function (item) {
+                        if (a.directory !== b.directory) { return b.directory - a.directory; }
+                        var key = fileBrowserSort.key;
+                        var av = a[key]; var bv = b[key];
+                        var result = (typeof av === 'number' && typeof bv === 'number') ?
+                            av - bv : String(av).localeCompare(String(bv), undefined,
+                                { numeric: true, sensitivity: 'base' });
+                        return (result || a.name.localeCompare(b.name)) * fileBrowserSort.direction;
+                    });
+                    updateFileSortHeader();
+                    entries.forEach(function (item) {
                         var row = document.createElement('div');
                         row.className = 'file-row';
                         var checkbox = document.createElement('input');
@@ -7019,13 +7221,23 @@
                         };
                         var size = document.createElement('span');
                         size.className = 'file-size';
-                        size.textContent = item.directory ? 'folder' : humanFileSize(item.size);
+                        size.textContent = item.directory ? '-' : humanFileSize(item.size);
+                        var type = document.createElement('span');
+                        type.className = 'file-type'; type.textContent = item.type;
+                        var created = document.createElement('span');
+                        created.className = 'file-date file-created';
+                        created.textContent = fileBrowserDate(item.created);
+                        var modified = document.createElement('span');
+                        modified.className = 'file-date file-modified';
+                        modified.textContent = fileBrowserDate(item.modified);
                         var pick = document.createElement('button');
                         pick.className = 'control-btn small';
                         pick.type = 'button';
                         pick.textContent = item.directory ? 'Open' : 'Toggle';
                         pick.onclick = name.onclick;
-                        row.appendChild(checkbox); row.appendChild(name); row.appendChild(size); row.appendChild(pick);
+                        row.appendChild(checkbox); row.appendChild(name); row.appendChild(type);
+                        row.appendChild(created); row.appendChild(modified); row.appendChild(size);
+                        row.appendChild(pick);
                         list.appendChild(row);
                     });
                     if (!list.children.length) {
@@ -7232,14 +7444,10 @@
                 if (text) { Module.setStatus(text); }
             }
 
-            // Step 1: make sure the game data (pak0.pk3) is available. If it is
-            // already present (cached from a previous session or provided
-            // locally), just top up any missing paks. Otherwise ask the user
-            // whether to download the included pak0.pk3 or use a local copy.
+            // Step 1: make sure the retail game data is available. Missing paks
+            // are extracted locally from the original official installers.
             function downloadAllPaks() {
-                return PAK_FILES.reduce(function (chain, name) {
-                    return chain.then(function () { return downloadPak(name); });
-                }, Promise.resolve());
+                return installRetailPaks();
             }
 
             function ensureGameData() {
@@ -7249,25 +7457,20 @@
                 } catch (e) { /* FS problem - fall through to the question */ }
 
                 if (pak0Exists) {
-                    // pak0 is set; fetch any still-missing paks (pak1/pak2) but
-                    // do not fail startup if they cannot be downloaded - the
-                    // user's local pak0 is the mandatory part.
-                    return PAK_FILES.reduce(function (chain, name) {
-                        return chain.then(function () {
-                            return downloadPak(name).catch(function (err) {
-                                if (console && console.warn) {
-                                    console.warn('Optional pak ' + name +
-                                        ' not fetched: ' + err.message);
-                                }
-                            });
-                        });
-                    }, Promise.resolve());
+                    // A locally supplied pak0 is enough to launch. Fill in a
+                    // missing official patch pair when possible, but retain the
+                    // established offline/local-file fallback on failure.
+                    return installRetailPaks().catch(function (err) {
+                        if (console && console.warn) {
+                            console.warn('Optional retail patch data not installed: ' + err.message);
+                        }
+                    });
                 }
 
                 return new Promise(function (resolve, reject) {
                     document.getElementById('setup-download-btn').onclick = function () {
                         hideLauncher();
-                        showLoading('Downloading game data...');
+                        showLoading('Downloading the official game installer...');
                         downloadAllPaks().then(resolve, reject);
                     };
                     document.getElementById('setup-local-btn').onclick = function () {
@@ -7478,6 +7681,15 @@
                              requireOwnLogic: true,
                              pk3s: ['nitmod_2.3.5.pk3'],
                              base: ETL_MIRROR_BASE + 'nitmod/' },
+                silent:    { name: 'silEnT',      fsGame: 'silent',    available: true,
+                             requireOwnLogic: true,
+                             pk3s: ['silent-0.9.0.pk3'],
+                             base: ETL_MIRROR_BASE + 'silent/' },
+                etrun:     { name: 'ETrun 2.0.1', fsGame: 'etrun',     available: true,
+                             requireOwnLogic: true,
+                             releasePrefix: 'ETrun-',
+                             pk3s: ['ETrun-2.0.1.pk3'],
+                             base: ETL_MIRROR_BASE + 'etrun/' },
             };
             var DEFAULT_MOD = 'legacy';
 
@@ -8226,7 +8438,7 @@
                 ["skill_lightweapons","s","20 50 90 140","xp"],
                 ["skill_medic","s","20 50 90 140","xp"],
                 ["skill_soldier","s","20 50 90 140","xp"],
-                ["team_maxPanzers","s","-1","xp"],
+                ["team_maxPanzers","s","-1","teams"],
                 ["team_maxplayers","s","0","xp"],
             ];
 
@@ -9469,6 +9681,297 @@
                 ["team_maxplayers","s","0","xp"],
             ];
 
+            // silEnT 0.9.0 server CVars from original-files/docs/server.html.
+            var CVARS_SILENT = [
+                ["g_privateMessages","b","0","chat"],
+                ["g_spreeOptions","s","0","chat"],
+                ["g_multikillTime","s","1000","server"],
+                ["g_obituary","b","1","chat"],
+                ["g_dropMsg","s","","chat"],
+                ["g_landmineNotifyType","s","3","chat"],
+                ["g_defaultHitSounds","s","1","chat"],
+                ["g_recognition","b","0","chat"],
+                ["g_dbDirectory","s","database","admin"],
+                ["g_dbUserMaxAge","s","0","admin"],
+                ["g_XPSave","s","0","xp"],
+                ["g_XPSaveMaxAge_xp","s","1d","xp"],
+                ["g_XPSaveMaxAge","s","1w","xp"],
+                ["g_XPSaveMinXP","s","-1","xp"],
+                ["g_maxXP","s","-1","xp"],
+                ["g_maxXPResetWarn","s","0","xp"],
+                ["g_damageXP","s","0","xp"],
+                ["g_damageXPLevel","s","50","xp"],
+                ["g_XPDecay","s","0","xp"],
+                ["g_XPDecayRate","s","0.0","xp"],
+                ["g_XPDecayFloor","s","0.0","xp"],
+                ["g_minCommandWaitTime","s","0","server"],
+                ["g_tyranny","b","0","admin"],
+                ["g_warningOptions","s","0","admin"],
+                ["g_maxWarnings","s","3","admin"],
+                ["g_warningDecay","s","24","admin"],
+                ["g_autoTempBan","s","0","admin"],
+                ["g_autoTempBanTime","s","1800","admin"],
+                ["g_minConnectLevel","s","0","server"],
+                ["g_greetingPos","s","0","chat"],
+                ["g_clientBinaries","s","0","server"],
+                ["g_identOptions","s","0","admin"],
+                ["g_adminProtection","s","7","admin"],
+                ["g_protectMinLevel","s","-1","admin"],
+                ["g_dbMaxAliases","s","0","admin"],
+                ["g_muteRename","b","0","admin"],
+                ["g_ssDirectory","s","","admin"],
+                ["g_floodprotect","b","1","admin"],
+                ["g_floodthreshold","s","6","admin"],
+                ["g_floodWait","s","1000","admin"],
+                ["g_voiceChatsAllowed","s","4","chat"],
+                ["g_playerRating_minplayers","s","8","xp"],
+                ["g_stats","s","0","xp"],
+                ["g_shuffle_rating","s","3","xp"],
+                ["g_killRating","s","3","xp"],
+                ["g_playerRating","s","3","xp"],
+                ["g_unevenTeamDiff","s","0","teams"],
+                ["g_unevenTeamFreq","s","30","teams"],
+                ["team_maxPanzers","s","-1","xp"],
+                ["team_maxMortars","s","-1","teams"],
+                ["team_maxFlamers","s","-1","teams"],
+                ["team_maxMG42s","s","-1","teams"],
+                ["team_maxGrenLaunchers","s","-1","teams"],
+                ["team_maxMedics","s","-1","teams"],
+                ["team_maxEngineers","s","-1","teams"],
+                ["team_maxFieldOps","s","-1","teams"],
+                ["team_maxCovertOps","s","-1","teams"],
+                ["g_teamDamageRestriction","s","0","teams"],
+                ["g_minHits","s","6","server"],
+                ["g_minAirstrikeTime","s","10","server"],
+                ["g_minArtyTime","s","10","server"],
+                ["g_maxTeamLandmines","s","10","teams"],
+                ["g_maxTeamTripmines","s","3","teams"],
+                ["g_minGameClients","s","0","teams"],
+                ["g_maxGameClients","s","0","teams"],
+                ["g_TDMType","s","0","match"],
+                ["g_TDMOptions","s","5","match"],
+                ["g_TDMScore","s","100","match"],
+                ["g_TDMObjBonus","s","20","match"],
+                ["g_mapConfigs","s","","server"],
+                ["g_mapScriptDirectory","s","","server"],
+                ["g_campaignFile","s","","server"],
+                ["g_banners","s","","chat"],
+                ["g_playerCounting","s","1","server"],
+                ["g_censor","s","","admin"],
+                ["g_censorNames","s","","admin"],
+                ["g_censorPenalty","s","0","admin"],
+                ["g_censorNeil","b","0","admin"],
+                ["g_censorNeilNames","b","0","admin"],
+                ["g_censorMuteTime","s","60","admin"],
+                ["g_censorXP","s","5","xp"],
+                ["g_voting","s","0","vote"],
+                ["vote_limit","s","5","vote"],
+                ["vote_percent","s","50","vote"],
+                ["vote_allow_comp","b","1","vote"],
+                ["vote_allow_gametype","b","1","vote"],
+                ["vote_allow_kick","b","1","vote"],
+                ["vote_allow_map","b","1","vote"],
+                ["vote_allow_matchreset","b","1","vote"],
+                ["vote_allow_mutespecs","b","1","vote"],
+                ["vote_allow_nextmap","b","1","vote"],
+                ["vote_allow_pub","b","1","vote"],
+                ["vote_allow_referee","b","1","vote"],
+                ["vote_allow_shuffleteamsxp","b","1","vote"],
+                ["vote_allow_swapteams","b","1","vote"],
+                ["vote_allow_friendlyfire","b","1","vote"],
+                ["vote_allow_timelimit","b","1","vote"],
+                ["vote_allow_warmupdamage","b","1","vote"],
+                ["vote_allow_antilag","b","1","vote"],
+                ["vote_allow_balancedteams","b","1","vote"],
+                ["vote_allow_muting","b","1","vote"],
+                ["vote_allow_surrender","b","1","vote"],
+                ["vote_allow_restartcampaign","b","1","vote"],
+                ["vote_allow_nextcampaign","b","1","vote"],
+                ["vote_allow_poll","b","1","vote"],
+                ["vote_allow_maprestart","b","1","vote"],
+                ["vote_allow_shufflenorestart","b","1","vote"],
+                ["vote_allow_cointoss","b","1","vote"],
+                ["vote_allow_putspec","b","1","vote"],
+                ["vote_block_maprestart","s","300","vote"],
+                ["vote_block_matchreset","s","300","vote"],
+                ["vote_block_shuffleteamsxp","s","300","vote"],
+                ["vote_block_shufflenorestart","s","300","vote"],
+                ["vote_block_nextmap","s","300","vote"],
+                ["vote_block_swapteams","s","300","vote"],
+                ["vote_block_surrender","s","300","vote"],
+                ["vote_block_map","s","300","vote"],
+                ["vote_block_timelimit","s","300","vote"],
+                ["vote_block_poll","s","300","vote"],
+                ["vote_block_nextcampaign","s","300","vote"],
+                ["vote_block_restartcampaign","s","300","vote"],
+                ["g_mapVoteFlags","s","0","vote"],
+                ["g_maxMapsVotedFor","s","6","vote"],
+                ["g_minMapAge","s","3","server"],
+                ["g_resetXPMapCount","s","0","xp"],
+                ["g_includedMaps","s","","server"],
+                ["g_excludedMaps","s","","server"],
+                ["g_noVoteTime","s","0","vote"],
+                ["g_voteResultsMinLevel","s","-1","vote"],
+                ["g_votedMuteLength","s","3h","vote"],
+                ["g_poison","s","0","weapons"],
+                ["g_poisonFlags","s","7","weapons"],
+                ["g_medics","s","0","support"],
+                ["g_adrenDmgReduction","s","50","weapons"],
+                ["g_medicHealthRegen","s","0","support"],
+                ["g_throwableKnives","b","0","weapons"],
+                ["g_maxKnives","s","5","weapons"],
+                ["g_knifeChargeTime","s","800","weapons"],
+                ["g_constructibleXPSharing","b","0","xp"],
+                ["g_asblock","s","0","weapons"],
+                ["g_panzersSpeed","s","2500","weapons"],
+                ["g_panzersGravity","b","0","weapons"],
+                ["g_dyno","s","0","weapons"],
+                ["g_canisterKick","s","0","weapons"],
+                ["g_canisterKickOwner","b","0","weapons"],
+                ["g_reflectFriendlyFire","s","0.0","weapons"],
+                ["g_reflectFFWeapons","s","31","weapons"],
+                ["g_friendlyFireOpts","s","0","weapons"],
+                ["g_staminaRecharge","s","1.0","weapons"],
+                ["g_mineid","b","0","weapons"],
+                ["g_medicSelfhealTime","s","0","support"],
+                ["g_maxPanzerSuicides","s","-1","weapons"],
+                ["g_panzerPackDistance","s","0","support"],
+                ["g_weapons","s","0","weapons"],
+                ["g_classWeapons","s","63","weapons"],
+                ["g_mg42","s","0","weapons"],
+                ["g_coverts","s","0","weapons"],
+                ["g_enableTMines","b","1","weapons"],
+                ["skill_soldier","s","20 50 90 140","xp"],
+                ["skill_medic","s","20 50 90 140","xp"],
+                ["skill_engineer","s","20 50 90 140","xp"],
+                ["skill_fieldops","s","20 50 90 140","xp"],
+                ["skill_covertops","s","20 50 90 140","xp"],
+                ["skill_battlesense","s","20 50 90 140","xp"],
+                ["skill_lightweapons","s","20 50 90 140","xp"],
+                ["g_noSkillUpgrades","s","0","xp"],
+                ["g_panzersVulnerable","b","0","weapons"],
+                ["g_maxMarkers","s","2","weapons"],
+                ["g_enableDemolition","b","1","weapons"],
+                ["g_dmgKnife","s","10","weapons"],
+                ["g_dmgSten","s","14","weapons"],
+                ["g_dmgFG42","s","15","weapons"],
+                ["g_dmgPistol","s","18","weapons"],
+                ["g_dmgSMG","s","18","weapons"],
+                ["g_dmgMG42","s","18","weapons"],
+                ["g_dmgMG","s","20","weapons"],
+                ["g_dmgFG42Scope","s","30","weapons"],
+                ["g_dmgInfRifle","s","34","weapons"],
+                ["g_dmgSniper","s","50","weapons"],
+                ["g_dmgFlamer","s","5","weapons"],
+                ["g_dmgGrenade","s","250","weapons"],
+                ["g_dmgGrenadeRadius","s","250","weapons"],
+                ["g_dmgGLauncher","s","250","weapons"],
+                ["g_dmgGLauncherRadius","s","250","weapons"],
+                ["g_dmgTMine","s","260","weapons"],
+                ["g_dmgLandmine","s","250","weapons"],
+                ["g_dmgLandmineRadius","s","250","weapons"],
+                ["g_dmgSatchel","s","250","weapons"],
+                ["g_dmgSatchelRadius","s","250","weapons"],
+                ["g_dmgPanzer","s","400","weapons"],
+                ["g_dmgPanzerRadius","s","300","weapons"],
+                ["g_dmgMortar","s","400","weapons"],
+                ["g_dmgMortarRadius","s","400","weapons"],
+                ["g_dmgDynamite","s","400","weapons"],
+                ["g_dmgDynamiteRadius","s","400","weapons"],
+                ["g_dmgAir","s","400","weapons"],
+                ["g_dmgAirRadius","s","400","weapons"],
+                ["g_dmgArty","s","400","weapons"],
+                ["g_dmgArtyRadius","s","400","weapons"],
+                ["g_dmg","s","0","weapons"],
+                ["g_dmgHeadShotMin","s","50","weapons"],
+                ["g_dmgHeadShotRatio","s","2.0","weapons"],
+                ["g_knifeThrowDamage","s","50","weapons"],
+                ["g_dmgPPSh","s","19","weapons"],
+                ["g_packDistance","s","0","support"],
+                ["g_dropHealth","s","0","support"],
+                ["g_dropAmmo","s","0","support"],
+                ["g_tossDistance","s","0","server"],
+                ["g_intermissionTime","s","60","server"],
+                ["g_intermissionReadyPercent","s","100","server"],
+                ["g_skills","s","0","xp"],
+                ["g_misc","s","0","server"],
+                ["g_skipCorrection","b","1","server"],
+                ["g_maxWarp","s","4","server"],
+                ["g_moverScale","s","1.0","server"],
+                ["g_slashKill","s","0","server"],
+                ["g_maxSelfkills","s","-1","server"],
+                ["g_ammoCabinetTime","s","60000","support"],
+                ["g_healthCabinetTime","s","10000","support"],
+                ["g_spectator","s","0","server"],
+                ["g_truePing","b","0","server"],
+                ["g_dropObj","s","0","server"],
+                ["g_doubleJumpHeight","s","1.4","server"],
+                ["g_serverInfo","s","1","server"],
+                ["g_fear","s","2000","server"],
+                ["g_realBody","b","0","server"],
+                ["g_inactivity","s","0","server"],
+                ["g_spectatorInactivity","s","0","server"],
+                ["g_gametype","s","4","server"],
+                ["g_antilagDelay","s","0","server"],
+                ["g_fixedphysics","b","0","server"],
+                ["g_fixedphysicsfps","s","125","server"],
+                ["g_maxNameChanges","s","3","server"],
+                ["g_disableComplaints","s","0","server"],
+                ["g_watermark","s","","server"],
+                ["g_watermarkFadeAfter","s","0","server"],
+                ["g_watermarkFadeTime","s","0","server"],
+                ["g_antiwarp","b","1","server"],
+                ["g_panzerwar","b","0","server"],
+                ["g_sniperwar","b","0","server"],
+                ["g_riflewar","b","0","server"],
+                ["g_countryFlags","b","1","server"],
+                ["g_flushItems","b","1","server"],
+                ["g_maxConnsPerIP","s","4","admin"],
+                ["shoutcastPassword","s","none","server"],
+                ["g_headshot","s","0","server"],
+                ["g_instagibDamage","s","400","server"],
+                ["g_inactivityOptions","s","3","server"],
+                ["g_ettvFlags","s","3","server"],
+                ["g_mode","s","0","server"],
+                ["g_hitsounds","s","1","chat"],
+                ["g_playDead","b","0","server"],
+                ["g_shove","s","0","server"],
+                ["g_shoveNoZ","b","0","server"],
+                ["g_dragCorpse","b","0","server"],
+                ["g_classChange","b","0","server"],
+                ["g_forceLimboHealth","b","1","support"],
+                ["g_goomba","s","0","server"],
+                ["g_goombaFlags","s","0","server"],
+                ["g_spawnInvul","s","3","server"],
+                ["g_spawnInvulFair","b","1","server"],
+                ["g_spinCorpse","b","0","server"],
+                ["g_teamChangeKills","b","1","server"],
+                ["g_extraStatistics","b","1","xp"],
+                ["g_realPlayTime","b","1","server"],
+                ["g_maxIgnoresPerMap","s","2","server"],
+                ["g_min_crazyspeed","s","200","server"],
+                ["g_max_crazyspeed","s","540","server"],
+                ["g_min_crazygravity","s","10","server"],
+                ["g_max_crazygravity","s","1200","server"],
+                ["g_silentac","s","0","admin"],
+                ["g_proneDelay","b","0","server"],
+                ["g_goatSound","b","1","server"],
+                ["g_rifleshootwar","b","0","server"],
+                ["g_riflenadewar","b","0","server"],
+                ["g_stenwar","b","0","server"],
+                ["g_pistolwar","b","0","server"],
+                ["g_incognitoCountryFlag","s","-1","server"],
+                ["g_logOptions","s","0","admin"],
+                ["g_logAdmin","s","","admin"],
+                ["g_cheatLog","s","","admin"],
+                ["omnibot_enable","b","1","bots"],
+                ["omnibot_path","s","","bots"],
+                ["g_bot_maxXP","s","-1","xp"],
+                ["omnibot_flags","s","0","bots"],
+                ["lua_modules","s","","server"],
+                ["lua_allowedModules","s","","server"],
+            ];
+
             function mergeCvarTables() {
                 var merged = {};
                 Array.prototype.slice.call(arguments).forEach(function (table) {
@@ -9492,7 +9995,8 @@
             }
 
             [CVARS_ETPUB, CVARS_NITMOD, CVARS_ETJUMP, CVARS_ETBLOAT,
-             CVARS_JAYMOD_FULL, CVARS_XMOD_FULL, CVARS_NOQUARTER]
+             CVARS_JAYMOD_FULL, CVARS_XMOD_FULL, CVARS_NOQUARTER,
+             CVARS_SILENT]
                 .forEach(inferGeneratedCvarTypes);
 
             var SHELL_MANAGED_CVARS = {
@@ -9507,6 +10011,7 @@
                     var name = row[0].toLowerCase();
                     return !SHELL_MANAGED_CVARS[name] &&
                         name.indexOf('omnibot_') !== 0 &&
+                        name.indexOf('password') === -1 &&
                         name !== 'developer' && name !== 'dedicated' &&
                         name.indexOf('debug') === -1;
                 });
@@ -9523,7 +10028,9 @@
                 // its feature cvars and the Legacy server cvars.
                 etbloat: hostUsefulCvarTable(
                     mergeCvarTables(CVARS_LEGACY, CVARS_ETBLOAT)),
-                nitmod: hostUsefulCvarTable(CVARS_NITMOD)
+                nitmod: hostUsefulCvarTable(CVARS_NITMOD),
+                silent: hostUsefulCvarTable(CVARS_SILENT),
+                etrun: []
             };
 
             // The groups the settings are shown in, in this order. A category
@@ -10118,7 +10625,7 @@
                 var key = knownModKey(raw);
                 if (!key) {
                     throw new Error('Unknown connectmod "' + raw +
-                        '". Use legacy, xmod, jaymod, etjump, etpub, noquarter, etbloat or nitmod.');
+                        '". Use legacy, xmod, jaymod, etjump, etpub, noquarter, etbloat, nitmod, silent or etrun.');
                 }
                 return key;
             }
@@ -10335,7 +10842,7 @@
                         var forced = knownModKey(explicitMod);
                         if (!forced) {
                             throw new Error('Unknown server mod "' + explicitMod +
-                                '". Use legacy, xmod, jaymod, etjump, etpub, noquarter, etbloat or nitmod.');
+                                '". Use legacy, xmod, jaymod, etjump, etpub, noquarter, etbloat, nitmod, silent or etrun.');
                         }
                         return forced;
                     }
@@ -10439,10 +10946,8 @@
                         configLine('g_spectator', '7')
                     ];
                 }
-                // ETJump's browser build must not load Omni-bot. Its native
-                // bot library is a separate dynamic module and does not share
-                // the WebAssembly ABI of ETJump's qagame.
-                if (modKey === 'etjump') {
+                // These browser builds do not load the Legacy Omni-bot module.
+                if (!modSupportsOmniBot(modKey)) {
                     return [configLine('omnibot_enable', '0')];
                 }
                 return [];
@@ -10496,7 +11001,7 @@
                 var mod = HOST_MODS[settings.mod];
                 var assets = hostAssetsFor(settings.mod);
                 var botsReady = false;
-                var supportsOmniBot = settings.mod !== 'etjump';
+                var supportsOmniBot = modSupportsOmniBot(settings.mod);
                 if (mod && mod.available && settings.mod !== DEFAULT_MOD) {
                     args.push('+set', 'fs_game', mod.fsGame);
                 }
@@ -11725,9 +12230,9 @@
                     // saved panel value undo the browser-hosted XMod defaults.
                     next.cvars.g_spectator = '7';
                 }
-                if (next.mod === 'etjump') {
-                    // Omni-bot is intentionally unavailable for the browser
-                    // ETJump host; keep both the session state and lobby slot
+                if (!modSupportsOmniBot(next.mod)) {
+                    // Omni-bot is intentionally unavailable for this browser
+                    // mod; keep both the session state and lobby slot
                     // count from advertising bots that cannot exist.
                     next.bots = 0;
                 }
@@ -11773,16 +12278,16 @@
                     etlSendCommand('set jxac_enable "0"');
                     etlSendCommand('set g_spectator "7"');
                 }
-                if (next.mod === 'etjump') {
+                if (!modSupportsOmniBot(next.mod)) {
                     etlSendCommand('set omnibot_enable "0"');
                 }
-                if (next.mod !== 'etjump' && next.bots !== settings.bots) {
+                if (modSupportsOmniBot(next.mod) && next.bots !== settings.bots) {
                     // Omni-bot's server manager keeps the bot count between
                     // these two bounds and adds/kicks bots accordingly.
                     etlSendCommand('bot maxbots ' + next.bots);
                     etlSendCommand('bot minbots ' + next.bots);
                 }
-                if (next.mod !== 'etjump') {
+                if (modSupportsOmniBot(next.mod)) {
                     writeOmniBotConfig(next.bots, next.omniBot);
                     OMNIBOT_SETTINGS.forEach(function (entry) {
                         var value = next.omniBot[entry[0] + '.' + entry[1]];
@@ -12192,7 +12697,7 @@
                 setupMapSearch('game-map-search', 'game-map', true);
                 byId('game-bots').oninput = function () {
                     var settings = gameSettings();
-                    if (!settings || settings.mod === 'etjump') { return; }
+                    if (!settings || !modSupportsOmniBot(settings.mod)) { return; }
                     renderOmniBotSettings('game-', readOmniBotSettings('game-'),
                         settings.mod || DEFAULT_MOD,
                         Math.max(0, parseInt(byId('game-bots').value, 10) || 0));
@@ -12410,7 +12915,8 @@
                     });
                     document.getElementById('server-filter-search').oninput = renderLiveServers;
                     [['server-filter-empty', 'Empty'], ['server-filter-full', 'Full'],
-                        ['server-filter-password', 'Password'], ['server-filter-bots', 'Bots']]
+                        ['server-filter-password', 'Password'], ['server-filter-bots', 'Bots'],
+                        ['server-filter-compatible', 'Compatible']]
                         .forEach(function (spec) {
                             document.getElementById(spec[0]).onclick = function () {
                                 var state = (Number(this.dataset.state || 0) + 1) % 3;
@@ -12557,7 +13063,7 @@
                         return {
                             name: 'ET:Legacy Web Host', map: firstMap,
                             rotation: firstMap ? [firstMap] : [], rotationIndex: 0,
-                            maxPlayers: 8, bots: modKey === 'etjump' ? 0 : 4,
+                            maxPlayers: 8, bots: modSupportsOmniBot(modKey) ? 4 : 0,
                             timeLimit: 0, private: false, developerMode: false,
                             mod: modKey, balancedTeams: false, doWarmup: true,
                             friendlyFire: true, warmup: 60, alliedRespawn: 0,
@@ -12844,6 +13350,20 @@
                     document.getElementById('file-refresh').onclick = function () {
                         renderFileBrowser(fileBrowserPath);
                     };
+                    Array.prototype.forEach.call(
+                        document.querySelectorAll('#file-list-head .file-sort'),
+                        function (button) {
+                            button.onclick = function () {
+                                var key = this.dataset.sort;
+                                if (fileBrowserSort.key === key) {
+                                    fileBrowserSort.direction *= -1;
+                                } else {
+                                    fileBrowserSort.key = key;
+                                    fileBrowserSort.direction = 1;
+                                }
+                                renderFileBrowser(fileBrowserPath);
+                            };
+                        });
                     document.getElementById('file-up').onclick = function () {
                         if (fileBrowserIsRoot(fileBrowserPath)) {
                             fileBrowserPath = fileBrowserPath === HOME_ETL_DIR ? INSTALL_DIR : HOME_ETL_DIR;
@@ -13193,7 +13713,7 @@
                                 '\n\nThe browser must preload cgame/ui before ' +
                                 'the server switches fs_game. Serve the current ' +
                                 'standalone .wasm32.so files in the mod folder, ' +
-                                'or use ?connectmod=legacy, xmod or jaymod to ' +
+                                'or use ?connectmod=<mod> to ' +
                                 'override automatic detection.';
                             showError(msg);
                             Module.removeRunDependency('etl-assets');
@@ -13218,19 +13738,14 @@
                             Module.removeRunDependency('etl-assets');
                             return;
                         }
-                        // Otherwise a retail pak download failed.
-                        msg = 'Could not load game data from ' + ASSET_BASE +
-                            '.\n' + err.message;
-                        if (assetsAreCrossOrigin()) {
-                            msg += '\n\nThis mirror is fetched through the ' +
-                                'configured relay download proxy. Check that ' +
-                                'the relay is online and permits the file.';
-                        } else {
-                            msg += '\n\nMake sure pak0.pk3, pak1.pk3 and ' +
-                                'pak2.pk3 are present in the "' +
-                                ASSET_BASE.replace(/\/$/, '') +
-                                '" folder next to this page.';
-                        }
+                        // Otherwise the official retail installer download or
+                        // extraction failed.
+                        msg = 'Could not install the original game data.\n' + err.message +
+                            '\n\nThe browser downloads the two official WolfET ' +
+                            'installers through the configured relay and extracts ' +
+                            'pak0.pk3, pak1.pk3 and pak2.pk3 locally. Check that ' +
+                            'the relay is online and up to date, or use "Load ' +
+                            'local game files".';
                         showError(msg);
                         Module.removeRunDependency('etl-assets');
                     });

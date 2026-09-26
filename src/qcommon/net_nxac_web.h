@@ -8,6 +8,8 @@
 /* Caller memory is validated/mapped by the VM dispatch before this call. */
 intptr_t NET_NxACWebCall(int owner,const netadr_t *serverAddress,int operation,int handle,void *buffer,int length,int value);
 void NET_NxACWebReset(int owner);
+/* Trusted reliable peer-channel notification; never a wire capability. */
+void NET_NxACWebPeerReady(const netadr_t *from);
 qboolean NET_NxACWebRelayMessage(const netadr_t *from,const char *text);
 void NET_NxACWebRelayClosed(const netadr_t *from);
 /* Supplied by net_web: use only an existing active game WebSocket and refuse

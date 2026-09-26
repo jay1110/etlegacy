@@ -575,6 +575,26 @@ async function testBinaryRelay(port) {
 	await delay(150);
 }
 
+async function testNxAC(port) {
+ const host=new Client(port), guest=new Client(port), stranger=new Client(port);
+ await host.hello('NXHost');await guest.hello('NXGuest');await stranger.hello('NXStranger');
+ host.send({t:'host',room:{name:'nxac',map:'oasis',maxPlayers:4}});
+ const room=await host.waitType('hosted','nx host');guest.send({t:'join',roomId:room.roomId});
+ await guest.waitType('joined','nx joined');await host.waitType('peer','nx peer');
+ check((await guest.waitType('nxac','nx ready')).op==='ready','NxAC joiner readiness');
+ check((await host.waitType('nxac','nx ready')).op==='ready','NxAC host readiness');
+ const data=Buffer.alloc(21919,123).toString('base64');
+ guest.send({t:'nxac',op:'data',to:host.peer,data});
+ const received=await host.waitType('nxac','nx max data');check(received.data===data && received.from===guest.peer,'NxAC max frame preserved and source bound');
+ guest.send({t:'nxac',op:'data',to:stranger.peer,data});check(await stranger.silentFor(100),'NxAC unrelated peer denied');
+ guest.send({t:'nxac',op:'data',to:host.peer,data:'@@=='});
+ check((await host.waitType('nxac','nx malformed close')).op==='close','NxAC malformed closes receiver');
+ check((await guest.waitType('nxac','nx malformed close')).op==='close','NxAC malformed closes sender');
+ guest.send({t:'nxac',op:'ready',to:host.peer});guest.send({t:'nxac',op:'data',to:host.peer,data});
+ check(await host.silentFor(100),'NxAC cannot reopen closed generation');
+ host.close();guest.close();stranger.close();await delay(150);
+}
+
 async function testValidation(port) {
 	const host = new Client(port);
 	await host.hello('Validator');
@@ -697,6 +717,7 @@ async function main() {
 	await testJoinErrors(lobby.port);
 	await testSignalling(lobby.port);
 	await testBinaryRelay(lobby.port);
+	await testNxAC(lobby.port);
 	await testValidation(lobby.port);
 	await testOversizeAndRate(lobby.port);
 

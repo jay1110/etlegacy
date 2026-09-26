@@ -258,6 +258,14 @@ if (mapListPresent) {
     }
 }
 
+check(exists('retail-extractor.js'), 'retail installer extractor present: retail-extractor.js');
+check(exists('retail-extractor.wasm'), 'retail installer extractor present: retail-extractor.wasm');
+if (exists('retail-extractor.wasm')) {
+    const magic = fs.readFileSync(path.join(dir, 'retail-extractor.wasm')).subarray(0, 4);
+    check(magic.equals(Buffer.from([0x00, 0x61, 0x73, 0x6d])),
+        'retail-extractor.wasm has the WebAssembly magic header');
+}
+
 // 9. Every published binary package must retain the project licence, the
 //    third-party notices generated from the vendored licence texts and a link
 //    to the exact corresponding source revision used by CI.
@@ -278,7 +286,8 @@ if (exists('THIRD_PARTY_NOTICES.txt')) {
     const notices = fs.readFileSync(path.join(dir, 'THIRD_PARTY_NOTICES.txt'), 'utf8');
     for (const component of ['cJSON', 'libjpeg-turbo', 'libpng', 'MiniZip',
                              'zlib', 'gl4es', 'SDL2 Emscripten port',
-                             'findlocale', 'Paul E. Jones SHA-1 implementation']) {
+                             'findlocale', 'Paul E. Jones SHA-1 implementation',
+                             'REWise Wise installer extractor']) {
         check(notices.includes(component),
             `THIRD_PARTY_NOTICES.txt covers ${component}`);
     }
@@ -288,6 +297,11 @@ if (exists('etl.html')) {
     const html = fs.readFileSync(path.join(dir, 'etl.html'), 'utf8');
     check(/<script[^>]+src="etl-p2p\.js"/.test(html),
         'etl.html loads etl-p2p.js');
+    check(/<script[^>]+src="retail-extractor\.js"/.test(html),
+        'etl.html loads the retail installer extractor');
+    check(html.includes('/Full-Version/WolfET.exe') &&
+          html.includes('/Patches/ET_Patch_2_60.exe'),
+        'etl.html obtains retail paks from the official installers');
     // The controls of a running game: leave, settings, invite link.
     for (const id of ['game-sidebar', 'sidebar-exit', 'sidebar-settings',
                       'sidebar-invite', 'game-panel']) {
@@ -296,8 +310,30 @@ if (exists('etl.html')) {
     // The host settings and the "Join games" browser.
     for (const id of ['host-map', 'host-name', 'host-maxclients', 'host-bots',
                       'host-timelimit', 'host-private', 'menu-join-games',
-                      'join-list']) {
+                      'join-list', 'server-filter-compatible', 'file-list-head',
+                      'file-list-entries']) {
         check(html.includes(`id="${id}"`), `etl.html contains the #${id} element`);
+    }
+    for (const key of ['name', 'type', 'created', 'modified', 'size']) {
+        check(html.includes(`data-sort="${key}"`),
+            `game-folder table can sort by ${key}`);
+    }
+    check(/silent:\s*\{[^}]*fsGame:\s*'silent'[^}]*requireOwnLogic:\s*true[^}]*silent-0\.9\.0\.pk3/s.test(html),
+        'silEnT 0.9.0 is enabled with its own WASM game logic');
+    check(/etrun:\s*\{[^}]*fsGame:\s*'etrun'[^}]*requireOwnLogic:\s*true[^}]*ETrun-2\.0\.1\.pk3/s.test(html),
+        'ETrun 2.0.1 is enabled with its own WASM game logic');
+    check((html.match(/<option value="etrun">/g) || []).length === 3,
+        'ETrun is offered by direct connect, server filters and browser hosting');
+    check(/function modSupportsOmniBot\(modKey\)[\s\S]*modKey !== 'etjump' && modKey !== 'etrun'/.test(html),
+        'ETrun hosting does not load the incompatible Legacy Omni-bot module');
+    check(/silent:\s*hostUsefulCvarTable\(CVARS_SILENT\)/.test(html),
+        'silEnT server CVars are exposed in Advanced host settings');
+    const silentCvars = html.match(/var CVARS_SILENT = \[([\s\S]*?)\n\s*\];/);
+    check(Boolean(silentCvars), 'silEnT server CVar table is packaged');
+    if (silentCvars) {
+        const rows = silentCvars[1].match(/^\s*\["[^"]+","[bifs]","/gm) || [];
+        check(rows.length === 287,
+            `silEnT CVar table contains all 287 documented entries (got ${rows.length})`);
     }
 }
 

@@ -28,7 +28,8 @@
  * cl_wwwDownload fail and the game fall back to its own, far slower transfer.
  * The relay fetches the file instead and serves it with the CORS header the
  * browser wants. Only public http(s) game assets (.pk3, wasm side modules and
- * bot data zips) are passed through; see --no-download-proxy and
+ * bot data zips), plus the two explicitly allowlisted official ET installers,
+ * are passed through; see --no-download-proxy and
  * --allow-private-downloads.
  *
  * Browsers served over HTTPS may only open secure (wss://) WebSockets, so a
@@ -425,8 +426,14 @@ function checkDownloadUrl(url) {
         return 'URLs with credentials are not passed through';
     }
 
-    if (!/\.(?:pk3|wasm32\.so|zip)$/i.test(safeDecode(url.pathname))) {
-        return 'only game asset files (.pk3, .wasm32.so, .zip) are passed through';
+    const retailInstaller = url.protocol === 'https:' &&
+        url.hostname.toLowerCase() === 'et.clan-etc.de' && !url.port &&
+        (url.pathname === '/wolffiles_backup/ET/Full-Version/WolfET.exe' ||
+         url.pathname === '/wolffiles_backup/ET/Patches/ET_Patch_2_60.exe') &&
+        !url.search && !url.hash;
+
+    if (!retailInstaller && !/\.(?:pk3|wasm32\.so|zip)$/i.test(safeDecode(url.pathname))) {
+        return 'only game assets or the approved WolfET installers are passed through';
     }
 
     return null;

@@ -228,6 +228,16 @@ async function main() {
 	check(gotOnClient.peer === 1, 'the client receives the packet tagged with the host index (1)');
 	check(gotOnClient.data.length === 3 && gotOnClient.data[0] === 9 && gotOnClient.data[2] === 7, 'the client receives the exact payload');
 
+	// Actual browser API -> lobby -> browser API, without RTCPeerConnection.
+	async function nxReceive(api) { for(let i=0;i<100;i++){const e=api.receiveNxAC();if(e)return e;await delay(10);}throw Error('NxAC timeout'); }
+	check((await nxReceive(host)).ready === true && (await nxReceive(client)).ready === true,'NxAC relay ready on both peers without RTC');
+	const nxPayload=new Uint8Array(21919).fill(65);
+	check(client.sendNxAC(1,nxPayload),'NxAC maximum frame accepted by lobby client');
+	const nxGot=await nxReceive(host);check(nxGot.peer===clientIdxOnHost && nxGot.data.length===21919 && nxGot.data[21918]===65,'NxAC maximum frame forwarded intact');
+	check(host.sendNxAC(clientIdxOnHost,new TextEncoder().encode('nxac1 ready')),'NxAC reverse direction accepted');
+	check(new TextDecoder().decode((await nxReceive(client)).data)==='nxac1 ready','NxAC text stays data, not transport readiness');
+	check(host.receive()===null && client.receive()===null,'NxAC never enters game packet queue');
+
 	// ---- introspection ----
 	const hostPeers = host.getPeers();
 	check(hostPeers.length === 1 && hostPeers[0].idx === clientIdxOnHost, 'host.getPeers() lists the single joiner');

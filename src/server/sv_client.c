@@ -377,6 +377,12 @@ void SV_DirectConnect(const netadr_t *from)
 	qboolean ettvClient;
 
 	Com_DPrintf("SVC_DirectConnect ()\n");
+#ifdef __EMSCRIPTEN__
+    /* Browser database initialization needs event-loop turns. Dropping this
+     * attempt lets the normal connect retry run after DB_BOOT completes,
+     * without allocating a slot or sending a fatal localhost rejection. */
+    if(SV_NitmodDatabaseBootPending() || SV_NitmodDatabaseConnectPending()) return;
+#endif
 
 	// Prevent using connect as an amplifier
 	if (sv_protect->integer & SVP_IOQ3)
@@ -2496,6 +2502,11 @@ void SV_ExecuteClientMessage(client_t *cl, msg_t *msg)
 {
 	int c;
 	int serverId;
+#ifdef __EMSCRIPTEN__
+    /* Existing clients still have old-world state until the reconnect
+     * continuation runs. Do not execute input against the new VM yet. */
+    if(SV_NitmodDatabaseBootPending()) return;
+#endif
 
 	MSG_Bitstream(msg);
 

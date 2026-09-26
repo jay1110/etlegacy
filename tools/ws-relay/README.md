@@ -129,11 +129,11 @@ shell (`src/web/shell.html`) reads these query parameters:
 
 | Parameter | Purpose | Example |
 |-----------|---------|---------|
-| `mirror`  | Base URL of the retail/XMod/Jaymod asset mirror | `?mirror=https://etclan.de/etl/` |
-| `assets`  | Base URL to download `pak0-2.pk3` from | `?assets=https://et.clan-etc.de/etmain/` |
+| `mirror`  | Base URL of the retail and supported-mod asset mirror | `?mirror=https://etclan.de/etl/` |
+| `assets`  | Legacy override for other downloadable assets (retail paks are extracted from the official installers) | `?assets=https://et.clan-etc.de/etmain/` |
 | `relay`   | WebSocket relay URL (`net_wsRelayServer`) | `?relay=wss://relay.example.com` |
 | `connect` | Game server `host:port` to auto-join | `?connect=etclan.de:27966` |
-| `connectmod` | Force the mod prepared before a direct connection (`legacy`, `xmod`, `jaymod`); normally detected with `getinfo` | `?connectmod=jaymod` |
+| `connectmod` | Force the mod prepared before a direct connection (`legacy`, `xmod`, `jaymod`, `etjump`, `etpub`, `noquarter`, `etbloat`, `nitmod`, `silent`, `etrun`); normally detected with `getinfo` | `?connectmod=etrun` |
 | `touch`   | Force the on-screen touch controls off/on | `?touch=1` |
 
 `relay` is optional: the shell has a default relay built in (`DEFAULT_RELAY` in
@@ -153,9 +153,11 @@ announces `fs_game`; the server still supplies its own exact PK3 filename.
 ## Browser asset downloads
 
 The same service exposes `GET /download?url=<game-asset-url>` for public
-`.pk3`, `.wasm32.so` and `.zip` files. The page uses it for a cross-origin
-mirror, because the relay adds `Access-Control-Allow-Origin: *` while keeping
-the request restricted to public addresses and those game-asset extensions.
+`.pk3`, `.wasm32.so` and `.zip` files. It additionally accepts exactly the two
+official ET installer URLs used to extract pak0/pak1/pak2 in the browser; other
+`.exe` URLs remain blocked. The page uses the endpoint for cross-origin files,
+because the relay adds `Access-Control-Allow-Origin: *` while retaining its
+public-address and file allowlists.
 When TLS is terminated by nginx, the existing `/ws-relay/` location forwards
 this ordinary HTTP request as well as WebSocket upgrades; `/ws-relay/download`
 therefore reaches the relay's `/download` endpoint.

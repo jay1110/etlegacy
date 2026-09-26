@@ -14,7 +14,7 @@
 #define NX_LOCAL_FIRST_PORT 41000
 /* ABI1 opcodes match Nitmod game/nitmod_nxac_host.h. */
 enum { NX_CAPS,NX_LISTEN,NX_CONNECT,NX_INFO,NX_ACCEPT,NX_SEND,NX_RECV,NX_CLOSE,NX_RESET };
-enum { NX_LISTENER=1,NX_LOCAL=2,NX_REMOTE=3 };
+enum { NX_LISTENER=1,NX_LOCAL=2,NX_REMOTE=3,NX_P2P=4 };
 typedef struct { int localPort,peerPort; char peerIp[16]; } nxWebInfo_t;
 typedef char nxWebInfoSize[sizeof(nxWebInfo_t)==24?1:-1];
 typedef struct {
@@ -36,14 +36,16 @@ static nxWebChannel_t *Allocate(int owner,int kind){
     int i;if(nextId<=0 || nextId==INT_MAX)return NULL; /* No handle reuse after wrap. */
     for(i=0;i<NX_CHANNELS;++i)if(!channels[i].id){nxWebChannel_t *c=&channels[i];memset(c,0,sizeof(*c));c->id=nextId++;c->owner=owner;c->kind=kind;c->generation=generations[owner];return c;}return NULL;
 }
+static qboolean IsPeer(const netadr_t *a){return a && a->type==NA_IP && a->ip[0]==241 && a->ip[1]==0 && a->ip[2]==0 && a->ip[3]>=1 && a->ip[3]<=250;}
 static qboolean Ready(const netadr_t *address){int i;if(!address)return qfalse;for(i=0;i<NX_SESSIONS;++i)if(sessions[i].ready && NET_CompareAdr(address,&sessions[i].address))return qtrue;return qfalse;}
 static void Close(nxWebChannel_t *c,qboolean notify){
     int i,id;if(!c || !c->id)return;id=c->id;
-    if(c->kind==NX_REMOTE && notify){char text[64];Com_sprintf(text,sizeof(text),"nxac1 close %d",c->id);NET_WebNxACSend(&c->address,text);}
+    if((c->kind==NX_REMOTE || c->kind==NX_P2P) && notify){char text[64];
+        Com_sprintf(text,sizeof(text),"nxac1 %s %d",c->kind==NX_P2P && !c->peer?"cancel":"close",c->kind==NX_P2P && c->peer?c->peer:c->id);NET_WebNxACSend(&c->address,text);}
     if(c->kind==NX_LOCAL){nxWebChannel_t *peer=Find(c->peer);if(peer){peer->peer=0;peer->eof=qtrue;}}
     memset(c,0,sizeof(*c));
     /* A listener owns its unaccepted and accepted local server endpoints. */
-    for(i=0;i<NX_CHANNELS;++i)if(channels[i].id && channels[i].listener==id)Close(&channels[i],qfalse);
+    for(i=0;i<NX_CHANNELS;++i)if(channels[i].id && channels[i].listener==id)Close(&channels[i],notify);
 }
 void NET_NxACWebReset(int owner){int i;if(!Owner(owner))return;for(i=0;i<NX_CHANNELS;++i)if(channels[i].id && channels[i].owner==owner)Close(&channels[i],qtrue);++generations[owner];}
 static int Push(nxWebChannel_t *c,const byte *data,int size){int first;if(size<0 || size>NX_QUEUE-c->size)return 0;first=NX_QUEUE-((c->head+c->size)%NX_QUEUE);if(first>size)first=size;memcpy(c->queue+(c->head+c->size)%NX_QUEUE,data,first);memcpy(c->queue,data+first,size-first);c->size+=size;return size;}
@@ -62,12 +64,60 @@ static int Decode(const char *text,byte *data){
 }
 static int Number(const char **text){const char *p=*text;int n=0;if(*p<'0'||*p>'9')return -1;while(*p>='0'&&*p<='9'){int digit=*p++-'0';if(n>(INT_MAX-digit)/10)return -1;n=n*10+digit;}*text=p;return n;}
 static void RemoteError(nxWebChannel_t *c){if(c){char text[64];Com_sprintf(text,sizeof(text),"nxac1 close %d",c->id);NET_WebNxACSend(&c->address,text);c->state=-1;c->eof=qtrue;}}
+/* P2P readiness comes only from the host's authenticated, ordered channel,
+ * never from a peer-controlled text message. */
+void NET_NxACWebPeerReady(const netadr_t *from){
+    int i;if(!IsPeer(from) || Ready(from))return;
+    for(i=0;i<NX_SESSIONS;++i)if(!sessions[i].ready){sessions[i].ready=qtrue;sessions[i].address=*from;return;}
+}
+static void PeerReply(const netadr_t *from,const char *verb,int id){char out[80];Com_sprintf(out,sizeof(out),"nxac1 %s %d",verb,id);NET_WebNxACSend(from,out);}
+static qboolean PeerMessage(const netadr_t *from,const char *text){
+    const char *p=text+6;char verb[16];int i=0,id,port,n;nxWebChannel_t *c,*listener=NULL;
+    if(!Ready(from))return qtrue;
+    while(*p && *p!=' ' && i<15)verb[i++]=*p++;verb[i]=0;
+    if(*p!=' ')return qtrue;++p;id=Number(&p);if(id<=0)return qtrue;
+    if(!strcmp(verb,"open")){
+        if(*p!=' ')return qtrue;++p;port=Number(&p);if(*p || port<1 || port>65535)return qtrue;
+        for(i=0;i<NX_CHANNELS;++i){
+            c=&channels[i];
+            if(c->id && c->kind==NX_P2P && c->owner==NXWEB_QAGAME && c->peer==id && NET_CompareAdr(from,&c->address))return qtrue;
+            if(c->id && c->kind==NX_LISTENER && c->generation==generations[NXWEB_QAGAME] && c->localPort==port)listener=c;
+        }
+        if(!listener || !(c=Allocate(NXWEB_QAGAME,NX_P2P))){PeerReply(from,"error",id);return qtrue;}
+        if(nextPort>=65000)nextPort=NX_LOCAL_FIRST_PORT;
+        c->address=*from;c->peer=id;c->listener=listener->id;c->localPort=port;c->remotePort=nextPort++;c->state=1;
+        {char out[96];Com_sprintf(out,sizeof(out),"nxac1 opened %d %d %d",id,c->remotePort,c->id);
+            c->openSent=NET_WebNxACSend(from,out);}
+        return qtrue;
+    }
+    if(!strcmp(verb,"cancel")){
+        if(*p)return qtrue;
+        for(i=0;i<NX_CHANNELS;++i){c=&channels[i];if(c->id && c->kind==NX_P2P && c->owner==NXWEB_QAGAME && c->peer==id && NET_CompareAdr(from,&c->address)){Close(c,qfalse);break;}}
+        return qtrue;
+    }
+    c=Find(id);if(!c || c->kind!=NX_P2P || c->generation!=generations[c->owner] || !NET_CompareAdr(from,&c->address))return qtrue;
+    if(!strcmp(verb,"opened")){
+        int peer;if(c->owner!=NXWEB_CGAME || c->state!=0 || !c->openSent || *p!=' ')goto failed;
+        ++p;port=Number(&p);if(*p!=' ')goto failed;++p;peer=Number(&p);
+        if(*p || port<1 || port>65535 || peer<=0)goto failed;
+        c->localPort=port;c->peer=peer;c->state=1;return qtrue;
+    }
+    if(!strcmp(verb,"data")){
+        byte bytes[NX_CHUNK];if(*p!=' ' || c->state!=1 || c->eof)goto failed;++p;n=Decode(p,bytes);
+        if(n<0 || Push(c,bytes,n)!=n)goto failed;return qtrue;
+    }
+    if((!strcmp(verb,"close") || !strcmp(verb,"eof")) && !*p){if(c->owner==NXWEB_QAGAME && !c->accepted)Close(c,qfalse);else c->eof=qtrue;return qtrue;}
+    if(!strcmp(verb,"error") && !*p){c->state=-1;c->eof=qtrue;return qtrue;}
+failed:
+    if(c->peer)PeerReply(from,"close",c->peer);if(c->owner==NXWEB_QAGAME && !c->accepted)Close(c,qfalse);else {c->state=-1;c->eof=qtrue;}return qtrue;
+}
 qboolean NET_NxACWebRelayMessage(const netadr_t *from,const char *text){
     const char *p;char verb[16];int i=0,id,n;nxWebChannel_t *c;
     if(!from || !text || strncmp(text,"nxac1 ",6))return qfalse;
     /* No strcpy/strlen on the payload until the net_web ingress bound, also
      * independently verified here, is satisfied. */
     for(i=0;i<NX_TEXT && text[i];++i){}if(i==NX_TEXT)return qtrue;
+    if(IsPeer(from))return PeerMessage(from,text);
     p=text+6;if(!strcmp(p,"ready")){for(i=0;i<NX_SESSIONS;++i)if(sessions[i].ready && NET_CompareAdr(from,&sessions[i].address))return qtrue;for(i=0;i<NX_SESSIONS;++i)if(!sessions[i].ready){sessions[i].ready=qtrue;sessions[i].address=*from;break;}return qtrue;}
     i=0;while(*p && *p!=' ' && i<15)verb[i++]=*p++;verb[i]=0;if(*p++!=' ')return qtrue;
     id=Number(&p);c=Find(id);if(!c || c->kind!=NX_REMOTE || c->owner!=NXWEB_CGAME || c->generation!=generations[NXWEB_CGAME] || !NET_CompareAdr(from,&c->address))return qtrue;
@@ -82,7 +132,7 @@ qboolean NET_NxACWebRelayMessage(const netadr_t *from,const char *text){
     if(!strcmp(verb,"error")){c->state=-1;c->eof=qtrue;return qtrue;}
     RemoteError(c);return qtrue;
 }
-void NET_NxACWebRelayClosed(const netadr_t *from){int i;if(!from)return;for(i=0;i<NX_SESSIONS;++i)if(sessions[i].ready && NET_CompareAdr(from,&sessions[i].address))sessions[i].ready=qfalse;for(i=0;i<NX_CHANNELS;++i)if(channels[i].id && channels[i].kind==NX_REMOTE && NET_CompareAdr(from,&channels[i].address)){channels[i].state=-1;channels[i].eof=qtrue;}}
+void NET_NxACWebRelayClosed(const netadr_t *from){int i;if(!from)return;for(i=0;i<NX_SESSIONS;++i)if(sessions[i].ready && NET_CompareAdr(from,&sessions[i].address))sessions[i].ready=qfalse;for(i=0;i<NX_CHANNELS;++i)if(channels[i].id && (channels[i].kind==NX_REMOTE || channels[i].kind==NX_P2P) && NET_CompareAdr(from,&channels[i].address)){if(channels[i].owner==NXWEB_QAGAME && !channels[i].accepted)Close(&channels[i],qfalse);else {channels[i].state=-1;channels[i].eof=qtrue;}}}
 intptr_t NET_NxACWebCall(int owner,const netadr_t *serverAddress,int op,int handle,void *buffer,int length,int value){
     nxWebChannel_t *c,*peer,*listener;int i,n;
     if(!Owner(owner))return -1;
@@ -104,26 +154,29 @@ intptr_t NET_NxACWebCall(int owner,const netadr_t *serverAddress,int op,int hand
             peer->localPort=value;peer->remotePort=c->localPort;peer->peer=c->id;peer->listener=listener->id;return c->id;
         }
         if(!Ready(serverAddress))return -1;
-        for(i=0;i<NX_CHANNELS;++i)if(channels[i].id && channels[i].kind==NX_REMOTE && NET_CompareAdr(serverAddress,&channels[i].address))return -1;
-        c=Allocate(owner,NX_REMOTE);if(!c)return -1;c->address=*serverAddress;c->remotePort=value;
+        for(i=0;i<NX_CHANNELS;++i)if(channels[i].id && channels[i].owner==owner && channels[i].state>=0 && !channels[i].eof && (channels[i].kind==NX_REMOTE || channels[i].kind==NX_P2P) && NET_CompareAdr(serverAddress,&channels[i].address))return -1;
+        c=Allocate(owner,IsPeer(serverAddress)?NX_P2P:NX_REMOTE);if(!c)return -1;c->address=*serverAddress;c->remotePort=value;
         {char text[64];Com_sprintf(text,sizeof(text),"nxac1 open %d %d",c->id,value);c->openSent=NET_WebNxACSend(serverAddress,text);}return c->id;
     }
     c=Owned(owner,handle);if(!c)return -1;
     /* Reject an old Cgame handle after the engine has changed game sessions. */
-    if(owner==NXWEB_CGAME && c->kind==NX_REMOTE && (!serverAddress || !NET_CompareAdr(serverAddress,&c->address)))return -1;
+    if(owner==NXWEB_CGAME && (c->kind==NX_REMOTE || c->kind==NX_P2P) && (!serverAddress || !NET_CompareAdr(serverAddress,&c->address)))return -1;
     if(owner==NXWEB_CGAME && c->kind==NX_LOCAL && (!serverAddress || serverAddress->type!=NA_LOOPBACK))return -1;
     if(op==NX_CLOSE){Close(c,qtrue);return 0;}
     if(op==NX_INFO){
         nxWebInfo_t info;if(!buffer || length!=sizeof(info))return -1;
-        if(c->kind==NX_REMOTE && c->state==0 && !c->openSent){char text[64];Com_sprintf(text,sizeof(text),"nxac1 open %d %d",c->id,c->remotePort);c->openSent=NET_WebNxACSend(&c->address,text);}
+        if((c->kind==NX_REMOTE || c->kind==NX_P2P) && c->state==0 && !c->openSent){char text[64];Com_sprintf(text,sizeof(text),"nxac1 open %d %d",c->id,c->remotePort);c->openSent=NET_WebNxACSend(&c->address,text);}
         if(c->state<=0)return c->state;
-        memset(&info,0,sizeof(info));info.localPort=c->localPort;info.peerPort=c->remotePort;if(c->kind!=NX_REMOTE)Q_strncpyz(info.peerIp,"127.0.0.1",sizeof(info.peerIp));
+        memset(&info,0,sizeof(info));info.localPort=c->localPort;info.peerPort=c->remotePort;if(c->kind==NX_P2P)Com_sprintf(info.peerIp,sizeof(info.peerIp),"%u.%u.%u.%u",c->address.ip[0],c->address.ip[1],c->address.ip[2],c->address.ip[3]);else if(c->kind!=NX_REMOTE)Q_strncpyz(info.peerIp,"127.0.0.1",sizeof(info.peerIp));
         memcpy(buffer,&info,sizeof(info));return 1;
     }
-    if(op==NX_ACCEPT){if(owner!=NXWEB_QAGAME || c->kind!=NX_LISTENER)return -1;for(i=0;i<NX_CHANNELS;++i)if(channels[i].id && channels[i].listener==c->id && !channels[i].accepted){channels[i].accepted=1;return channels[i].id;}return -1;}
+    if(op==NX_ACCEPT){if(owner!=NXWEB_QAGAME || c->kind!=NX_LISTENER)return -1;for(i=0;i<NX_CHANNELS;++i)if(channels[i].id && channels[i].listener==c->id && !channels[i].accepted && channels[i].state==1 && !channels[i].eof){
+        nxWebChannel_t *pending=&channels[i];
+        if(pending->kind==NX_P2P && !pending->openSent){char out[96];Com_sprintf(out,sizeof(out),"nxac1 opened %d %d %d",pending->peer,pending->remotePort,pending->id);pending->openSent=NET_WebNxACSend(&pending->address,out);if(!pending->openSent)continue;}
+        pending->accepted=1;return pending->id;}return -1;}
     if((op!=NX_SEND && op!=NX_RECV) || !buffer || length<1 || length>NX_CHUNK || c->kind==NX_LISTENER || c->state!=1)return -1;
     if(op==NX_RECV){if(c->size)return Pop(c,(byte *)buffer,length);return c->eof?-2:0;}
     if(c->eof)return -1;
     if(c->kind==NX_LOCAL){peer=Find(c->peer);if(!peer)return -1;n=NX_QUEUE-peer->size;if(n>length)n=length;return n?Push(peer,(const byte *)buffer,n):0;}
-    {char text[NX_TEXT];Com_sprintf(text,sizeof(text),"nxac1 data %d ",c->id);n=(int)strlen(text);Encode((const byte *)buffer,length,text+n);return NET_WebNxACSend(&c->address,text)?length:0;}
+    {char text[NX_TEXT];Com_sprintf(text,sizeof(text),"nxac1 data %d ",c->kind==NX_P2P?c->peer:c->id);n=(int)strlen(text);Encode((const byte *)buffer,length,text+n);return NET_WebNxACSend(&c->address,text)?length:0;}
 }

@@ -799,11 +799,28 @@ intptr_t SV_GameSystemCalls(intptr_t *args)
 /* Version-1 private export; call only after the matching storage trap was
  * negotiated. Unrelated game modules retain their original export ABI. */
 #define GAME_NITMOD_DB_PRE_SHUTDOWN 0x4e444201
+#define GAME_NITMOD_DB_CONNECT_STATE 0x4e444202
+qboolean SV_NitmodDatabaseConnectPending(void)
+{
+    if(!gvm || !VM_Ext_IsActive(G_NITMOD_DATABASE_STORAGE)) return qfalse;
+    /* Older modules return -1 for unknown exports. Only an explicit pending
+     * response delays admission; real errors still reach ClientConnect. */
+    return VM_Call(gvm,GAME_NITMOD_DB_CONNECT_STATE)==2;
+}
 static struct { int action,value; char text[MAX_STRING_CHARS]; } nitmodDbDeferred;
+static struct { int action; unsigned int generation; } nitmodDbBoot;
+qboolean SV_NitmodDatabaseBootPending(void) { return nitmodDbBoot.action!=0; }
+qboolean SV_NitmodDatabaseWaitBoot(int action,unsigned int generation)
+{
+    if(!SV_NitmodDatabaseConnectPending()) return qfalse;
+    nitmodDbBoot.action=action; nitmodDbBoot.generation=generation;
+    Com_Printf("[SQLite] Waiting for database initialization before reconnecting map clients.\n");
+    return qtrue;
+}
 /* Console admission must not mutate a transition already waiting on DB. */
 qboolean SV_NitmodDatabasePendingTransition(void)
 {
-    return nitmodDbDeferred.action != 0;
+    return nitmodDbDeferred.action != 0 || nitmodDbBoot.action != 0;
 }
 static int SV_NitmodDatabasePrepare(void)
 {
@@ -820,7 +837,9 @@ qboolean SV_NitmodDatabaseDefer(int action,const char *text,int value)
             Com_Printf("[SQLite] Server transition already waiting for database commit.\n");
         return qtrue;
     }
-    if(SV_NitmodDatabasePrepare()!=2) return qfalse;
+    /* Keep a shutdown/map request issued during boot, but do not freeze the
+     * initializing VM. Complete boot first, then drain on the next frame. */
+    if(!nitmodDbBoot.action && SV_NitmodDatabasePrepare()!=2) return qfalse;
     nitmodDbDeferred.action=action; nitmodDbDeferred.value=value;
     Q_strncpyz(nitmodDbDeferred.text,text?text:"",sizeof(nitmodDbDeferred.text));
     Com_Printf("[SQLite] Waiting for pending commits before server transition.\n");
@@ -830,6 +849,16 @@ qboolean SV_NitmodDatabaseFrame(void)
 {
     int action,value;
     char text[MAX_STRING_CHARS];
+    if(nitmodDbBoot.action) {
+        unsigned int generation;
+        if(SV_NitmodDatabaseConnectPending()) return qtrue;
+        action=nitmodDbBoot.action; generation=nitmodDbBoot.generation;
+        memset(&nitmodDbBoot,0,sizeof(nitmodDbBoot));
+        Com_Printf("[SQLite] Database initialization completed; resuming map clients.\n");
+        if(action==NITMOD_DB_FINISH_RESTART) SV_NitmodDatabaseFinishRestart();
+        else SV_NitmodDatabaseFinishSpawn(generation);
+        return qtrue;
+    }
     if(!nitmodDbDeferred.action) return qfalse;
     if(SV_NitmodDatabasePrepare()==2) return qtrue;
     action=nitmodDbDeferred.action; value=nitmodDbDeferred.value;
@@ -874,6 +903,7 @@ void SV_ShutdownGameProgs(void)
 #ifdef __EMSCRIPTEN__
 	Sys_WebDatabaseReset();
 	memset(&nitmodDbDeferred,0,sizeof(nitmodDbDeferred));
+    memset(&nitmodDbBoot,0,sizeof(nitmodDbBoot));
 	NET_NxACWebReset(NXWEB_QAGAME);
 #endif
 	VM_Free(gvm);
@@ -915,6 +945,7 @@ static void SV_InitGameVM(qboolean restart)
 
 #ifdef __EMSCRIPTEN__
 	memset(&nitmodDbDeferred,0,sizeof(nitmodDbDeferred));
+    memset(&nitmodDbBoot,0,sizeof(nitmodDbBoot));
 #endif
 	// mark all extensions as inactive
 	VM_Ext_ResetActive();
@@ -998,6 +1029,13 @@ qboolean SV_GameCommand(void)
 {
 	if (sv.state != SS_GAME)
 	{
+#ifdef __EMSCRIPTEN__
+        /* GAME_INIT has completed before we yield for DB_BOOT. Commands
+         * appended by match configs must reach that initialized VM while
+         * player admission remains paused. Otherwise Cbuf consumes them as
+         * unknown commands, permanently losing sv_cvar/forcecvar rules. */
+        if(sv.state != SS_LOADING || !gvm || !SV_NitmodDatabaseBootPending())
+#endif
 		return qfalse;
 	}
 

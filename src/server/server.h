@@ -543,11 +543,17 @@ svEntity_t *SV_SvEntityForGentity(sharedEntity_t *gEnt);
 sharedEntity_t *SV_GEntityForSvEntity(svEntity_t *svEnt);
 void SV_InitGameProgs(void);
 void SV_ShutdownGameProgs(void);
+void SV_NitmodDatabaseFinishRestart(void);
+void SV_NitmodDatabaseFinishSpawn(unsigned int hunkClearGeneration);
 #ifdef __EMSCRIPTEN__
 /* Advertises that every ordinary server transition drains the async DB. */
 #define NITMOD_WEB_DB_LIFECYCLE 1
 enum { NITMOD_DB_MAP=1, NITMOD_DB_RESTART, NITMOD_DB_SPAWN, NITMOD_DB_SHUTDOWN };
+enum { NITMOD_DB_FINISH_RESTART=1, NITMOD_DB_FINISH_SPAWN };
+qboolean SV_NitmodDatabaseWaitBoot(int action,unsigned int generation);
+qboolean SV_NitmodDatabaseBootPending(void);
 qboolean SV_NitmodDatabasePendingTransition(void);
+qboolean SV_NitmodDatabaseConnectPending(void);
 qboolean SV_NitmodDatabaseDefer(int action,const char *text,int value);
 qboolean SV_NitmodDatabaseFrame(void);
 void SV_NitmodDatabaseMap(const char *mapname,qboolean cheat);

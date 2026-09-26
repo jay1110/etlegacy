@@ -128,6 +128,51 @@ endif()
 # used for the engine link. The pk3 name is also written to a file so the CI
 # packaging step ships a matching legacy_<version>.pk3.
 if(EMSCRIPTEN AND BUILD_CLIENT_MOD AND TARGET etl)
+	# The retail Enemy Territory data is kept inside the original Wise
+	# installers. Build REWise as a small, independently-instantiated browser
+	# module so shell.html can download those installers and extract only the
+	# required pak0/pak1/pak2 files without executing Windows code.
+	set(REWISE_WEB_SRC
+		${PROJECT_SOURCE_DIR}/vendor/rewise/src/CP1252.c
+		${PROJECT_SOURCE_DIR}/vendor/rewise/src/exefile.c
+		${PROJECT_SOURCE_DIR}/vendor/rewise/src/pkzip.c
+		${PROJECT_SOURCE_DIR}/vendor/rewise/src/print.c
+		${PROJECT_SOURCE_DIR}/vendor/rewise/src/reader.c
+		${PROJECT_SOURCE_DIR}/vendor/rewise/src/rewise.c
+		${PROJECT_SOURCE_DIR}/vendor/rewise/src/wildcard.c
+		${PROJECT_SOURCE_DIR}/vendor/rewise/src/wiseoverlay.c
+		${PROJECT_SOURCE_DIR}/vendor/rewise/src/wisescript.c
+	)
+	# Do not make this a normal executable target: the engine-wide executable
+	# flags include MAIN_MODULE, SDL, WebGL and a 2 GiB initial memory. REWise is
+	# deliberately a tiny independent module and must not inherit any of those.
+	add_custom_command(
+		OUTPUT
+			${CMAKE_CURRENT_BINARY_DIR}/retail-extractor.js
+			${CMAKE_CURRENT_BINARY_DIR}/retail-extractor.wasm
+		COMMAND ${CMAKE_C_COMPILER}
+			${REWISE_WEB_SRC}
+			-O3
+			-sUSE_ZLIB=1
+			-sALLOW_MEMORY_GROWTH=1
+			-sFORCE_FILESYSTEM=1
+			-sMODULARIZE=1
+			-sEXPORT_NAME=createREWiseModule
+			-sINVOKE_RUN=0
+			"-sEXPORTED_RUNTIME_METHODS=['FS','callMain']"
+			-sEXIT_RUNTIME=0
+			-o ${CMAKE_CURRENT_BINARY_DIR}/retail-extractor.js
+		DEPENDS ${REWISE_WEB_SRC}
+		COMMENT "Building the browser retail-data extractor"
+		VERBATIM
+	)
+	add_custom_target(retail_extractor
+		DEPENDS
+			${CMAKE_CURRENT_BINARY_DIR}/retail-extractor.js
+			${CMAKE_CURRENT_BINARY_DIR}/retail-extractor.wasm
+	)
+	add_dependencies(etl retail_extractor)
+
 	set(ETL_MOD_PK3_NAME "${MODNAME}_${ETL_CMAKE_VERSION_SHORT}.pk3")
 	configure_file(
 		"${PROJECT_SOURCE_DIR}/src/web/shell.html"

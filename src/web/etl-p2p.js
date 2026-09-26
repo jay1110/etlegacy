@@ -153,6 +153,8 @@
 		this.idxToPeer = {};      // peer index -> lobby peerId
 		this.recvQueue = [];      // FIFO of {peer: idx, data: Uint8Array}
 		this.recvDrops = 0;
+		this.nxacQueue = [];
+		this.nxacBytes = 0;
 
 		this.listeners = {};      // event name -> [cb]
 		this.roomSubs = [];       // subscribeRooms callbacks
@@ -355,6 +357,8 @@
 	 * signalling/relay socket must not silently kill a match.
 	 */
 	P.onLobbyClosed = function (reason) {
+		var self = this;
+		Object.keys(this.peers).forEach(function (id) { if (self.peers[id].nxacTransport === 'relay') self.closeNxAC(self.peers[id], true, true); });
 		this.connected = false;
 		if (!this.wantReconnect || this.destroyed) {
 			this.emit('closed', { reason: reason || 'lobby closed' });
@@ -451,7 +455,12 @@
 
 	P.dispatchControl = function (msg, onWelcome) {
 		switch (msg.t) {
+		case 'nxac':
+			this.onNxACRelay(msg);
+			break;
+
 		case 'welcome':
+			this.nxacRelay = msg.nxacRelay === 1;
 			this.peerId = msg.peer >>> 0;
 			if (!this.config.iceServers && msg.ice) {
 				this.iceServers = msg.ice;
@@ -880,6 +889,8 @@
 			dc: null,
 			rtcOpen: false,
 			transport: 'relay',
+			nxacTransport: this.nxacRelay ? 'relay' : 'rtc',
+			nxacClosed: false,
 			pendingCandidates: []
 		};
 		this.peers[peerId] = peer;
@@ -897,6 +908,7 @@
 			clearTimeout(this.rtcOpenTimers[peer.peer]);
 			delete this.rtcOpenTimers[peer.peer];
 		}
+		this.closeNxAC(peer, true);
 		try { if (peer.dc) { peer.dc.close(); } } catch (err) { /* ignore */ }
 		try { if (peer.pc) { peer.pc.close(); } } catch (err) { /* ignore */ }
 		if (peer.idx && this.idxToPeer[peer.idx] === peer.peer) {
@@ -959,6 +971,7 @@
 			return;
 		}
 		self.attachDataChannel(peer, dc);
+		try { self.attachDataChannel(peer, pc.createDataChannel('etl-nxac-1', { ordered: true })); } catch (err) { /* No NxAC capability without reliable RTC. */ }
 
 		pc.createOffer().then(function (offer) {
 			return pc.setLocalDescription(offer).then(function () {
@@ -970,6 +983,8 @@
 	};
 
 	P.attachDataChannel = function (peer, dc) {
+		if (dc.label === 'etl-nxac-1') { this.attachNxAC(peer, dc); return; }
+		if (dc.label !== DATA_CHANNEL_LABEL) { dc.close(); return; }
 		var self = this;
 		peer.dc = dc;
 		try {
@@ -990,6 +1005,96 @@
 		dc.onmessage = function (ev) {
 			self.enqueue(peer.idx, toU8(ev.data));
 		};
+	};
+
+	// Dedicated reliable stream; never fall back to the lossy game channel.
+	P.closeNxAC = function (peer, discard, remote) {
+		var dc = peer.nxac;
+		if (!dc && (peer.nxacTransport !== 'relay' || peer.nxacClosed)) return;
+		peer.nxacClosed = true;
+		peer.nxacReady = false;
+		if (peer.nxacTransport === 'relay' && !remote && this.ws && this.ws.readyState === 1) {
+			try { this.ws.send(JSON.stringify({t:'nxac',op:'close',to:peer.peer})); } catch (err) { /* socket closure handles remote */ }
+		}
+		peer.nxac = null;
+		var kept = [], i, e;
+		for (i = 0; i < this.nxacQueue.length; i++) {
+			e = this.nxacQueue[i];
+			if (discard && e.token === peer && !e.closed) { if (e.data) this.nxacBytes -= e.data.length; }
+			else kept.push(e);
+		}
+		this.nxacQueue = kept;
+		// Coalesce terminal notifications by index; always before a new ready.
+		if (!this.nxacQueue.some(function (e) { return e.closed && e.peer === peer.idx; }))
+			this.nxacQueue.push({ peer: peer.idx, closed: true, token: peer });
+		try { if (dc) dc.close(); } catch (err) { /* already closed */ }
+	};
+	P.attachNxAC = function (peer, dc) {
+		var self = this;
+		if (peer.nxacTransport === 'relay' || peer.nxac || dc.ordered !== true || dc.maxRetransmits != null || dc.maxPacketLifeTime != null) { dc.close(); return; }
+		peer.nxac = dc;
+		dc.binaryType = 'arraybuffer';
+		function valid() { return self.peers[peer.peer] === peer && peer.nxac === dc; }
+		dc.onopen = function () {
+			if (!valid()) return;
+			self.nxacQueue.push({ peer: peer.idx, ready: true, token: peer });
+		};
+		dc.onclose = dc.onerror = function () { if (valid()) self.closeNxAC(peer); };
+		dc.onmessage = function (ev) {
+			if (!valid()) return;
+			var bytes = toU8(ev.data);
+			if (!bytes.length || bytes.length > 21919 || self.nxacBytes + bytes.length > 1048576 || self.nxacQueue.length >= 512) { self.closeNxAC(peer, true); return; }
+			bytes = bytes.slice();
+			self.nxacQueue.push({ peer: peer.idx, data: bytes, token: peer });
+			self.nxacBytes += bytes.length;
+		};
+	};
+	P.onNxACRelay = function (msg) {
+		var peer = this.peers[msg.from];
+		if (!Number.isInteger(msg.from) || !peer || peer.nxacTransport !== 'relay' || peer.nxacClosed) return;
+		if (msg.op === 'close') { this.closeNxAC(peer, false, true); return; }
+		if (msg.op === 'ready') {
+			if (!peer.nxacReady) { peer.nxacReady = true; this.nxacQueue.push({peer:peer.idx,ready:true,token:peer}); }
+			return;
+		}
+		if (msg.op !== 'data' || !peer.nxacReady) return;
+		var raw, bytes;
+		try {
+			if (typeof msg.data !== 'string' || msg.data.length > 29228 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(msg.data)) throw Error('base64');
+			raw = atob(msg.data); bytes = new Uint8Array(raw.length);
+			for (var i=0;i<raw.length;++i) { bytes[i]=raw.charCodeAt(i); if (!bytes[i] || bytes[i]>127) throw Error('ASCII'); }
+		} catch (err) { this.closeNxAC(peer,true); return; }
+		if (!bytes.length || bytes.length>21919 || this.nxacBytes+bytes.length>1048576 || this.nxacQueue.length>=512) { this.closeNxAC(peer,true); return; }
+		this.nxacQueue.push({peer:peer.idx,data:bytes,token:peer}); this.nxacBytes+=bytes.length;
+	};
+	P.sendNxAC = function (idx, bytes) {
+		var peer = this.peers[this.idxToPeer[idx]], dc = peer && peer.nxac;
+		if (peer && peer.nxacTransport === 'relay') {
+			if (!peer.nxacReady || peer.nxacClosed || !this.ws || this.ws.readyState!==1 || !(bytes instanceof Uint8Array) || !bytes.length || bytes.length>21919) return false;
+			var raw=''; for(var i=0;i<bytes.length;++i) { if(!bytes[i] || bytes[i]>127) { this.closeNxAC(peer,true); return false; } raw+=String.fromCharCode(bytes[i]); }
+			var frame=JSON.stringify({t:'nxac',op:'data',to:peer.peer,data:btoa(raw)});
+			var terminal = bytes.length<=128 && /^nxac1 (close|cancel|eof) [0-9]+$/.test(raw);
+			if(this.ws.bufferedAmount+frame.length>(terminal?266240:262144)) { if(terminal)this.closeNxAC(peer,true); return false; }
+			try { this.ws.send(frame); return true; } catch(err) { this.closeNxAC(peer,true); return false; }
+		}
+		if (!dc || dc.readyState !== 'open' || !(bytes instanceof Uint8Array) || !bytes.length || bytes.length > 21919) return false;
+		// Reserve a bounded reliable budget for terminal control frames: the C
+		// caller releases its handle after close and cannot retry that message.
+		var control = bytes.length <= 128 && /^nxac1 (close|cancel|eof) [0-9]+$/.test(String.fromCharCode.apply(null, bytes));
+		if (dc.bufferedAmount + bytes.length > (control ? 266240 : 262144)) {
+			if (control) this.closeNxAC(peer);
+			return false;
+		}
+		try { dc.send(bytes.slice()); return true; } catch (err) { this.closeNxAC(peer); return false; }
+	};
+	P.receiveNxAC = function () {
+		var e;
+		while ((e = this.nxacQueue.shift())) {
+			if (e.data) this.nxacBytes -= e.data.length;
+			if (!e.closed && this.peers[e.token.peer] !== e.token) continue;
+			return e.closed ? { peer: e.peer, closed: true } : e.ready ? { peer: e.peer, ready: true } : { peer: e.peer, data: e.data };
+		}
+		return null;
 	};
 
 	P.markRelay = function (peer) {
@@ -1243,7 +1348,7 @@
 			'subscribeRooms', 'getRoomCount', 'host', 'reclaim', 'updateRoom',
 			'stopHosting', 'join', 'leave', 'getRole', 'getRoomId', 'getPeers',
 			'getRoom', 'getHostToken',
-			'on', 'off', 'send', 'receive', 'active', 'addressForPeer'
+			'on', 'off', 'send', 'receive', 'sendNxAC', 'receiveNxAC', 'active', 'addressForPeer'
 		];
 		for (var i = 0; i < methods.length; i++) {
 			(function (name) {

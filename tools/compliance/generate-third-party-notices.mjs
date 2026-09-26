@@ -35,6 +35,11 @@ const components = [
     version: "1998 snapshot",
     files: ["vendor/sha-1/license.txt"],
   },
+  {
+    name: "REWise Wise installer extractor",
+    version: "0.3.1",
+    files: ["vendor/rewise/COPYING"],
+  },
 ];
 
 const separator = "=".repeat(78);

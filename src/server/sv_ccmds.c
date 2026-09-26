@@ -258,9 +258,6 @@ static void SV_FieldInfo_f(void)
 void SV_NitmodDatabaseRestart(int newGameState)
 {
     int i;
-    client_t *client;
-    char *denied;
-    qboolean isBot;
     /* The console entry validated and accepted the state transition before
      * handing over this continuation. Do not validate it a second time:
      * a warmup restart would then compare equal and leave the VM frozen. */
@@ -308,6 +305,18 @@ void SV_NitmodDatabaseRestart(int newGameState)
 		sv.time += FRAMETIME;
 	}
 
+#ifdef __EMSCRIPTEN__
+    if(SV_NitmodDatabaseWaitBoot(NITMOD_DB_FINISH_RESTART,0)) return;
+#endif
+    SV_NitmodDatabaseFinishRestart();
+}
+
+void SV_NitmodDatabaseFinishRestart(void)
+{
+    int i;
+    client_t *client;
+    char *denied;
+    qboolean isBot;
 	sv.state      = SS_GAME;
 	sv.restarting = qfalse;
 
