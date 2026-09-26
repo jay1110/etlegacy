@@ -332,6 +332,15 @@ if (exists('etl.html')) {
         'TJMod is offered by direct connect, server filters and browser hosting');
     check(/function modSupportsOmniBot\(modKey\)[\s\S]*modKey !== 'tjmod'/.test(html),
         'TJMod hosting does not load the incompatible Legacy Omni-bot module');
+    const modMatcherSource = html.match(/function liveServerModNameMatches\(raw, name\)\s*\{[\s\S]*?\n\s*\}/);
+    check(Boolean(modMatcherSource), 'versioned server gamenames have a compatibility matcher');
+    if (modMatcherSource) {
+        const modMatcher = Function(`${modMatcherSource[0]}; return liveServerModNameMatches;`)();
+        check(modMatcher('tjmod 1.6.6 test', 'tjmod'),
+            'server gamename "tjmod 1.6.6 test" is recognized as TJMod');
+        check(!modMatcher('tjmodder', 'tjmod'),
+            'TJMod compatibility matching observes a name boundary');
+    }
     check(/silent:\s*hostUsefulCvarTable\(CVARS_SILENT\)/.test(html),
         'silEnT server CVars are exposed in Advanced host settings');
     const silentCvars = html.match(/var CVARS_SILENT = \[([\s\S]*?)\n\s*\];/);
