@@ -34,6 +34,8 @@
 
 #include "g_local.h"
 
+#include <time.h>
+
 #ifdef FEATURE_OMNIBOT
 #include "g_etbot_interface.h"
 #endif
@@ -1649,35 +1651,6 @@ void G_InitGame(int levelTime, int randomSeed, int restart, int etLegacyServer, 
 	// MAPVOTE
 	if (g_gametype.integer == GT_WOLF_MAPVOTE)
 	{
-		char mapConfig[MAX_STRING_CHARS];
-
-		//trap_Cvar_Set("C", va("%d,%d",
-		//        ((level.mapsSinceLastXPReset >= g_resetXPMapCount.integer) ?
-		//               0 : level.mapsSinceLastXPReset)+1,
-		//       g_resetXPMapCount.integer));
-
-		if (g_mapConfigs.string[0] && g_resetXPMapCount.integer)
-		{
-			Q_strncpyz(mapConfig, "exec ", sizeof(mapConfig));
-			Q_strcat(mapConfig, sizeof(mapConfig), g_mapConfigs.string);
-			i = level.mapsSinceLastXPReset;
-			if (i == 0 || i == g_resetXPMapCount.integer)
-			{
-				i = 2;
-			}
-			else if (i + 2 <= g_resetXPMapCount.integer)
-			{
-				i += 2;
-			}
-			else
-			{
-				i = 1;
-			}
-			Q_strcat(mapConfig, sizeof(mapConfig), va("/vote_%d.cfg", i));
-
-			trap_SendConsoleCommand(EXEC_APPEND, mapConfig);
-		}
-
 		level.mapVotePlayersCount = CG_ParseMapVotePlayersCountConfig();
 	}
 
@@ -1738,9 +1711,6 @@ void G_InitGame(int levelTime, int randomSeed, int restart, int etLegacyServer, 
 	numSplinePaths = 0 ;
 	numPathCorners = 0;
 
-	// MAPVOTE
-	level.mapsSinceLastXPReset = 0;
-
 	// init objective indicator
 	level.flagIndicator   = 0;
 	level.redFlagCounter  = 0;
@@ -1758,18 +1728,15 @@ void G_InitGame(int levelTime, int randomSeed, int restart, int etLegacyServer, 
 		}
 #endif
 
-		if (!(g_xpSaver.integer & XPSF_ENABLE))
+#ifdef FEATURE_XPSAVE
+		if (g_xpSave.integer)
 		{
-			G_Printf("^3WARNING: g_xpSaver changed to 0\n");
-			trap_Cvar_Set("g_xpSaver", "0");
+			G_Printf("^3WARNING: g_xpSave changed to 0\n");
+			trap_Cvar_Set("g_xpSave", "0");
 		}
+#endif
 	}
 #endif
-
-	if ((g_xpSaver.integer & XPSF_CONVERT))
-	{
-		G_XPSaver_Convert();
-	}
 
 #ifdef FEATURE_RATING
 	if (g_skillRating.integer)
@@ -1788,24 +1755,78 @@ void G_InitGame(int levelTime, int randomSeed, int restart, int etLegacyServer, 
 	}
 #endif
 
-	if ((g_xpSaver.integer & XPSF_ENABLE) && g_gametype.integer == GT_WOLF_CAMPAIGN)
+#ifdef FEATURE_XPSAVE
+	if (g_gametype.integer == GT_WOLF_CAMPAIGN)
 	{
 		if (g_campaigns[level.currentCampaign].current == 0 || level.newCampaign)
 		{
-			if (!(g_xpSaver.integer & XPSF_NR_EVER))
+			G_XPSave_Clear();
+		}
+	}
+	else if (g_xpSave.integer && (g_gametype.integer == GT_WOLF || g_gametype.integer == GT_WOLF_MAPVOTE))
+	{
+		// keep reset cvars sane
+		if (g_xpSaveResetThreshold.integer < 0)
+		{
+			trap_Cvar_Set("g_xpSaveResetThreshold", "0");
+		}
+
+		if (g_xpSaveResetValue.integer < 0)
+		{
+			trap_Cvar_Set("g_xpSaveResetValue", "0");
+		}
+
+		if (g_xpSaveResetMode.integer < 0)
+		{
+			trap_Cvar_Set("g_xpSaveResetMode", "0");
+		}
+		else if (g_xpSaveResetMode.integer > 3)
+		{
+			trap_Cvar_Set("g_xpSaveResetMode", "0");
+		}
+
+		// if the value looks like it belongs to a different mode, reinitialize it
+		// (e.g. after a config change and server restart)
+		if (g_xpSaveResetMode.integer == 1 && g_xpSaveResetValue.integer > 1000000000)
+		{
+			trap_Cvar_Set("g_xpSaveResetValue", "0");
+		}
+		else if (g_xpSaveResetMode.integer == 2 && (g_xpSaveResetValue.integer <= 0 || g_xpSaveResetValue.integer < 1000000000))
+		{
+			trap_Cvar_Set("g_xpSaveResetValue", va("%i", (int)time(NULL)));
+		}
+
+		// maps-based auto-reset
+		if (g_xpSaveResetMode.integer == 1 &&
+		    g_xpSaveResetThreshold.integer > 0 &&
+		    g_xpSaveResetValue.integer >= g_xpSaveResetThreshold.integer)
+		{
+			G_Printf("XP save: auto-reset triggered after %i maps\n", g_xpSaveResetValue.integer);
+
+			if (G_XPSave_Clear() == 0)
 			{
-				G_XPSaver_Clear();
+				trap_Cvar_Set("g_xpSaveResetValue", "0");
+			}
+		}
+		// time-based auto-reset (threshold is in hours)
+		else if (g_xpSaveResetMode.integer == 2 &&
+		         g_xpSaveResetThreshold.integer > 0)
+		{
+			time_t now        = time(NULL);
+			time_t last_reset = (time_t)g_xpSaveResetValue.integer;
+
+			if (difftime(now, last_reset) >= (double)(g_xpSaveResetThreshold.integer * 3600))
+			{
+				G_Printf("XP save: time-based auto-reset triggered\n");
+
+				if (G_XPSave_Clear() == 0)
+				{
+					trap_Cvar_Set("g_xpSaveResetValue", va("%i", (int)now));
+				}
 			}
 		}
 	}
-
-	if ((g_xpSaver.integer & XPSF_ENABLE) && (g_gametype.integer == GT_WOLF_STOPWATCH || g_gametype.integer == GT_WOLF_MAPVOTE || g_gametype.integer == GT_WOLF))
-	{
-		if (!(g_xpSaver.integer & XPSF_NR_EVER))
-		{
-			G_XPSaver_Clear();
-		}
-	}
+#endif
 
 	// disable server engine flood protection if we have mod-sided flood protection enabled
 	// since they don't block the same commands
@@ -2088,9 +2109,13 @@ int QDECL SortRanks(const void *a, const void *b)
 			totalXP[1] += cb->sess.skillpoints[i];
 		}
 
-		if (!(((g_gametype.integer == GT_WOLF_CAMPAIGN || g_gametype.integer == GT_WOLF_STOPWATCH || g_gametype.integer == GT_WOLF_MAPVOTE || g_gametype.integer == GT_WOLF) && (g_xpSaver.integer & XPSF_ENABLE)) ||
-		      (g_gametype.integer == GT_WOLF_CAMPAIGN && (g_campaigns[level.currentCampaign].current != 0 && !level.newCampaign)) ||
-		      (g_gametype.integer == GT_WOLF_LMS && g_currentRound.integer != 0)))
+		if (!(
+#ifdef FEATURE_XPSAVE
+				(g_gametype.integer == GT_WOLF_CAMPAIGN) ||
+				(g_xpSave.integer && (g_gametype.integer == GT_WOLF || g_gametype.integer == GT_WOLF_MAPVOTE)) ||
+#endif
+				(g_gametype.integer == GT_WOLF_CAMPAIGN && (g_campaigns[level.currentCampaign].current != 0 && !level.newCampaign)) ||
+				(g_gametype.integer == GT_WOLF_LMS && g_currentRound.integer != 0)))
 		{
 			// current map XPs only
 			totalXP[0] -= ca->sess.startxptotal;
@@ -2817,11 +2842,6 @@ void ExitLevel(void)
 	{
 		int nextMap = -1, highMapVote = 0, curMapVotes = 0, maxMaps, highMapAge = 0, curMapAge = 0;
 
-		if (g_resetXPMapCount.integer)
-		{
-			level.mapsSinceLastXPReset++;
-		}
-
 		maxMaps = Com_Clamp(0, level.mapVoteNumMaps, g_maxMapsVotedFor.integer);
 
 		for (i = 0; i < maxMaps; i++)
@@ -2893,6 +2913,17 @@ void ExitLevel(void)
 			cl->ps.persistant[PERS_SCORE] = 0;
 		}
 	}
+
+#ifdef FEATURE_XPSAVE
+	// increment the global map counter for maps-based XP save reset
+	if (g_xpSave.integer &&
+	    g_xpSaveResetMode.integer == 1 &&
+	    g_xpSaveResetThreshold.integer > 0 &&
+	    (g_gametype.integer == GT_WOLF || g_gametype.integer == GT_WOLF_MAPVOTE))
+	{
+		trap_Cvar_Set("g_xpSaveResetValue", va("%i", g_xpSaveResetValue.integer + 1));
+	}
+#endif
 
 	// we need to do this here before changing to CON_CONNECTING
 	G_WriteSessionData(qfalse);
@@ -3026,29 +3057,6 @@ void G_LogExit(const char *string)
 		}
 	}
 #endif
-
-	if (
-		(g_xpSaver.integer & XPSF_ENABLE) && (
-			(g_gametype.integer == GT_WOLF_CAMPAIGN) ||
-			((g_gametype.integer == GT_WOLF_STOPWATCH) && !(g_xpSaver.integer & XPSF_DISABLE_STOPWATCH)) ||
-			(g_gametype.integer == GT_WOLF_MAPVOTE) ||
-			(g_gametype.integer == GT_WOLF)
-			)
-		)
-	{
-		for (i = 0; i < level.numConnectedClients; i++)
-		{
-			gentity_t *ent = &g_entities[level.sortedClients[i]];
-
-			if (!ent->inuse)
-			{
-				continue;
-			}
-
-			// record xp before intermission
-			G_XPSaver_Store(ent->client);
-		}
-	}
 
 	level.intermissionQueued = level.time;
 
@@ -3294,6 +3302,25 @@ void G_LogExit(const char *string)
 
 #ifdef FEATURE_OMNIBOT
 	Bot_Util_SendTrigger(NULL, NULL, "Round End.", "roundend");
+#endif
+
+#ifdef FEATURE_XPSAVE
+	// persist XP and medals after awards have been handed out
+	if (g_gametype.integer == GT_WOLF_CAMPAIGN ||
+	    (g_xpSave.integer && (g_gametype.integer == GT_WOLF || g_gametype.integer == GT_WOLF_MAPVOTE)))
+	{
+		for (i = 0; i < level.numConnectedClients; i++)
+		{
+			gentity_t *ent = &g_entities[level.sortedClients[i]];
+
+			if (!ent->inuse)
+			{
+				continue;
+			}
+
+			G_XPSave_Store(ent->client);
+		}
+	}
 #endif
 
 	G_BuildEndgameStats();

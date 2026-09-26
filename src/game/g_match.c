@@ -301,18 +301,16 @@ void G_addStats(gentity_t *targ, gentity_t *attacker, int damage, meansOfDeath_t
 	{
 		if (attacker && attacker->client)
 		{
-			weapon_t weap = GetMODTableData(mod)->weaponIcon;
-
 			// don't count hits/shots for hitscan weapons
-			if (!GetWeaponTableData(weap)->splashDamage)
+			// Keep flamethrower out as well: it is not flagged explosive, but it
+			// has splash-like continuous damage and should not lose a shot for
+			// every corpse it touches.
+			if (!GetMODTableData(mod)->isExplosive && mod != MOD_FLAMETHROWER)
 			{
-				int x;
-
-				x = attacker->client->sess.aWeaponStats[GetMODTableData(mod)->indexWeaponStat].atts--;
-
-				if (x < 1)
+				// Only decrement if there is a shot to take back
+				if (attacker->client->sess.aWeaponStats[GetMODTableData(mod)->indexWeaponStat].atts > 0)
 				{
-					attacker->client->sess.aWeaponStats[GetMODTableData(mod)->indexWeaponStat].atts = 1;
+					attacker->client->sess.aWeaponStats[GetMODTableData(mod)->indexWeaponStat].atts--;
 				}
 			}
 
@@ -493,9 +491,13 @@ void G_createStatsJson(gentity_t *ent, void *target)
 
 	tmp = cJSON_AddObjectToObject(target, "skills");
 	// Add skill points as necessary
-	if (((g_gametype.integer == GT_WOLF_CAMPAIGN || g_gametype.integer == GT_WOLF_STOPWATCH || g_gametype.integer == GT_WOLF_MAPVOTE || g_gametype.integer == GT_WOLF) && (g_xpSaver.integer & XPSF_ENABLE)) ||
-	    (g_gametype.integer == GT_WOLF_CAMPAIGN && (g_campaigns[level.currentCampaign].current != 0 && !level.newCampaign)) ||
-	    (g_gametype.integer == GT_WOLF_LMS && g_currentRound.integer != 0))
+	if (
+#ifdef FEATURE_XPSAVE
+		(g_gametype.integer == GT_WOLF_CAMPAIGN) ||
+		(g_xpSave.integer && (g_gametype.integer == GT_WOLF || g_gametype.integer == GT_WOLF_MAPVOTE)) ||
+#endif
+		(g_gametype.integer == GT_WOLF_CAMPAIGN && (g_campaigns[level.currentCampaign].current != 0 && !level.newCampaign)) ||
+		(g_gametype.integer == GT_WOLF_LMS && g_currentRound.integer != 0))
 	{
 		for (i = SK_BATTLE_SENSE; i < SK_NUM_SKILLS; i++)
 		{
@@ -576,9 +578,13 @@ char *G_createStats(gentity_t *ent)
 	}
 
 	// Add skillpoints as necessary
-	if (((g_gametype.integer == GT_WOLF_CAMPAIGN || g_gametype.integer == GT_WOLF_STOPWATCH) && (g_xpSaver.integer & XPSF_ENABLE)) ||
-	    (g_gametype.integer == GT_WOLF_CAMPAIGN && (g_campaigns[level.currentCampaign].current != 0 && !level.newCampaign)) ||
-	    (g_gametype.integer == GT_WOLF_LMS && g_currentRound.integer != 0))
+	if (
+#ifdef FEATURE_XPSAVE
+		(g_gametype.integer == GT_WOLF_CAMPAIGN) ||
+		(g_xpSave.integer && (g_gametype.integer == GT_WOLF || g_gametype.integer == GT_WOLF_MAPVOTE)) ||
+#endif
+		(g_gametype.integer == GT_WOLF_CAMPAIGN && (g_campaigns[level.currentCampaign].current != 0 && !level.newCampaign)) ||
+		(g_gametype.integer == GT_WOLF_LMS && g_currentRound.integer != 0))
 	{
 		for (i = SK_BATTLE_SENSE; i < SK_NUM_SKILLS; i++)
 		{

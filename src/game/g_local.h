@@ -1379,7 +1379,6 @@ typedef struct level_locals_s
 	int mapvotehistorycount;
 	char lastVotedMap[MAX_VOTE_MAPS];
 	int mapVoteNumMaps;
-	int mapsSinceLastXPReset;
 	qboolean mapVotePlayersCount;
 
 	// sv_cvars
@@ -1469,6 +1468,9 @@ void Cmd_UnIgnore_f(gentity_t *ent, unsigned int dwCommand, int value);
 void Cmd_SelectedObjective_f(gentity_t *ent, unsigned int dwCommand, int value);
 void Cmd_IntermissionPlayerKillsDeaths_f(gentity_t *ent, unsigned int dwCommand, int value);
 void Cmd_IntermissionPlayerTime_f(gentity_t *ent, unsigned int dwCommand, int value);
+#ifdef FEATURE_XPSAVE
+void Cmd_IntermissionXPSaveReset_f(gentity_t *ent, unsigned int dwCommand, int value);
+#endif
 void Cmd_IntermissionSkillRating_f(gentity_t *ent, unsigned int dwCommand, int value);
 void Cmd_IntermissionWeaponAccuracies_f(gentity_t *ent, unsigned int dwCommand, int value);
 void Cmd_IntermissionWeaponStats_f(gentity_t *ent, unsigned int dwCommand, int value);
@@ -2362,18 +2364,14 @@ float G_SkillRatingGetMapRating(char *mapname);
 void G_SkillRatingSetMapRating(char *mapname, int winner);
 #endif
 
-#define XPSF_ENABLE              1  ///< enable XP Save on disconnect
-#define XPSF_NR_MAPRESET         2  ///< no reset on map restarts
-#define XPSF_NR_EVER             4  ///< no reset ever
-#define XPSF_WIPE_DUP_GUID       8  ///< call ClientDisconnect() on clients with the same GUID
-#define XPSF_DISABLE_STOPWATCH   16 ///< do not use xp-save when playing stopwatch
-#define XPSF_CONVERT             32 ///< if enabled the server tries to import old .xp format into etl database
-
-int G_XPSaver_CheckDB(char *db_path, int db_mode);
-void G_XPSaver_Load(gclient_t *cl);
-void G_XPSaver_Store(gclient_t *cl);
-int G_XPSaver_Clear();
-void G_XPSaver_Convert();
+#ifdef FEATURE_XPSAVE
+// g_xpsave.c
+int G_XPSave_CheckDB(char *db_path, int db_mode);
+void G_XPSave_Load(gclient_t *cl);
+void G_XPSave_Store(gclient_t *cl);
+int G_XPSave_Clear();
+int G_XPSave_Reset(const unsigned char *guid);
+#endif
 
 // g_stats.c
 void G_UpgradeSkill(gentity_t *ent, skillType_t skill);

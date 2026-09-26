@@ -21,6 +21,10 @@ endif()
 if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.31")
 	cmake_policy(SET CMP0177 NEW)
 endif()
+if(POLICY CMP0218)
+	# Use CMake's unified diagnostic controls for deprecation messages.
+	cmake_policy(SET CMP0218 NEW)
+endif()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
 include(CMakeDependentOption)
@@ -97,7 +101,8 @@ option(FEATURE_LUAJIT			"Build with LuaJIT instead of PUC Lua"					OFF)
 cmake_dependent_option(FEATURE_WINDOWS_CONSOLE	"Build win32 executables with Windows console"	ON "WIN32" OFF)
 
 cmake_dependent_option(FEATURE_LUA		"Enable Lua support (mod)"						ON "BUILD_SERVER_MOD" OFF)
-cmake_dependent_option(FEATURE_LUASQL	"Enable LuaSQL sqlite3 backend (mod)"			ON "FEATURE_LUA" OFF)
+cmake_dependent_option(FEATURE_LUASQL	"Enable LuaSQL sqlite3 backend (mod)"			ON "FEATURE_LUA AND FEATURE_DBMS" OFF)
+cmake_dependent_option(FEATURE_XPSAVE	"Enable XP save support (mod)"				    ON "FEATURE_DBMS" OFF)
 cmake_dependent_option(FEATURE_RATING	"Enable skill rating support (mod)"				ON "FEATURE_DBMS" OFF)
 cmake_dependent_option(FEATURE_OMNIBOT	"Enable Omni-bot support (mod)"					ON "( NOT MINGW AND WIN32 ) OR FORCE_OMNIBOT OR CMAKE_SYSTEM_NAME MATCHES Linux OR EMSCRIPTEN" OFF)
 

@@ -1965,13 +1965,18 @@ static hudStucture_t *CG_ReadHudJsonObject(cJSON *hud, hudFileUpgrades_t *upgr, 
 		// only 3 popupmessages were available
 		for (numPopUp = 0; numPopUp < 3; ++numPopUp)
 		{
-			hudComponent_t *comp = (hudComponent_t *)((byte *)&tmpHud->popupmessages + numPopUp * sizeof(hudComponent_t));
+			hudComponent_t *comp = CG_GetPopupMessageComponent(tmpHud, numPopUp);
 			int            j;
+
+			if (!comp)
+			{
+				continue;
+			}
 
 			// don't update style if inherit from parent which already upgrade it
 			if (parentHud)
 			{
-				hudComponent_t *compParent = (hudComponent_t *)((byte *)&parentHud->popupmessages + numPopUp * sizeof(hudComponent_t));
+				hudComponent_t *compParent = CG_GetPopupMessageComponent(parentHud, numPopUp);
 
 				if (comp->style == compParent->style)
 				{
@@ -2303,6 +2308,13 @@ qboolean CG_TryReadHudFromFile(const char *filename, qboolean isEditable)
  * and server owners, as players playing across servers with different versions
  * may experience issues if hud.dat is moved from where older mod versions
  * expect it to be.
+ *
+ * @note trap_FS_GetFileList has been commented as the listing doesn't allow
+ * un-pure file, which is the case for all hud_v*.dat files.
+ * Instead, try to open each possible combination from v CURRENT_HUD_JSON_VERSION to v1
+ * and check if the file exist.
+ * @todo This is a work around. Find a better approach to ensure the listing system
+ * work even with un pure files
  */
 void CG_ReadHudsFromFile(void)
 {
@@ -2310,21 +2322,21 @@ void CG_ReadHudsFromFile(void)
 	char       profileName[MAX_OSPATH];
 	char       legacyPath[MAX_OSPATH];
 	char       hudDir[MAX_OSPATH];
-	char       fileList[HUDS_FILE_LIST_BUFFER_SIZE];
-	char       sourcePath[MAX_OSPATH];
-	char       targetPath[MAX_OSPATH];
-	char       backupPath[MAX_OSPATH];
-	char       invalidPath[MAX_OSPATH];
-	char       latestCompatibleHudPath[MAX_OSPATH];
-	char       *fileName;
-	int        fileCount;
-	int        fileIndex;
-	int        filenameVersion;
-	int        parsedVersion;
-	int        currentVersion;
-	int        latestCompatibleHudVersion;
-	qboolean   userHudsLoaded;
-	qboolean   currentHudUsable;
+	//char       fileList[HUDS_FILE_LIST_BUFFER_SIZE];
+	char sourcePath[MAX_OSPATH];
+	char targetPath[MAX_OSPATH];
+	char backupPath[MAX_OSPATH];
+	char invalidPath[MAX_OSPATH];
+	char latestCompatibleHudPath[MAX_OSPATH];
+	//char       *fileName = NULL;
+	//int        fileCount;
+	//int        fileIndex;
+	int      filenameVersion;
+	int      parsedVersion;
+	int      currentVersion;
+	int      latestCompatibleHudVersion;
+	qboolean userHudsLoaded;
+	qboolean currentHudUsable;
 
 	hudFilePath                = CG_HudFilePath();
 	userHudsLoaded             = qfalse;
@@ -2391,13 +2403,19 @@ void CG_ReadHudsFromFile(void)
 	// `hud_v7.dat`
 	{
 		CG_HudVersionedDirPath(hudDir, sizeof(hudDir));
-		fileCount = trap_FS_GetFileList(hudDir, ".dat", fileList, sizeof(fileList));
-		fileName  = fileList;
-		for (fileIndex = 0; fileIndex < fileCount; fileIndex++)
+		//fileCount = trap_FS_GetFileList(hudDir, ".dat", fileList, sizeof(fileList));
+		//fileName  = fileList;
+		//for (fileIndex = 0; fileIndex < fileCount; fileIndex++)
+		for (filenameVersion = CURRENT_HUD_JSON_VERSION; 0 < filenameVersion; --filenameVersion)
 		{
-			if (CG_ParseHudVersionFilename(fileName, &filenameVersion) && filenameVersion <= CURRENT_HUD_JSON_VERSION)
+			//if (CG_ParseHudVersionFilename(fileName, &filenameVersion) && filenameVersion <= CURRENT_HUD_JSON_VERSION)
+			//{
+			//Com_sprintf(sourcePath, sizeof(sourcePath), "%s/%s", hudDir, fileName);
+
+			Com_sprintf(sourcePath, sizeof(sourcePath), "%s/hud_v%i.dat", hudDir, filenameVersion);
+
+			if (CG_HudFileExists(sourcePath))
 			{
-				Com_sprintf(sourcePath, sizeof(sourcePath), "%s/%s", hudDir, fileName);
 				if (CG_ReadHudFileVersion(sourcePath, &parsedVersion))
 				{
 					// Once the JSON version is known, future-version HUDs are left
@@ -2435,7 +2453,7 @@ void CG_ReadHudsFromFile(void)
 					}
 				}
 			}
-			fileName += strlen(fileName) + 1;
+			//fileName += strlen(fileName) + 1;
 		}
 	}
 
@@ -2467,13 +2485,19 @@ void CG_ReadHudsFromFile(void)
 	if (!currentHudUsable)
 	{
 		latestCompatibleHudVersion = 0;
-		fileCount                  = trap_FS_GetFileList(hudDir, ".dat", fileList, sizeof(fileList));
-		fileName                   = fileList;
-		for (fileIndex = 0; fileIndex < fileCount; fileIndex++)
+		//fileCount                  = trap_FS_GetFileList(hudDir, ".dat", fileList, sizeof(fileList));
+		//fileName                   = fileList;
+		//for (fileIndex = 0; fileIndex < fileCount; fileIndex++)
+		for (filenameVersion = CURRENT_HUD_JSON_VERSION; 0 < filenameVersion; --filenameVersion)
 		{
-			if (CG_ParseHudVersionFilename(fileName, &filenameVersion) && filenameVersion <= CURRENT_HUD_JSON_VERSION)
+			//if (CG_ParseHudVersionFilename(fileName, &filenameVersion) && filenameVersion <= CURRENT_HUD_JSON_VERSION)
+			//{
+			//Com_sprintf(sourcePath, sizeof(sourcePath), "%s/%s", hudDir, fileName);
+
+			Com_sprintf(sourcePath, sizeof(sourcePath), "%s/hud_v%i.dat", hudDir, filenameVersion);
+
+			if (CG_HudFileExists(sourcePath))
 			{
-				Com_sprintf(sourcePath, sizeof(sourcePath), "%s/%s", hudDir, fileName);
 				if (CG_ReadHudFileVersion(sourcePath, &parsedVersion))
 				{
 					// The JSON version is authoritative because filenames can
@@ -2495,7 +2519,7 @@ void CG_ReadHudsFromFile(void)
 					}
 				}
 			}
-			fileName += strlen(fileName) + 1;
+			//fileName += strlen(fileName) + 1;
 		}
 
 		if (latestCompatibleHudPath[0] && CG_ReadHudJsonFile(latestCompatibleHudPath, qtrue))

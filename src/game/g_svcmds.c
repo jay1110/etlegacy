@@ -36,6 +36,8 @@
 
 #include "g_local.h"
 
+#include <time.h>
+
 #ifdef FEATURE_OMNIBOT
 #include "g_etbot_interface.h"
 #endif
@@ -876,29 +878,6 @@ void Svcmd_ResetMatch_f(qboolean fDoReset, qboolean fDoRestart)
 
 	if (fDoRestart)
 	{
-		if ((g_xpSaver.integer & XPSF_NR_MAPRESET))
-		{
-			for (i = 0; i < level.numConnectedClients; i++)
-			{
-				gentity_t *ent = &g_entities[level.sortedClients[i]];
-
-				if (!ent->inuse)
-				{
-					continue;
-				}
-
-				if (
-					(g_gametype.integer == GT_WOLF_CAMPAIGN) ||
-					((g_gametype.integer == GT_WOLF_STOPWATCH) && !(g_xpSaver.integer & XPSF_DISABLE_STOPWATCH)) ||
-					(g_gametype.integer == GT_WOLF_MAPVOTE) ||
-					g_gametype.integer == GT_WOLF
-					)
-				{
-					// record xp
-					G_XPSaver_Store(ent->client);
-				}
-			}
-		}
 		level.fResetStats = qtrue;
 		trap_SendConsoleCommand(EXEC_APPEND, "stoprecord\n");
 		trap_SendConsoleCommand(EXEC_APPEND, va("map_restart 0 %i\n", ((g_gamestate.integer != GS_PLAYING) ? GS_RESET : GS_WARMUP)));
@@ -912,6 +891,37 @@ void Svcmd_ResetMatch(void)
 {
 	Svcmd_ResetMatch_f(qtrue, qtrue);
 }
+
+#ifdef FEATURE_XPSAVE
+/**
+ * @brief Svcmd_ResetXPSave_f
+ * @details <code>reset_xpsave</code>: resets all persisted XP save data.
+ */
+void Svcmd_ResetXPSave_f(void)
+{
+	if (!g_xpSave.integer)
+	{
+		G_Printf("reset_xpsave: g_xpSave is disabled\n");
+		return;
+	}
+
+	if (g_gametype.integer != GT_WOLF && g_gametype.integer != GT_WOLF_MAPVOTE)
+	{
+		G_Printf("reset_xpsave: only available in Objective and Mapvote gametypes\n");
+		return;
+	}
+
+	if (G_XPSave_Clear() != 0)
+	{
+		G_Printf("reset_xpsave: failed to clear persisted XP\n");
+		return;
+	}
+
+	trap_Cvar_Set("g_xpSaveResetValue", "0");
+
+	G_Printf("reset_xpsave: all persisted XP has been reset\n");
+}
+#endif
 
 /**
  * @brief swaps all clients to opposite team
@@ -2577,6 +2587,9 @@ static consoleCommandTable_t consoleCommandTable[] =
 	{ "listmaxlivesip",             PrintMaxLivesGUID             },
 	{ "start_match",                Svcmd_StartMatch_f            },
 	{ "reset_match",                Svcmd_ResetMatch              },
+#ifdef FEATURE_XPSAVE
+	{ "reset_xpsave",               Svcmd_ResetXPSave_f           },
+#endif
 	{ "swap_teams",                 Svcmd_SwapTeams_f             },
 	{ "shuffle_teams",              Svcmd_ShuffleTeamsXP          },
 	{ "shuffle_teams_norestart",    Svcmd_ShuffleTeamsXPNoRestart },

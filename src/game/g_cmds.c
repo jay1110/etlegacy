@@ -364,9 +364,13 @@ qboolean G_SendScore_Add(gentity_t *ent, int i, char *buf, int bufsize)
 	{
 		int j;
 
-		if (((g_gametype.integer == GT_WOLF_CAMPAIGN || g_gametype.integer == GT_WOLF_STOPWATCH || g_gametype.integer == GT_WOLF_MAPVOTE || g_gametype.integer == GT_WOLF) && (g_xpSaver.integer & XPSF_ENABLE)) ||
-		    (g_gametype.integer == GT_WOLF_CAMPAIGN && (g_campaigns[level.currentCampaign].current != 0 && !level.newCampaign)) ||
-		    (g_gametype.integer == GT_WOLF_LMS && g_currentRound.integer != 0))
+		if (
+#ifdef FEATURE_XPSAVE
+			(g_gametype.integer == GT_WOLF_CAMPAIGN) ||
+			(g_xpSave.integer && (g_gametype.integer == GT_WOLF || g_gametype.integer == GT_WOLF_MAPVOTE)) ||
+#endif
+			(g_gametype.integer == GT_WOLF_CAMPAIGN && (g_campaigns[level.currentCampaign].current != 0 && !level.newCampaign)) ||
+			(g_gametype.integer == GT_WOLF_LMS && g_currentRound.integer != 0))
 		{
 			for (j = SK_BATTLE_SENSE; j < SK_NUM_SKILLS; j++)
 			{
@@ -2809,7 +2813,7 @@ void G_SayTo(gentity_t *ent, gentity_t *other, int mode, int color, const char *
 
 	if (mode == SAY_BUDDY)      // send only to people who have the sender on their buddy list
 	{
-		if (ent->s.clientNum != other->s.clientNum)
+		if (ent != other)
 		{
 			fireteamData_t *ft1, *ft2;
 			if (!G_IsOnFireteam(other - g_entities, &ft1))
@@ -3015,7 +3019,7 @@ void G_VoiceTo(gentity_t *ent, gentity_t *other, int mode, const char *id, qbool
 	// send only to people who have the sender on their buddy list
 	if (mode == SAY_BUDDY)
 	{
-		if (ent->s.clientNum != other->s.clientNum)
+		if (ent != other)
 		{
 			fireteamData_t *ft1, *ft2;
 
@@ -4896,6 +4900,61 @@ void Cmd_IntermissionPlayerTime_f(gentity_t *ent, unsigned int dwCommand, int va
 
 	trap_SendServerCommand(ent - g_entities, buffer);
 }
+
+#ifdef FEATURE_XPSAVE
+/**
+ * @brief Cmd_IntermissionXPSaveReset_f
+ * @param[in,out] ent
+ * @param dwCommand - unused
+ * @param value    - unused
+ */
+void Cmd_IntermissionXPSaveReset_f(gentity_t *ent, unsigned int dwCommand, int value)
+{
+	char userinfo[MAX_INFO_STRING];
+	char *guid;
+	int i;
+	gclient_t *cl;
+
+	if (!ent || !ent->client)
+	{
+		return;
+	}
+
+	if (!g_xpSave.integer)
+	{
+		return;
+	}
+
+	if (g_gametype.integer != GT_WOLF && g_gametype.integer != GT_WOLF_MAPVOTE)
+	{
+		return;
+	}
+
+	cl = ent->client;
+
+	trap_GetUserinfo(ent - g_entities, userinfo, sizeof(userinfo));
+	guid = Info_ValueForKey(userinfo, "cl_guid");
+
+	if (G_XPSave_Reset((const unsigned char *)guid) != 0)
+	{
+		return;
+	}
+
+	// reset current session xp so the debriefing display updates immediately
+	Com_Memset(cl->sess.skillpoints, 0, sizeof(cl->sess.skillpoints));
+	Com_Memset(cl->sess.startskillpoints, 0, sizeof(cl->sess.startskillpoints));
+	Com_Memset(cl->sess.medals, 0, sizeof(cl->sess.medals));
+	cl->sess.startxptotal = 0;
+	cl->sess.rank         = 0;
+
+	for (i = 0; i < SK_NUM_SKILLS; i++)
+	{
+		cl->sess.skill[i] = 0;
+	}
+
+	trap_SendServerCommand(ent - g_entities, "print \"XP save data reset.\\n\"");
+}
+#endif
 
 #ifdef FEATURE_RATING
 /**

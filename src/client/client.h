@@ -829,6 +829,8 @@ void CL_Netchan_Transmit(netchan_t *chan, msg_t *msg);   //int length, const byt
 void CL_Netchan_TransmitNextFragment(netchan_t *chan);
 qboolean CL_Netchan_Process(netchan_t *chan, msg_t *msg);
 
+void CL_InitServerInfo(serverInfo_t *server, const netadr_t *address);
+
 // cl_db.c
 #ifdef FEATURE_DBMS
 void DB_InsertFavorite(const char *profile, int source, const char *name, const char *address, const char *mod);

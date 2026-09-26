@@ -1192,7 +1192,7 @@ typedef struct
 	int physicsTime;                        ///< either cg.snap->time or cg.nextSnap->time
 
 	int timelimitWarnings;                  ///< 5 min, 1 min, overtime
-	int ownWaveTicktockLastReinfTime;      ///< last own reinforcement time seen for one-shot ticktock warning
+	int ownWaveWarningLastReinfTime;        ///< last own reinforcement time seen for one-shot reinforcement warning
 
 	qboolean mapRestart;                    ///< set on a map restart to set back the weapon
 
@@ -1870,10 +1870,7 @@ typedef struct
 	sfxHandle_t countFight;
 	sfxHandle_t countPrepare;
 	sfxHandle_t goatAxis;
-	sfxHandle_t reinforceTickSound;
-	sfxHandle_t reinforceTockSound;
-	sfxHandle_t reinforceTickLoudSound;
-	sfxHandle_t reinforceTockLoudSound;
+	sfxHandle_t reinforceWarningSound;
 
 	// hitsounds
 	sfxHandle_t headShot;
@@ -2213,6 +2210,11 @@ enum
 	POPUP_SWAP_VICTIM_KILLER = BIT(8),
 	POPUP_FORCE_COLORS       = BIT(9),
 	POPUP_SCROLL_DOWN        = BIT(10),
+	POPUP_FILTER_ANNOUNCE    = BIT(11),
+	POPUP_FILTER_ENEMY       = BIT(12),
+	POPUP_FILTER_OWN_TEAM    = BIT(13),
+	POPUP_FILTER_SELF        = BIT(14),
+	POPUP_FILTER_SUICIDE     = BIT(15),
 };
 
 // Big popup filters
@@ -2775,12 +2777,15 @@ typedef struct cgs_s
 	qboolean dbMapMultiVote;
 	int dbMapVotedFor[3];
 	sortedVotedMapByTotal_s dbSortedVotedMapsByTotal[MAX_VOTE_MAPS];
-	int mapVoteMapX;
-	int mapVoteMapY;
 
 	int fixedphysics;
 	int fixedphysicsfps;
 	int pronedelay;
+#ifdef FEATURE_XPSAVE
+	int xpSaveResetValue;
+	int xpSaveResetThreshold;
+	int xpSaveResetMode;
+#endif
 #ifdef FEATURE_RATING
 	int skillRating;
 	float mapProb;
@@ -2823,8 +2828,8 @@ enum
 // reinforcement/spawn timer flags
 enum
 {
-	REINFORCEMENT_TIMER_DOUBLE_DIGITS  = BIT(0),
-	REINFORCEMENT_TIMER_COLOR_GRADIENT = BIT(1),
+	REINFORCEMENT_TIMER_DOUBLE_DIGITS     = BIT(0),
+	REINFORCEMENT_TIMER_REINFORCE_WARNING = BIT(1),
 };
 
 // crosshairs flags
@@ -3981,6 +3986,10 @@ qboolean CG_Debriefing_ReadyButton_KeyDown(panel_button_t *button, int key);
 qboolean CG_Debriefing_QCButton_KeyDown(panel_button_t *button, int key);
 qboolean CG_Debriefing_PanelButton_KeyDown(panel_button_t *button, int key);
 qboolean CG_Debriefing_NextButton_KeyDown(panel_button_t *button, int key);
+#ifdef FEATURE_XPSAVE
+qboolean CG_Debriefing_XPSaveResetButton_KeyDown(panel_button_t *button, int key);
+void CG_Debriefing_XPSaveResetButton_Draw(panel_button_t *button);
+#endif
 
 void CG_PanelButtonsRender_Button_Ext(rectDef_t *r, const char *text);
 
@@ -4157,6 +4166,8 @@ typedef struct
  */
 #define HUD_COMPONENTS_NUM 63
 
+#define NUM_PM_STACK 4 ///< Number of popup message stacks, drives the popupmessages[] array size
+
 typedef struct hudComponent_s
 {
 	rectDef_t location; ///< This used runtime to actually draw the component
@@ -4221,10 +4232,7 @@ typedef struct hudStructure_s
 	hudComponent_t weaponicon;
 	hudComponent_t weaponammo;
 	hudComponent_t fireteam;
-	hudComponent_t popupmessages;
-	hudComponent_t popupmessages2;
-	hudComponent_t popupmessages3;
-	hudComponent_t popupmessages4;
+	hudComponent_t popupmessages[NUM_PM_STACK];
 	hudComponent_t powerups;
 	// 20
 	hudComponent_t objectives;
@@ -4324,6 +4332,9 @@ hudStucture_t *CG_ReadSingleHudJsonFile(const char *filename);
 qboolean CG_WriteHudsToFile();
 qboolean CG_TryReadHudFromFile(const char *filename, qboolean isEditable);
 void CG_ReadHudsFromFile(void);
+
+// cg_popupmessages.c
+hudComponent_t *CG_GetPopupMessageComponent(hudStucture_t *hud, int stackNum);
 
 // cg_customcrosshair.c
 void CG_DrawCustomCrosshair(qboolean withSpread);
@@ -4427,8 +4438,14 @@ extern const hudComponentMembersFields_t hudComponentMembersFields[];
  * @brief Using the stringizing operator to save typing...
  */
 #define HUDF(x) # x, offsetof(hudStucture_t, x), qfalse
-extern const hudComponentFields_t hudComponentFields[];
 
+/**
+ * @brief Using the stringizing operator to save typing
+ * with array field. The index start at 1 to use proper
+ * numbering for user but is still minus 1 for index array
+ */
+#define HUDF_ARR(x, i) #x#i, offsetof(hudStucture_t, x[i - 1]), qfalse
+extern const hudComponentFields_t hudComponentFields[];
 
 void CG_DrawCompText(hudComponent_t *comp, const char *str, vec4_t color, int fontStyle, fontHelper_t *font);
 void CG_DrawCompMultilineText(hudComponent_t *comp, const char *str, vec4_t color, int align, int fontStyle, fontHelper_t *font);
@@ -4459,4 +4476,5 @@ qhandle_t CG_GetTeamFlag(team_t team);
 char *CG_GetClientNameString(int clientNum, qboolean isFullcolor);
 
 void CG_DemoBackwardsCompatInit();
+
 #endif // #ifndef INCLUDE_CG_LOCAL_H

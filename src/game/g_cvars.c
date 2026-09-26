@@ -31,6 +31,8 @@
 
 #include "g_local.h"
 
+#include <time.h>
+
 #ifdef FEATURE_LUA
 #include "g_lua.h"
 #endif
@@ -244,7 +246,6 @@ vmCvar_t g_mapVoteFlags;
 vmCvar_t g_maxMapsVotedFor;
 vmCvar_t g_minMapAge;
 vmCvar_t g_excludedMaps;
-vmCvar_t g_resetXPMapCount;
 
 vmCvar_t g_campaignFile;
 
@@ -322,8 +323,13 @@ vmCvar_t g_multiview; // 0 - off, other - enabled
 #endif
 
 vmCvar_t g_stickyCharge;
-vmCvar_t g_xpSaver;
-vmCvar_t g_xpSaverMaxAge;
+
+#ifdef FEATURE_XPSAVE
+vmCvar_t g_xpSave;
+vmCvar_t g_xpSaveResetMode;
+vmCvar_t g_xpSaveResetThreshold;
+vmCvar_t g_xpSaveResetValue;
+#endif
 
 vmCvar_t g_debugForSingleClient;
 vmCvar_t g_debugEvents;
@@ -589,7 +595,6 @@ cvarTable_t gameCvarTable[] =
 	{ &g_maxMapsVotedFor,                 "g_maxMapsVotedFor",                 "6",                          0,                                               0, qfalse, qfalse },
 	{ &g_minMapAge,                       "g_minMapAge",                       "3",                          0,                                               0, qfalse, qfalse },
 	{ &g_excludedMaps,                    "g_excludedMaps",                    "",                           0,                                               0, qfalse, qfalse },
-	{ &g_resetXPMapCount,                 "g_resetXPMapCount",                 "0",                          0,                                               0, qfalse, qfalse },
 
 	{ &g_campaignFile,                    "g_campaignFile",                    "",                           0,                                               0, qfalse, qfalse },
 
@@ -649,8 +654,12 @@ cvarTable_t gameCvarTable[] =
 	{ &g_multiview,                       "g_multiview",                       "0",                          CVAR_LATCH | CVAR_ARCHIVE,                       0, qfalse, qfalse },
 #endif
 	{ &g_stickyCharge,                    "g_stickyCharge",                    "0",                          CVAR_ARCHIVE,                                    0, qfalse, qfalse },
-	{ &g_xpSaver,                         "g_xpSaver",                         "0",                          CVAR_ARCHIVE,                                    0, qfalse, qfalse },
-	{ &g_xpSaverMaxAge,                   "g_xpSaverMaxAge",                   "86400",                      CVAR_ARCHIVE,                                    0, qfalse, qfalse },
+#ifdef FEATURE_XPSAVE
+	{ &g_xpSave,                          "g_xpSave",                          "0",                          CVAR_ARCHIVE,                                    0, qfalse, qfalse },
+	{ &g_xpSaveResetMode,                 "g_xpSaveResetMode",                 "0",                          CVAR_ARCHIVE,                                    0, qfalse, qfalse },
+	{ &g_xpSaveResetThreshold,            "g_xpSaveResetThreshold",            "0",                          CVAR_ARCHIVE,                                    0, qfalse, qfalse },
+	{ &g_xpSaveResetValue,                "g_xpSaveResetValue",                "0",                          CVAR_ARCHIVE,                                    0, qfalse, qfalse },
+#endif
 	{ &g_suddenDeath,                     "g_suddenDeath",                     "0",                          CVAR_ARCHIVE,                                    0, qtrue,  qfalse },
 	{ &g_dropObjDelay,                    "g_dropObjDelay",                    "3000",                       CVAR_ARCHIVE,                                    0, qtrue,  qfalse },
 
@@ -736,6 +745,9 @@ void G_UpdateCvars(void)
 	qboolean    chargetimechanged  = qfalse;
 	qboolean    clsweaprestriction = qfalse;
 	qboolean    skillLevelPoints   = qfalse;
+#ifdef FEATURE_XPSAVE
+	static qboolean xpSaveResetModeInitialized = qfalse;
+#endif
 
 	for (i = 0, cv = gameCvarTable ; i < gameCvarTableSize ; i++, cv++)
 	{
@@ -899,6 +911,23 @@ void G_UpdateCvars(void)
 						G_RemoveAllShoutcasters();
 					}
 				}
+#ifdef FEATURE_XPSAVE
+				else if (cv->vmCvar == &g_xpSaveResetMode)
+				{
+					if (xpSaveResetModeInitialized)
+					{
+						if (g_xpSaveResetMode.integer == 1)
+						{
+							trap_Cvar_Set("g_xpSaveResetValue", "0");
+						}
+						else if (g_xpSaveResetMode.integer == 2)
+						{
+							trap_Cvar_Set("g_xpSaveResetValue", va("%i", (int)time(NULL)));
+						}
+					}
+					xpSaveResetModeInitialized = qtrue;
+				}
+#endif
 #ifdef FEATURE_LUA
 				else if (cv->vmCvar == &lua_modules || cv->vmCvar == &lua_allowedModules)
 				{
@@ -912,13 +941,11 @@ void G_UpdateCvars(void)
 
 					cs[0] = '\0';
 
-					// MAPVOTE
-					// FIXME: mapvote & xp
-					if (g_gametype.integer == GT_WOLF_MAPVOTE)
-					{
-						Info_SetValueForKey(cs, "X", va("%i", (level.mapsSinceLastXPReset >= g_resetXPMapCount.integer) ? 0 : level.mapsSinceLastXPReset));
-						Info_SetValueForKey(cs, "Y", (va("%i", g_resetXPMapCount.integer)));
-					}
+#ifdef FEATURE_XPSAVE
+					Info_SetValueForKey(cs, "X", va("%i", g_xpSaveResetValue.integer));
+					Info_SetValueForKey(cs, "Y", va("%i", g_xpSaveResetThreshold.integer));
+					Info_SetValueForKey(cs, "Z", va("%i", g_xpSaveResetMode.integer));
+#endif
 
 #ifdef FEATURE_RATING
 					Info_SetValueForKey(cs, "R", va("%i", g_skillRating.integer));

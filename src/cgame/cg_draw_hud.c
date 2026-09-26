@@ -42,6 +42,12 @@ hudComponent_t *showOnlyHudComponent = NULL;
 static lagometer_t lagometer;
 static int         fps;
 
+#define POPUPMESSAGE_STYLE { "No Connect", "No TeamJoin", "No Mission", \
+							 "No Pickup", "No Death", "No Echo", \
+							 "Weapon Icon", "Alt Weap Icons", \
+							 "Swap V<->K", "Force Colors", "Scroll Down", \
+							 "No Announce", "No Enemy Team", "No Own Team", \
+							 "No Self", "No Suicide" }
 /**
 * @var hudComponentFields
 * @brief for accessing hudStucture_t's fields in a loop
@@ -50,70 +56,70 @@ static int         fps;
 */
 const hudComponentFields_t hudComponentFields[] =
 {
-	{ HUDF(crosshair),          CG_DrawCrosshair,                 HUD_COMP_TYPE_SPECIFIC,  0.19f, { "Pulse",         "Pulse Alt",    "Dynamic Color",  "Dynamic Color Alt" } },         // FIXME: outside cg_draw_hud
-	{ HUDF(staminabar),         CG_DrawStaminaBar,                HUD_COMP_TYPE_BAR,       0.19f, { 0 } },
-	{ HUDF(breathbar),          CG_DrawBreathBar,                 HUD_COMP_TYPE_BAR,       0.19f, { 0 } },
-	{ HUDF(healthbar),          CG_DrawPlayerHealthBar,           HUD_COMP_TYPE_BAR,       0.19f, { "Dynamic Color" } },
-	{ HUDF(weaponchargebar),    CG_DrawWeapRecharge,              HUD_COMP_TYPE_BAR,       0.19f, { 0 } },
-	{ HUDF(clipbar),            CG_DrawClipBar,                   HUD_COMP_TYPE_BAR,       0.25f, { "Dynamic Color" } },
-	{ HUDF(healthtext),         CG_DrawPlayerHealth,              HUD_COMP_TYPE_TEXT,      0.25f, { "Dynamic Color", "Draw Suffix" } },
-	{ HUDF(xptext),             CG_DrawXP,                        HUD_COMP_TYPE_TEXT,      0.25f, { "Draw Suffix" } },
-	{ HUDF(ranktext),           CG_DrawRank,                      HUD_COMP_TYPE_TEXT,      0.20f, { 0 } },
-	{ HUDF(statsdisplay),       CG_DrawSkills,                    HUD_COMP_TYPE_SPECIFIC,  0.25f, { "Column" } },
-	{ HUDF(weaponheatbar),      CG_DrawGunHeatBar,                HUD_COMP_TYPE_BAR,       0.19f, { 0 } },
-	{ HUDF(weaponicon),         CG_DrawGunIcon,                   HUD_COMP_TYPE_SPECIFIC,  0.19f, { "Icon Flash",    "Only Ticking" } },
-	{ HUDF(weaponammo),         CG_DrawAmmoCount,                 HUD_COMP_TYPE_TEXT,      0.25f, { "Dynamic Color" } },
-	{ HUDF(fireteam),           CG_DrawFireTeamOverlay,           HUD_COMP_TYPE_SPECIFIC,  0.20f, { "Latched Class", "No Header",    "Colorless Name", "Status Color Name", "Status Color Row", "Spawn Point", "Spawn Point Location", "Minor Spawn Point", "Health Text", "Mini Health Bar"} }, // FIXME: outside cg_draw_hud
-	{ HUDF(popupmessages),      CG_DrawPM,                        HUD_COMP_TYPE_FEED,      0.22f, { "No Connect",    "No TeamJoin",  "No Mission",     "No Pickup", "No Death", "No Echo", "Weapon Icon", "Alt Weap Icons", "Swap V<->K", "Force Colors", "Scroll Down"} }, // FIXME: outside cg_draw_hud
-	{ HUDF(popupmessages2),     CG_DrawPM,                        HUD_COMP_TYPE_FEED,      0.22f, { "No Connect",    "No TeamJoin",  "No Mission",     "No Pickup", "No Death", "No Echo", "Weapon Icon", "Alt Weap Icons", "Swap V<->K", "Force Colors", "Scroll Down"} }, // FIXME: outside cg_draw_hud
-	{ HUDF(popupmessages3),     CG_DrawPM,                        HUD_COMP_TYPE_FEED,      0.22f, { "No Connect",    "No TeamJoin",  "No Mission",     "No Pickup", "No Death", "No Echo", "Weapon Icon", "Alt Weap Icons", "Swap V<->K", "Force Colors", "Scroll Down"} }, // FIXME: outside cg_draw_hud
-	{ HUDF(popupmessages4),     CG_DrawPM,                        HUD_COMP_TYPE_FEED,      0.22f, { "No Connect",    "No TeamJoin",  "No Mission",     "No Pickup", "No Death", "No Echo", "Weapon Icon", "Alt Weap Icons", "Swap V<->K", "Force Colors", "Scroll Down"} }, // FIXME: outside cg_draw_hud
-	{ HUDF(powerups),           CG_DrawPowerUps,                  HUD_COMP_TYPE_SPECIFIC,  0.19f, { 0 } },
-	{ HUDF(objectives),         CG_DrawObjectiveStatus,           HUD_COMP_TYPE_SPECIFIC,  0.19f, { 0 } },
-	{ HUDF(hudhead),            CG_DrawPlayerStatusHead,          HUD_COMP_TYPE_SPECIFIC,  0.19f, { 0 } },
-	{ HUDF(cursorhints),        CG_DrawCursorhint,                HUD_COMP_TYPE_SPECIFIC,  0.19f, { "Size Pulse",    "Strobe Pulse", "Alpha Pulse" } },// FIXME: outside cg_draw_hud
-	{ HUDF(cursorhintsbar),     CG_DrawCursorHintBar,             HUD_COMP_TYPE_BAR,       0.19f, { 0 } },           // FIXME: outside cg_draw_hud
-	{ HUDF(cursorhintstext),    CG_DrawCursorHintText,            HUD_COMP_TYPE_TEXT,      0.19f, { "Draw Suffix" } },// FIXME: outside cg_draw_hud
-	{ HUDF(weaponstability),    CG_DrawWeapStability,             HUD_COMP_TYPE_BAR,       0.19f, { "Always" } },    // FIXME: outside cg_draw_hud
-	{ HUDF(livesleft),          CG_DrawLivesLeft,                 HUD_COMP_TYPE_SPECIFIC,  0.19f, { 0 } },
-	{ HUDF(roundtimer),         CG_DrawRoundTimer,                HUD_COMP_TYPE_TEXT,      0.19f, { "Simple",        "Double Digits" } },
-	{ HUDF(reinforcement),      CG_DrawRespawnTimer,              HUD_COMP_TYPE_TEXT,      0.19f, { "Double Digits", "Color Gradient" } },
-	{ HUDF(spawntimer),         CG_DrawSpawnTimer,                HUD_COMP_TYPE_TEXT,      0.19f, { "Double Digits" } },
-	{ HUDF(localtime),          CG_DrawLocalTime,                 HUD_COMP_TYPE_TEXT,      0.19f, { "Second",        "12 Hours" } },
-	{ HUDF(votetext),           CG_DrawVote,                      HUD_COMP_TYPE_MULTITEXT, 0.22f, { "Complaint" } }, // FIXME: outside cg_draw_hud
-	{ HUDF(spectatortext),      CG_DrawSpectatorMessage,          HUD_COMP_TYPE_MULTITEXT, 0.22f, { 0 } },           // FIXME: outside cg_draw_hud
-	{ HUDF(limbotext),          CG_DrawLimboMessage,              HUD_COMP_TYPE_MULTITEXT, 0.22f, { "No Wounded Msg" } },// FIXME: outside cg_draw_hud
-	{ HUDF(followtext),         CG_DrawFollow,                    HUD_COMP_TYPE_SPECIFIC,  0.22f, { "No Countdown" } },// FIXME: outside cg_draw_hud
-	{ HUDF(demotext),           CG_DrawDemoMessage,               HUD_COMP_TYPE_TEXT,      0.22f, { "Details" } },
-	{ HUDF(missilecamera),      CG_DrawMissileCamera,             HUD_COMP_TYPE_SPECIFIC,  0.22f, { 0 } },           // FIXME: outside cg_draw_hud
-	{ HUDF(sprinttext),         CG_DrawPlayerSprint,              HUD_COMP_TYPE_TEXT,      0.25f, { "Draw Suffix" } },
-	{ HUDF(breathtext),         CG_DrawPlayerBreath,              HUD_COMP_TYPE_TEXT,      0.25f, { "Draw Suffix" } },
-	{ HUDF(weaponchargetext),   CG_DrawWeaponCharge,              HUD_COMP_TYPE_TEXT,      0.25f, { "Draw Suffix" } },
-	{ HUDF(fps),                CG_DrawFPS,                       HUD_COMP_TYPE_TEXT,      0.19f, { "Draw Suffix" } },
-	{ HUDF(snapshot),           CG_DrawSnapshot,                  HUD_COMP_TYPE_MULTITEXT, 0.19f, { 0 } },
-	{ HUDF(ping),               CG_DrawPing,                      HUD_COMP_TYPE_TEXT,      0.19f, { "Draw Prefix" } },
-	{ HUDF(speed),              CG_DrawSpeed,                     HUD_COMP_TYPE_MULTITEXT, 0.19f, { "Max Speed",     "Draw Suffix" } },
-	{ HUDF(lagometer),          CG_DrawLagometer,                 HUD_COMP_TYPE_SPECIFIC,  0.19f, { 0 } },
-	{ HUDF(disconnect),         CG_DrawDisconnect,                HUD_COMP_TYPE_SPECIFIC,  0.35f, { "No Text" } },
-	{ HUDF(chat),               CG_DrawTeamInfo,                  HUD_COMP_TYPE_FEED,      0.20f, { "No Team Flag" } },// FIXME: outside cg_draw_hud
-	{ HUDF(spectatorstatus),    CG_DrawSpectator,                 HUD_COMP_TYPE_TEXT,      0.35f, { 0 } },           // FIXME: outside cg_draw_hud
-	{ HUDF(pmitemsbig),         CG_DrawPMItemsBig,                HUD_COMP_TYPE_FEED,      0.22f, { "No Skill",      "No Rank" } },  // FIXME: outside cg_draw_hud
-	{ HUDF(warmuptitle),        CG_DrawWarmupTitle,               HUD_COMP_TYPE_TEXT,      0.35f, { 0 } },           // FIXME: outside cg_draw_hud
-	{ HUDF(warmuptext),         CG_DrawWarmupText,                HUD_COMP_TYPE_MULTITEXT, 0.22f, { 0 } },           // FIXME: outside cg_draw_hud
-	{ HUDF(objectivetext),      CG_DrawObjectiveInfo,             HUD_COMP_TYPE_MULTITEXT, 0.22f, { 0 } },           // FIXME: outside cg_draw_hud
-	{ HUDF(iconfeed),           CG_DrawIconFeed,                  HUD_COMP_TYPE_SPECIFIC,  0.22f, { 0 } },           // FIXME: outside cg_draw_hud
-	{ HUDF(centerprint),        CG_DrawCenterString,              HUD_COMP_TYPE_MULTITEXT, 0.22f, { 0 } },           // FIXME: outside cg_draw_hud
-	{ HUDF(banner),             CG_DrawBannerPrint,               HUD_COMP_TYPE_MULTITEXT, 0.23f, { 0 } },           // FIXME: outside cg_draw_hud
-	{ HUDF(crosshairtext),      CG_DrawCrosshairNames,            HUD_COMP_TYPE_TEXT,      0.25f, { "Full Color",    "Explosive Owner" } },// FIXME: outside cg_draw_hud
-	{ HUDF(crosshairbar),       CG_DrawCrosshairHealthBar,        HUD_COMP_TYPE_BAR,       0.25f, { "Class",         "Rank",         "Dynamic Color" } },// FIXME: outside cg_draw_hud
-	{ HUDF(stats),              CG_DrawShoutcastPlayerStatus,     HUD_COMP_TYPE_SPECIFIC,  0.19f, { 0 } },           // FIXME: outside cg_draw_hud
-	{ HUDF(xpgain),             CG_DrawPMItemsXPGain,             HUD_COMP_TYPE_FEED,      0.22f, { "Scroll Down",   "No Reason",    "No Stack",       "No XP Add up"      } }, // FIXME: outside cg_draw_hud
-	{ HUDF(scPlayerListAxis),   CG_DrawShoutcastPlayerListAxis,   HUD_COMP_TYPE_SPECIFIC,  0.16f, { 0 } },           // FIXME: outside cg_draw_hud
-	{ HUDF(scPlayerListAllies), CG_DrawShoutcastPlayerListAllies, HUD_COMP_TYPE_SPECIFIC,  0.16f, { 0 } },           // FIXME: outside cg_draw_hud
-	{ HUDF(scTeamNamesAxis),    CG_DrawShoutcastTeamNameAxis,     HUD_COMP_TYPE_SPECIFIC,  0.3f,  { "Show Score",    "Swap Score" } },// FIXME: outside cg_draw_hud
-	{ HUDF(scTeamNamesAllies),  CG_DrawShoutcastTeamNameAllies,   HUD_COMP_TYPE_SPECIFIC,  0.3f,  { "Show Score",    "Swap Score" } },// FIXME: outside cg_draw_hud
-	{ HUDF(compass),            CG_DrawNewCompass,                HUD_COMP_TYPE_SPECIFIC,  0.19f, { "Square",        "Draw Item",    "Draw Sec Obj",   "Draw Prim Obj", "Decor", "Direction", "Cardinal Pts", "Always Draw", "Point North", "Icons Inside", "Dynamic Ticks", "Dynamic Direction"} },
-	{ NULL,                     0,                                qfalse,                  NULL,  HUD_COMP_TYPE_MAX, 0.00f,{ 0 } },
+	{ HUDF(crosshair),          CG_DrawCrosshair,                 HUD_COMP_TYPE_SPECIFIC,  0.19f,              { "Pulse",         "Pulse Alt",     "Dynamic Color",  "Dynamic Color Alt" } }, // FIXME: outside cg_draw_hud
+	{ HUDF(staminabar),         CG_DrawStaminaBar,                HUD_COMP_TYPE_BAR,       0.19f,              { 0 } },
+	{ HUDF(breathbar),          CG_DrawBreathBar,                 HUD_COMP_TYPE_BAR,       0.19f,              { 0 } },
+	{ HUDF(healthbar),          CG_DrawPlayerHealthBar,           HUD_COMP_TYPE_BAR,       0.19f,              { "Dynamic Color" } },
+	{ HUDF(weaponchargebar),    CG_DrawWeapRecharge,              HUD_COMP_TYPE_BAR,       0.19f,              { 0 } },
+	{ HUDF(clipbar),            CG_DrawClipBar,                   HUD_COMP_TYPE_BAR,       0.25f,              { "Dynamic Color" } },
+	{ HUDF(healthtext),         CG_DrawPlayerHealth,              HUD_COMP_TYPE_TEXT,      0.25f,              { "Dynamic Color", "Draw Suffix" } },
+	{ HUDF(xptext),             CG_DrawXP,                        HUD_COMP_TYPE_TEXT,      0.25f,              { "Draw Suffix" } },
+	{ HUDF(ranktext),           CG_DrawRank,                      HUD_COMP_TYPE_TEXT,      0.20f,              { 0 } },
+	{ HUDF(statsdisplay),       CG_DrawSkills,                    HUD_COMP_TYPE_SPECIFIC,  0.25f,              { "Column" } },
+	{ HUDF(weaponheatbar),      CG_DrawGunHeatBar,                HUD_COMP_TYPE_BAR,       0.19f,              { 0 } },
+	{ HUDF(weaponicon),         CG_DrawGunIcon,                   HUD_COMP_TYPE_SPECIFIC,  0.19f,              { "Icon Flash",    "Only Ticking" } },
+	{ HUDF(weaponammo),         CG_DrawAmmoCount,                 HUD_COMP_TYPE_TEXT,      0.25f,              { "Dynamic Color" } },
+	{ HUDF(fireteam),           CG_DrawFireTeamOverlay,           HUD_COMP_TYPE_SPECIFIC,  0.20f,              { "Latched Class", "No Header",     "Colorless Name", "Status Color Name", "Status Color Row", "Spawn Point", "Spawn Point Location", "Minor Spawn Point", "Health Text", "Mini Health Bar"} }, // FIXME: outside cg_draw_hud
+	{ HUDF_ARR(popupmessages,   1),                               CG_DrawPM,               HUD_COMP_TYPE_FEED, 0.22f, POPUPMESSAGE_STYLE }, // FIXME: outside cg_draw_hud
+	{ HUDF_ARR(popupmessages,   2),                               CG_DrawPM,               HUD_COMP_TYPE_FEED, 0.22f, POPUPMESSAGE_STYLE }, // FIXME: outside cg_draw_hud
+	{ HUDF_ARR(popupmessages,   3),                               CG_DrawPM,               HUD_COMP_TYPE_FEED, 0.22f, POPUPMESSAGE_STYLE }, // FIXME: outside cg_draw_hud
+	{ HUDF_ARR(popupmessages,   4),                               CG_DrawPM,               HUD_COMP_TYPE_FEED, 0.22f, POPUPMESSAGE_STYLE }, // FIXME: outside cg_draw_hud
+	{ HUDF(powerups),           CG_DrawPowerUps,                  HUD_COMP_TYPE_SPECIFIC,  0.19f,              { 0 } },
+	{ HUDF(objectives),         CG_DrawObjectiveStatus,           HUD_COMP_TYPE_SPECIFIC,  0.19f,              { 0 } },
+	{ HUDF(hudhead),            CG_DrawPlayerStatusHead,          HUD_COMP_TYPE_SPECIFIC,  0.19f,              { 0 } },
+	{ HUDF(cursorhints),        CG_DrawCursorhint,                HUD_COMP_TYPE_SPECIFIC,  0.19f,              { "Size Pulse",    "Strobe Pulse",  "Alpha Pulse" } },// FIXME: outside cg_draw_hud
+	{ HUDF(cursorhintsbar),     CG_DrawCursorHintBar,             HUD_COMP_TYPE_BAR,       0.19f,              { 0 } },           // FIXME: outside cg_draw_hud
+	{ HUDF(cursorhintstext),    CG_DrawCursorHintText,            HUD_COMP_TYPE_TEXT,      0.19f,              { "Draw Suffix" } },// FIXME: outside cg_draw_hud
+	{ HUDF(weaponstability),    CG_DrawWeapStability,             HUD_COMP_TYPE_BAR,       0.19f,              { "Always" } },    // FIXME: outside cg_draw_hud
+	{ HUDF(livesleft),          CG_DrawLivesLeft,                 HUD_COMP_TYPE_SPECIFIC,  0.19f,              { 0 } },
+	{ HUDF(roundtimer),         CG_DrawRoundTimer,                HUD_COMP_TYPE_TEXT,      0.19f,              { "Simple",        "Double Digits", "Reinforce Warning" } },
+	{ HUDF(reinforcement),      CG_DrawRespawnTimer,              HUD_COMP_TYPE_TEXT,      0.19f,              { "Double Digits", "Reinforce Warning" } },
+	{ HUDF(spawntimer),         CG_DrawSpawnTimer,                HUD_COMP_TYPE_TEXT,      0.19f,              { "Double Digits" } },
+	{ HUDF(localtime),          CG_DrawLocalTime,                 HUD_COMP_TYPE_TEXT,      0.19f,              { "Second",        "12 Hours" } },
+	{ HUDF(votetext),           CG_DrawVote,                      HUD_COMP_TYPE_MULTITEXT, 0.22f,              { "Complaint" } }, // FIXME: outside cg_draw_hud
+	{ HUDF(spectatortext),      CG_DrawSpectatorMessage,          HUD_COMP_TYPE_MULTITEXT, 0.22f,              { 0 } },           // FIXME: outside cg_draw_hud
+	{ HUDF(limbotext),          CG_DrawLimboMessage,              HUD_COMP_TYPE_MULTITEXT, 0.22f,              { "No Wounded Msg" } },// FIXME: outside cg_draw_hud
+	{ HUDF(followtext),         CG_DrawFollow,                    HUD_COMP_TYPE_SPECIFIC,  0.22f,              { "No Countdown" } },// FIXME: outside cg_draw_hud
+	{ HUDF(demotext),           CG_DrawDemoMessage,               HUD_COMP_TYPE_TEXT,      0.22f,              { "Details" } },
+	{ HUDF(missilecamera),      CG_DrawMissileCamera,             HUD_COMP_TYPE_SPECIFIC,  0.22f,              { 0 } },           // FIXME: outside cg_draw_hud
+	{ HUDF(sprinttext),         CG_DrawPlayerSprint,              HUD_COMP_TYPE_TEXT,      0.25f,              { "Draw Suffix" } },
+	{ HUDF(breathtext),         CG_DrawPlayerBreath,              HUD_COMP_TYPE_TEXT,      0.25f,              { "Draw Suffix" } },
+	{ HUDF(weaponchargetext),   CG_DrawWeaponCharge,              HUD_COMP_TYPE_TEXT,      0.25f,              { "Draw Suffix" } },
+	{ HUDF(fps),                CG_DrawFPS,                       HUD_COMP_TYPE_TEXT,      0.19f,              { "Draw Suffix" } },
+	{ HUDF(snapshot),           CG_DrawSnapshot,                  HUD_COMP_TYPE_MULTITEXT, 0.19f,              { 0 } },
+	{ HUDF(ping),               CG_DrawPing,                      HUD_COMP_TYPE_TEXT,      0.19f,              { "Draw Prefix" } },
+	{ HUDF(speed),              CG_DrawSpeed,                     HUD_COMP_TYPE_MULTITEXT, 0.19f,              { "Max Speed",     "Draw Suffix" } },
+	{ HUDF(lagometer),          CG_DrawLagometer,                 HUD_COMP_TYPE_SPECIFIC,  0.19f,              { 0 } },
+	{ HUDF(disconnect),         CG_DrawDisconnect,                HUD_COMP_TYPE_SPECIFIC,  0.35f,              { "No Text" } },
+	{ HUDF(chat),               CG_DrawTeamInfo,                  HUD_COMP_TYPE_FEED,      0.20f,              { "No Team Flag" } },// FIXME: outside cg_draw_hud
+	{ HUDF(spectatorstatus),    CG_DrawSpectator,                 HUD_COMP_TYPE_TEXT,      0.35f,              { 0 } },           // FIXME: outside cg_draw_hud
+	{ HUDF(pmitemsbig),         CG_DrawPMItemsBig,                HUD_COMP_TYPE_FEED,      0.22f,              { "No Skill",      "No Rank" } },   // FIXME: outside cg_draw_hud
+	{ HUDF(warmuptitle),        CG_DrawWarmupTitle,               HUD_COMP_TYPE_TEXT,      0.35f,              { 0 } },           // FIXME: outside cg_draw_hud
+	{ HUDF(warmuptext),         CG_DrawWarmupText,                HUD_COMP_TYPE_MULTITEXT, 0.22f,              { 0 } },           // FIXME: outside cg_draw_hud
+	{ HUDF(objectivetext),      CG_DrawObjectiveInfo,             HUD_COMP_TYPE_MULTITEXT, 0.22f,              { 0 } },           // FIXME: outside cg_draw_hud
+	{ HUDF(iconfeed),           CG_DrawIconFeed,                  HUD_COMP_TYPE_SPECIFIC,  0.22f,              { 0 } },           // FIXME: outside cg_draw_hud
+	{ HUDF(centerprint),        CG_DrawCenterString,              HUD_COMP_TYPE_MULTITEXT, 0.22f,              { 0 } },           // FIXME: outside cg_draw_hud
+	{ HUDF(banner),             CG_DrawBannerPrint,               HUD_COMP_TYPE_MULTITEXT, 0.23f,              { 0 } },           // FIXME: outside cg_draw_hud
+	{ HUDF(crosshairtext),      CG_DrawCrosshairNames,            HUD_COMP_TYPE_TEXT,      0.25f,              { "Full Color",    "Explosive Owner" } },// FIXME: outside cg_draw_hud
+	{ HUDF(crosshairbar),       CG_DrawCrosshairHealthBar,        HUD_COMP_TYPE_BAR,       0.25f,              { "Class",         "Rank",          "Dynamic Color" } },// FIXME: outside cg_draw_hud
+	{ HUDF(stats),              CG_DrawShoutcastPlayerStatus,     HUD_COMP_TYPE_SPECIFIC,  0.19f,              { 0 } },           // FIXME: outside cg_draw_hud
+	{ HUDF(xpgain),             CG_DrawPMItemsXPGain,             HUD_COMP_TYPE_FEED,      0.22f,              { "Scroll Down",   "No Reason",     "No Stack",       "No XP Add up"      } }, // FIXME: outside cg_draw_hud
+	{ HUDF(scPlayerListAxis),   CG_DrawShoutcastPlayerListAxis,   HUD_COMP_TYPE_SPECIFIC,  0.16f,              { 0 } },           // FIXME: outside cg_draw_hud
+	{ HUDF(scPlayerListAllies), CG_DrawShoutcastPlayerListAllies, HUD_COMP_TYPE_SPECIFIC,  0.16f,              { 0 } },           // FIXME: outside cg_draw_hud
+	{ HUDF(scTeamNamesAxis),    CG_DrawShoutcastTeamNameAxis,     HUD_COMP_TYPE_SPECIFIC,  0.3f,               { "Show Score",    "Swap Score" } },// FIXME: outside cg_draw_hud
+	{ HUDF(scTeamNamesAllies),  CG_DrawShoutcastTeamNameAllies,   HUD_COMP_TYPE_SPECIFIC,  0.3f,               { "Show Score",    "Swap Score" } },// FIXME: outside cg_draw_hud
+	{ HUDF(compass),            CG_DrawNewCompass,                HUD_COMP_TYPE_SPECIFIC,  0.19f,              { "Square",        "Draw Item",     "Draw Sec Obj",   "Draw Prim Obj", "Decor", "Direction", "Cardinal Pts", "Always Draw", "Point North", "Icons Inside", "Dynamic Ticks", "Dynamic Direction"} },
+	{ NULL,                     0,                                qfalse,                  NULL,               HUD_COMP_TYPE_MAX, 0.00f,{ 0 } },
 };
 
 /**
@@ -213,10 +219,10 @@ void CG_setDefaultHudValues(hudStucture_t *hud)
 	hud->weaponammo         = CG_getComponent(SCREEN_WIDTH - 82, 458, 57, 14, qtrue, 0, 0, 100.f, colorWhite, colorWhite, qfalse, HUD_Background, qfalse, HUD_Border, ITEM_TEXTSTYLE_SHADOWED, ITEM_ALIGN_RIGHT, qfalse, 0.25f, 0, 0, 0, CG_DrawAmmoCount);
 	hud->clipbar            = CG_getComponent(SCREEN_WIDTH - 30, SCREEN_HEIGHT - 92, 12, 72, qfalse, 0, BAR_LEFT | BAR_VERT | BAR_BG | BAR_BGSPACING_X0Y0 | BAR_LERP_COLOR | BAR_DECOR | BAR_ICON, 100.f, (vec4_t) { 1.0f, 1.0f, 1.0f, 0.75f }, (vec4_t) { 1.0f, 0.0f, 0.0f, 0.25f }, qfalse, HUD_Background, qfalse, HUD_Border, ITEM_TEXTSTYLE_SHADOWED, ITEM_ALIGN_CENTER, qfalse, 0.19f, 0, 0, 0, CG_DrawClipBar);
 	hud->fireteam           = CG_getComponent(10, 10, 350, 100, qtrue, FT_LATCHED_CLASS | FT_HEALTH_TEXT, 0, 100.f, colorWhite, HUD_Background, qtrue, HUD_BackgroundAlt, qtrue, HUD_Border, ITEM_TEXTSTYLE_SHADOWED, ITEM_ALIGN_CENTER, qfalse, 0.20f, 0, 0, 0, CG_DrawFireTeamOverlay);
-	hud->popupmessages      = CG_getComponent(4, 245, 422, 96, qtrue, 128, 0, 89.7f, colorWhite, colorWhite, qfalse, HUD_Background, qfalse, HUD_Border, ITEM_TEXTSTYLE_SHADOWED, ITEM_ALIGN_LEFT, qfalse, 0.22f, 0, 2000, 2500, CG_DrawPM);
-	hud->popupmessages2     = CG_getComponent(4, 245, 422, 96, qfalse, 128, 0, 89.7f, colorWhite, colorWhite, qfalse, HUD_Background, qfalse, HUD_Border, ITEM_TEXTSTYLE_SHADOWED, ITEM_ALIGN_LEFT, qfalse, 0.22f, 0, 2000, 2500, CG_DrawPM);
-	hud->popupmessages3     = CG_getComponent(4, 245, 422, 96, qfalse, 128, 0, 89.7f, colorWhite, colorWhite, qfalse, HUD_Background, qfalse, HUD_Border, ITEM_TEXTSTYLE_SHADOWED, ITEM_ALIGN_LEFT, qfalse, 0.22f, 0, 2000, 2500, CG_DrawPM);
-	hud->popupmessages4     = CG_getComponent(4, 245, 422, 96, qfalse, 128, 0, 89.7f, colorWhite, colorWhite, qfalse, HUD_Background, qfalse, HUD_Border, ITEM_TEXTSTYLE_SHADOWED, ITEM_ALIGN_LEFT, qfalse, 0.22f, 0, 2000, 2500, CG_DrawPM);
+	hud->popupmessages[0]   = CG_getComponent(4, 245, 422, 96, qtrue, 128, 0, 89.7f, colorWhite, colorWhite, qfalse, HUD_Background, qfalse, HUD_Border, ITEM_TEXTSTYLE_SHADOWED, ITEM_ALIGN_LEFT, qfalse, 0.22f, 0, 2000, 2500, CG_DrawPM);
+	hud->popupmessages[1]   = CG_getComponent(4, 245, 422, 96, qfalse, 128, 0, 89.7f, colorWhite, colorWhite, qfalse, HUD_Background, qfalse, HUD_Border, ITEM_TEXTSTYLE_SHADOWED, ITEM_ALIGN_LEFT, qfalse, 0.22f, 0, 2000, 2500, CG_DrawPM);
+	hud->popupmessages[2]   = CG_getComponent(4, 245, 422, 96, qfalse, 128, 0, 89.7f, colorWhite, colorWhite, qfalse, HUD_Background, qfalse, HUD_Border, ITEM_TEXTSTYLE_SHADOWED, ITEM_ALIGN_LEFT, qfalse, 0.22f, 0, 2000, 2500, CG_DrawPM);
+	hud->popupmessages[3]   = CG_getComponent(4, 245, 422, 96, qfalse, 128, 0, 89.7f, colorWhite, colorWhite, qfalse, HUD_Background, qfalse, HUD_Border, ITEM_TEXTSTYLE_SHADOWED, ITEM_ALIGN_LEFT, qfalse, 0.22f, 0, 2000, 2500, CG_DrawPM);
 	hud->powerups           = CG_getComponent(SCREEN_WIDTH  - 40, SCREEN_HEIGHT - 136, 36, 36, qtrue, 0, 0, 100.f, colorWhite, colorWhite, qfalse, HUD_Background, qfalse, HUD_Border, ITEM_TEXTSTYLE_SHADOWED, ITEM_ALIGN_CENTER, qfalse, 0.19f, 0, 0, 0, CG_DrawPowerUps);
 	hud->objectives         = CG_getComponent(4, SCREEN_HEIGHT - 136, 36, 36, qtrue, 0, 0, 100.f, colorWhite, colorWhite, qfalse, HUD_Background, qfalse, HUD_Border, ITEM_TEXTSTYLE_SHADOWED, ITEM_ALIGN_CENTER, qfalse, 0.19f, 0, 0, 0, CG_DrawObjectiveStatus);
 	hud->hudhead            = CG_getComponent(44, SCREEN_HEIGHT - 96, 62, 80, qtrue, 0, 0, 100.f, colorWhite, colorWhite, qfalse, HUD_Background, qfalse, HUD_Border, ITEM_TEXTSTYLE_SHADOWED, ITEM_ALIGN_CENTER, qfalse, 0.19f, 0, 0, 0, CG_DrawPlayerStatusHead);
@@ -243,7 +249,7 @@ void CG_setDefaultHudValues(hudStucture_t *hud)
 	hud->ping               = CG_getComponent(SCREEN_WIDTH - 60, 200, 57, 14, qfalse, 1, 0, 100.f, HUD_Text, HUD_Text, qtrue, HUD_Background, qtrue, HUD_Border, ITEM_TEXTSTYLE_NORMAL, ITEM_ALIGN_CENTER, qfalse, 0.19f, 0, 0, 0, CG_DrawPing);
 	hud->speed              = CG_getComponent(SCREEN_WIDTH - 60, 275, 57, 14, qfalse, 2, 0, 100.f, HUD_Text, HUD_Text, qtrue, HUD_Background, qtrue, HUD_Border, ITEM_TEXTSTYLE_NORMAL, ITEM_ALIGN_CENTER, qfalse, 0.19f, 0, 0, 0, CG_DrawSpeed);
 	hud->lagometer          = CG_getComponent(SCREEN_WIDTH - 60, 216, 57, 57, qfalse, 0, 0, 100.f, HUD_Text, HUD_Text, qtrue, HUD_Background, qtrue, HUD_Border, ITEM_TEXTSTYLE_NORMAL, ITEM_ALIGN_CENTER, qfalse, 0.19f, 0, 0, 0, CG_DrawLagometer);
-	hud->disconnect         = CG_getComponent(SCREEN_WIDTH - 60, 216, 57, 57, qtrue, 0, 0, 100.f, colorWhite, colorWhite, qtrue, HUD_Background, qtrue, HUD_Border, ITEM_TEXTSTYLE_NORMAL, ITEM_ALIGN_CENTER, qfalse, 0.35f, 0, 0, 0, CG_DrawDisconnect);
+	hud->disconnect         = CG_getComponent(SCREEN_WIDTH - 60, 216, 57, 57, qtrue, 0, 0, 100.f, colorWhite, colorWhite, qfalse, HUD_Background, qfalse, HUD_Border, ITEM_TEXTSTYLE_NORMAL, ITEM_ALIGN_CENTER, qfalse, 0.35f, 0, 0, 0, CG_DrawDisconnect);
 	hud->chat               = CG_getComponent(165, 406, 364, 72, qtrue, 0, 0, 100.f, colorWhite, colorWhite, qfalse, HUD_Background, qfalse, HUD_Border, ITEM_TEXTSTYLE_SHADOWED, ITEM_ALIGN_LEFT, qfalse, 0.20f, 0, 0, 0, CG_DrawTeamInfo);
 	hud->spectatorstatus    = CG_getComponent(SCREEN_WIDTH * .5f - 70, 421, 140, 24, qtrue, 0, 0, 100.f, colorWhite, colorWhite, qfalse, HUD_Background, qfalse, HUD_Border, ITEM_TEXTSTYLE_SHADOWED, ITEM_ALIGN_CENTER, qfalse, 0.35f, 0, 0, 0, CG_DrawSpectator);
 	hud->pmitemsbig         = CG_getComponent(347, 292, 290, 57, qtrue, 0, 0, 100.f, colorWhite, colorWhite, qfalse, HUD_Background, qfalse, HUD_Border, ITEM_TEXTSTYLE_SHADOWED, ITEM_ALIGN_LEFT, qfalse, 0.22f, 2500, 2000, 2500, CG_DrawPMItemsBig);
@@ -3155,6 +3161,17 @@ char *CG_SpawnTimerText(qboolean isDoubleDigits)
 }
 
 /**
+ * @brief Whether we are in the "WARMUP" half of the warmup blink cycle
+ * @return qtrue for "WARMUP", qfalse for the limbo times
+ *
+ * @note Swaps in sync with the ITEM_TEXTSTYLE_BLINK fade.
+ */
+static qboolean CG_IsWarmupBlinkPhase(void)
+{
+	return sinf(cg.time / (float)BLINK_DIVISOR) >= 0.f;
+}
+
+/**
  * @brief CG_SpawnTimersText
  * @param[out] respawn
  * @param[out] spawntimer
@@ -3179,8 +3196,18 @@ static qboolean CG_SpawnTimersText(char **s, char **rt, qboolean isDoubleDigits)
 			limbotimeEnemy = cg_redlimbotime.integer;
 		}
 
-		*rt = va(isDoubleDigits ? "%02i" : "%0i", limbotimeEnemy / 1000);
-		*s  = (cgs.gametype == GT_WOLF_LMS && !cgs.clientinfo[cg.clientNum].shoutcaster) ? va("%s", CG_TranslateString("WARMUP")) : va(isDoubleDigits ? "%02i" : "%0i", limbotimeOwn / 1000);
+		// alternate the limbo times with the round timer "WARMUP" display, in sync
+		// with the blink fade; the standalone timers stay blank while "WARMUP" shows
+		if (CG_IsWarmupBlinkPhase())
+		{
+			*rt = NULL;
+			*s  = NULL;
+		}
+		else
+		{
+			*rt = va(isDoubleDigits ? "%02i" : "%0i", limbotimeEnemy / 1000);
+			*s  = (cgs.gametype == GT_WOLF_LMS && !cgs.clientinfo[cg.clientNum].shoutcaster) ? NULL : va(isDoubleDigits ? "%02i" : "%0i", limbotimeOwn / 1000);
+		}
 
 		// We are not playing and the timer is set so reset/disable it
 		// this happens for example when map is restarted or changed
@@ -3210,82 +3237,6 @@ static qboolean CG_SpawnTimersText(char **s, char **rt, qboolean isDoubleDigits)
 }
 
 /**
- * @brief CG_GetReinforcementMaxValue
- * @details Returns the maximum reinforcement countdown value for the timer currently shown in the reinforcement HUD element.
- */
-static int CG_GetReinforcementMaxValue(void)
-{
-	team_t team;
-	int    deployMs;
-
-	if (cgs.gamestate != GS_PLAYING)
-	{
-		team = (cgs.clientinfo[cg.snap->ps.clientNum].team == TEAM_AXIS) ? TEAM_AXIS : TEAM_ALLIES;
-	}
-	else if (cgs.gametype != GT_WOLF_LMS)
-	{
-		if (cgs.clientinfo[cg.clientNum].shoutcaster)
-		{
-			// Reinforcement HUD shows allies time while shoutcasting.
-			team = TEAM_ALLIES;
-		}
-		else if (cgs.clientinfo[cg.clientNum].team != TEAM_SPECTATOR || (cg.snap->ps.pm_flags & PMF_FOLLOW))
-		{
-			team = cgs.clientinfo[cg.snap->ps.clientNum].team;
-		}
-		else
-		{
-			return 0;
-		}
-	}
-	else
-	{
-		return 0;
-	}
-
-	deployMs = (team == TEAM_AXIS) ? cg_redlimbotime.integer : cg_bluelimbotime.integer;
-	if (deployMs <= 0)
-	{
-		return 0;
-	}
-
-	// CG_CalculateReinfTime includes a +1 second offset while playing.
-	return (cgs.gamestate == GS_PLAYING) ? (deployMs / 1000) + 1 : (deployMs / 1000);
-}
-
-/**
- * @brief CG_ApplyReinforcementGradientColor
- * @details Applies a two-segment linear gradient: red (0) -> yellow (middle) -> green (highest).
- */
-static void CG_ApplyReinforcementGradientColor(vec4_t color, int countdownValue, int maxValue)
-{
-	float timeFactor;
-
-	if (maxValue <= 0)
-	{
-		return;
-	}
-
-	countdownValue = Com_Clamp(0, maxValue, countdownValue);
-	timeFactor     = (float)countdownValue / (float)maxValue;
-
-	if (timeFactor <= 0.5f)
-	{
-		// Red to yellow.
-		color[0] = 1.f;
-		color[1] = timeFactor * 2.f;
-		color[2] = 0.f;
-	}
-	else
-	{
-		// Yellow to green.
-		color[0] = 1.f - ((timeFactor - 0.5f) * 2.f);
-		color[1] = 1.f;
-		color[2] = 0.f;
-	}
-}
-
-/**
  * @brief CG_RoundTimerText
  * @return
  */
@@ -3293,9 +3244,9 @@ static char *CG_RoundTimerText()
 {
 	qtime_t qt;
 
-	if (cgs.gamestate != GS_PLAYING)
+	if (cgs.gamestate != GS_PLAYING && CG_IsWarmupBlinkPhase())
 	{
-		return "WARMUP";
+		return va("%s", CG_TranslateString("WARMUP"));
 	}
 
 	if (cgs.timelimit <= 0.0f)
@@ -3366,24 +3317,32 @@ void CG_DrawRespawnTimer(hudComponent_t *comp)
 {
 	char     *s = NULL, *rt = NULL;
 	qboolean blink;
-	qboolean colorCountdown;
+	qboolean reinforceWarning;
 	vec4_t   drawColor;
+	int      reinfTime;
 
 	if (cg_paused.integer)
 	{
 		return;
 	}
 
-	blink          = CG_SpawnTimersText(&s, &rt, comp->style & REINFORCEMENT_TIMER_DOUBLE_DIGITS);
-	colorCountdown = (comp->style & REINFORCEMENT_TIMER_COLOR_GRADIENT) != 0;
+	blink            = CG_SpawnTimersText(&s, &rt, comp->style & REINFORCEMENT_TIMER_DOUBLE_DIGITS);
+	reinforceWarning = (comp->style & REINFORCEMENT_TIMER_REINFORCE_WARNING) != 0;
 
 	if (s)
 	{
 		Vector4Copy(comp->colorMain, drawColor);
 
-		if (colorCountdown && Q_isanumber(s))
+		if (reinforceWarning && cg_reinforceWarningTime.integer > 0 && Q_isanumber(s)
+		    && cgs.gamestate == GS_PLAYING
+		    && !(cg.snap->ps.pm_flags & PMF_FOLLOW)
+		    && cgs.clientinfo[cg.clientNum].team != TEAM_SPECTATOR)
 		{
-			CG_ApplyReinforcementGradientColor(drawColor, atoi(s), CG_GetReinforcementMaxValue());
+			reinfTime = atoi(s);
+			if (reinfTime > 0 && reinfTime <= cg_reinforceWarningTime.integer)
+			{
+				Vector4Copy(colorYellow, drawColor);
+			}
 		}
 
 		CG_DrawCompText(comp, s, drawColor, blink ? ITEM_TEXTSTYLE_BLINK : comp->styleText, &cgs.media.limboFont1);
@@ -3409,7 +3368,7 @@ void CG_DrawSpawnTimer(hudComponent_t *comp)
 	//  spawntimer/reinforcement timer? but the function doesn't treat them as such...
 	blink = CG_SpawnTimersText(&s, &rt, comp->style & REINFORCEMENT_TIMER_DOUBLE_DIGITS);
 
-	if (s)
+	if (rt)
 	{
 		CG_DrawCompText(comp, rt, comp->colorMain, blink ? ITEM_TEXTSTYLE_BLINK : comp->styleText, &cgs.media.limboFont1);
 	}
@@ -3423,25 +3382,40 @@ void CG_DrawRoundTimer(hudComponent_t *comp)
 {
 	char     *s = NULL, *rt = NULL, *mt;
 	qboolean blink;
+	qboolean reinforceWarning;
+	qboolean sWarn = qfalse;
+	int      value;
 
 	if (cg_paused.integer)
 	{
 		return;
 	}
 
-	blink = CG_SpawnTimersText(&s, &rt, comp->style & 2);
+	blink            = CG_SpawnTimersText(&s, &rt, comp->style & 2);
+	reinforceWarning = (comp->style & BIT(2)) != 0;
+
+	if (reinforceWarning && cg_reinforceWarningTime.integer > 0 && s && Q_isanumber(s)
+	    && cgs.gamestate == GS_PLAYING
+	    && !(cg.snap->ps.pm_flags & PMF_FOLLOW)
+	    && cgs.clientinfo[cg.clientNum].team != TEAM_SPECTATOR)
+	{
+		value = atoi(s);
+		sWarn = (value > 0 && value <= cg_reinforceWarningTime.integer);
+	}
 
 	mt = va("%s%s", "^*", CG_RoundTimerText());
 
-	if (comp->style & 1)
+	// single value style, or the "WARMUP" half of the warmup blink cycle
+	if ((comp->style & 1) || (cgs.gamestate != GS_PLAYING && CG_IsWarmupBlinkPhase()))
 	{
 		s = mt;
 	}
 	else
 	{
+		// display order: "enemy own roundtime"
 		if (s)
 		{
-			s = va("^$%s%s%s", s, " ", mt);
+			s = va("%s%s %s", sWarn ? "^3" : "^$", s, mt);
 		}
 		else
 		{
@@ -3450,7 +3424,7 @@ void CG_DrawRoundTimer(hudComponent_t *comp)
 
 		if (rt)
 		{
-			s = va("^1%s%s%s", rt, " ", s);
+			s = va("^1%s %s", rt, s);
 		}
 	}
 
@@ -3817,12 +3791,6 @@ void CG_DrawLagometer(hudComponent_t *comp)
 	    )
 	{
 		CG_Text_Paint_Ext(ax, ay, scale * 1.75, scale * 1.75, colorWhite, "snc", 0, 0, comp->styleText, &cgs.media.limboFont2);
-	}
-
-	// don't draw if a demo and we're running at a different timescale
-	if (!cg.demoPlayback)
-	{
-		CG_DrawDisconnect(&hudData.active->disconnect);
 	}
 
 	// add snapshots/s in top-right corner of meter

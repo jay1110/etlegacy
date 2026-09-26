@@ -34,7 +34,6 @@
 
 #include "cg_local.h"
 
-#define NUM_PM_STACK           4
 #define NUM_PM_STACK_ITEMS     32
 #define NUM_PM_STACK_ITEMS_BIG 3 // we shouldn't need many of these
 #define NUM_PM_STACK_ITEMS_XP  32
@@ -79,6 +78,45 @@ const char *cg_skillRewards[SK_NUM_SKILLS][NUM_SKILL_LEVELS - 1] =
 	{ "Improved use of Light Weapon Ammunition",  "Faster Reload",                             "Improved Light Weapon Handling",        "Dual-Wield Pistols"       }, // light weapons
 	{ "Improved Projectile Resources",            "Heavy Weapon Proficiency",                  "Improved Dexterity",                    "Improved Weapon Handling" }, // heavy weapons
 	{ "Improved use of Scoped Weapon Ammunition", "Improved use of Sabotage and Misdirection", "Breath Control",                        "Assassin"                 } // scoped weapons & military intelligence
+};
+
+const char *cg_skillRewardsDetails[SK_NUM_SKILLS][NUM_SKILL_LEVELS - 1] =
+{
+	{ "Gives you a pair of Binoculars for all class Only Covert Ops can use Binoculars to spot Land Mines",
+	  "Stamina bar to recharge at 160% of the normal rate",
+	  "Increases the maximum Health by 15 points",
+	  "Sense enemy Land Mines without the aid of Binoculars Any mines within a certain range will appear as translucent outlines"
+	}, // battle sense
+	{ "+4 extra Rifle Grenade rounds and +4 extra Hand Grenades",
+	  "Arm and defuse Land Mines and Dynamite 50% faster",
+	  "Constructing, repairing, Arming and Defusing with Pliers uses 33% less Stamina",
+	  "Give a Flak Jackets which provides 50% damage deflection from explosive weapons"
+	}, // explosives & construction
+	{ "Extra ammunition clip and grenade as Medic",
+	  "+2 syringes and +2 extra max ammo plus Medic pack only takes 15% Stamina instead of 25%",
+	  "Syringes now return fallen team-mates to full health",
+	  "Give Adrenaline which decrease damage by 50% and prevent sprint bar to drain while spriting for 10 seconds"
+	}, // first aid
+	{ "Ammo Pack contain +1 extra magazine clip Issuing the Ammo Pack deplete stamina by 15% instead of 25%",
+	  "Artillery or Air Strike takes 66% Stamina instead of 100%",
+	  "Air Strike now has two aircraft incoming and each Artillery Strike lasts twice as long",
+	  "Aiming over an enemy disguised will result in a Disguised Enemy prompt and their location will be highlighted on team’s Command Map"
+	},                // signals
+	{ "+1 extra clip of ammunition for all light weapons",
+	  "Reload light weapons 35% faster",
+	  "SMG spread is reduced by 35% while Pistol recoil is halved",
+	  "Single-handed weapon slot now has the option of dual-wield akimbo pistols"
+	}, // light weapons
+	{ "Firing a Panzerfaust or Mortar will now take 33% less Stamina",
+	  "Emplaced, Nested, Tank or Mobile MG will cool 50% faster",
+	  "Decreased speed penalty while holding heavy weapon When firing the Flamethrower the penality still apply",
+	  "Handle a SMG in one handed slot"
+	}, // heavy weapons
+	{ "Ammo Pack get includes +1 extra clip of ammunition for Scoped Weapon",
+	  "Satchel Charges and Smoke Grenades stamina usage is reduced by 33%",
+	  "50% reduction in both recoil jump and weapon sway with Scoped Weapons",
+	  "Instant kill with any backstab with knife"
+	} // scoped weapons & military intelligence
 };
 
 void CG_PMItemBigSound(pmListItem_t *item);
@@ -140,6 +178,22 @@ void CG_InitPM(void)
 	Com_Memset(&cg_pmStackXP, 0, sizeof(cg_pmStackXP));
 	cg_pmOldListXP     = NULL;
 	cg_pmWaitingListXP = NULL;
+}
+
+/**
+ * @brief CG_GetPopupMessageComponent
+ * @param[in] hud
+ * @param[in] stackNum
+ * @return
+ */
+hudComponent_t *CG_GetPopupMessageComponent(hudStucture_t *hud, int stackNum)
+{
+	if (!hud || stackNum < 0 || stackNum >= NUM_PM_STACK)
+	{
+		return NULL;
+	}
+
+	return &hud->popupmessages[stackNum];
 }
 
 /**
@@ -267,7 +321,7 @@ void CG_UpdatePMLists(void)
 
 	for (i = 0; i < NUM_PM_STACK; ++i)
 	{
-		hudComponent_t *pmComp = (hudComponent_t *)((byte *)&hud->popupmessages + i * sizeof(hudComponent_t));
+		hudComponent_t *pmComp = CG_GetPopupMessageComponent(hud, i);
 
 		CG_UpdatePMList(&cg_pmWaitingList[i], &cg_pmOldList[i], pmComp->feedTime, pmComp->feedStayTime, pmComp->feedFadeTime);
 	}
@@ -346,8 +400,9 @@ qboolean CG_CheckPMItemFilter(popupMessageType_t type, int filter)
 	case PM_MINES:
 	case PM_OBJECTIVE:
 	case PM_DESTRUCTION:
-	case PM_ANNOUNCE:
 		return filter & POPUP_FILTER_MISSION;
+	case PM_ANNOUNCE:
+		return filter & POPUP_FILTER_ANNOUNCE;
 	case PM_AMMOPICKUP:
 	case PM_HEALTHPICKUP:
 	case PM_WEAPONPICKUP:
@@ -376,7 +431,7 @@ void CG_AddPMItemEx(popupMessageType_t type, const char *message, const char *me
 {
 	pmListItem_t   *listItem;
 	char           *end;
-	hudComponent_t *pmComp = (hudComponent_t *)((byte *)&CG_GetActiveHUD()->popupmessages + stackNum * sizeof(hudComponent_t));
+	hudComponent_t *pmComp = CG_GetPopupMessageComponent(CG_GetActiveHUD(), stackNum);
 
 	if (!message || !*message)
 	{
@@ -389,7 +444,7 @@ void CG_AddPMItemEx(popupMessageType_t type, const char *message, const char *me
 		return;
 	}
 
-	if (!pmComp->visible || CG_CheckPMItemFilter(type, pmComp->style))
+	if (!pmComp || !pmComp->visible || CG_CheckPMItemFilter(type, pmComp->style))
 	{
 		return;
 	}
@@ -896,12 +951,20 @@ static qboolean CG_DrawPMItems(hudComponent_t *comp, pmListItem_t *listItem, flo
  */
 void CG_DrawPM(hudComponent_t *comp)
 {
-	pmListItem_t *listItem;
-	float        lineHeight;
-	float        size;
-	float        y;
-	qboolean     isScapeAvailable;
-	int          pmNum = comp - &CG_GetActiveHUD()->popupmessages;
+	pmListItem_t  *listItem;
+	float         lineHeight;
+	float         size;
+	float         y;
+	qboolean      isScapeAvailable;
+	int           pmNum;
+	hudStucture_t *hud = CG_GetActiveHUD();
+
+	pmNum = comp - hud->popupmessages;
+
+	if (pmNum < 0 || pmNum >= NUM_PM_STACK)
+	{
+		return;
+	}
 
 	if (!cg_pmWaitingList[pmNum])
 	{

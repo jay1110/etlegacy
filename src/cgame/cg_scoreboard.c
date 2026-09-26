@@ -35,6 +35,9 @@
 
 #include "cg_local.h"
 
+#include <math.h>
+#include <time.h>
+
 char *Binding_FromName(const char *cvar);
 
 // colors and fonts for overlays
@@ -376,8 +379,56 @@ int WM_DrawObjectives(int x, int y, int width, float fade)
 		case GT_WOLF_CAMPAIGN:
 			s = va(CG_TranslateString("MAP %i of %i"), cgs.currentCampaignMap + 1, cgs.campaignData.mapCount);
 			break;
+		case GT_WOLF:
 		case GT_WOLF_MAPVOTE:
-			s = (cgs.mapVoteMapY ? va(CG_TranslateString("MAP %i of %i"), cgs.mapVoteMapX + 1, cgs.mapVoteMapY) : "MAP");
+#ifdef FEATURE_XPSAVE
+			if (cgs.xpSaveResetMode == 1 && cgs.xpSaveResetThreshold > 0)
+			{
+				s = va(CG_TranslateString("MAP %i of %i"), cgs.xpSaveResetValue + 1, cgs.xpSaveResetThreshold);
+			}
+			else if (cgs.xpSaveResetMode == 2 && cgs.xpSaveResetThreshold > 0)
+			{
+				time_t now        = time(NULL);
+				time_t last_reset = (time_t)cgs.xpSaveResetValue;
+				int    remaining  = cgs.xpSaveResetThreshold * 3600 - (int)difftime(now, last_reset);
+				int    hours, minutes;
+
+				if (remaining <= 0)
+				{
+					s = CG_TranslateString("XP RESET AT NEXT MAP");
+				}
+				else
+				{
+					hours   = remaining / 3600;
+					minutes = (remaining % 3600) / 60;
+
+					s = va(CG_TranslateString("XP RESET IN %ih %im"), hours, minutes);
+				}
+			}
+			else if (cgs.xpSaveResetMode == 3 && cgs.xpSaveResetThreshold > 0)
+			{
+				int halfLifeHours = cgs.xpSaveResetThreshold;
+				int days          = halfLifeHours / 24;
+				int hours         = halfLifeHours % 24;
+
+				if (days > 0 && hours > 0)
+				{
+					s = va(CG_TranslateString("XP DECAY λ %id %ih"), days, hours);
+				}
+				else if (days > 0)
+				{
+					s = va(CG_TranslateString("XP DECAY λ %id"), days);
+				}
+				else
+				{
+					s = va(CG_TranslateString("XP DECAY λ %ih"), hours);
+				}
+			}
+			else
+#endif
+			{
+				s = "MAP";
+			}
 			break;
 		default:
 			s = "MAP";

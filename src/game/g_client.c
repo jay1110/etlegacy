@@ -2311,14 +2311,7 @@ char *ClientConnect(int clientNum, qboolean firstTime, qboolean isBot)
 
 				if (!Q_strncmp(cl->pers.cl_guid, cs_guid, MAX_GUID_LENGTH + 1))
 				{
-					if ((g_xpSaver.integer & XPSF_WIPE_DUP_GUID))
-					{
-						trap_DropClient(clientNum, "Bad GUID: Duplicate etkey.", 0);
-					}
-					else
-					{
-						return "Bad GUID: Duplicate etkey.";
-					}
+					return "Bad GUID: Duplicate etkey.";
 				}
 			}
 		}
@@ -2439,6 +2432,21 @@ char *ClientConnect(int clientNum, qboolean firstTime, qboolean isBot)
 		if (!G_ReadSessionData(client))
 		{
 			G_InitSessionData(client, userinfo);
+
+#ifdef FEATURE_XPSAVE
+			// session restore failed, but DB-backed modes should still load
+			// their persisted XP so we don't start at zero and overwrite the row
+			if (g_gametype.integer == GT_WOLF_CAMPAIGN ||
+			    (g_xpSave.integer && (g_gametype.integer == GT_WOLF || g_gametype.integer == GT_WOLF_MAPVOTE)))
+			{
+				G_XPSave_Load(client);
+
+				for (i = 0; i < SK_NUM_SKILLS; i++)
+				{
+					G_SetPlayerSkill(client, i);
+				}
+			}
+#endif
 		}
 	}
 
@@ -2567,40 +2575,19 @@ char *ClientConnect(int clientNum, qboolean firstTime, qboolean isBot)
 	}
 #endif
 
-	if (
-		firstTime &&
-		(g_xpSaver.integer & XPSF_ENABLE) && (
-			(g_gametype.integer == GT_WOLF_CAMPAIGN) ||
-			(g_gametype.integer == GT_WOLF_STOPWATCH && !(g_xpSaver.integer & XPSF_DISABLE_STOPWATCH)) ||
-			(g_gametype.integer == GT_WOLF_MAPVOTE || g_gametype.integer == GT_WOLF)
-			)
-		)
+#ifdef FEATURE_XPSAVE
+	if (firstTime &&
+	    (g_gametype.integer == GT_WOLF_CAMPAIGN ||
+	     (g_xpSave.integer && (g_gametype.integer == GT_WOLF || g_gametype.integer == GT_WOLF_MAPVOTE))))
 	{
-		G_XPSaver_Load(client);
+		G_XPSave_Load(client);
 
 		for (i = 0; i < SK_NUM_SKILLS; i++)
 		{
 			G_SetPlayerSkill(client, i);
 		}
 	}
-
-	if (
-		!firstTime &&
-		(g_xpSaver.integer & XPSF_ENABLE) && (
-			(g_gametype.integer == GT_WOLF_CAMPAIGN) ||
-			((g_gametype.integer == GT_WOLF_STOPWATCH) && !(g_xpSaver.integer & XPSF_DISABLE_STOPWATCH)) ||
-			(g_gametype.integer == GT_WOLF_MAPVOTE) ||
-			(g_gametype.integer == GT_WOLF)
-			)
-		)
-	{
-		G_XPSaver_Load(client);
-
-		for (i = 0; i < SK_NUM_SKILLS; i++)
-		{
-			G_SetPlayerSkill(client, i);
-		}
-	}
+#endif
 
 	ClientUserinfoChanged(clientNum);
 
@@ -3546,18 +3533,14 @@ void ClientDisconnect(int clientNum)
 	}
 #endif
 
-	if (
-		(g_xpSaver.integer & XPSF_ENABLE) &&
-		!level.intermissiontime && (
-			(g_gametype.integer == GT_WOLF_CAMPAIGN) ||
-			((g_gametype.integer == GT_WOLF_STOPWATCH) && !(g_xpSaver.integer & XPSF_DISABLE_STOPWATCH)) ||
-			(g_gametype.integer == GT_WOLF_MAPVOTE) ||
-			(g_gametype.integer == GT_WOLF)
-			)
-		)
+#ifdef FEATURE_XPSAVE
+	if (!level.intermissiontime &&
+	    (g_gametype.integer == GT_WOLF_CAMPAIGN ||
+	     (g_xpSave.integer && (g_gametype.integer == GT_WOLF || g_gametype.integer == GT_WOLF_MAPVOTE))))
 	{
-		G_XPSaver_Store(ent->client);
+		G_XPSave_Store(ent->client);
 	}
+#endif
 
 #ifdef FEATURE_LUA
 	// LUA API callbacks

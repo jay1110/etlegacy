@@ -235,7 +235,6 @@ extern vmCvar_t g_mapVoteFlags;
 extern vmCvar_t g_maxMapsVotedFor;
 extern vmCvar_t g_minMapAge;
 extern vmCvar_t g_excludedMaps;
-extern vmCvar_t g_resetXPMapCount;
 
 extern vmCvar_t g_campaignFile;
 
@@ -304,8 +303,13 @@ extern vmCvar_t g_multiview;
 #endif
 
 extern vmCvar_t g_stickyCharge;
-extern vmCvar_t g_xpSaver;
-extern vmCvar_t g_xpSaverMaxAge;
+
+#ifdef FEATURE_XPSAVE
+extern vmCvar_t g_xpSave;
+extern vmCvar_t g_xpSaveResetMode;
+extern vmCvar_t g_xpSaveResetThreshold;
+extern vmCvar_t g_xpSaveResetValue;
+#endif
 
 extern vmCvar_t g_debugForSingleClient;
 extern vmCvar_t g_debugEvents;
