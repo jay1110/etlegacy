@@ -133,7 +133,7 @@ shell (`src/web/shell.html`) reads these query parameters:
 | `assets`  | Legacy override for other downloadable assets (retail paks are extracted from the official installers) | `?assets=https://et.clan-etc.de/etmain/` |
 | `relay`   | WebSocket relay URL (`net_wsRelayServer`) | `?relay=wss://relay.example.com` |
 | `connect` | Game server `host:port` to auto-join | `?connect=etclan.de:27966` |
-| `connectmod` | Force the mod prepared before a direct connection (`legacy`, `xmod`, `jaymod`, `etjump`, `etpub`, `noquarter`, `etbloat`, `nitmod`, `silent`, `etrun`); normally detected with `getinfo` | `?connectmod=etrun` |
+| `connectmod` | Force the mod prepared before a direct connection (`legacy`, `xmod`, `jaymod`, `etjump`, `etpub`, `noquarter`, `etbloat`, `nitmod`, `silent`, `etrun`, `tjmod`); normally detected with `getinfo` | `?connectmod=tjmod` |
 | `touch`   | Force the on-screen touch controls off/on | `?touch=1` |
 
 `relay` is optional: the shell has a default relay built in (`DEFAULT_RELAY` in

@@ -326,6 +326,12 @@ if (exists('etl.html')) {
         'ETrun is offered by direct connect, server filters and browser hosting');
     check(/function modSupportsOmniBot\(modKey\)[\s\S]*modKey !== 'etjump' && modKey !== 'etrun'/.test(html),
         'ETrun hosting does not load the incompatible Legacy Omni-bot module');
+    check(/tjmod:\s*\{[^}]*fsGame:\s*'tjmod'[^}]*requireOwnLogic:\s*true[^}]*tjmod-1_6_6\.pk3/s.test(html),
+        'TJMod 1.6.6 is enabled with its own WASM game logic');
+    check((html.match(/<option value="tjmod">/g) || []).length === 3,
+        'TJMod is offered by direct connect, server filters and browser hosting');
+    check(/function modSupportsOmniBot\(modKey\)[\s\S]*modKey !== 'tjmod'/.test(html),
+        'TJMod hosting does not load the incompatible Legacy Omni-bot module');
     check(/silent:\s*hostUsefulCvarTable\(CVARS_SILENT\)/.test(html),
         'silEnT server CVars are exposed in Advanced host settings');
     const silentCvars = html.match(/var CVARS_SILENT = \[([\s\S]*?)\n\s*\];/);
