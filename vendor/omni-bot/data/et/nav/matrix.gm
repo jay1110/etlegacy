@@ -1,0 +1,311 @@
+//==========================================================================================
+//
+//  matrix.gm
+//
+// Who   	When		What
+//------------------------------------------------------------------------------------------
+// palota	23 June 2026	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	SaveCampTime = 0,
+	SaveGroups = 0,
+
+	RideMovers = {},
+
+	WatchLift = function(name, top)
+	{
+		wpname = "lift_" + name;
+		pos = Util.WpNameInfo(wpname).position;
+		entity = TraceLine(pos, pos+Vec3(0, 0, -100), null, TRACE.ALL, 0, false).entity;
+		//print(wpname, entity);
+		mover =
+		{
+			LiftPos = 0,
+			startwp = wpname,
+			entity = entity,
+			Tolerance = 200,
+			maxusers = 3,
+			board = function(_this)
+			{
+				return _this.mover.LiftPos == 0;
+			},
+			leave = function(_this)
+			{
+				return _this.mover.LiftPos == 1;
+			},
+		};
+		Map.RideMovers[name] = mover;
+
+		for(;;)
+		{
+			z = GetEntPosition(entity).z;
+			if(z <= 90)
+			{
+				if (mover.LiftPos != 0) {
+					mover.LiftPos = 0;
+					Util.MapDebugPrint("Lift " + name + " at bottom", 1);
+				}
+			}
+			else if(z >= top)
+			{
+				if (mover.LiftPos != 1) {
+					mover.LiftPos = 1;
+					Util.MapDebugPrint("Lift " + name + " at top", 1);
+				}
+			}
+			else
+			{
+				mover.LiftPos = -1;
+			}
+			sleep(0.5);
+		}
+	},
+
+	Command_Post_Built = function()
+	{
+		Util.DisableGoal("DEFEND_cp.*");
+		Util.DisableGroup("ax1");
+		Util.MapDebugPrint("Command_Post_Built");
+	},
+
+	Command_Post_Destroyed = function()
+	{
+		Util.EnableGoal("DEFEND_cp.*");
+		Util.EnableGroup("ax1", TEAM.AXIS);
+		Util.MapDebugPrint("Command_Post_Destroyed");
+	},
+
+	Axis_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint("Axis_Command_Post_Built");
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint("Axis_Command_Post_Destroyed");
+	},
+
+	Blast_Door_Destroyed = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		Util.EnableGoal("DEFEND_doc.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"DEFEND_key.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"FLAG_key1",
+			"CAPPOINT_key",
+		});
+		Util.MapDebugPrint("Blast_Door_Destroyed");
+	},
+
+	key1_Taken = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_key.*");
+		SetGoalPriority("DEFEND_door.*", 0.4);
+		Util.MapDebugPrint("key1_Taken");
+	},
+
+	key1_Returned = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_key.*");
+		SetGoalPriority("DEFEND_door.*", 0.5);
+		Util.MapDebugPrint("key1_Returned");
+	},
+
+	key1_Secured = function()
+	{
+		sleep(0.1);
+		Wp.CheckBlockable();
+		Util.DisableGoal("DEFEND_door.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"FLAG_key1",
+			"CAPPOINT_key",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"PLANT_Agents_documents",
+		});
+		Util.MapDebugPrint("key1_Secured");
+	},
+
+	Agents_documents_Destroyed = function()
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"FLAG_docs",
+			"CAPPOINT_docs",
+		});
+		Util.MapDebugPrint("Agents_documents_Destroyed");
+	},
+
+	docs_Taken = function()
+	{
+		Util.EnableGoal("DEFEND_sub.*");
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_doc.*");
+		Util.MapDebugPrint("docs_Taken");
+	},
+
+	docs_Returned = function()
+	{
+		Util.DisableGoal("DEFEND_sub.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_doc.*");
+		Util.MapDebugPrint("docs_Returned");
+	},
+
+	docs_Secured = function()
+	{
+		ETUtil.WinningChat(TEAM.ALLIES);
+		ETUtil.LosingChat(TEAM.AXIS);
+		Util.MapDebugPrint("docs_Secured");
+	},
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger("Rebels Command Post Built! Both teams now spawn at their 2nd spawn!", Map.Command_Post_Built);
+	OnTrigger("Rebels Command Post Destroyed! Both teams now spawn at their 1st spawn!", Map.Command_Post_Destroyed);
+	OnTrigger("Axis Command Post Built!", Map.Axis_Command_Post_Built);
+	OnTrigger("Axis Command Post Destroyed!", Map.Axis_Command_Post_Destroyed);
+	OnTrigger("Rebels Have Destroyed The Safe!!!", Map.Agents_documents_Destroyed);
+	OnTrigger("Rebels Have Destroyed The Blast Door!!!", Map.Blast_Door_Destroyed);
+	OnTrigger("Rebels picked up the Boss office key", Map.key1_Taken);
+	OnTrigger("Flag returned key1!", Map.key1_Returned);
+	OnTrigger("Boss office door has been opened", Map.key1_Secured);
+	OnTrigger("Rebels picked up the Agents documents", Map.docs_Taken);
+	OnTrigger("Flag returned docs!", Map.docs_Returned);
+	OnTrigger("Rebels secured the Agents documents", Map.docs_Secured);
+
+	Util.DisableGoal(".*", true);
+	Util.EnableGoal({
+		".*CAB_.*",
+		"BUILD_Command_Post",
+		"PLANT_Command_Post",
+		"DEFEND_cp.*",
+		"DEFEND_door.*",
+	});
+	SetGoalGroup({
+		"DEFEND_fountain.*",
+		"MOBILEMG42_city.*",
+		"SNIPE_city.*",
+		"CALLARTILLERY_city.*",
+		"ARTILLERY_S_city.*",
+	}, "ax1");
+	Util.EnableGroup("ax1", TEAM.AXIS);
+	SetAvailableMapGoals(TEAM.AXIS, true, {
+	});
+	SetAvailableMapGoals(TEAM.ALLIES, true, {
+		"PLANT_Blast_Door",
+	});
+
+	SetGoalPriority("DEFEND_key.*", 0.51);
+	SetGoalPriority("DEFEND_door.*", 0.4);
+
+	Util.SetMaxUsers(1, "PLANT_Blast_Door");
+
+	Util.SetGoalRange("BUILD_Command_Post", AABB(9799.228,-7274.265,9.125,12367.709,-4309.116,320.897));
+
+	thread(Map.WatchLift, "key", 760);
+	thread(Map.WatchLift, "doc", 1000);
+	thread(Map.WatchLift, "roof", 2440);
+
+	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
+
+	sleep(80);
+	SetGoalPriority("DEFEND_door.*", 0.5, TEAM.AXIS);
+};
+
+global InitializeRoutes = function()
+{
+	r1 = {
+		ROUTE_gate1 = {},
+		ROUTE_gate2 = {},
+	};
+
+	MapRoutes =
+	{
+		BUILD_Command_Post =
+		{
+			ROUTE_allied_spawn =
+			{
+				ROUTE_city_l1 = r1,
+				ROUTE_city_l2 = r1,
+			},
+			ROUTE_axis_spawn =
+			{
+				ROUTE_city_x1 = r1,
+				ROUTE_city_x2 = r1,
+				ROUTE_city_x3 = r1,
+			},
+		},
+		FLAG_key1 =
+		{
+			ROUTE_cp_spawn =
+			{
+				ROUTE_stairs1 ={Weight=4},
+				ROUTE_stairs2 ={Weight=4},
+				ROUTE_lifts ={},
+			},
+			ROUTE_gate1 = { ROUTE_cp_spawn = {}},
+			ROUTE_gate2 = { ROUTE_cp_spawn = {}},
+		},
+		CAPPOINT_docs =
+		{
+			ROUTE_key =
+			{
+				ROUTE_door1 = {},
+				ROUTE_door2 = {},
+			}
+		},
+		CAPPOINT_docs =
+		{
+			ROUTE_docs =
+			{
+				ROUTE_stairs1 =
+				{
+					ROUTE_sub1 =
+					{
+						ROUTE_sub3 ={},
+						ROUTE_sub4 ={},
+						ROUTE_sub5 ={},
+						ROUTE_sub6 ={},
+					},
+					ROUTE_sub2 =
+					{
+						ROUTE_sub3 ={},
+						ROUTE_sub4 ={},
+						ROUTE_sub5 ={},
+						ROUTE_sub6 ={},
+					},
+				},
+				ROUTE_stairs2 =
+				{
+					ROUTE_sub1 = {},
+					ROUTE_sub2 = {},
+				},
+				ROUTE_roof1 = {
+					ROUTE_sub1 ={},
+				},
+				ROUTE_roof2 = {
+					ROUTE_sub1 ={},
+				},
+			},
+		},
+	};
+
+	MapRoutes.FLAG_key1.ROUTE_allied_spawn = MapRoutes.BUILD_Command_Post.ROUTE_allied_spawn;
+	MapRoutes.FLAG_key1.ROUTE_axis_spawn = MapRoutes.BUILD_Command_Post.ROUTE_axis_spawn;
+	MapRoutes.FLAG_key1.ROUTE_cp = MapRoutes.FLAG_key1.ROUTE_cp_spawn;
+	MapRoutes.PLANT_Command_Post = MapRoutes.BUILD_Command_Post;
+	MapRoutes["DEFEND_cp.*"] = MapRoutes.BUILD_Command_Post;
+	MapRoutes.PLANT_Blast_Door = MapRoutes.FLAG_key1;
+	MapRoutes["DEFEND_door.*"] = MapRoutes.FLAG_key1;
+	MapRoutes["DEFEND_key.*"] = MapRoutes.FLAG_key1;
+	MapRoutes.FLAG_docs = MapRoutes.FLAG_key1;
+	MapRoutes["DEFEND_doc.*"] = MapRoutes.FLAG_docs;
+	MapRoutes.PLANT_Agents_documents = MapRoutes.FLAG_docs;
+	Util.Routes(MapRoutes);
+};

@@ -1,0 +1,2554 @@
+/* 932 SPAWNS ARE VERY SCREWED UP!!
+DefendingTeam = TEAM.AXIS, //needed for IntrusionWarning
+
+		OnTriggerRegion( AABB(-11668,-5740,161, -11469,-5512,393), RegionTrigger.IntrusionWarning );
+		OnTriggerRegion( AABB(-9952,-5522,180, -9628,-5333,364), RegionTrigger.IntrusionWarning );
+		OnTriggerRegion( AABB(-10136,-6699,146, -9994,-6608,367), RegionTrigger.IntrusionWarning );
+		OnTriggerRegion( AABB(-11369,-7391,160, -11206,-6991,433), RegionTrigger.IntrusionWarning );
+		OnTriggerRegion( AABB(-11184,-7426,178, -11106,-7005,410), RegionTrigger.IntrusionWarningEngObj );
+		OnTriggerRegion( AABB(-11064,-7099,158, -10926,-6968,339), RegionTrigger.IntrusionWarningEngObj );
+		OnTriggerRegion( AABB(-10580,-7450,158, -10445,-7011,397), RegionTrigger.IntrusionWarningEngObj );
+		OnTriggerRegion( AABB(-10861,-7124,165, -10641,-6995,351), RegionTrigger.AllClear );
+
+//nothing else required
+///////////////////////////////////////////////
+	OnTriggerRegion(AABB(-10781.831,-5526.875,313.125,-10448.712,-5255.125,515.125), RegionTrigger.DisableCombatMovement);
+	OnTriggerRegion(AABB(-11332.472,-6914.470,537.132,-10380.936,-6283.438,687.614), RegionTrigger.DisableCombatMovement);
+//////////////
+	OnTriggerRegion(AABB(-3500,-8290,389,-2940,-7800,517), RegionTrigger.BreakableDistance); //allied hut window for sniper
+	RegionTrigger.BreakableDistance.MaxBreakableDist = 250;
+	RegionTrigger.BreakableDistance.MinBreakableDist = 0;
+/////////////
+	OnTriggerRegion(AABB(-3733.483,-2051.376,652.817,-3449.874,-1751.765,1083.265), RegionTrigger.DisableBotPush);
+	OnTriggerRegion(AABB(-9999.171,-5791.996,177.340,-9894.374,-5449.106,515.125), RegionTrigger.DisableBotPush);
+    
+/////////////////////////////
+    
+SPAWNS ARE VERY SCREWED UP!!
+
+	DepotRoofCounter = 0,
+	DepotRoof =
+	{
+		Name = "DepotRoof",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function(ent)
+		{
+			// only for allied players
+			if ( GetEntTeam(ent) != TEAM.ALLIES ) {
+				return;
+			}
+
+			Map.DepotRoofCounter += 1;
+
+			// some goals to clear out the roof
+			//Util.EnableGroup( "depotroof", TEAM.AXIS );
+		},
+		OnExit = function(ent)
+		{
+			// only for allied players
+			if ( GetEntTeam(ent) != TEAM.ALLIES ) {
+				return;
+			}
+
+			Map.DepotRoofCounter -= 1;
+
+			// is the roof clear?
+			if ( Map.DepotRoofCounter < 1 ) {
+				//Util.DisableGroup( "depotroof", TEAM.AXIS );
+			}
+		},
+	},
+	OnTriggerRegion(AABB(-11424.124,-6971.128,537.125,-10310.962,-6210.208,944.180), Map.DepotRoof);
+    
+//////////////////////////////////////////////////    	// ************************************************************************
+SPAWNS ARE VERY SCREWED UP!!
+	
+	 * If an Axis player falls down the bridge
+	 * while there's no way back to the top of the hill,
+	 * excepted to go a long way around, just suicide.
+	 
+	Axis_Bridge_Suicide =
+	{
+		Name = "Axis_Bridge_Suicide",
+		TriggerOnClass = CLASS.ANYPLAYER,
+		OnEnter = function( ent )
+		{
+			bot = Util.IsBot( ent );
+			if ( !bot ) { return; }
+
+			if ( !Map.isBridgeWalkable && bot.GetTeam() == TEAM.AXIS )
+			{
+				bot.ExecCommand( "kill" );
+
+				Util.MapDebugPrint( "An Axis bot has fallen down the bridge without any way back", true );
+			}
+		},
+	},
+    
+OnTriggerRegion( AABB( 839.173, -2163.921, 137.125, 3140.962, 104.713, 239.862 ), Map.Axis_Bridge_Suicide );    
+//////////
+
+	MainEntranceSuicide = function()
+	{
+		if ( !Map.isTankPastBridge )
+		{
+			return;
+		}
+
+		foreach ( id and bot in BotTable )
+		{
+			pos = bot.GetPosition();
+
+			// Two possibilities:
+			// - The bot is around the first spawn (y < -1500);
+			// - The bot is at the other side of the Bridge (x > 2400)
+			// I had in mind a third possibility
+			// (the bot is going for the flag but far from it, x < -3000),
+			// but it sounds better to let it go
+			if ( pos.x > 2400 || pos.y < -1500 )
+			{
+				bot.ExecCommand( "kill" );
+
+				Util.MapDebugPrint(
+					bot.Name + Util.DebugColorString + " had to kill himself to spawn closer to the action",
+					true
+				);
+			}
+		}
+	},
+///put in goaltrigger ex:main_entrance_destroyed
+/// Map.MainEntranceSuicide();
+////////////////////
+	 * Similar to MainEntranceSuicide,
+	 * but for Axis during the first part,
+	 * when their side isn't reachable because the Bridge isn't walkable.
+
+	AxisBridgeDestructionSuicide = function()
+	{
+		if ( Map.isMainEntranceDestroyed )
+		{
+			return;
+		}
+
+		foreach ( id and bot in BotTable )
+		{
+			// Only Axis
+			if ( bot.GetTeam() == TEAM.ALLIES )
+			{
+				continue;
+			}
+
+			pos = bot.GetPosition();
+
+			// Three possibilities:
+			// - The bot is around the first spawn (y < -1500);
+			// - The bot is at the other side of the Bridge (x > 2400) ;
+			// - The bot is going for the flag but far from it (x < -3000)
+			if ( x < -3000 || pos.x > 2400 || pos.y < -1500 )
+			{
+				bot.ExecCommand( "kill" );
+
+				Util.MapDebugPrint(
+					bot.Name + Util.DebugColorString + " had to kill himself to spawn back at the Main Entrance",
+					true
+				);
+			}
+		}
+	},
+
+/////////////////////////////////////////////////////////////////
+
+	TestRoleCount = function()
+	{
+		while ( true )
+		{
+			sleep( 5 );
+			Map.DoRoleStats();
+		}
+	},
+
+	DoRoleStats = function()
+	{
+		Util.MapDebugPrint( "^=********************************************************************************", true );
+
+		alliesAttackerRoleCount = 0;
+		alliesAttacker1RoleCount = 0;
+		alliesAttacker2RoleCount = 0;
+		alliesAttacker3RoleCount = 0;
+
+		axisDefenderRoleCount = 0;
+		axisDefender1RoleCount = 0;
+		axisDefender2RoleCount = 0;
+
+		foreach ( id and bot in BotTable )
+		{
+			iBotRoleCount = 0;
+
+			team = bot.GetTeam();
+			class = "(" + Map.ClassEnumToColoredString( bot.GetClass() ) + Util.DebugColorString + ")";
+			if ( team == TEAM.ALLIES )
+			{
+				if ( bot.HasRole( ROLE.ATTACKER ) )
+				{
+					Util.MapDebugPrint( class + " " + bot.Name + Util.DebugColorString + " has the ATTACKER role!", true );
+					alliesAttackerRoleCount += 1;
+					iBotRoleCount += 1;
+				}
+
+				if ( bot.HasRole( ROLE.ATTACKER1 ) )
+				{
+					Util.MapDebugPrint( class + " " + bot.Name + Util.DebugColorString + " has the ATTACKER1 role!", true );
+					alliesAttacker1RoleCount += 1;
+					iBotRoleCount += 1;
+				}
+
+				if ( bot.HasRole( ROLE.ATTACKER2 ) )
+				{
+					Util.MapDebugPrint( class + " " + bot.Name + Util.DebugColorString + " has the ATTACKER2 role!", true );
+					alliesAttacker2RoleCount += 1;
+					iBotRoleCount += 1;
+				}
+
+				if ( bot.HasRole( ROLE.ATTACKER3 ) )
+				{
+					Util.MapDebugPrint( class + " " + bot.Name + Util.DebugColorString + " has the ATTACKER3 role!", true );
+					alliesAttacker3RoleCount += 1;
+					iBotRoleCount += 1;
+				}
+			}
+			/*else if ( team == TEAM.AXIS )
+			{
+				if ( bot.HasRole( ROLE.DEFENDER ) )
+				{
+					axisDefenderRoleCount += 1;
+					iBotRoleCount += 1;
+				}
+
+				if ( bot.HasRole( ROLE.DEFENDER1 ) )
+				{
+					axisDefender1RoleCount += 1;
+					iBotRoleCount += 1;
+				}
+
+				if ( bot.HasRole( ROLE.DEFENDER2 ) )
+				{
+					axisDefender2RoleCount += 1;
+					iBotRoleCount += 1;
+				}
+			}
+			else
+			{
+				Util.MapDebugPrint( "Test: A spectator bot is a different team: " + team, true );
+			}
+
+			if ( iBotRoleCount > 1 )
+			{
+				Util.MapDebugPrint( "The current bot has " + iBotRoleCount + " roles at once", true );
+			}
+		}
+
+		Util.MapDebugPrint( "(ALLIES) ATTACKER: " + alliesAttackerRoleCount, true );
+		Util.MapDebugPrint( "(ALLIES) ATTACKER1: " + alliesAttacker1RoleCount, true );
+		Util.MapDebugPrint( "(ALLIES) ATTACKER2: " + alliesAttacker2RoleCount, true );
+		Util.MapDebugPrint( "(ALLIES) ATTACKER3: " + alliesAttacker3RoleCount, true );
+
+		alliesTotal = alliesAttackerRoleCount + alliesAttacker1RoleCount + alliesAttacker2RoleCount + alliesAttacker3RoleCount;
+		Util.MapDebugPrint( "(ALLIES) Total: " + alliesTotal + "/" + Server.Team[ TEAM.ALLIES ].NumBots + " bot(s) has/have a role", true );
+
+		/*
+		Util.MapDebugPrint( "(AXIS) DEFENDER: " + axisDefenderRoleCount, true );
+		Util.MapDebugPrint( "(AXIS) DEFENDER1: " + axisDefender1RoleCount, true );
+		Util.MapDebugPrint( "(AXIS) DEFENDER2: " + axisDefender2RoleCount, true );
+
+		axisTotal = axisDefenderRoleCount + axisDefender1RoleCount + axisDefender2RoleCount;
+		Util.MapDebugPrint( "(AXIS) Total: " + axisTotal + "/" + Server.Team[ TEAM.AXIS ].NumBots + " bot(s) has/have a role", true );
+		
+
+		Util.MapDebugPrint( "^=********************************************************************************", true );
+	},
+
+	TestAlliesGoalStats = function()
+	{
+		while ( true )
+		{
+			gameTimeLeft = GetGameTimeLeft();
+
+			sleep( 5 );
+
+			if ( GetGameTimeLeft() == gameTimeLeft )
+			{
+				// Game is paused
+				continue;
+			}
+
+			Map.DoAlliesGoalStats();
+		}
+	},
+
+	DoAlliesGoalStats = function()
+	{
+		Util.MapDebugPrint( "^=********************************************************************************", true );
+
+		foreach ( id and bot in BotTable )
+		{
+			if ( bot.GetTeam() == TEAM.ALLIES )
+			{
+				team = "(^4ALLIES" + Util.DebugColorString + ")";
+				class = "(" + Map.ClassEnumToColoredString( bot.GetClass() ) + Util.DebugColorString + ")";
+				role = "(" + Map.GetAlliedBotRole( bot ) + Util.DebugColorString + ")";
+				name = bot.Name + Util.DebugColorString;
+				goal = bot.GetMapGoalName();
+				if ( goal == null)
+				{
+					goal = bot.GetHighLevelGoalName();
+					if ( goal == null)
+					{
+						goal = "either ROAMING, WatchForProjectile or CovertOps";
+					}
+				}
+
+				if ( bot.Health > 0 )
+				{
+					Util.MapDebugPrint( team + " " + class + " " + role + " " + name + " is going for " + goal, true );
+				}
+				else
+				{
+					Util.MapDebugPrint( team + " " + class + " " + role + " " + name + " is dead", true );
+				}
+			}
+		}
+
+		Util.MapDebugPrint( "^=********************************************************************************", true );
+	},
+
+	ClassEnumToColoredString = function( class )
+	{
+		returnValue;
+		switch( class )
+		{
+			case CLASS.SOLDIER:
+			{
+				returnValue = "^2SOLDIER";
+			}
+
+			case CLASS.MEDIC:
+			{
+				returnValue = "^1MEDIC";
+			}
+
+			case CLASS.ENGINEER:
+			{
+				returnValue = "^3ENGINEER";
+			}
+
+			case CLASS.FIELDOPS:
+			{
+				returnValue = "^5FIELDOPS";
+			}
+
+			case CLASS.COVERTOPS:
+			{
+				returnValue = "^8COVERTOPS";
+			}
+		}
+
+		return returnValue;
+	},
+
+	GetAlliedBotRole = function( bot )
+	{
+		role;
+		if ( bot.HasRole( ROLE.ATTACKER ) )
+		{
+			role = "ATTACKER";
+		}
+		else if ( bot.HasRole( ROLE.ATTACKER1 ) )
+		{
+			role = "ATTACKER1";
+		}
+		else if ( Util.BotHasAnyRole( bot ) )
+		{
+			// Falling here when a bot goes for a goal without a role though...
+			role = "SOME ROLE?";
+		}
+		else
+		{
+			role = "NO ROLE";
+		}
+
+		return role;
+	},
+
+/////////////////////////////////////////////////////////////
+
+	// *** PATH THROUGH MANAGEMENT ***
+	Navigation =
+	{
+		jump =
+		{
+			navigate = function( _this )
+			{
+				// Since this kind of navigation doesn't work well with waypoints
+				// and since it is made this way in several locations...
+				// Let's have a common name for the next waypoint of each
+				wpTable = {};
+				Wp.GetWaypointByName( "jump", wpTable );
+
+				// With a good jump while going forward to pass through
+				_this.AddAimRequest( Priority.High, "facing", wpTable.facing );
+				_this.Bot.HoldButton( BTN.FORWARD, 0.5 );
+
+				_this.Bot.HoldButton( BTN.JUMP, 0.5 );
+			},
+		},
+
+		// Outside the Main Entrance, on the first floor,
+		// southwest corner, between a pillar and the mountain...
+		selfkill =
+		{
+			navigate = function( _this )
+			{
+				_this.Bot.ExecCommand( "kill" );
+				Util.MapDebugPrint( "Bot was totally stuck!", true );
+			},
+		},
+	},
+
+
+
+
+
+
+/////////////////////////////////////////////////	// ************************************************************************
+    SPAWNS ARE VERY SCREWED UP!!
+    
+*/  SPAWNS ARE VERY SCREWED UP!!
+//
+//  BOTS DO PLAY THE MAP, BUT......cyber4wolf.
+//==========================================================================================
+//
+//	uranproject_b6.gm    
+//  SPAWNS ARE VERY SCREWED UP!! AT pHASE 5 THE AXIS SPAWN AT 2ND SPAWN, THE MAP SCRIPT SPECIFIES SPAWN #5 IN PHASE #5 - SPAWN 3 DOES NOT WORK SO AXIS STAY SPAWNING AT SPAWN 2 UNTIL PHASE 4 SPAWN.
+//  aT PHASE #5 AXIS SHOULD SPAWN PHASE 5 SPAWN BUT THEY SPAWN PHASE 2 SPAWN. HAVE NOT BEEN ABLE TO CHANGE THE SPAWNS, SPECIFICALLY AXIS NOT GO BACK TO SPAWN #2!. HAVING TEAMS ON DIFFERENT ENDS OF THE MAP AT THE FINAL STAGE DOES NOT WORK!
+//	Who      SPAWNS ARE VERY SCREWED UP!!                      	When		What
+//------------------------------------------------------------------------------------------
+//	Ets|^1C^2Y^3B^6E^5R^04^1W^2O^3L^6F	09 October 2025	Initial Script
+// version 1.5  SPAWNS ARE VERY SCREWED UP!!
+// Elevator is at the Top Floor but is NOT Active UNTIL the Funnel Exit is Destroyed. 
+// Then if either button is pressed the Elevator will Cycle. 
+// The Cycle Starts at the top and goes down to bottom floor and BACK to the top. 
+// The doors Open at the bottom floor but they will NOT stay open for long and then 
+// the elevator returns to the top floor and the doors open and it stays until either button is pressed.
+// The Old Bunker Area can NOT be destroyed UNTIL the Funnel Exit is Destroyed.
+// (there is NO trigger string for the Funnel Exit Destroyed.) 
+//  Axis change spawn when Funnel Exit is destroyed, a custom trigger is now in their spawn.
+//==========================================================================================
+//  SPAWNS ARE VERY SCREWED UP!!
+
+global Map =
+{
+	Debug = 0, // please set to zero before distributing your script
+    securitydooropen = false,
+    MainBunkerDoorDestroyed = false,
+    LockDoor1closed = true,
+    LockDoor2closed = true,
+    lockdoor1status = 0,
+    lockdoor2status = 0,
+    Mover1Position = 0,
+    liftStatus = 1,//attop 
+    liftfirstfloordoorOpen = 1, 
+    liftlowerfloordoorOpen = 0, 
+    backdoorintact = true,
+    outpostentrancedestroyed = false,
+    happyhome = true,
+    getoff = false,
+    endoffloorride = false,
+    floorathome = true,
+    PLANT_Bunker_Main_Entrance = PLANT_main,
+    showmovers = true,
+    FunnelExitGone = false,    
+    backdoorgone = false, 
+    oldbunkergone = false,              
+    	Movers =
+	{
+		// retain these movers
+		"MOVER_big_aufzug",
+	},
+              
+    	Switches =
+	{
+                        // waypoint_setproperty paththrough UseSwitch_PT:plaform_big_aufzug NOT pla"T"form  
+		plaform_big_aufzug =
+		{
+			AimPosition = Vec3(-897.957, -3802.125, 2146.980),	///bot aim_pos
+			Enabled = false,
+			Priority = 0,
+			WaypointName = "plaform_big_aufzug",
+			Timeout = 9000,
+           
+            wait = function()
+            {
+                if (Map.floorathome == true )
+                {
+                    //wait 3.5 sec while door opens
+                    sleep(1.0);
+                    return true;
+                }
+            //always return false unless the door is open
+            return false;
+            },
+          
+		},
+                     
+// waypoint_setproperty paththrough UseSwitch_PT:lockdoor1    on waypoint before: button1lockdoor    
+    lockdoor1 =
+		{
+			AimPosition = Vec3(1556.100, 4295.125, 699.852),
+			Enabled = false,
+			//Debug = true,
+			Priority = 0.0,
+			Timeout = 1500,
+			WaypointName = "button1lockdoor",
+            wait = function()
+            {
+                if (Map.lockdoor1status == 0 )
+                {
+                    //wait 3.5 sec while door opens
+                    sleep(4.5);
+                    return true;
+                }
+            //always return false unless the door is open
+            return false;
+            },      
+		},
+// waypoint_setproperty paththrough UseSwitch_PT:lockdoor2    on waypoint before: button2lockdoor               
+    lockdoor2 =
+		{
+			AimPosition = Vec3(1539.519, 3885.125, 718.288),
+			Enabled = false,
+			//Debug = true,
+			Priority = 0.0,
+			Timeout = 1500,
+			WaypointName = "button2lockdoor",
+            wait = function()
+            {
+                if (Map.lockdoor2status == 0 )
+                {
+                    //wait 3.5 sec while door opens
+                    sleep(4.5);
+                    return true;
+                }
+            //always return false unless the door is open
+            return false;
+            },      
+		},
+// waypoint_setproperty paththrough UseSwitch_PT:Elevatortop    on waypoint before:  topbutton  
+    elevatortop =
+		{
+			AimPosition = Vec3(1334.125, 2822.245, 1489.810),
+			Enabled = false,
+			//Debug = true,
+			Priority = 0.0,
+			Timeout = 1500,
+			WaypointName = "topbutton",
+            wait = function()
+            {
+                if (Map.liftfirstfloordoorOpen == true )
+                {
+                    //wait 3.5 sec while door opens
+                    //sleep(4.5);
+                    return true;
+                    sleep(4.5);
+                }
+            //always return false unless the door is open
+            return false;
+            },      
+		},
+// waypoint_setproperty paththrough UseSwitch_PT:Elevatorbottom    PT: is name in this list & name on waypoint:  bottombutton       
+    Elevatorbottom =
+		{
+			AimPosition = Vec3(1569.875, 2691.028, 724.056),
+			Enabled = false,
+			//Debug = true,
+			Priority = 0.0,
+			Timeout = 1500,
+			WaypointName = "bottombutton",
+            wait = function()
+            {
+                if (Map.liftlowerfloordoorOpen == true )
+                {
+                    //wait 3.5 sec while door opens
+                    sleep(4.5);
+                    return true;
+                }
+            //always return false unless the door is open
+            return false;
+            },      
+		},
+    }, 
+
+//  /bot waypoint_setproperty paththrough RideMover_PT:big_aufzug_allies   
+// check the map waypoints make sure this is correct
+
+ RideMovers =
+ {
+    big_aufzug_allies =
+		{
+			movergoal = "MOVER_big_aufzug",
+			rideposition = Vec3(-3.837, 2.727, 250.625),
+			stance = BTN.CROUCH,
+            maxusers = 5,
+			startwp = "home",
+			exitwp = null,
+			board = function( _this )
+			{
+				return Map.floorathome == true;
+			},
+
+			leave = function( _this )
+			{
+				if ( Map.endoffloorride == true && _this.Bot.GetTeam() == TEAM.ALLIES )
+				{
+					Map.RideMovers.big_aufzug_allies.exitwp = "end";
+					return true;
+				}
+
+				if ( Map.endoffloorride == true && _this.Bot.GetTeam() == TEAM.AXIS )
+				{
+					Map.RideMovers.big_aufzug_allies.exitwp = "end";
+					return true;
+				}
+
+				return false;
+			},
+		},
+        
+    NEW_TRIGGER1 = function( trigger )
+	{
+        if ( trigger.Action == "0.00 0.00 -120.01" )
+        {
+            //topdoorsclosing_elevatorgoingdown SWITCH_Elevatorbottom
+            //Map.liftStatus = 0;
+            //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Elevatorbottom" );
+            //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Elevatortop" );
+            //SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Elevatorbottom" );
+            //SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Elevatortop" );
+                  Util.MapDebugPrint( "^6AT_TOP_GOINGDOWN" );  
+        }
+    else if ( trigger.Action == "0.00 0.00 120.01" )
+        {
+            //Map.liftStatus = 1;
+            //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Elevatorbottom" );
+            //SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Elevatorbottom" );
+            //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Elevatortop" );
+            //SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Elevatortop" );
+                Util.MapDebugPrint( "^6AT_BOTTOM_GOINGUP" );
+        }
+
+		Util.MapDebugPrint( "^6NEW_TRIGGER1 Elevator" );
+	},
+ 
+    NEW_TRIGGER2 = function( trigger )
+	{
+        if ( trigger.Action == "opening" )
+        {
+                //doorsopening_elevatorisdown
+            Map.liftStatus = 0;
+            liftlowerfloordoorOpen = true; 		
+			//Map.Switches.Elevatortop.Enabled = false;
+            //Map.Switches.Elevatorbottom.Enabled = false;           
+                  Util.MapDebugPrint( "^6BOTTOMDOORS_OPENING" );  
+        }
+    else if ( trigger.Action == "closing" )
+        {
+            Map.liftStatus = 1;
+            liftlowerfloordoorOpen = false;
+			//Map.Switches.Elevatortop.Enabled = false;
+            //Map.Switches.Elevatorbottom.Enabled = false;
+                Util.MapDebugPrint( "^6BOTTOMDOORS_CLOSING_GOINGUP" );
+        }
+
+		Util.MapDebugPrint( "^6NEW_TRIGGER2 Elevator bottomdoors" );
+	},
+   
+       NEW_TRIGGER3 = function( trigger )
+	{
+        if ( trigger.Action == "opening" )
+        {
+                //doorsopening_elevatorisdown
+            Map.liftStatus = 0;
+            liftfirstfloordoorOpen = false; 
+			//Map.Switches.Elevatortop.Enabled = false;
+            //Map.Switches.Elevatorbottom.Enabled = false;          
+                  Util.MapDebugPrint( "^6TOPDOORS_CLOSING_GOINGDOWN" );  
+        }
+    else if ( trigger.Action == "closing" )
+        {
+            Map.liftStatus = 1;
+            liftfirstfloordoorOpen = true;
+			Map.Switches.Elevatortop.Enabled = true;
+            Map.Switches.Elevatorbottom.Enabled = true;
+                Util.MapDebugPrint( "^6TOPDOORS_OPENING" );
+        }
+
+		Util.MapDebugPrint( "^6NEW_TRIGGER3 Elevator TOPDOORS" );
+	},
+   /*
+    door1start = function( trigger )
+	{
+        if ( trigger.Action == "Vector3(0.00 60.00 0.00)" )//opening but is closed Vector3(0.00 60.00 0.00),                         
+		          {
+                     //vec = ToVector(trigger.Action);
+                    Map.lockdoor1Closed = false;
+                    Map.lockdoor1Opened = true;
+                    Map.lockdoor1status = 1;//opened
+
+            			//Map.Switches.inside_elevator_ontoplevel.Enabled = true; //ride down
+                        //Map.Switches.inside_elevator_onbottomlevel.Enabled = false; //ride up
+                        //Map.Switches.elevator_groundlevel.Enabled = false; //call to the top
+                        //Map.Switches.elevator_bottomlevel.Enabled = true;  //call to the bottom
+                        
+   
+    SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_lockdoor1" ); 
+   
+    SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_lockdoor1" );        
+			                             Util.MapDebugPrint("^6lockdoor1status OPENING", true);
+			
+		}
+		else 
+		{
+                    Map.lockdoor1Closed = true;
+                    Map.lockdoor1Opened = false;            
+                    Map.lockdoor1status = 0; //closed
+ 
+    SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor1" ); 
+    
+    SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor1" );        
+			        Util.MapDebugPrint("^6lockdoor1status CLOSING", true);			
+		}
+	},
+    */
+    door4start = function( trigger )//door fucked up door3istoplevel
+	{
+        if ( trigger.Action == "0.00 60.00 0.00" )//opening but is closed              
+		          {
+                    Map.lockdoor2Closed = false;
+                    Map.lockdoor2Opened = true;
+                      Map.lockdoor2status = 1;//opened
+            			//Map.Switches.inside_elevator_ontoplevel.Enabled = true; //ride down
+                        //Map.Switches.inside_elevator_onbottomlevel.Enabled = false; //ride up
+                        //Map.Switches.elevator_groundlevel.Enabled = false; //call to the top
+                        //Map.Switches.elevator_bottomlevel.Enabled = true;  //call to the bottom
+                        
+	SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_lockdoor2" );    
+
+	SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_lockdoor2" );    
+        
+			                             Util.MapDebugPrint("^6lockdoor2status OPENING", true);			
+		}
+		else
+		{
+                    Map.lockdoor2Closed = true;
+                    Map.lockdoor2Opened = false;            
+            Map.lockdoor2status = 0; //closed 
+    SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor2" );    
+ 
+	SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor2" );    
+        
+			Util.MapDebugPrint("^6lockdoor2status CLOSING", true);			
+		}
+	},    
+  },  
+    	Roles =
+	{
+		AXIS =
+		{
+			AllBots = true, // each bot is considered for a role
+			DEFENDER =	
+			{
+				numbots = 10,
+                //spawnpt = 2, //script does not change axis spawn, only 2 work!
+				crucialClass = CLASS.ENGINEER, CLASS.MEDIC, CLASS.FIELDOPS,
+			},
+			DEFENDER1 =	
+			{
+				numbots = 8,
+                //spawnpt = 2,                
+				crucialClass = CLASS.ENGINEER, CLASS.MEDIC, CLASS.COVERTOPS,
+			},
+			DEFENDER2 =	
+			{
+				numbots = 8,
+                //spawnpt = 2,
+				crucialClass = CLASS.COVERTOPS, CLASS.SOLDIER,
+			},
+			ROAMER =	
+			{
+				numbots = 8,
+                //spawnpt = 2,
+				crucialClass = CLASS.SOLDIER, CLASS.FIELDOPS,
+			},
+		},
+		
+		ALLIES =
+		{
+			AllBots = true, // each bot is considered for a role
+			ATTACKER =	
+			{
+				numbots = 10,
+                                //spawnpt = 4,
+				crucialClass =  CLASS.ENGINEER, CLASS.MEDIC, CLASS.SOLDIER,
+			},
+			ATTACKER1 =	
+			{
+				numbots = 8,
+                                //spawnpt = 9,
+				crucialClass = CLASS.ENGINEER, CLASS.MEDIC, CLASS.COVERTOPS,
+			},
+			ATTACKER2 =	
+			{
+				numbots = 8,
+                                //spawnpt = 3,
+				crucialClass = CLASS.FIELDOPS, CLASS.SOLDIER,
+			},
+			ROAMER =	
+			{
+				numbots = 8,
+                                //spawnpt = 9,
+				crucialClass = CLASS.COVERTOPS, CLASS.FIELDOPS,
+			},
+		},
+	},
+
+	Allied_Commandpost_Built = function( trigger )
+	{
+        //Util.ChangeSpawn( TEAM.ALLIES, 11 );
+         Map.SetSpawn1; 
+		Util.MapDebugPrint( "^6Allied_Commandpost_Built" );
+	},
+
+/////
+
+//////////
+
+	MainEntranceSuicide = function()
+	{
+		if ( Map.outpostentrancedestroyed )
+		{
+			return;
+		}
+
+		foreach ( id and bot in BotTable )
+		{
+			pos = bot.GetPosition();
+
+			// Two possibilities:
+			// - The bot is around the first spawn (y < -1500);
+			// - The bot is at the other side of the Bridge (x > 2400)
+			// I had in mind a third possibility
+			// (the bot is going for the flag but far from it, x < -3000),
+			// but it sounds better to let it go
+			if  ( pos.x > -1000 || pos.y < -3000 )
+			{
+				bot.ExecCommand( "kill" );
+
+				Util.MapDebugPrint(
+					bot.Name + Util.DebugColorString + " had to kill himself to spawn closer to the action",
+					true
+				);
+			}
+		}
+	},
+///put in goaltrigger ex:main_entrance_destroyed
+/// Map.MainEntranceSuicide();
+////////////////////
+
+
+    axisspawnchange =
+    {
+        Name = "axisspawnchange",
+        TriggerOnClass = CLASS.ANYPLAYER,
+        OnEnter = function(ent)
+        {
+            if(GetEntTeam(ent) == TEAM.AXIS )
+            {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("AXIS Im in the axisspawnchange");
+                            Map.SetSpawn1;                     
+                    }
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("AXIS OBJECTIVE axisspawnchange");
+                                                
+                    }
+                    //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_tunnel_.*" );                                                                                              
+                Util.MapDebugPrint( "^6AXIS ^ePLAYER at axisspawnchange WITH THE ^1OBJECTIVE" ); //works                   
+                }
+            Util.MapDebugPrint( "^2AXIS ^ePLAYER IS AT axisspawnchange" );//works
+            }            
+		Util.MapDebugPrint( "^2ENTER axisspawnchange" );         
+        },
+        OnExit = function(ent)
+        {
+            
+            if(GetEntTeam(ent) == TEAM.AXIS )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("I Have Picked Up OBJECTIVE");                        
+                    }
+                 Util.MapDebugPrint( "^2AXIS^ePLAYER IS AT spawnchange WITH THE OBJECTIVE" );  //works              
+                     //SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_secretdocs1" ); 
+                }
+            		Util.MapDebugPrint( "^6AXIS ^ePLAYER IS at THE ^6AXIS spawnchange EXIT" );//works
+            }
+            if(GetEntTeam(ent) == TEAM.ALLIES )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("I Have The OBJECTIVE");                        
+                    }              
+                    //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_tunnel_.*" );     
+            		Util.MapDebugPrint( "^6ALLIES ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2EXIT WITH THE ^1OBJECTIVE" ); //works   
+                }
+            		Util.MapDebugPrint( "^6ALLIES ^ePLAYER IS at AXIS_CAPPOINT_ROOM EXIT" );//works
+            }        
+
+		Util.MapDebugPrint( "^2EXIT axisspawnchange" );         
+        },
+       
+    },
+
+
+
+
+//spawn at lab
+	SetSpawn1 = function(bot)
+	{
+		if (bot.GetTeam() == TEAM.AXIS) {
+            
+			if (Map.oldbunkergone == true)
+            {
+                
+				bot.ChangeSpawnPoint(2);
+			} 
+		}
+	},
+
+	SetSpawn = function()
+	{
+		foreach(bot in BotTable)
+		{
+			Map.SetSpawn1(bot);
+		}
+	},
+
+
+
+
+
+olddoorisgone = false,
+////
+    old = 
+    {
+        Name = "old",
+        TriggerOnClass = CLASS.ANYPLAYER,
+        OnEnter = function(ent)
+        {
+            if(GetEntTeam(ent) == TEAM.ALLIES )
+            {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("I am inside");                        
+                    }
+                                Util.ChangeSpawn( TEAM.AXIS, 2 );
+                                //ETUtil.SuicideSpawn( TEAM.AXIS, 2, -1 );
+
+        //SetGoalPriority("ATTACK_pumproom_.*", 0.92, TEAM.ALLIES);
+        //Util.ChangeSpawn( TEAM.ALLIES, 9 );
+        //ETUtil.SuicideSpawn( TEAM.AXIS, 8, -1 );
+        //Util.EnableGoal( "SWITCH_Elevatortop", true );    
+        //Util.EnableGoal( "SWITCH_Elevatorbottom", true );
+        Util.ChangeSpawn( TEAM.AXIS, 2 ); 
+        SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor2" );    
+        SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor1" ); 
+	   SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor2" );    
+        SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor1" );   
+        SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Elevatorbottom" );
+        SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_Elevatortop" );     
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_oldbunkerareadoor_.*" );
+        //SetGoalPriority("PLANT_Cooling_Pumps", 1.99, TEAM.ALLIES, CLASS.ENGINEER);
+        
+        Util.DisableGoal( "SWITCH_towerdoor", true );
+        Util.DisableGoal( "SWITCH_funnelmaingate", true ); 
+        Util.DisableGoal( "PLANT_Bunker_Backdoor___Dynamite_it", true );
+        Util.DisableGoal( "BUILD_Bridge", true );
+        //Util.DisableGoal( "PLANT_funnel_entrance", true );
+        Util.DisableGoal( "PLANT_Outpost_Entrance", true );
+        Util.DisableGoal( "PLANT_Ventilator", true );
+        Util.DisableGoal( "BUILD_second_Bridge", true );
+        Util.DisableGoal( "PLANT_second_Bridge", true );
+        Util.DisableGoal( "PLANT_Bridge", true );                
+        Util.DisableGoal( "PLANT_Old_Bunker_Area", true );
+        Util.DisableGoal( "PLANT_Funnel_Exit", true ); 
+	   SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor2" );    
+        SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor1" ); 
+        SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_pumproom_.*" );
+            Util.MapDebugPrint( "^23_ALLIED ^ePLAYER IS inside ^2OLD BUNKER ENTRANCE" ); //works                                            
+            }
+            if(GetEntTeam(ent) == TEAM.AXIS )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_tunnel_.*" );                                                                                              
+                Util.MapDebugPrint( "^26_AXIS ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2ENTRANCE WITH THE ^1OBJECTIVE" ); //works                   
+                }
+            //Util.MapDebugPrint( "^27_AXIS ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2ENTRANCE" );//works
+            }
+        Map.olddoorisgone = true;            
+		//Util.MapDebugPrint( "^2ENTER" );         
+        },
+        OnExit = function(ent)
+        {
+            
+            if(GetEntTeam(ent) == TEAM.ALLIES )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("I Have Picked Up OBJECTIVE");                        
+                    }
+                 Util.MapDebugPrint( "^28_ALLIED ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2EXIT WITH THE OBJECTIVE" );  //works              
+                     //SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_secretdocs1" );   
+                }
+            		//Util.MapDebugPrint( "^212_ALLIED ^ePLAYER IS at THE ^6AXIS_CAPPOINT_ROOM EXIT" );//works
+            }
+            if(GetEntTeam(ent) == TEAM.AXIS )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("I Have The OBJECTIVE");                        
+                    }              
+                    //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_tunnel_.*" );     
+            		Util.MapDebugPrint( "^215_AXIS ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2EXIT WITH THE ^1OBJECTIVE" ); //works   
+                }
+            		//Util.MapDebugPrint( "^216_AXIS ^ePLAYER IS at AXIS_CAPPOINT_ROOM EXIT" );//works
+            }        
+
+		//Util.MapDebugPrint( "^2EXIT" );         
+        },
+       
+    },
+
+    spawn1 = 
+    {
+        Name = "spawn1",
+        TriggerOnClass = CLASS.ANYPLAYER,
+        OnEnter = function(ent)
+        {
+            if(GetEntTeam(ent) == TEAM.AXIS )
+            {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("spawn1");                        
+                    }
+        //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_oldbunkerareadoor_.*" );
+        //SetGoalPriority("PLANT_Cooling_Pumps", 1.99, TEAM.ALLIES, CLASS.ENGINEER);               
+        //Util.DisableGoal( "PLANT_Old_Bunker_Area", true );         
+	    //SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor2" );    
+        //SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor1" ); 
+        //SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_pumproom_.*" );
+        
+            Util.MapDebugPrint( "^23_AXIS ^ePLAYER spawn1" ); //works                                            
+            }
+            if(GetEntTeam(ent) == TEAM.ALLIES )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_tunnel_.*" );                                                                                               
+                Util.MapDebugPrint( "^26_AXIS ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2ENTRANCE WITH THE ^1OBJECTIVE" ); //works                   
+                }
+            //Util.MapDebugPrint( "^27_ALLIED ^ePLAYER IS AT THE _CAPPOINT_ROOM ^2ENTRANCE" );//works
+            }            
+		//Util.MapDebugPrint( "^2ENTER" );         
+        },
+        OnExit = function(ent)
+        {
+            
+            if(GetEntTeam(ent) == TEAM.ALLIES )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("I Have Picked Up OBJECTIVE");                        
+                    }
+                 Util.MapDebugPrint( "^28_ALLIED ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2EXIT WITH THE OBJECTIVE" );  //works              
+                     //SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_secretdocs1" );   
+                }
+            		//Util.MapDebugPrint( "^212_ALLIED ^ePLAYER IS at THE ^6AXIS_CAPPOINT_ROOM EXIT" );//works
+            }
+            if(GetEntTeam(ent) == TEAM.AXIS )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("I Have The OBJECTIVE");                        
+                    }              
+                    //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_tunnel_.*" );     
+            		Util.MapDebugPrint( "^215_AXIS ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2EXIT WITH THE ^1OBJECTIVE" ); //works   
+                }
+            		//Util.MapDebugPrint( "^216_AXIS ^ePLAYER IS at AXIS_CAPPOINT_ROOM EXIT" );//works
+            }        
+
+		//Util.MapDebugPrint( "^2EXIT" );         
+        },
+       
+    },
+
+    spawn2 = 
+    {
+        Name = "spawn2",
+        TriggerOnClass = CLASS.ANYPLAYER,
+        OnEnter = function(ent)
+        {
+            if(GetEntTeam(ent) == TEAM.AXIS )
+            {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("spawn2");                        
+                    }
+                //Util.ChangeSpawn( TEAM.ALLIES, 9 );
+                //Util.EnableGoal( "SWITCH_Elevatortop", true );    
+                //Util.EnableGoal( "SWITCH_Elevatorbottom", true ); 
+        //SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor2" );    
+        //SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor1" ); 
+	   //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor2" );    
+        //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor1" );
+            Util.MapDebugPrint( "^23_AXIS ^ePLAYER spawn2" ); //works                                            
+            }
+            if(GetEntTeam(ent) == TEAM.ALLIES )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_tunnel_.*" );                                                                                               
+                Util.MapDebugPrint( "^26_AXIS ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2ENTRANCE WITH THE ^1OBJECTIVE" ); //works                   
+                }
+            //Util.MapDebugPrint( "^27_ALLIED ^ePLAYER IS AT THE _CAPPOINT_ROOM ^2ENTRANCE" );//works
+            }            
+		//Util.MapDebugPrint( "^2ENTER" );         
+        },
+        OnExit = function(ent)
+        {
+            
+            if(GetEntTeam(ent) == TEAM.ALLIES )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("I Have Picked Up OBJECTIVE");                        
+                    }
+                 Util.MapDebugPrint( "^28_ALLIED ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2EXIT WITH THE OBJECTIVE" );  //works              
+                     //SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_secretdocs1" );   
+                }
+            		//Util.MapDebugPrint( "^212_ALLIED ^ePLAYER IS at THE ^6AXIS_CAPPOINT_ROOM EXIT" );//works
+            }
+            if(GetEntTeam(ent) == TEAM.AXIS )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("I Have The OBJECTIVE");                        
+                    }              
+                    //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_tunnel_.*" );     
+            		Util.MapDebugPrint( "^215_AXIS ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2EXIT WITH THE ^1OBJECTIVE" ); //works   
+                }
+            		//Util.MapDebugPrint( "^216_AXIS ^ePLAYER IS at AXIS_CAPPOINT_ROOM EXIT" );//works
+            }        
+
+		//Util.MapDebugPrint( "^2EXIT" );         
+        },
+       
+    },
+
+    spawn3 = 
+    {
+        Name = "spawn3",
+        TriggerOnClass = CLASS.ANYPLAYER,
+        OnEnter = function(ent)
+        {
+            if(GetEntTeam(ent) == TEAM.AXIS )
+            {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("spawn3");                        
+                    }
+                //Util.ChangeSpawn( TEAM.ALLIES, 9 );
+                //Util.EnableGoal( "SWITCH_Elevatortop", true );    
+                //Util.EnableGoal( "SWITCH_Elevatorbottom", true ); 
+        //SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor2" );    
+        //SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor1" ); 
+	   //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor2" );    
+        //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor1" );
+            Util.MapDebugPrint( "^23_AXIS ^ePLAYER spawn3" ); //works                                            
+            }
+            if(GetEntTeam(ent) == TEAM.ALLIES )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_tunnel_.*" );                                                                                              
+                Util.MapDebugPrint( "^26_AXIS ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2ENTRANCE WITH THE ^1OBJECTIVE" ); //works                   
+                }
+            //Util.MapDebugPrint( "^27_ALLIED ^ePLAYER IS AT THE _CAPPOINT_ROOM ^2ENTRANCE" );//works
+            }            
+		//Util.MapDebugPrint( "^2ENTER" );         
+        },
+        OnExit = function(ent)
+        {
+            
+            if(GetEntTeam(ent) == TEAM.ALLIES )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("I Have Picked Up OBJECTIVE");                        
+                    }
+                 Util.MapDebugPrint( "^28_ALLIED ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2EXIT WITH THE OBJECTIVE" );  //works              
+                     //SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_secretdocs1" );   
+                }
+            		//Util.MapDebugPrint( "^212_ALLIED ^ePLAYER IS at THE ^6AXIS_CAPPOINT_ROOM EXIT" );//works
+            }
+            if(GetEntTeam(ent) == TEAM.AXIS )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("I Have The OBJECTIVE");                        
+                    }              
+                    //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_tunnel_.*" );     
+            		Util.MapDebugPrint( "^215_AXIS ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2EXIT WITH THE ^1OBJECTIVE" ); //works   
+                }
+            		//Util.MapDebugPrint( "^216_AXIS ^ePLAYER IS at AXIS_CAPPOINT_ROOM EXIT" );//works
+            }        
+
+		//Util.MapDebugPrint( "^2EXIT" );         
+        },
+       
+    },
+
+    spawn4 = 
+    {
+        Name = "spawn4",
+        TriggerOnClass = CLASS.ANYPLAYER,
+        OnEnter = function(ent)
+        {
+            if(GetEntTeam(ent) == TEAM.AXIS )
+            {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("spawn4");                        
+                    }
+                //Util.ChangeSpawn( TEAM.ALLIES, 9 );
+                //Util.EnableGoal( "SWITCH_Elevatortop", true );    
+                //Util.EnableGoal( "SWITCH_Elevatorbottom", true ); 
+        //SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor2" );    
+        //SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor1" ); 
+	   //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor2" );    
+        //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor1" );
+            Util.MapDebugPrint( "^23_AXIS ^ePLAYER spawn4" ); //works                                            
+            }
+            if(GetEntTeam(ent) == TEAM.ALLIES )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_tunnel_.*" );                                                                                              
+                Util.MapDebugPrint( "^26_AXIS ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2ENTRANCE WITH THE ^1OBJECTIVE" ); //works                   
+                }
+            //Util.MapDebugPrint( "^27_ALLIED ^ePLAYER IS AT THE _CAPPOINT_ROOM ^2ENTRANCE" );//works
+            }            
+		//Util.MapDebugPrint( "^2ENTER" );         
+        },
+        OnExit = function(ent)
+        {
+            
+            if(GetEntTeam(ent) == TEAM.ALLIES )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("I Have Picked Up OBJECTIVE");                        
+                    }
+                 Util.MapDebugPrint( "^28_ALLIED ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2EXIT WITH THE OBJECTIVE" );  //works              
+                     //SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_secretdocs1" ); 
+                }
+            		//Util.MapDebugPrint( "^212_ALLIED ^ePLAYER IS at THE ^6AXIS_CAPPOINT_ROOM EXIT" );//works
+            }
+            if(GetEntTeam(ent) == TEAM.AXIS )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("I Have The OBJECTIVE");                        
+                    }              
+                    //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_tunnel_.*" );     
+            		Util.MapDebugPrint( "^215_AXIS ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2EXIT WITH THE ^1OBJECTIVE" ); //works   
+                }
+            		//Util.MapDebugPrint( "^216_AXIS ^ePLAYER IS at AXIS_CAPPOINT_ROOM EXIT" );//works
+            }        
+
+		//Util.MapDebugPrint( "^2EXIT" );         
+        },
+       
+    },
+
+    spawn5 = 
+    {
+        Name = "spawn5",
+        TriggerOnClass = CLASS.ANYPLAYER,
+        OnEnter = function(ent)
+        {
+            if(GetEntTeam(ent) == TEAM.AXIS )
+            {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("spawn5");                        
+                    }
+                //Util.ChangeSpawn( TEAM.ALLIES, 9 );
+                //Util.EnableGoal( "SWITCH_Elevatortop", true );    
+                //Util.EnableGoal( "SWITCH_Elevatorbottom", true ); 
+        //SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor2" );    
+        //SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor1" ); 
+	   //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor2" );    
+        //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor1" );
+
+            Util.MapDebugPrint( "^23_AXIS ^ePLAYER spawn5" ); //works                                            
+            }
+            if(GetEntTeam(ent) == TEAM.ALLIES )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_tunnel_.*" );                                                                                             
+                Util.MapDebugPrint( "^26_AXIS ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2ENTRANCE WITH THE ^1OBJECTIVE" ); //works                   
+                }
+            //Util.MapDebugPrint( "^27_ALLIED ^ePLAYER IS AT THE _CAPPOINT_ROOM ^2ENTRANCE" );//works
+            }            
+		//Util.MapDebugPrint( "^2ENTER" );         
+        },
+        OnExit = function(ent)
+        {
+            
+            if(GetEntTeam(ent) == TEAM.ALLIES )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("I Have Picked Up OBJECTIVE");                        
+                    }
+                 Util.MapDebugPrint( "^28_ALLIED ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2EXIT WITH THE OBJECTIVE" );  //works              
+                     //SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_secretdocs1" );   
+                }
+            		//Util.MapDebugPrint( "^212_ALLIED ^ePLAYER IS at THE ^6AXIS_CAPPOINT_ROOM EXIT" );//works
+            }
+            if(GetEntTeam(ent) == TEAM.AXIS )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("I Have The OBJECTIVE");                        
+                    }              
+                    //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_tunnel_.*" );     
+            		Util.MapDebugPrint( "^215_AXIS ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2EXIT WITH THE ^1OBJECTIVE" ); //works   
+                }
+            		//Util.MapDebugPrint( "^216_AXIS ^ePLAYER IS at AXIS_CAPPOINT_ROOM EXIT" );//works
+            }        
+
+		//Util.MapDebugPrint( "^2EXIT" );         
+        },
+       
+    },
+
+	Bridge_Built = function( trigger )
+	{
+                    if ( Map.outpostentrancedestroyed == true)
+            {
+            SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_plaform_big_aufzug" );
+            SetAvailableMapGoals( TEAM.ALLIES, false, "RIDE_Platform_AL" );
+		          	Map.Switches.plaform_big_aufzug.Enabled = false;  
+            }
+        
+		Util.MapDebugPrint( "^6Bridge_Built" );
+	},
+
+	Cooling_Pumps_Built = function( trigger )
+	{
+        SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Cooling_Pumps" );
+		Util.MapDebugPrint( "^6Cooling_Pumps_Built" );
+	},
+
+	Funnel_Exit_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "^6Funnel_Exit_Built" );
+	},
+
+	Old_Bunker_Area_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "^6Old_Bunker_Area_Built" );
+	},
+
+	second_Bridge_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "^6second_Bridge_Built" );
+	},
+
+	Allied_Commandpost_Destroyed = function( trigger )
+	{
+        //Util.ChangeSpawn( TEAM.ALLIES, 9 );
+		Util.MapDebugPrint( "^6Allied_Commandpost_Destroyed" );
+	},
+
+	Bridge_Destroyed = function( trigger )
+	{
+        if (Map.MainBunkerDoorDestroyed == true)
+        {
+                  
+        Util.DisableGoal( "SWITCH_towerdoor", true );
+        Util.DisableGoal( "SWITCH_funnelmaingate", true ); 
+Util.DisableGoal( "PLANT_Bunker_Backdoor___Dynamite_it", true );
+Util.DisableGoal( "BUILD_Bridge", true );
+//Util.DisableGoal( "PLANT_funnel_entrance", true );
+Util.DisableGoal( "PLANT_Outpost_Entrance", true );
+Util.DisableGoal( "PLANT_Ventilator", true );
+Util.DisableGoal( "BUILD_second_Bridge", true );
+Util.DisableGoal( "PLANT_second_Bridge", true );
+Util.DisableGoal( "PLANT_Bridge", true );  
+        }
+		Util.MapDebugPrint( "^6Bridge_Destroyed" );
+	},
+
+	Bunker_Backdoor_Destroyed = function( trigger )
+	{
+            //ETUtil.SuicideSpawn( TEAM.AXIS, 6, -1 );
+
+                        if (Map.securitydooropen == true)//open
+                {
+                    Util.ChangeSpawn( TEAM.AXIS, 8 );
+                    //ETUtil.SuicideSpawn( TEAM.AXIS, 8, -1 );
+                                
+                    SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_backdoorinside_.*" );
+                    SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_main" );
+SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Main_Bunker_Entrance" ); 
+                    SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_funnel_entrance" );
+                    SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_maingate_.*" ); 
+                    
+                    Util.DisableGoal( "SWITCH_towerdoor", true );
+                    Util.DisableGoal( "SWITCH_funnelmaingate", true );
+                    SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_funnelmaingate" );
+                    SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_funnelmaingate" ); 
+                    Util.DisableGoal( "PLANT_Bunker_Backdoor___Dynamite_it", true );
+                    Util.DisableGoal( "BUILD_Bridge", true );
+                    //Util.DisableGoal( "PLANT_funnel_entrance", true );
+                    Util.DisableGoal( "PLANT_Outpost_Entrance", true );
+                    Util.DisableGoal( "PLANT_Ventilator", true );
+                    Util.DisableGoal( "BUILD_second_Bridge", true );
+                    Util.DisableGoal( "PLANT_second_Bridge", true );
+                    Util.DisableGoal( "PLANT_Bridge", true );  
+                }
+            else 
+            {
+                    Util.EnableGoal( "SWITCH_towerdoor", true );
+                    Util.DisableGoal( "SWITCH_funnelmaingate", true ); 
+                    SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_funnel_entrance" ); 
+                    SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_main" );
+SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Main_Bunker_Entrance" );   
+            }
+        Map.backdoorintact = false;
+        Map.backdoorgone = true;
+        Util.ChangeSpawn( TEAM.AXIS, 8 );
+                SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_backdoorinside_.*" ); 
+        	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_backdoorinside_1" );    
+    SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_backdoorinside_2" ); 
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_backdoorinside_3" );    
+    SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_backdoorinside_4" ); 
+    SetAvailableMapGoals( TEAM.AXIS, false, "ARTILLERY_S_bunkerfrontdoorshot_3" );    
+    SetAvailableMapGoals( TEAM.AXIS, false, "ARTILLERY_S_bunkerfrontdoorshot_2" ); 
+	SetAvailableMapGoals( TEAM.AXIS, false, "ARTILLERY_S_bunkerfrontdoorshot_1" );    
+    SetAvailableMapGoals( TEAM.AXIS, false, "CALLARTILLERY_bunkerfrontdoor" );
+
+		Util.MapDebugPrint( "^6Bunker_Backdoor_Destroyed" );
+	},
+
+	Bunker_Front_Door_Destroyed = function( trigger )
+	{
+        //Wp.SetWaypointFlag( "phase1", "Closed", true );
+            SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_plaform_big_aufzug" );
+            SetAvailableMapGoals( TEAM.ALLIES, false, "RIDE_Platform_AL" );        
+        Map.Switches.plaform_big_aufzug.Enabled = false;
+        Util.DisableGoal( "SWITCH_plaform_big_aufzug", true );
+        Util.DisableGoal( "RIDE_Platform_AL", true );
+        	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_backdoorinside_1" );
+            Util.EnableGoal( "SWITCH_towerdoor", true );    
+    SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_backdoorinside_2" ); 
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_backdoorinside_3" );    
+    SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_backdoorinside_4" ); 
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_frontdoor_.*" );
+        SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_backdoorinside_.*" ); 
+		Util.MapDebugPrint( "^6Bunker_Front_Door_Destroyed" );
+	},
+
+	Cooling_Pumps_Destroyed = function( trigger )
+	{
+                Util.ChangeSpawn( TEAM.AXIS, 2 );
+        //ETUtil.SuicideSpawn( TEAM.AXIS, 2, -1 );
+        SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Cooling_Pumps" );
+		Util.MapDebugPrint( "^6Cooling_Pumps_Destroyed" );
+	},
+
+	Funnel_Exit_Destroyed = function( trigger )
+	{
+        Map.FunnelExitGone = true;
+                Util.ChangeSpawn( TEAM.AXIS, 8 );
+        //ETUtil.SuicideSpawn( TEAM.AXIS, 8, -1 );
+        SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_funnel_entrance" );
+        SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Funnel_Exit" );
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_funnel_.*" );
+         SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Cooling_Pumps" );
+		Util.MapDebugPrint( "^6Funnel_Exit_Destroyed ^3WORKS - WORKS" );
+	},
+
+	Main_Bunker_Door_Destroyed = function( trigger )
+	{
+                    Util.ChangeSpawn( TEAM.AXIS, 8 );
+                    //ETUtil.SuicideSpawn( TEAM.AXIS, 8, -1 );
+        SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_supplyroomdoorswitch" );
+        //Wp.SetWaypointFlag( "phase1", "Closed", true );
+        Util.DisableGoal( "SWITCH_towerdoor", true );
+        Util.DisableGoal( "SWITCH_plaform_big_aufzug", true );
+        Util.DisableGoal( "RIDE_Platform_AL", true );       
+SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Funnel_Exit" );//must be destroyed before old bunker area can be planted, there is no game trigger
+SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Old_Bunker_Area" );
+SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_main" );
+
+                    //SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Main_Bunker_Entrance" );//old
+                    SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Bunker_Main_Entrance" );       
+SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_funnelmaingate" );
+         SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_funnelmaingate" );
+        Util.DisableGoal( "PLANT_Bunker_Backdoor___Dynamite_it", true );
+Util.DisableGoal( "BUILD_Bridge", true );
+//Util.DisableGoal( "PLANT_funnel_entrance", true );
+Util.DisableGoal( "PLANT_Outpost_Entrance", true );
+Util.DisableGoal( "PLANT_Ventilator", true );
+Util.DisableGoal( "BUILD_second_Bridge", true );
+Util.DisableGoal( "PLANT_second_Bridge", true );
+Util.DisableGoal( "PLANT_Bridge", true );
+            SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_maingate_.*" );    
+    SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_oldbunkerareadoor_.*" );
+//Util.SetRoleForTable({ "PLANT_funnel_entrance", "PLANT_Funnel_Exit", "PLANT_Ventilator" }, ROLE.ATTACKER1); //set role on multiple goals
+        //Util.EnableGoal( "PLANT_Old_Bunker_Area", true );
+          //ETUtil.SuicideSpawn( TEAM.AXIS, 2, -1 );
+          //Util.ChangeSpawn( TEAM.AXIS, 8 );
+     	SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_frontdoor_.*" );    
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_backdoorinside_.*" );   
+        //SetGoalPriority("PLANT_Old_Bunker_Area", 0.92, TEAM.ALLIES, CLASS.ENGINEER);
+        //SetGoalPriority("PLANT_Funnel_Exit", 0.92, TEAM.ALLIES, CLASS.ENGINEER); 
+        //SetGoalPriority("PLANT_Ventilator", 0.93, TEAM.ALLIES, CLASS.ENGINEER);
+        //SetGoalPriority("PLANT_Old_Bunker_Area", 1.97, TEAM.ALLIES, CLASS.ENGINEER);
+        //SetGoalPriority("PLANT_Ventilator", 0.93, TEAM.ALLIES, CLASS.ENGINEER); 
+        Map.MainBunkerDoorDestroyed = true;       
+		Util.MapDebugPrint( "^6Main_Bunker_Door_Destroyed" );
+	},
+
+	Old_Bunker_Area_Destroyed = function( trigger )
+	{
+        Map.oldbunkergone = true;
+        Map.SetSpawn1; 
+        Util.ChangeSpawn( TEAM.AXIS, 2 );
+        //ETUtil.SuicideSpawn( TEAM.AXIS, 2, -1 );
+		Util.MapDebugPrint( "^6Old_Bunker_Area_Destroyed" );
+	},
+
+	Outpost_Entrance_Destroyed = function( trigger )
+	{
+        OnTriggerRegion(AABB(-1001.497,-4156.703,2050.127,-288.125,-3721.134,2219.152), RegionTrigger.KillTrigger);
+        Map.MainEntranceSuicide();
+        //Util.ChangeSpawn( TEAM.ALLIES, 3 );
+        //Wp.SetWaypointFlag( "phase1", "Closed", true );
+        Util.DisableGoal( "SWITCH_plaform_big_aufzug", true );
+        Util.DisableGoal( "RIDE_Platform_AL", true );
+        Map.Switches.plaform_big_aufzug.Enabled = false;
+    SetAvailableMapGoals( TEAM.AXIS, true, "ARTILLERY_S_bunkerfrontdoorshot_3" );    
+    SetAvailableMapGoals( TEAM.AXIS, true, "ARTILLERY_S_bunkerfrontdoorshot_2" ); 
+	SetAvailableMapGoals( TEAM.AXIS, true, "ARTILLERY_S_bunkerfrontdoorshot_1" );    
+    SetAvailableMapGoals( TEAM.AXIS, true, "CALLARTILLERY_bunkerfrontdoor" );
+    SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_plaform_big_aufzug" );
+    SetAvailableMapGoals( TEAM.ALLIES, false, "RIDE_Platform_AL" );
+    SetAvailableMapGoals( TEAM.AXIS, false, "ARTILLERY_S_frontgateshot_3" );    
+    SetAvailableMapGoals( TEAM.AXIS, false, "ARTILLERY_S_frontgateshot_2" ); 
+	SetAvailableMapGoals( TEAM.AXIS, false, "ARTILLERY_S_frontgateshot_1" ); 
+	SetAvailableMapGoals( TEAM.AXIS, false, "CALLARTILLERY_frontgate_1" );    
+    SetAvailableMapGoals( TEAM.AXIS, false, "CALLARTILLERY_frontgate_2" ); 
+	SetAvailableMapGoals( TEAM.AXIS, false, "CALLARTILLERY_frontgate_3" );    
+    SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_frontgate_1" );         
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_frontgate_2" );    
+    SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_frontgate_3" ); 
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_frontgate_4" );    
+    SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_frontgate_5" ); 
+        SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Bunker_Backdoor___Dynamite_it" );
+SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Bunker_Front_Door___Dynamite_it" );
+SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Bridge" );
+SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_second_Bridge" );
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_frontgate_.*" );
+        SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_frontdoor_.*" );
+        Map.outpostentrancedestroyed = true; 
+		Util.MapDebugPrint( "^6Outpost_Entrance_Destroyed" );
+	},
+
+	Ventilator_Destroyed = function( trigger )
+	{
+//Util.ClearRoleForTable({ "PLANT_funnel_entrance", "PLANT_Funnel_Exit", "PLANT_Ventilator" }, ROLE.ATTACKER1); //set-clear role on multiple goals
+		Util.MapDebugPrint( "^6Ventilator_Destroyed" );
+	},
+
+	second_Bridge_Destroyed = function( trigger )
+	{
+        if (Map.MainBunkerDoorDestroyed == true)
+        {
+                  
+        Util.DisableGoal( "SWITCH_towerdoor", true );
+        Util.DisableGoal( "SWITCH_funnelmaingate", true ); 
+Util.DisableGoal( "PLANT_Bunker_Backdoor___Dynamite_it", true );
+Util.DisableGoal( "BUILD_Bridge", true );
+//Util.DisableGoal( "PLANT_funnel_entrance", true );
+Util.DisableGoal( "PLANT_Outpost_Entrance", true );
+Util.DisableGoal( "PLANT_Ventilator", true );
+Util.DisableGoal( "BUILD_second_Bridge", true );
+Util.DisableGoal( "PLANT_second_Bridge", true );
+Util.DisableGoal( "PLANT_Bridge", true );  
+        }
+		Util.MapDebugPrint( "^6second_Bridge_Destroyed" );
+	},
+    
+    pushoncebutton = function( trigger )//button on the wall in the bottom floor of bunker
+	{
+        //Util.EnableGoal( "GRENADE_funnelboards", true );
+        Util.DisableGoal( "SWITCH_funnelmaingate", true ); 
+        Util.DisableGoal( "SWITCH_towerdoor", true );
+        Util.EnableGoal( "PLANT_funnel_entrance", true );
+        Util.DisableGoal( "PLANT_funnel_entrance", false );
+        
+		Util.MapDebugPrint( "^6pushoncebutton" );
+	},
+    
+    funnelboadsgone = function( trigger )//pushoncebutton - AKA SWITCH opens door leading to this
+	{
+        Util.EnableGoal( "PLANT_funnel_entrance", true );
+        
+		Util.MapDebugPrint( "^6funnelboadsgone" );
+	},
+
+    securitydoorsopen = function( trigger )//pushoncebutton - AKA SWITCH opens door leading to this, then this switch enables MAIN gate to be destroyed.
+	{
+                if (Map.backdoorintact == false)//destroyed
+                {
+                    SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Main_Bunker_Entrance" );
+                    SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_main" );
+                    SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_backdoorinside_.*" );
+                    SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_maingate_.*" ); 
+                     SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_funnel_entrance" ); 
+
+                    Util.DisableGoal( "SWITCH_towerdoor", true );
+                    Util.DisableGoal( "SWITCH_funnelmaingate", true ); 
+                    Util.DisableGoal( "PLANT_Bunker_Backdoor___Dynamite_it", true );
+                    Util.DisableGoal( "BUILD_Bridge", true );
+                    //Util.DisableGoal( "PLANT_funnel_entrance", true );
+                    Util.DisableGoal( "PLANT_Outpost_Entrance", true );
+                    Util.DisableGoal( "PLANT_Ventilator", true );
+                    Util.DisableGoal( "BUILD_second_Bridge", true );
+                    Util.DisableGoal( "PLANT_second_Bridge", true );
+                    Util.DisableGoal( "PLANT_Bridge", true );  
+                }
+            else 
+            {
+                SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Bunker_Backdoor___Dynamite_it" );
+                SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_backdoorinside_.*" );
+                SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Main_Bunker_Entrance" );
+                    SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_maingate_.*" ); 
+                    
+                    Util.DisableGoal( "SWITCH_towerdoor", true );
+                    Util.DisableGoal( "SWITCH_funnelmaingate", true ); 
+                    //Util.DisableGoal( "PLANT_funnel_entrance", true );
+                    Util.DisableGoal( "PLANT_Outpost_Entrance", true );
+                    Util.DisableGoal( "PLANT_Ventilator", true );   
+            }
+       
+                    Util.ChangeSpawn( TEAM.AXIS, 8 );
+                    //ETUtil.SuicideSpawn( TEAM.AXIS, 8, -1 );        
+        Util.DisableGoal( "SWITCH_towerdoor", true );
+        Util.DisableGoal( "SWITCH_funnelmaingate", true ); 
+        	//SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_frontdoor_.*" );    
+    //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_backdoorinside_.*" );
+//Util.DisableGoal( "PLANT_Bunker_Backdoor___Dynamite_it", true );
+//Util.DisableGoal( "BUILD_Bridge", true );
+//Util.DisableGoal( "PLANT_funnel_entrance", true );
+//Util.DisableGoal( "PLANT_Outpost_Entrance", true );
+//Util.DisableGoal( "PLANT_Ventilator", true );
+//Util.DisableGoal( "BUILD_second_Bridge", true );
+//Util.DisableGoal( "PLANT_second_Bridge", true );
+//Util.DisableGoal( "PLANT_Bridge", true );
+
+        //SetGoalPriority("PLANT_funnel_entrance", 0.92, TEAM.ALLIES, CLASS.ENGINEER);
+        
+        Map.securitydooropen = true;
+		Util.MapDebugPrint( "^6securitydoorsopen" );
+	},
+    /*
+    oldbunkerplanted = function( trigger )
+	{
+        
+        Util.DisableGoal( "PLANT_funnel_entrance", true );
+        Util.DisableGoal( "SWITCH_towerdoor", true );
+        Util.DisableGoal( "SWITCH_funnelmaingate", true );
+        
+		Util.MapDebugPrint( "^6oldbunkerplanted" );
+	},
+    */
+        pumpsplanted = function( trigger )
+	{
+        
+        Util.DisableGoal( "PLANT_funnel_entrance", true );
+        Util.DisableGoal( "SWITCH_towerdoor", true );
+        Util.DisableGoal( "SWITCH_funnelmaingate", true );
+        Util.DisableGoal( "PLANT_Old_Bunker_Area", true );
+        Util.DisableGoal( "PLANT_Funnel_Exit", true ); 
+        Util.DisableGoal( "PLANT_Ventilator", true );        
+		Util.MapDebugPrint( "^6pumpsplanted" );
+	},
+    
+    pumpdoor1open = function( trigger )//
+	{
+	//SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_lockdoor2" );    
+    SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_lockdoor1" ); 
+	//SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor2" );    
+    SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_lockdoor1" ); 
+        Map.LockDoor1closed = false;    
+		Util.MapDebugPrint( "^6pumpdoor1open" );
+	},
+    
+    pumpdoor2open = function( trigger )//
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_lockdoor2" );    
+    //SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_lockdoor1" ); 
+	SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_lockdoor2" );    
+    //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor1" );
+    Map.LockDoor2closed = false; 
+		Util.MapDebugPrint( "^6pumpdoor2open" );
+	},
+    
+    pumpdoor1closed = function( trigger )//need a working trigger
+	{
+	//SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_lockdoor2" );    
+    SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor1" ); 
+	//SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor2" );    
+    SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor1" );
+    Map.LockDoor1closed = true; 
+		Util.MapDebugPrint( "^6pumpdoor1closed" );
+	},
+    
+    pumpdoor2closed = function( trigger )//need a working trigger
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor2" );    
+    //SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_lockdoor1" ); 
+	SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor2" );    
+    //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor1" );
+    Map.LockDoor2closed = true; 
+		Util.MapDebugPrint( "^6pumpdoor2closed" );
+	},
+    
+    oldbunkerdynoplanted = function( trigger )//button on the wall in the bottom floor of bunker  oldbunkerdynoplanted
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Funnel_Exit" );
+    	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_pumproom_1" );    
+    SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_pumproom_2" ); 
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_pumproom_3" );    
+    SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_pumproom_4" );    
+     SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_pumproom_5" );    
+        //Util.ChangeSpawn( TEAM.ALLIES, 9 );
+        SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Elevatorbottom" );
+        SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_Elevatortop" );
+  
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_oldbunkerareadoor_4" );
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_oldbunkerareadoor_5" );
+        SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_oldbunkerareadoor_6" );
+        
+                        SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_Commandpost" );
+                        SetGoalPriority("BUILD_Allied_Commandpost", 0.96, TEAM.ALLIES, CLASS.ENGINEER);
+ SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Cooling_Pumps" );
+                //Util.ChangeSpawn( TEAM.ALLIES, 9 );
+                //Util.EnableGoal( "SWITCH_Elevatortop", true );    
+                //Util.EnableGoal( "SWITCH_Elevatorbottom", true ); 
+        //SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor2" );    
+        //SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lockdoor1" ); 
+	   //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor2" );    
+        //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor1" );
+    
+	Wp.SetWaypointFlag("bob","closed",false);
+	Wp.SetWaypointFlag("bob2","closed",false);
+                        
+        Util.DisableGoal( "SWITCH_towerdoor", true );
+        Util.DisableGoal( "SWITCH_funnelmaingate", true ); 
+        Util.DisableGoal( "PLANT_Bunker_Backdoor___Dynamite_it", true );
+        Util.DisableGoal( "BUILD_Bridge", true );
+        //Util.DisableGoal( "PLANT_funnel_entrance", true );
+        Util.DisableGoal( "PLANT_Outpost_Entrance", true );
+        Util.DisableGoal( "PLANT_Ventilator", true );
+        Util.DisableGoal( "BUILD_second_Bridge", true );
+        Util.DisableGoal( "PLANT_second_Bridge", true );
+        Util.DisableGoal( "PLANT_Bridge", true );
+        
+		Util.MapDebugPrint( "^6oldbunkerdynoplanted" );
+	},
+
+/*
+ big_aufzug_gotoz = function( trigger )// WORKS
+ {
+ //-2.28 -900.26 0.00   
+		//if ( trigger.Action == "0.00 0.00 360.43")//( Map.outpostentrancedestroyed == true)
+        //if ( trigger.Action == "-2.28 -900.26 0.00")//( Map.outpostentrancedestroyed == true)
+        if ( trigger.Action == "2.28 900.26 0.00")//( Map.outpostentrancedestroyed == true)
+		{
+            
+            if ( Map.outpostentrancedestroyed == true)
+            {
+            SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_plaform_big_aufzug" );
+            SetAvailableMapGoals( TEAM.ALLIES, false, "RIDE_Platform_AL" );
+		          	Map.Switches.plaform_big_aufzug.Enabled = false;  
+            }
+	       else
+           {
+             
+            SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_plaform_big_aufzug" );
+            SetAvailableMapGoals( TEAM.ALLIES, true, "RIDE_Platform_AL" );
+		          	Map.Switches.plaform_big_aufzug.Enabled = false;
+          // }
+                    //Map.happyhome = true;
+            //Map.floorathome = true;        
+        Util.MapDebugPrint( "^ebigaufzuggoto" );			
+			Util.MapDebugPrint( "^7big_aufzug_goto IF ^6OUPOSTDESTROYED" );//platform is back at home location
+		}
+    
+		else if ( trigger.Action == "-2.28 -900.26 0.00")//( Map.outpostentrancedestroyed == true)( trigger.Action == "0.00 0.00 -360.43")//if ( trigger.Action == "-625.00 3959.00 1858.500" )
+		{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_plaform_big_aufzug" );
+        SetAvailableMapGoals( TEAM.ALLIES, true, "RIDE_Platform_AL" );
+        Map.Switches.plaform_big_aufzug.Enabled = true;	         			
+		Util.MapDebugPrint( "^ebig_aufzug_goto IS ELSEIF HOME ^1WORKS!!!" );//platform is back at home location
+		}
+   
+    		else
+		{
+			//Map.Switches.faucetlab1.Enabled = true;
+                    //sleep(6.3);
+        Map.floorathome = false;
+       Map.Switches.plaform_big_aufzug.Enabled = false;
+		SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_plaform_big_aufzug" );
+        SetAvailableMapGoals( TEAM.ALLIES, true, "RIDE_Platform_AL" );
+        	
+			Util.MapDebugPrint( "^ebig_aufzug_goto IS ELSE LEAVING" );          			
+			Util.MapDebugPrint( "^ebigaufzugoto" );
+		}
+    
+    			Util.MapDebugPrint( "^ebig_aufzug_goto IS LEAVING" );          			
+			Util.MapDebugPrint( "^ebigaufzugoto" );
+    },
+   */   
+     t86activated = function( trigger )
+     {
+        /*
+                    if ( !Map.floorathome == true or Map.outpostentrancedestroyed == true)
+            {
+            SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_plaform_big_aufzug" );
+            SetAvailableMapGoals( TEAM.ALLIES, false, "RIDE_Platform_AL" );
+		          	Map.Switches.plaform_big_aufzug.Enabled = false; 
+                    Util.MapDebugPrint("^7start enter ^6OUT_POST_DESTROYED_PLATFORM_TURNED_IS_OFF");
+                    Util.MapDebugPrint( "^et86 BUTTON activated ^1WORKS TURNED OFF" );  
+            }
+        else
+        {
+            */
+        SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_plaform_big_aufzug" );
+        Map.Switches.plaform_big_aufzug.Enabled = false;
+        SetAvailableMapGoals( TEAM.ALLIES, true, "RIDE_Platform_AL" );
+        Wp.SetWaypointFlag("rideplatform", "closed", true);
+        Util.MapDebugPrint( "^et86 BUTTON activated ^1WORKS NO CONDITIONALS" );
+        //}
+    Util.MapDebugPrint( "^et86 BUTTON activated ^1WORKS" );
+    },
+   
+
+//OnTriggerRegion(AABB(-462.624,-1101.118,1449.125,-397.254,-1031.556,1523.125), Map.rideover);    
+            rideover =//custom_trigger_at axis_end_of_ride THIS WORKS AND IS CORRECT positions
+ 	{
+ 		Name="rideover",
+ 		TriggerOnEntity = GetGoal("MOVER_big_aufzug").GetEntity(),
+ 		OnEnter = function(ent)
+ 		{ 
+        			sleep(3.3);
+			Map.floorathome = false;
+        //Map.happyhome = false;
+        //Map.getoff = true;
+        Map.endoffloorride = true;
+        Wp.SetWaypointFlag("rideplatform", "closed", true);
+        Wp.SetWaypointFlag("rideplatform2", "closed", true);
+        SetAvailableMapGoals( TEAM.ALLIES, false, "RIDE_Platform_AL" );
+                      SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_plaform_big_aufzug" );
+              Map.Switches.plaform_big_aufzug.Enabled = false;
+        Util.MapDebugPrint("^7rideover arrive enter");
+        sleep(4.0);
+        //Map.endoffloorride = false;
+        
+ 			Util.MapDebugPrint(GetEntName(ent) + " ^1rideover entering");
+			Util.MapDebugPrint("^7rideover leave by-by");                       
+ 		},
+ 		OnExit = function(ent)
+ 		{
+            //Map.getoff = false;
+            Map.floorathome = false;
+            Map.endoffloorride = false;
+            Wp.SetWaypointFlag("rideplatform", "closed", true);
+              Wp.SetWaypointFlag("rideplatform2", "closed", true);
+              SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_plaform_big_aufzug" );
+              Map.Switches.plaform_big_aufzug.Enabled = false;
+        //Util.BotChat( 0, "say", "^6THE PLANE BOMBED THE BRIDGE - DID YOU SEE THE BOMBS EXPLODING??", 2 ); 
+        //Util.MapDebugPrint( "^6THE PLANE BOMBED THE BRIDGE - DID YOU SEE THE BOMBS EXPLODING??^2EXIT" );              
+			Util.MapDebugPrint(GetEntName(ent) + "^7rideover exited aabb trigger");
+			Util.MapDebugPrint("^7rideover exit");
+ 		},     
+    },
+//OnTriggerRegion(AABB(-842.438,-4059.875,2086.125,-763.898,-3815.716,2160.125), Map.start);
+    start =//custom_trigger_at axis_end_of_ride
+ 	{
+ 		Name="start",
+ 		TriggerOnEntity = GetGoal("MOVER_big_aufzug").GetEntity(),
+ 		OnEnter = function(ent)
+ 		{
+            if ( Map.outpostentrancedestroyed == true)
+            {
+            SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_plaform_big_aufzug" );
+            SetAvailableMapGoals( TEAM.ALLIES, false, "RIDE_Platform_AL" );
+		          	Map.Switches.plaform_big_aufzug.Enabled = false; 
+            Map.floorathome = true;
+            Map.endoffloorride = false;
+                    Util.MapDebugPrint("^7start enter ^6OUT_POST_DESTROYED_PLATFORM_TURNED_IS_OFF");  
+            }
+        else
+        {
+         	sleep(6.3);
+            Map.floorathome = true;
+            Map.endoffloorride = false;
+            sleep(6.3);
+            SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_plaform_big_aufzug" );	   
+            Map.Switches.plaform_big_aufzug.Enabled = true;
+            SetAvailableMapGoals( TEAM.ALLIES, false, "RIDE_Platform_AL" );
+            Wp.SetWaypointFlag("rideplatform2", "closed", false);            		  
+            Wp.SetWaypointFlag("rideplatform", "closed", false);
+            Util.MapDebugPrint("^7start arrive ^2PLATFORM_TURNED_^1ON"); 
+        }     
+           //Map.Switches.plaform_big_aufzug.Enabled = false;
+ 			Util.MapDebugPrint(GetEntName(ent) + " ^1start entering");///not sure
+			Util.MapDebugPrint("^7start enter");                       
+ 		},
+ 		OnExit = function(ent)
+ 		{
+            //SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_plaform_big_aufzug" );
+            //Map.getoff = false;
+            //Map.endoffloorride = false;
+            Map.floorathome = false;
+            Map.endoffloorride = false;
+            		  Wp.SetWaypointFlag("rideplatform", "closed", true);
+                      Wp.SetWaypointFlag("rideplatform2", "closed", true);
+                     SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_plaform_big_aufzug" );
+            SetAvailableMapGoals( TEAM.ALLIES, true, "RIDE_Platform_AL" );
+		          	Map.Switches.plaform_big_aufzug.Enabled = false;             
+        //Util.BotChat( 0, "say", "^6THE PLANE BOMBED THE BRIDGE - DID YOU SEE THE BOMBS EXPLODING??", 2 ); 
+        //Util.MapDebugPrint( "^6THE PLANE BOMBED THE BRIDGE - DID YOU SEE THE BOMBS EXPLODING??^2EXIT" );              
+			Util.MapDebugPrint(GetEntName(ent) + "^7start exited aabb trigger");
+			Util.MapDebugPrint("^7start exit");
+ 		},     
+    },
+///
+funelintact = true,
+
+    funelextrigger =//custom_trigger_at axis_end_of_ride
+ 	{
+ 		Name="funelextrigger",
+ 		TriggerOnEntity = GetGoal("PLANT_Funnel_Exit").GetEntity(fun_ext),
+ 		OnEnter = function(ent)
+ 		{Map.funelintact = true;
+ 			Util.MapDebugPrint(GetEntName(ent) + " ^1start entering");///not sure
+			Util.MapDebugPrint("^7start enter");
+             Util.MapDebugPrint("^6Funnel_Exit_^1Intact");                        
+ 		},
+ 		OnExit = function(ent)
+ 		{
+            Map.funelintact = false;             
+        Util.BotChat( 0, "say", "^6THE PLANE BOMBED THE BRIDGE - DID YOU SEE THE BOMBS EXPLODING??", 2 );             
+			Util.MapDebugPrint(GetEntName(ent) + "^7start exited aabb trigger");
+			Util.MapDebugPrint("^7start exit");
+             Util.MapDebugPrint("^6Funnel_Exit_^1Destroyed"); 
+ 		},     
+    },  
+ //////////////////////////////////////////////////////////////////////
+ ///////////////////////////////////////////////////////////////////
+ ////////////////////////////////////////////////////////////////////
+ /////////////////////////////////////////////////////////////////////   
+    
+    killzone =//missing kill commands
+    {
+        Name = "killzone",
+        TriggerOnClass = CLASS.ANYPLAYER,
+        OnEnter = function(ent)
+        {
+            if(GetEntTeam(ent) == TEAM.ALLIES )
+            {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("ALLIES Im in the killzone");                        
+                    }
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("ALLIES OBJECTIVE killzone");                        
+                    }
+                    //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_tunnel_.*" );                                                                                              
+                Util.MapDebugPrint( "^26_AXIS ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2ENTRANCE WITH THE ^1OBJECTIVE" ); //works                   
+                }
+            Util.MapDebugPrint( "^27_ALLIED ^ePLAYER IS AT THE _CAPPOINT_ROOM ^2ENTRANCE" );//works
+            }            
+		Util.MapDebugPrint( "^2ENTER" );         
+        },
+        OnExit = function(ent)
+        {
+            
+            if(GetEntTeam(ent) == TEAM.ALLIES )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("I Have Picked Up OBJECTIVE");                        
+                    }
+                 Util.MapDebugPrint( "^28_ALLIED ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2EXIT WITH THE OBJECTIVE" );  //works              
+                     //SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_secretdocs1" ); 
+                }
+            		Util.MapDebugPrint( "^212_ALLIED ^ePLAYER IS at THE ^6AXIS_CAPPOINT_ROOM EXIT" );//works
+            }
+            if(GetEntTeam(ent) == TEAM.AXIS )
+            {
+                if (GetEntFlags( ent, ENTFLAG.CARRYINGGOAL))
+                {
+                    b = Util.GetBotByName(GetEntName(ent));
+                    if (b)
+                    {
+                        b.SayTeam("I Have The OBJECTIVE");                        
+                    }              
+                    //SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_tunnel_.*" );     
+            		Util.MapDebugPrint( "^215_AXIS ^ePLAYER IS AT THE AXIS_CAPPOINT_ROOM ^2EXIT WITH THE ^1OBJECTIVE" ); //works   
+                }
+            		Util.MapDebugPrint( "^216_AXIS ^ePLAYER IS at AXIS_CAPPOINT_ROOM EXIT" );//works
+            }        
+
+		Util.MapDebugPrint( "^2EXIT" );         
+        },
+       
+    },
+supplyroomstatusopen = false,
+    supplyroomopen = function( trigger )//need a working trigger
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_supplyroomdoorswitch" );    
+    //SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_supplyroomdoorswitch" ); 
+	SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_supplyroomdoorswitch" );    
+    //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor1" );
+    Map.supplyroomstatusopen = true;
+		Util.MapDebugPrint( "^6supplyroomopen" );
+	},
+    
+        supplyroomclosed = function( trigger )//need a working trigger
+	{
+        Map.supplyroomstatusopen = false;
+	//SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_lockdoor2" );    
+    SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_supplyroomdoorswitch" ); 
+	SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_supplyroomdoorswitch" );    
+    //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor1" );
+    //Map.LockDoor1closed = true; 
+		Util.MapDebugPrint( "^6supplyroomclosed" );
+	},
+    
+        funnelentrance2 = function( trigger )//need a working trigger
+	{
+        //Map.supplyroomstatusopen = false;
+	//SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_lockdoor2" );    
+    //SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_supplyroomdoorswitch" ); 
+	//SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_supplyroomdoorswitch" );    
+    //SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor1" );
+    //Map.LockDoor1closed = true; 
+		Util.MapDebugPrint( "^6funnelentrance2 ^2WORKS _ WORKS" );
+	},
+       
+    funelentintact = true,
+
+        //Util.EnableGoal( "PLANT_funnel_entrance", true );
+        //Util.DisableGoal( "PLANT_funnel_entrance", false );
+    funnelentrance =//custom_trigger_at axis_end_of_ride
+ 	{
+ 		Name="funnelentrance",
+ 		TriggerOnEntity = GetGoal("PLANT_funnel_entrance").GetEntity("air"),
+ 		OnEnter = function(ent)
+ 		{Map.funelentintact = true;
+ 			Util.MapDebugPrint(GetEntName(ent) + " ^1Funnel_Entrance entering");///not sure
+			Util.MapDebugPrint("^7Funnel_Entrance enter");
+             Util.MapDebugPrint("^6Funnel_Entrance_^1Intact");                        
+ 		},
+ 		OnExit = function(ent)
+ 		{
+            Map.funelentintact = false;             
+        Util.BotChat( 0, "say", "^6THE PLANE BOMBED THE BRIDGE - DID YOU SEE THE BOMBS EXPLODING??", 2 );             
+			Util.MapDebugPrint(GetEntName(ent) + "^7Funnel_Entrance exited aabb trigger");
+			Util.MapDebugPrint("^7Funnel_Entrance exit");
+             Util.MapDebugPrint("^6Funnel_Entrance_^1Destroyed"); 
+ 		},     
+    },  
+ //////////////////////////////////////////////////////////////////////
+ ///////////////////////////////////////////////////////////////////
+ ////////////////////////////////////////////////////////////////////
+ ///////////////////////////////////////////////////////////////////// 
+
+///
+    dummydoor = false,
+
+        //Util.EnableGoal( "PLANT_funnel_entrance", true );
+        //Util.DisableGoal( "PLANT_funnel_entrance", false );
+    dummydoor =
+ 	{
+ 		Name="dummydoor",
+ 		TriggerOnEntity = GetGoal("PLANT_main").GetEntity("truemmer_feld"),
+ 		OnEnter = function(ent)
+ 		{Map.dummydoor = true;
+ 			Util.MapDebugPrint(GetEntName(ent) + " ^1dummydoor entering");///not sure
+			Util.MapDebugPrint("^7dummydoor enter");
+             Util.MapDebugPrint("^6dummydoor_^1Intact");                        
+ 		},
+ 		OnExit = function(ent)
+ 		{
+            Map.dummydoor = false;             
+        Util.BotChat( 0, "say", "^6THE PLANE BOMBED THE BRIDGE - DID YOU SEE THE BOMBS EXPLODING??", 2 );             
+			Util.MapDebugPrint(GetEntName(ent) + "^7dummydoor exited aabb trigger");
+			Util.MapDebugPrint("^7dummydoor exit");
+             Util.MapDebugPrint("^6dummydoor^1Destroyed"); 
+ 		},     
+    },  
+ //////////////////////////////////////////////////////////////////////
+ ///////////////////////////////////////////////////////////////////
+ ////////////////////////////////////////////////////////////////////
+ /////////////////////////////////////////////////////////////////////     
+};
+
+global OnMapLoad = function()
+{
+
+	// Register callback functions  Lock Door 1 opened
+ 	OnTriggerRegion(AABB(2180.788,-2366.875,1457.125,2408.875,-2126.890,1543.125), Map.dummydoor);   
+    OnTrigger( "Ammo and Health Door opened", Map.supplyroomopen );
+    OnTrigger( "Ammo and Health Door closed", Map.supplyroomclosed );
+    //OnTriggerRegion(AABB(-1001.497,-4156.703,2050.127,-288.125,-3721.134,2219.152), RegionTrigger.KillTrigger);     
+    //OnTriggerRegion(AABB(-1001.497,-4156.703,2050.127,-288.125,-3721.134,2219.152), Map.killzone);
+    OnTriggerRegion(AABB(-842.438,-4059.875,2086.125,-763.898,-3815.716,2160.125), Map.start);
+    OnTriggerRegion(AABB(-462.624,-1101.118,1449.125,-397.254,-1031.556,1523.125), Map.rideover);
+    //OnTriggerRegion(AABB(-2317.732,-2495.079,657.125,3560.874,6406.875,2532.052), Map.SetSpawn1);
+    //OnTrigger( "big_aufzug_goto", Map.big_aufzug_gotoz );
+    OnTrigger( "t86 activated", Map.t86activated );
+    OnTriggerRegion(AABB(1630.018,2515.125,1443.125,1669.787,2644.875,1517.129), Map.old);
+    OnTrigger( "Planted at the Cooling Pumps.", Map.pumpsplanted );
+    //OnTrigger( "Planted at the Old Bunker Area.", Map.oldbunkerplanted );
+    OnTrigger( "t48_moving", Map.pushoncebutton );//SWITCH_towerdoor NOT WORKING
+	OnTrigger( "The Commandpost has been constucted!", Map.Allied_Commandpost_Built );// //Util.ChangeSpawn( TEAM.ALLIES, 11 );
+	OnTrigger( "The Bridge has been constucted!", Map.Bridge_Built );
+	OnTrigger( "The Pump has been constucted!", Map.Cooling_Pumps_Built );
+	OnTrigger( "MISSING_STRING", Map.Funnel_Exit_Built );
+   //OnTrigger( "door_1_start", Map.door1start);// open or closed
+   //OnTrigger( "door_4_start", Map.door4start );// open or closed 
+   OnTriggerRegion(AABB(487.149,2756.085,1435.125,808.855,2813.054,1509.134), Map.spawn1);
+OnTriggerRegion(AABB(116.425,2735.216,1435.128,424.870,2777.165,1509.134), Map.spawn2);
+OnTriggerRegion(AABB(126.394,2410.037,1435.127,423.753,2460.395,1509.133), Map.spawn3);
+OnTriggerRegion(AABB(-239.937,2728.713,1435.125,35.468,2772.502,1509.136), Map.spawn4);
+OnTriggerRegion(AABB(-257.378,2376.633,1435.125,40.169,2426.194,1509.130), Map.spawn5);
+alliedlaffer = OnTriggerRegion(AABB(3426.551,2523.136,1435.125,3560.875,2636.875,1533.125), RegionTrigger.DisableBotPush);
+axislaffer = OnTriggerRegion(AABB(-656.875,2523.125,1434.125,-510.778,2636.863,1509.125), RegionTrigger.DisableBotPush);
+funnelstairstobunker = OnTriggerRegion(AABB(47.126,-137.533,1425.125,582.875,2062.874,2507.125), RegionTrigger.DisableBotPush);
+    OnTrigger( "^7Lock Door 1 opened", Map.pumpdoor1open );
+    OnTrigger( "^7Lock Door 2 opened", Map.pumpdoor2open );
+    OnTrigger( "^7Lock Door 1 closed", Map.pumpdoor1closed );
+    OnTrigger( "^7Lock Door 2 closed", Map.pumpdoor2closed );
+    //OnTrigger( "aufzug_goto", Map.NEW_TRIGGER1 );// up or down - elevator move up or down
+    //OnTrigger( "door_up_Moving", Map.NEW_TRIGGER3 );// open or closed - elevator top door
+    //OnTrigger( "t99_Moving", Map.NEW_TRIGGER2 );// open or closed - elevator bottom door
+    OnTrigger( "Planted at the Old Bunker Area.", Map.oldbunkerdynoplanted );    
+	OnTrigger( "MISSING_STRING", Map.Old_Bunker_Area_Built );
+	OnTrigger( "The Second Bridge has been constucted!", Map.second_Bridge_Built );
+	OnTrigger( "The Commandpost has been destroyed!", Map.Allied_Commandpost_Destroyed );// //Util.ChangeSpawn( TEAM.ALLIES, 9 );
+	OnTrigger( "MISSING_STRING", Map.Bridge_Destroyed );
+	OnTrigger( "Allied team destroyed the Crater Bunker Backdoor", Map.Bunker_Backdoor_Destroyed );
+	OnTrigger( "Allied team destroyed Crater Bunker Frontdoor", Map.Bunker_Front_Door_Destroyed );
+	OnTrigger( "Allies have destoyed the Cooling-Pump Reactor Overheating!", Map.Cooling_Pumps_Destroyed );
+	
+    //OnTrigger( "^7Setting Allied autospawn to Glass Bridge Spawns Setting Axis autospawn to Old Bunker Area", Map.Funnel_Exit_Destroyed );
+    //OnTrigger( "^7Setting Axis autospawn to Old Bunker Area", Map.Funnel_Exit_Destroyed );
+    //	OnTrigger( "Setting Allied autospawn to Glass Bridge Spawns", Map.Funnel_Exit_Destroyed );
+    //OnTrigger( "Setting Allied autospawn to Glass Bridge Spawns Setting Axis autospawn to Old Bunker Area", Map.Funnel_Exit_Destroyed );
+   // OnTrigger( "Setting Axis autospawn to Old Bunker Area", Map.Funnel_Exit_Destroyed );
+   
+	OnTrigger( "Allied team destroyed the Mainbunker Doors", Map.Main_Bunker_Door_Destroyed );
+ 	OnTrigger( "bunker_ent Destroyed!", Map.Main_Bunker_Door_Destroyed );   
+	OnTrigger( "Old Bunker wech!", Map.Old_Bunker_Area_Destroyed );
+    
+	OnTrigger( "Allied team destroyed the Outpost entrance", Map.Outpost_Entrance_Destroyed );
+    
+	OnTrigger( "Ventilator is destroyed!", Map.Ventilator_Destroyed );
+    
+	OnTrigger( "MISSING_STRING", Map.second_Bridge_Destroyed );
+    
+    OnTrigger( "GRENADE_funnelboards Exploded.", Map.funnelboadsgone );
+    
+	OnTriggerRegion(AABB(1858.154,-36.875,1441.125,1904.875,1.126,1515.125), Map.funelextrigger);    
+//OnTriggerRegion(AABB(-912.786,-1463.875,1445.125,-343.125,-894.127,1523.125), Map.platform_endoftrip);    
+   // OnTriggerRegion(AABB(-801.571,-4205.866,2046.668,-334.861,-3721.160,2146.308), Map.platform_start_end);
+    
+//OnTrigger( "Funnel Exit wech!", Map.Funnel_Exit_Destroyed );
+
+OnTrigger( "Funnel Exit Destroyed!", Map.Funnel_Exit_Destroyed );
+ 
+OnTrigger( "The Allied breached into the funnel!", Map.funnelentrance2 );
+
+
+    OnTrigger( "Security Doors Opened", Map.securitydoorsopen );//SWITCH_funnelmaingate
+OnTriggerRegion(AABB(1967.126,-207.240,1855.125,2054.875,-168.435,1929.125), Map.funnelentrance);
+
+//OnTriggerRegion(AABB(1905.734,-135.874,1855.125,1945.776,-54.127,1929.125), Map.funnelentranceinside);
+	//~Util.DisableGoal( ".*", true ); // all but routes
+	//~SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_.*" );
+	//~SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_.*" );
+        SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Bunker_Backdoor___Dynamite_it" );
+SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Bunker_Front_Door___Dynamite_it" );   
+
+SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_supplyroomdoorswitch" );
+SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_supplyroomdoorswitch" );
+    
+  //SWITCH_towerdoor  
+   //SWITCH_funnelmaingate 
+Util.DisableGoal( "SWITCH_towerdoor", true );
+         SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Old_Bunker_Area" );
+         SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Funnel_Exit" );
+        SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Cooling_Pumps" );
+              
+Util.DisableGoal( "MOUNTMG42_.*", true );
+Util.DisableGoal( "REPAIRMG42_.*", true );
+SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_main" );
+SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Main_Bunker_Entrance" );
+//Util.DisableGoal( "PLANT_Main_Bunker_Entrance", true );
+Util.AddUseWp("PLANT_Main_Bunker_Entrance", "main_1");// Antenna is the waypoint name
+Util.AddUseWp("PLANT_Main_Bunker_Entrance", "main_2");// Antenna is the waypoint name
+Util.AddUseWp("PLANT_Main_Bunker_Entrance", "main_3");// Antenna is the waypoint name
+SetGoalPriority("PLANT_Main_Bunker_Entrance", 0.96, TEAM.ALLIES, CLASS.ENGINEER);
+SetGoalPriority("PLANT_Outpost_Entrance", 0.99, TEAM.ALLIES, CLASS.ENGINEER);
+	// Max users per goal
+	//Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+//Wp.SetWaypointFlag("rideplatform", "closed", false);
+//Wp.SetWaypointFlag("rideplatform", "closed", false);
+Util.DisableGoal( "PLANT_Funnel_Exit", true );    
+Util.AddUseWp("PLANT_Funnel_Exit", "screenplant");// Antenna is the waypoint name
+Util.AddUseWp("PLANT_funnel_entrance", "funnelplant");// Antenna is the waypoint name
+SetGoalPriority("BUILD_Cooling_Pumps", 0.96, TEAM.AXIS, CLASS.ENGINEER);
+SetGoalPriority("PLANT_Cooling_Pumps", 0.96, TEAM.ALLIES, CLASS.ENGINEER);
+
+SetGoalPriority("PLANT_Old_Bunker_Area", 0.96, TEAM.ALLIES, CLASS.ENGINEER);
+Util.AddUseWp("PLANT_Cooling_Pumps", "pump_1");// Antenna is the waypoint name
+Util.AddUseWp("PLANT_Cooling_Pumps", "pump_2");// Antenna is the waypoint name
+Util.AddUseWp("PLANT_Cooling_Pumps", "pump_3");// Antenna is the waypoint name
+Util.AddUseWp("PLANT_Cooling_Pumps", "pump_4");// Antenna is the waypoint name
+Util.AddUseWp("PLANT_Cooling_Pumps", "pump_5");// Antenna is the waypoint name
+Util.AddUseWp("PLANT_Cooling_Pumps", "pump_6");// Antenna is the waypoint name
+SetGoalPriority("PLANT_Funnel_Exit", 0.94, TEAM.ALLIES, CLASS.ENGINEER);//Funnel Exit & Entrance Destroyed has NO TRIGGER, Funnel Exit destroyed IS REQUIRED before OLD Bunker Area can be PLANTED & destroyed!
+//SetGoalPriority("BUILD_.*", 0.94, TEAM.ALLIES, CLASS.ENGINEER);
+//SetGoalPriority("ATTACK_funnel_1", 0.75, TEAM.ALLIES);
+Util.DisableGoal( "ATTACK_funnel_1", true );
+//SetGoalPriority("SWITCH_funnelmaingate", 1.99, TEAM.ALLIES); 
+//Util.AddUseWp("ATTACK_funnel_1", "ATTACK_funnel_1");// Antenna is the waypoint name
+Util.AddUseWp("PLANT_Old_Bunker_Area", "oldbunkerarea");// Antenna is the waypoint name
+SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Ventilator" );
+//SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_funnel_entrance" );
+Util.AddUseWp("PLANT_Outpost_Entrance", "maindoor2");// Antenna is the waypoint name
+Util.AddUseWp("PLANT_Outpost_Entrance", "maindoor3");// Antenna is the waypoint name
+Util.AddUseWp("PLANT_Outpost_Entrance", "maindoor4");// Antenna is the waypoint name
+SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Cooling_Pumps" );
+SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Funnel_Exit" );
+SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Old_Bunker_Area" );
+
+SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Allied_Commandpost" );
+
+SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Bridge" );
+SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_second_Bridge" );
+
+    SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_funnelmaingate" );
+         SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_funnelmaingate" );
+SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Allied_Commandpost" );
+SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Cooling_Pumps" );
+SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Old_Bunker_Area" );
+SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Funnel_Exit" );
+SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Bridge" );
+SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_second_Bridge" );
+SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_funnel_entrance" );
+//ATTACK GOALS
+	SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_frontdoor_.*" );    
+    SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_backdoorinside_.*" );    
+    SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_frontgate_.*" );
+   	Util.LimitToClass( "PLANT_Allied_Commandpost", 1, 5 );    
+   	Util.LimitToClass( "PLANT_Bridge", 1, 5 );
+   	Util.LimitToClass( "PLANT_second_Bridge", 1, 5 );    
+			//Map.Switches.Elevatortop.Enabled = false;
+            //Map.Switches.Elevatorbottom.Enabled = false;
+	SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Elevatortop" );    
+    SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Elevatorbottom" );
+         SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Elevatorbottom" );
+        SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Elevatortop" );   
+    SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_maingate_.*" );    
+    SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_oldbunkerareadoor_.*" );
+        
+    SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_pumproom_.*" );
+    
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_backdoorinside_1" );    
+    SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_backdoorinside_2" ); 
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_backdoorinside_3" );    
+    SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_backdoorinside_4" );    
+
+     
+     	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_pumproom_1" );    
+    SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_pumproom_2" ); 
+	SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_pumproom_3" );    
+    SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_pumproom_4" );    
+     SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_pumproom_5" );
+        
+	SetAvailableMapGoals( TEAM.AXIS, false, "ARTILLERY_S_bunkerfrontdoorshot_3" );    
+    SetAvailableMapGoals( TEAM.AXIS, false, "ARTILLERY_S_bunkerfrontdoorshot_2" ); 
+	SetAvailableMapGoals( TEAM.AXIS, false, "ARTILLERY_S_bunkerfrontdoorshot_1" );    
+    SetAvailableMapGoals( TEAM.AXIS, false, "CALLARTILLERY_bunkerfrontdoor" );
+    
+    SetAvailableMapGoals( TEAM.AXIS, true, "ARTILLERY_S_frontgateshot_3" );    
+    SetAvailableMapGoals( TEAM.AXIS, true, "ARTILLERY_S_frontgateshot_2" ); 
+	SetAvailableMapGoals( TEAM.AXIS, true, "ARTILLERY_S_frontgateshot_1" ); 
+	SetAvailableMapGoals( TEAM.AXIS, true, "CALLARTILLERY_frontgate_1" );    
+    SetAvailableMapGoals( TEAM.AXIS, true, "CALLARTILLERY_frontgate_2" ); 
+	SetAvailableMapGoals( TEAM.AXIS, true, "CALLARTILLERY_frontgate_3" );    
+    SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_frontgate_1" );         
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_frontgate_2" );    
+    SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_frontgate_3" ); 
+	SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_frontgate_4" );    
+    SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_frontgate_5" ); 
+SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_plaform_big_aufzug" );
+//SetGoalPriority("SWITCH_plaform_big_aufzug", 0.8, TEAM.ALLIES);    
+SetAvailableMapGoals( TEAM.ALLIES, false, "RIDE_Platform_AL" );        
+	Wp.SetWaypointFlag("bob","closed",true);
+	Wp.SetWaypointFlag("bob2","closed",true);    
+    //Wp.SetWaypointFlag( "phase1", "closed", false );
+    SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Bunker_Main_Entrance" );
+	SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_lockdoor2" );    
+    SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_lockdoor1" ); 
+	SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor2" );    
+    SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_lockdoor1" );    
+SetGoalPriority("PLANT_Bunker_Front_Door___Dynamite_it", 0.91, TEAM.ALLIES, CLASS.ENGINEER);
+SetGoalPriority("PLANT_Bunker_Backdoor___Dynamite_it", 0.92, TEAM.ALLIES, CLASS.ENGINEER);
+Util.AddUseWp("PLANT_Bunker_Front_Door___Dynamite_it", "frontdoor");// Antenna is the waypoint name
+Util.AddUseWp("PLANT_Bunker_Backdoor___Dynamite_it", "backdoor2");// Antenna is the waypoint name
+Util.AddUseWp("PLANT_Bunker_Backdoor___Dynamite_it", "backdoor");// Antenna is the waypoint name
+
+SetGoalPriority("PLANT_funnel_entrance", 0.92, TEAM.ALLIES, CLASS.ENGINEER);
+SetGoalPriority("PLANT_main", 0.92, TEAM.ALLIES, CLASS.ENGINEER);
+	//~SetAvailableMapGoals( TEAM.ALLIES, false, "ATTACK_funnel_1" ); 
+ Util.AddUseWp("PLANT_funnel_entrance", "funnelplant");// Antenna is the waypoint name   
+Util.AddUseWp("PLANT_main", "main_1");// Antenna is the waypoint name
+Util.AddUseWp("PLANT_main", "main_2");// Antenna is the waypoint name
+Util.AddUseWp("PLANT_main", "main_3");// Antenna is the waypoint name
+    
+/* dyno planted doors in order
+    1- PLANT_Outpost_Entrance
+    2- PLANT_Bunker_Front_Door___Dynamite_it
+    3- PLANT_Bunker_Backdoor___Dynamite_it
+    4- PLANT_Funnel_Exit
+    5- more to go
+
+	//Util.LimitToClass( "PLANT_Lab_Command_Post", 2, 5 );    
+    
+
+	//Util.LimitToClass( "PLANT_Lab_Command_Post", 2, 5 );    
+    
+
+	//Util.LimitToClass( "PLANT_Lab_Command_Post", 2, 5 );   
+
+    
+    
+
+*/
+	// Camp times
+	//SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+SetMapGoalProperties( "ATTACK_.*", {MinCampTime=15, MaxCampTime=90} );
+ 	Util.UpdateSwitchData(); 
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+	print( "^2Custom ^4- ^1C4W ^3Omni-bot map script is ^2v1.5 ^3For the map: ^7" + GetMapName() );
+	
+	Util.BotChat( 0, "say", "^2Custom ^4- ^1C4W ^3Omni-bot map script is ^2v1.5 ^3For the map: ^7" + GetMapName(), 1 );
+};
+
+global OnBotJoin = function( bot )
+{
+    Map.SetSpawn1(bot); //goes in OnBotJoin section
+	// Uncomment for shootable breakables
+	bot.TargetBreakableDist = 90.0;
+	// Only set MaxViewDistance on maps with limited sight (e.g. fog)
+	//~bot.MaxViewDistance = 2400;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_Bunker_Backdoor___Dynamite_it =
+		{
+		},
+		BUILD_Bridge =
+		{
+		},
+		PLANT_Bridge =
+		{
+		},
+		PLANT_Outpost_Entrance =
+		{
+		},
+		PLANT_Bunker_Front_Door___Dynamite_it =
+		{
+		},
+		PLANT_Main_Bunker_Entrance =
+		{
+		},
+		BUILD_Cooling_Pumps =
+		{
+		},
+		PLANT_Cooling_Pumps =
+		{
+            ROUTE_OldBunkerDoorSpawn = 
+            {
+                ROUTE_elevator_bottom = 
+                {
+                    ROUTE_firstcornerwoodbarrier = 
+                    {
+                        ROUTE_bottomdoors = {},
+                        ROUTE_topdoors = {},
+                    },
+                    ROUTE_secondcornercommandpost = 
+                    {
+                        ROUTE_lowerdoors = {},
+                        ROUTE_upperdoors = {},
+                    },
+                    ROUTE_lockeddoorroom = {},
+                },
+                ROUTE_falling2death = 
+                {
+                    ROUTE_firstcornerwoodbarrier = 
+                    {
+                        ROUTE_secondcornercommandpost = 
+                        {
+                            ROUTE_lowerdoors = {},
+                            ROUTE_upperdoors = {},
+                        },
+                        ROUTE_elevator_bottom = 
+                        {
+                            ROUTE_lockeddoorroom = {},
+                        },
+                        ROUTE_bottomdoors = {},
+                        ROUTE_topdoors = {},
+                    }, 
+                },
+            },
+		},
+		BUILD_Allied_Commandpost =
+		{
+		},
+		PLANT_Allied_Commandpost =
+		{
+		},
+		PLANT_Ventilator =
+		{
+		},
+		BUILD_second_Bridge =
+		{
+		},
+		PLANT_second_Bridge =
+		{
+		},
+		BUILD_Funnel_Exit =
+		{
+		},
+		PLANT_Funnel_Exit =
+		{
+
+		},
+		BUILD_Old_Bunker_Area =
+		{
+		},
+		PLANT_Old_Bunker_Area =
+		{
+		},
+	};
+	Util.Routes(MapRoutes);
+};

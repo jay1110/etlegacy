@@ -58,6 +58,18 @@ if (exists('etl.wasm')) {
 if (exists('etl.html')) {
     const html = fs.readFileSync(path.join(dir, 'etl.html'), 'utf8');
     check(!html.includes('{{{'), 'etl.html has the emcc script placeholder substituted');
+    check(html.includes('src="img/logos/web-et_logo1.png"'),
+        'etl.html uses a locally hosted start-page banner');
+    check(
+        !html.includes('https://www.etlegacy.com/images/logo.png'),
+        'etl.html no longer hotlinks the upstream logo'
+    );
+    check(html.includes("Math.floor(Math.random() * 3)"),
+        'etl.html rotates the three start-page banners');
+    for (let n = 1; n <= 3; n += 1) {
+        check(exists(`img/logos/web-et_logo${n}.png`),
+            `start-page banner ${n} is packaged`);
+    }
 }
 
 // 4. The standalone cgame/ui/qagame side modules must be present in legacy/ AND

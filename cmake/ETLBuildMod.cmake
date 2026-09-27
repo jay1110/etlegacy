@@ -208,6 +208,14 @@ if(EMSCRIPTEN AND BUILD_CLIENT_MOD AND TARGET etl)
 		"${CMAKE_CURRENT_BINARY_DIR}/maplist.json"
 		COPYONLY
 	)
+	file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/img/logos")
+	foreach(ETL_WEB_LOGO_NUMBER RANGE 1 3)
+		configure_file(
+			"${PROJECT_SOURCE_DIR}/img/logos/web-et_logo${ETL_WEB_LOGO_NUMBER}.png"
+			"${CMAKE_CURRENT_BINARY_DIR}/img/logos/web-et_logo${ETL_WEB_LOGO_NUMBER}.png"
+			COPYONLY
+		)
+	endforeach()
 endif()
 
 #
