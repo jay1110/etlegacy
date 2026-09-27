@@ -332,6 +332,10 @@ if (exists('etl.html')) {
         'TJMod is offered by direct connect, server filters and browser hosting');
     check(/function modSupportsOmniBot\(modKey\)[\s\S]*modKey !== 'tjmod'/.test(html),
         'TJMod hosting does not load the incompatible Legacy Omni-bot module');
+    check(/function createPreloadedSideModulePaths\(dirs, name, source\)[\s\S]*createPreloadedSideModule\(dirs\[0\], name, source\)[\s\S]*aliasPreloadedSideModule\(primaryTarget, dirs\[i\], name, source\)/.test(html),
+        'side modules are instantiated once and aliased across engine search paths');
+    check((html.match(/return createPreloadedSideModulePaths\(\s*assets\.moduleDirs, name, bytes\);/g) || []).length === 2,
+        'host and dedicated-server module preload paths share the single-instantiation loader');
     const modMatcherSource = html.match(/function liveServerModNameMatches\(raw, name\)\s*\{[\s\S]*?\n\s*\}/);
     check(Boolean(modMatcherSource), 'versioned server gamenames have a compatibility matcher');
     if (modMatcherSource) {

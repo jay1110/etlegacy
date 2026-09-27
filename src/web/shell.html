@@ -6216,6 +6216,49 @@
                 });
             }
 
+            // Sys_LoadGameDll searches the homepath first and the basepath as a
+            // fallback. Both names must therefore exist in preloadedWasm, but
+            // running createPreloadedFile for both paths is not harmless: the
+            // WASM plugin instantiates, relocates and runs the constructors of
+            // the SIDE_MODULE on every call. Loading the same cgame/ui/qagame
+            // twice consumes another table/memory range and can leave the
+            // dynamic linker trapping with "index out of bounds" while Start
+            // game prepares several mods. Instantiate once at the first search
+            // path and make every remaining path an alias of those exports.
+            function aliasPreloadedSideModule(sourceTarget, dir, name, source) {
+                try {
+                    Module.FS.mkdirTree(dir);
+                } catch (e) { /* already exists */ }
+
+                var target = dir + '/' + name;
+                try {
+                    if (Module.FS.analyzePath(target).exists) {
+                        Module.FS.unlink(target);
+                    }
+                } catch (e) { /* nothing to remove */ }
+                Module.FS.writeFile(target, source);
+
+                var exports = Module.preloadedWasm &&
+                    Module.preloadedWasm[sourceTarget];
+                if (!exports) {
+                    throw new Error('the preloaded WASM module is missing for ' +
+                        sourceTarget);
+                }
+                Module.preloadedWasm[target] = exports;
+            }
+
+            function createPreloadedSideModulePaths(dirs, name, source) {
+                if (!dirs || !dirs.length) {
+                    return Promise.reject(new Error('no module search path for ' + name));
+                }
+                var primaryTarget = dirs[0] + '/' + name;
+                return createPreloadedSideModule(dirs[0], name, source).then(function () {
+                    for (var i = 1; i < dirs.length; i++) {
+                        aliasPreloadedSideModule(primaryTarget, dirs[i], name, source);
+                    }
+                });
+            }
+
             // Fetch the raw bytes of a standalone side module served in the mod's
             // folder. Used only as a fallback when the module is not inside the
             // mod pk3. 'no-cache' forces HTTP revalidation so a stale
@@ -6614,11 +6657,8 @@
                     // release build, then fs_basepath/<mod>) so the very first
                     // load attempt is a preloadedWasm cache hit instead of failing
                     // on the engine's freshly-extracted, un-preloaded copy.
-                    return assets.moduleDirs.reduce(function (chain, dir) {
-                        return chain.then(function () {
-                            return createPreloadedSideModule(dir, name, bytes);
-                        });
-                    }, Promise.resolve());
+                    return createPreloadedSideModulePaths(
+                        assets.moduleDirs, name, bytes);
                 }).catch(function (err) {
                     // Tag the failure so the top-level handler can reliably tell a
                     // side-module problem apart from a retail-pak download failure,
@@ -10811,11 +10851,8 @@
                             ' is not usable: ' + problem);
                     }
                     noteUndeclaredVmAbi(name, assets, 'folder', bytes);
-                    return assets.moduleDirs.reduce(function (chain, dir) {
-                        return chain.then(function () {
-                            return createPreloadedSideModule(dir, name, bytes);
-                        });
-                    }, Promise.resolve());
+                    return createPreloadedSideModulePaths(
+                        assets.moduleDirs, name, bytes);
                 }).catch(function (err) {
                     var wrapped = err instanceof Error ? err :
                         new Error(String(err || 'unknown error'));
