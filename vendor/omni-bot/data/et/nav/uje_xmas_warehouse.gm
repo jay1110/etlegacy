@@ -1,0 +1,1579 @@
+//==========================================================================================
+//
+//	uje_xmas_warehouse.gm
+//
+//	        Who          	           When		              What
+//------------------------------------------------------------------------------------------
+//	^1[UJE]^3Captain	          17 September 2017	         Initial Script
+//
+//==========================================================================================
+//                          Info Script
+//                        **************
+// script based on Native12 waypoints of the map mlb_daybreak.
+// Suitable for uje_xmas_warehouse by ^1[UJE]^3Captain with a new gm file
+//
+//*********************************************************************************************\\
+global Map =
+{
+	Debug = 1, // please set to zero before distributing your script
+	//set status' for conditionals,
+	FifthExplosiveTaken = false,
+	KeycardTaken = false,
+	Vent_Hatch_1 = false,
+	Vent_Hatch_2 = false,
+	Detonator_Door_Opening = false,
+	Detonator_Door_Closing = false,
+	rocket_base_gate_Dyno = 0,
+	
+	Switches =
+	{
+		//	/bot waypoint_setproperty paththrough UseSwitch_PT:keycard_door_ins
+		keycard_door_ins =
+		{
+			AimPosition = Vec3(-7602.754, 8031.875, 274.943),	///bot aim_pos
+			Enabled = true,
+			LimitTeam = (1<<TEAM.AXIS) | (1<<TEAM.ALLIES),
+			Priority = 0.0,
+			WaypointName = "keycard_door_ins",
+			LimitBots = 1,
+			Timeout = 2500,
+			
+			Wait = function()
+			{
+				while ( !Map.Detonator_door_opened )
+				{
+					yield();
+				}
+				yield();
+				return true;
+			},
+		},
+		
+		//	/bot waypoint_setproperty paththrough UseSwitch_PT:keycard_door_out
+		keycard_door_out =
+		{
+			AimPosition = Vec3(-7360.125, 8130.483, 277.458),	///bot aim_pos
+			Enabled = true,
+			LimitTeam = (1<<TEAM.AXIS) | (1<<TEAM.ALLIES),
+			Priority = 0.0,
+			WaypointName = "keycard_door_out",
+			LimitBots = 1,
+			Timeout = 2500,
+			
+			Wait = function()
+			{
+				while ( !Map.Detonator_door_opened )
+				{
+					yield();
+				}
+				yield();
+				return true;
+			},
+		},
+	},
+	
+	NavL = function(_this, x,y,z, x2,y2)	//navigate: ladder_up
+	{
+		_this.AddAimRequest(Priority.VeryHigh, "facing", Vec3(x,y,z));
+
+		for(i=0; i<20; i+=1)
+		{
+			pos = _this.Bot.GetPosition();
+			if(Abs(pos.x - x2) > 60 || Abs(pos.y - y2) > 20)
+			{
+				break;
+			}
+			sleep(0.5);
+		}
+	},
+
+	NavL3 = function(_this, x,y,z, x2,y2)	//navigate: ladder_to_keycard
+	{
+		_this.AddAimRequest(Priority.VeryHigh, "facing", Vec3(x,y,z));
+
+		for(i=0; i<100; i+=1)
+		{
+			pos = _this.Bot.GetPosition();
+			if(Abs(pos.x - x2) > 20 || Abs(pos.y - y2) > 40 or pos.z < 265 or pos.z > 488)
+			{
+				Util.MapDebugPrint( "^5I'm off the ladder." );
+				break;
+			}
+			yield();
+		}
+	},
+
+	NavL4 = function(_this, x,y,z, x2,y2)	//navigate: ladder_to_keycard; ladder_out_of_water;
+	{
+		_this.AddAimRequest(Priority.VeryHigh, "facing", Vec3(x,y,z));
+
+		for(i=0; i<20; i+=1)
+		{
+			pos = _this.Bot.GetPosition();
+			if(Abs(pos.x - x2) > 60 || Abs(pos.y - y2) > 60)
+			{
+				break;
+			}
+			sleep(0.5);
+		}
+	},
+	
+	Navigation =
+	{
+		//	/bot waypoint_setproperty paththrough Navigation_PT:climb_2
+		climb_2 =
+		{
+			navigate = function(_this)
+			{
+				if ( _this.Goto(Vector3(-8003.875, 7710.744, 566.698)) == EVENT.PATH_SUCCESS )
+				{
+					_this.AddAimRequest(Priority.VeryHigh, "facing", Vector3(-0.999, 0.037, 0.003));
+					sleep(0.1);
+					_this.Bot.HoldButton(BTN.STRAFE_R, 0.8);
+					sleep(0.8);
+					_this.ReleaseAimRequest();
+				}
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:jump_1
+		jump_1 =
+		{
+			navigate = function(_this)
+			{
+				for(i=0; i<2; i+=1)
+				{
+					_this.Bot.PressButton(BTN.JUMP);
+					sleep(0.25);
+					_this.Bot.ResetStuckTime();
+					_this.Bot.PressButton(BTN.FORWARD);
+					sleep(0.25);
+				}
+			},
+		},
+		
+		//	/bot waypoint_setproperty paththrough Navigation_PT:in_tunnel
+		in_tunnel =	//tunnel from keycard room
+		{
+			navigate = function(_this)
+			{
+				if ( _this.Goto(Vector3(-6221.875, 6987.172, 344.125)) == EVENT.PATH_SUCCESS )
+				{
+					bot = _this.Bot;
+					_this.AddAimRequest(Priority.High, "facing", Vector3(0.527, -0.037, -0.849));
+					sleep(0.2);
+					bot.HoldButton(BTN.CROUCH, 1.8);
+					bot.HoldButton(BTN.FORWARD, 1.8);
+					sleep(1.8);
+					_this.ReleaseAimRequest();
+				}
+			},
+		},
+		
+		//	/bot waypoint_setproperty paththrough Navigation_PT:into_tunnel
+		into_tunnel =	//ladder above last allied spawn
+		{
+			navigate = function(_this)
+			{
+				if ( _this.Goto(Vector3(-6728.881, 6066.071, 792.125)) == EVENT.PATH_SUCCESS )
+				{
+					bot = _this.Bot;
+					_this.AddAimRequest(Priority.High, "facing", Vector3(0.527, -0.037, -0.849));
+					sleep(0.4);
+					bot.HoldButton(BTN.CROUCH, 0.3);
+					bot.HoldButton(BTN.FORWARD, 0.3);
+					sleep(0.3);
+					_this.AddAimRequest(Priority.High, "facing", Vector3(0.521, -0.017, 0.853));
+					sleep(0.1);
+					bot.HoldButton(BTN.BACKWARD, 2.5);
+					sleep(2.5);
+					_this.ReleaseAimRequest();
+				}
+			},
+		},
+		
+		//	/bot waypoint_setproperty paththrough Navigation_PT:jump_to_walkway
+		jump_to_walkway =
+		{
+			navigate = function(_this)
+			{
+				if ( _this.Goto(Vector3(-7029.091, 7906.939, 232.125)) == EVENT.PATH_SUCCESS )
+				{
+					_this.AddAimRequest(Priority.VeryHigh, "facing", Vector3(-0.018, 0.947, 0.320));
+					sleep(0.4);
+					_this.Bot.HoldButton(BTN.FORWARD, 0.7);
+					sleep(0.1);
+					_this.Bot.HoldButton(BTN.SPRINT, 0.4);
+					_this.Bot.PressButton(BTN.JUMP);
+					sleep(0.6);
+				}
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:jump_to_ladder
+		jump_to_ladder =	//ladder to keycard
+		{
+			navigate = function(_this)
+			{
+				if ( _this.Goto(Vector3(-6720.606, 7996.384, 248.125)) == EVENT.PATH_SUCCESS )
+				{
+					bot = _this.Bot;
+					_this.AddAimRequest(Priority.VeryHigh, "facing", Vector3(0.441508,-0.336054,0.831949));
+					sleep(0.2);
+					bot.MoveTowards(Vec3(-6686.126, 7945.337, 281.591));
+					bot.HoldButton(BTN.SPRINT, BTN.JUMP, 0.4);
+					sleep(0.4);
+					_this.AddAimRequest(Priority.VeryHigh, "facing", Vector3(0.373, -0.048, 0.927));
+				}
+			},
+		},
+
+		//	/bot waypoint_setproperty paththrough Navigation_PT:ladder_to_keycard
+		ladder_to_keycard =
+		{
+			navigate = function(_this)
+			{
+				_this.AddAimRequest(Priority.VeryHigh, "facing", Vector3(0.247, -0.032, 0.969));
+				Map.NavL3(_this, 0.247, -0.032, 0.969,  -6686.127, 7952.217);
+			},
+		},
+
+		//  	/bot waypoint_setproperty paththrough Navigation_PT:ah_ladder
+		ah_ladder =		//ladder to ammo and health cab above turbines
+		{
+			navigate = function(_this)
+			{
+				if ( _this.Goto(Vector3(-2653.526, 4178.133, 392.286)) == EVENT.PATH_SUCCESS )
+				{
+					_this.AddAimRequest(Priority.VeryHigh, "facing", Vector3(-0.007, 0.494, -0.869));
+					sleep(0.6);
+					_this.Bot.HoldButton(BTN.FORWARD, 2);
+					_this.Bot.HoldButton(BTN.CROUCH, 1);
+					sleep(2);
+				}
+			},
+		},
+
+		//  	/bot waypoint_setproperty paththrough Navigation_PT:ladder
+		ladder =
+		{
+			navigate = function(_this)
+			{
+				if ( _this.Goto(Vector3(3893.776, -5150.135, -143.875)) == EVENT.PATH_SUCCESS )
+				{
+					_this.AddAimRequest(Priority.VeryHigh, "facing", Vector3(-0.574, -0.006, -0.819));
+					sleep(0.5);
+					_this.Bot.HoldButton(BTN.FORWARD, 1.5);
+					sleep(1.5);
+				}
+			},
+		},
+
+		//  	/bot waypoint_setproperty paththrough Navigation_PT:ladder_up
+		ladder_up =
+		{
+			navigate = function(_this)
+			{
+				Map.NavL(_this, -0.287, 0.003, 0.958,  -8002.811, 7712.393);
+			},
+		},
+
+		//  	/bot waypoint_setproperty paththrough Navigation_PT:to_ladder_to_catapult
+		to_ladder_to_catapult =
+		{
+			navigate = function(_this)
+			{
+				if ( _this.Goto(Vector3(-2644.992, 4938.997, 344.125)) == EVENT.PATH_SUCCESS )
+				{
+					_this.AddAimRequest(Priority.VeryHigh, "facing", Vector3(0.008, -0.812, 0.584));
+					sleep(0.7);
+					_this.Bot.HoldButton(BTN.WALK, BTN.FORWARD, 0.2);
+					sleep(0.2);
+				}
+			},
+		},
+
+		//  	/bot waypoint_setproperty paththrough Navigation_PT:ladder_to_catapult
+		ladder_to_catapult =
+		{
+			navigate = function(_this)
+			{
+				if ( _this.Goto(Vector3(-2645.246, 4910.129, 359.639)) == EVENT.PATH_SUCCESS )
+				{
+					_this.AddAimRequest(Priority.VeryHigh, "facing", Vector3(-0.006, -0.279, 0.960));
+					sleep(0.4);
+					_this.Bot.HoldButton(BTN.SPRINT, BTN.FORWARD, 1.75);
+					sleep(1.75);
+				}
+			},
+		},
+
+		//  	/bot waypoint_setproperty paththrough Navigation_PT:jump
+		jump =		//catapult
+		{
+			navigate = function(_this)
+			{
+				if ( _this.Goto(Vector3(-2856.348, 4712.619, 604.125)) == EVENT.PATH_SUCCESS )
+				{
+					_this.AddAimRequest(Priority.VeryHigh, "facing", Vector3(0.504658,-0.462177,-0.729186));
+					sleep(0.2);
+					_this.Bot.HoldButton(BTN.CROUCH, 1.5);
+					_this.Bot.HoldButton(BTN.FORWARD, 0.95);
+					sleep(0.8);
+					_this.Bot.PressButton(BTN.USE);
+					yield();
+					_this.Bot.PressButton(BTN.USE);
+					sleep(1.8);
+					_this.ReleaseAimRequest();
+				}
+			},
+		},
+
+		//  	/bot waypoint_setproperty paththrough Navigation_PT:ladder_out_of_water
+		ladder_out_of_water =
+		{
+			navigate = function(_this)
+			{
+				Map.NavL4(_this, 0.004, -0.255, 0.967,  -3743.355, 4318.125);
+			},
+		},
+		//  	/bot waypoint_setproperty paththrough Navigation_PT:keycard_wait
+		keycard_wait =
+		{
+			EvalFunc = function() // if this function returns false, navigation will not run
+			{
+				return !Map.Detonator_door_opened;
+			},
+			
+			navigate = function(_this)
+			{
+				if ( _this.Goto(Vector3(-7460.517, 7951.864, 240.125)) == EVENT.PATH_SUCCESS )
+				{
+					if ( Map.Detonator_doorMoving )
+					{
+						while ( Map.Detonator_doorMoving )
+						{
+							yield();
+						}
+						yield();
+						_this.AddAimRequest(Priority.High, "facing", Vector3(0.039, 0.998, 0.058));
+						sleep(0.05);
+						_this.Bot.HoldButton(BTN.FORWARD, 0.08);
+						sleep(0.08);
+						_this.ReleaseAimRequest();
+					}
+					else
+					{
+						_this.AddAimRequest(Priority.High, "facing", Vector3(0.039, 0.998, 0.058));
+						sleep(0.05);
+						_this.Bot.HoldButton(BTN.FORWARD, 0.08);
+						sleep(0.08);
+						_this.ReleaseAimRequest();
+					}
+				}
+			},
+		},
+		
+		//  	/bot waypoint_setproperty paththrough Navigation_PT:keycard_wait_out
+		keycard_wait_out =
+		{
+			EvalFunc = function() // if this function returns false, navigation will not run
+			{
+				return !Map.Detonator_door_opened;
+			},
+			
+			navigate = function(_this)
+			{
+				if ( _this.Goto(Vector3(-7446.188, 8181.854, 248.125)) == EVENT.PATH_SUCCESS )
+				{
+					if ( Map.Detonator_doorMoving )
+					{
+						while ( Map.Detonator_doorMoving )
+						{
+							yield();
+						}
+						yield();
+						_this.AddAimRequest(Priority.High, "facing", Vector3(-0.130, -0.990, 0.058));
+						sleep(0.05);
+						_this.Bot.HoldButton(BTN.FORWARD, 0.08);
+						sleep(0.08);
+						_this.ReleaseAimRequest();
+					}
+					else
+					{
+						_this.AddAimRequest(Priority.High, "facing", Vector3(-0.130, -0.990, 0.058));
+						sleep(0.05);
+						_this.Bot.HoldButton(BTN.FORWARD, 0.08);
+						sleep(0.08);
+						_this.ReleaseAimRequest();
+					}
+				}
+			},
+		},
+		
+		//  	/bot waypoint_setproperty paththrough Navigation_PT:ladder_out_of_water
+		ladder_out_of_water =
+		{
+			navigate = function(_this)
+			{
+				Map.NavL4(_this, 0.004, -0.255, 0.967,  -3743.355, 4318.125);
+			},
+		},
+		
+		//  	/bot waypoint_setproperty paththrough Navigation_PT:vh1
+		vh1 =
+		{
+			gotowp = "vh1",
+			EvalFunc = function()
+			{
+				return Map.Vent_Hatch_1;
+			},
+
+			navigate = function(_this)
+			{
+				if ( !Map.Vent_Hatch_1 ) 
+				{
+					yield();
+					return;
+				}
+
+				if( GetModName() == "noquarter" )
+				{
+					_this.AddWeaponRequest(Priority.VeryHigh, WEAPON.KNIFE_KABAR );
+				}
+				else
+				{
+					_this.AddWeaponRequest(Priority.High, WEAPON.KNIFE);
+				}
+				
+				_this.AddAimRequest(Priority.VeryHigh, "facing", Vector3(0.995, -0.031, -0.099));
+
+				while( Map.Vent_Hatch_1 ) 
+				{
+					_this.Bot.HoldButton(BTN.ATTACK1, 0.5);
+					_this.Bot.HoldButton(BTN.CROUCH, 0.5);
+					yield();
+				}
+
+				_this.ReleaseAimRequest();
+				_this.ReleaseWeaponRequest();
+			},
+		},
+		//  	/bot waypoint_setproperty paththrough Navigation_PT:vh2
+		vh2 =
+		{
+			gotowp = "vh2",
+			EvalFunc = function()
+			{
+				return Map.Vent_Hatch_2;
+			},
+
+			navigate = function(_this)
+			{
+				if ( !Map.Vent_Hatch_2 ) 
+				{
+					yield();
+					return;
+				}
+
+				if( GetModName() == "noquarter" )
+				{
+					_this.AddWeaponRequest(Priority.VeryHigh, WEAPON.KNIFE_KABAR );
+				}
+				else
+				{
+					_this.AddWeaponRequest(Priority.High, WEAPON.KNIFE);
+				}
+				
+				_this.AddAimRequest(Priority.VeryHigh, "facing", Vector3(-0.030, 0.021, -0.999));
+
+				while( Map.Vent_Hatch_2 ) 
+				{
+					_this.Bot.HoldButton(BTN.ATTACK1, 0.5);
+					_this.Bot.HoldButton(BTN.CROUCH, 0.5);
+					yield();
+				}
+
+				_this.ReleaseAimRequest();
+				_this.ReleaseWeaponRequest();
+			},
+		},
+      },
+	
+	Detonator_door_moving = function( trigger )
+	{
+		if ( !Map.start )
+		{
+			//turn the trigger action string into a vector for referencing
+			vec = ToVector(trigger.Action);
+			//reference the changing value to determine the direction
+			if ( vec.z < 0 )
+			{
+				Util.MapDebugPrint("^5Detonator door opening", true);
+				
+				Map.Detonator_doorMoving = true;
+				Map.Detonator_Door_Closing = false;
+				Map.Detonator_Door_Opening = true;
+				Map.Switches.keycard_door_ins.Enabled = false;
+				Map.Switches.keycard_door_out.Enabled = false;
+				
+				sleep(4);
+				
+				if ( Map.Detonator_Door_Opening )
+				{
+					Map.Detonator_door_opened = true;
+					Map.Detonator_doorMoving = false;
+					
+					SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_Rocket_Gate" );
+				}
+				
+				Util.MapDebugPrint("^5Detonator door opened", true);
+				
+			}
+			else if ( vec.z > 0 )
+			{
+				Util.MapDebugPrint("^5Detonator door closing", true);
+				
+				Map.Detonator_Door_Opening = false;
+				Map.Detonator_Door_Closing = true;
+				
+				SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Rocket_Gate" );
+				
+				sleep(2);
+				
+				if ( Map.Detonator_Door_Closing )
+				{
+					Map.Detonator_doorMoving = true;
+					Map.Detonator_door_opened = false;
+					
+					sleep(2);
+				
+					if ( Map.Detonator_Door_Closing )
+					{
+						Map.Switches.keycard_door_ins.Enabled = true;
+						Map.Switches.keycard_door_out.Enabled = true;
+						Map.Detonator_doorMoving = false;
+					}
+				}
+				
+				Util.MapDebugPrint("^5Detonator door closed", true);
+				
+			}
+		}
+	},
+	
+	rocket_base_gate_Planted = function( trigger )
+	{
+		Map.rocket_base_gate_Dyno += 1;
+		
+		SetAvailableMapGoals( TEAM.AXIS, true, "CALLARTILLERY_Rocket_Base_Gate" );
+		
+		Util.MapDebugPrint( "^5rocket_base_gate_Planted" );
+	},
+	
+	rocket_base_gate_Defused = function( trigger )
+	{
+
+		Map.rocket_base_gate_Dyno -= 1;
+		
+		Util.MapDebugPrint( "^5rocket_base_gate_Defused" );
+	},
+	
+	rocket_base_gate_Destroyed = function( trigger )
+	{
+		Map.rocket_base_gate_Dyno = 0;
+		SetAvailableMapGoals( TEAM.AXIS, false, {"CALLARTILLERY_Rocket_Base_Gate","SMOKEBOMB_AXIS_RB_Gate_01"} );
+		
+		Wp.SetWaypointFlag( "Door_1", "allies", false );
+		Wp.SetWaypointFlag( "Door_1", "door", false );
+		Wp.SetWaypointFlag( "Door_2", "allies", false );
+		Wp.SetWaypointFlag( "Door_2", "door", false );
+		Wp.SetWaypointFlag( "Door_3", "allies", false );
+		Wp.SetWaypointFlag( "Door_3", "door", false );
+		Wp.SetWaypointFlag( "Door_4", "allies", false );
+		Wp.SetWaypointFlag( "Door_4", "door", false );
+		Wp.SetWaypointFlag( "Door_5", "allies", false );
+		Wp.SetWaypointFlag( "Door_5", "door", false );
+		Wp.SetWaypointFlag( "Door_6", "allies", false );
+		Wp.SetWaypointFlag( "Door_6", "door", false );
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, {"MOUNTMG42_t382_1","REPAIRMG42_t382_1",".*DEFEND_Allies_RB_Gate.*","CALLARTILLERY_Armory"} );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allies_Keycard.*" );
+		
+		Util.MapDebugPrint( "^5rocket_base_gate_Destroyed" );
+		
+		sleep(5.5);
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, {"ATTACK_Axis_RB_Gate.*","MOUNTMG42_t382","REPAIRMG42_t382"} );
+		SetAvailableMapGoals( TEAM.AXIS, true, {"FLAG_gold2","SMOKEBOMB_Axis_Keycard_01","ATTACK_Axis_Keycard.*"} );
+		
+	},
+	
+	Keycard_Taken = function( trigger )
+	{
+		Map.KeycardTaken = true;
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, {"FLAG_gold2","SMOKEBOMB_Axis_Keycard_01","ATTACK_Axis_Keycard.*"} );
+		SetAvailableMapGoals( TEAM.AXIS, true, {"CAPPOINT_Armory","MOUNTMG42_t382","REPAIRMG42_t382","ATTACK_Axis_Armory.*"} );
+		
+		Util.MapDebugPrint( "^5Keycard_Taken" );
+		
+		sleep(2);
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allies_Keycard.*" );
+            SetAvailableMapGoals( TEAM.ALLIES, true, {"MOUNTMG42_t382_1","REPAIRMG42_t382_1","DEFEND_Allies_Armory.*"} );
+	},		
+	
+	Keycard_Returned = function( trigger )
+	{
+		Map.KeycardTaken = false;
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, {"CAPPOINT_Armory","MOUNTMG42_t382","REPAIRMG42_t382",".*_Axis_Armory.*"} );
+		SetAvailableMapGoals( TEAM.AXIS, true, {"FLAG_gold2","SMOKEBOMB_Axis_Keycard_01","ATTACK_Axis_Keycard.*"} );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, {"MOUNTMG42_t382_1","REPAIRMG42_t382_1","DEFEND_Allies_Armory.*"} );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allies_Keycard.*" );
+
+		
+		Util.MapDebugPrint( "^5Keycard_Returned" );
+	},
+	
+	Armory_Opened = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Axis_Detonator.*" );
+		SetAvailableMapGoals( TEAM.AXIS, false, {"CAPPOINT_Armory","ATTACK_Axis_Armory.*","SMOKEBOMB_Axis_Keycard_01","MOUNTMG42_t382","REPAIRMG42_t382"} );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, {"DEFEND_Allies_Armory.*","MOUNTMG42_t382_1","REPAIRMG42_t382_1"} );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allies_Detonator.*" );
+
+		sleep (3.0);
+		
+		SetAvailableMapGoals( TEAM.AXIS, true, "FLAG_gold" );
+		
+		Util.MapDebugPrint( "^5Armory_Opened" );
+	},
+	
+	First_Explosive_Taken = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "CAPPOINT_Detonator" );
+		
+		Util.MapDebugPrint( "^5First_Explosive_Taken" );
+	},
+	
+	Fifth_Explosive_Taken = function( trigger )
+	{
+		Map.FifthExplosiveTaken = true;
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, {"FLAG_gold","MOUNTMG42_t382","REPAIRMG42_t382"} );
+		
+		Util.MapDebugPrint( "^5Fifth_Explosive_Taken" );
+		
+		sleep (2.0);
+		
+		if ( Map.FifthExplosiveTaken )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, false, {"MOUNTMG42_t382_1","REPAIRMG42_t382_1"} );
+		}
+	},
+	
+	Fifth_Explosive_Returned = function( trigger )
+	{
+		Map.FifthExplosiveTaken = false;
+		
+		SetAvailableMapGoals( TEAM.AXIS, true, {"MOUNTMG42_t382","REPAIRMG42_t382","FLAG_gold"} );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, {"MOUNTMG42_t382_1","REPAIRMG42_t382_1"} );
+	
+		Util.MapDebugPrint( "^5Fifth_Explosive_Returned" );
+	},
+	
+	Explosive_Secured = function( trigger )
+	{
+		Util.MapDebugPrint( "^5Explosive_Secured" );
+	},
+	
+	Bomb_Ready = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, {"MOUNTMG42_t382_1","REPAIRMG42_t382_1"} );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "MOBILEMG42_Allies_Detonator_13" );
+		
+		SetAvailableMapGoals( TEAM.AXIS, false, {"MOUNTMG42_t382","REPAIRMG42_t382","CAPPOINT_Detonator"} );
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Countdown" );
+		
+		Util.MapDebugPrint( "^5Bomb_Ready" );
+	},
+	
+	Countdown_Activated = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "SWITCH_Countdown" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allies_Detonator_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, {"SWITCH_Countdown","DEFEND_Allies_Detonator_.*"} );
+		
+		yield();
+		
+		
+		Util.MapDebugPrint( "^5Countdown_Activated" );
+		
+		sleep(1);
+		
+		Util.BotChat( TEAM.AXIS, "vsay", VOICE.G_CHEER, 1 );
+	},
+	
+	Countdown_Interrupted = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, ".*_Axis_Detonator_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_Countdown" );
+
+		SetAvailableMapGoals( TEAM.AXIS, true, ".*_Axis_Detonator_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "SWITCH_Countdown" );
+		
+		Util.MapDebugPrint( "^5Countdown_Interrupted" );		
+	},
+	
+	Rocket_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "^5Axis_Win" );
+		
+		Map.Axis_Win = true;
+		sleep(1);
+		ETUtil.WinningChat( TEAM.AXIS );
+		sleep(1.5);
+		ETUtil.LosingChat( TEAM.ALLIES );
+		
+		Util.MapDebugPrint( "^5Rocket_Destroyed" );
+	},
+	
+	Vent_Hatch_1_Exploded = function( trigger )
+	{
+		Map.Vent_Hatch_1 = false;
+		
+		Util.MapDebugPrint( "^5Vent_Hatch_1_Exploded" );
+	},
+	
+	Vent_Hatch_2_Exploded = function( trigger )
+	{
+		Map.Vent_Hatch_2 = false;
+		
+		Util.MapDebugPrint( "^5Vent_Hatch_2_Exploded" );
+	},
+	
+	Door_Moving = function( trigger )
+	{
+		if ( trigger.Action == "opening" )
+		{
+			Map.Door1Status = 1; //opened
+			Map.Switches.door1.Enabled = false;
+			//Util.MapDebugPrint("opening");
+		}
+		else
+		{
+			Map.Door1Status = 0; //closed
+			Map.Switches.door1.Enabled = true;
+		}
+	},
+	
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "Planted at the rocket base gate.", Map.rocket_base_gate_Planted );
+	OnTrigger( "Defused at the rocket base gate.", Map.rocket_base_gate_Defused );
+	OnTrigger( "Axis have breached the rocket base gate!!!!", Map.rocket_base_gate_Destroyed );
+	
+	OnTrigger( "Axis have stolen the armory keycard!", Map.Keycard_Taken );
+	OnTrigger( "Flag returned gold2!", Map.Keycard_Returned );
+	OnTrigger( "^6The armory has been opened!!!!", Map.Armory_Opened );
+	
+	OnTrigger( "^6Axis have stolen the first explosive charge!!!!", Map.First_Explosive_Taken );
+	OnTrigger( "^6Axis have stolen the 5th explosive charge!!!!", Map.Fifth_Explosive_Taken );
+	OnTrigger( "^6The 5th explosive charge has been returned!!!!", Map.Fifth_Explosive_Returned );
+	
+	OnTrigger( "Axis captured goldbar_holder", Map.Explosive_Secured );
+	OnTrigger( "^6The bomb is ready to be armed!!!!", Map.Bomb_Ready );
+	OnTrigger( "^6Countdown activated", Map.Countdown_Activated );
+	OnTrigger( "^6Countdown interrupted", Map.Countdown_Interrupted );
+	
+	OnTrigger( "^3Axis has blown the rocket !!!!!!", Map.Rocket_Destroyed );
+	OnTrigger( "portedouble_lever1_goto", Map.Detonator_door_moving );
+	OnTrigger( "GRENADE_Vent_Hatch_1 Exploded", Map.Vent_Hatch_1_Exploded );
+	OnTrigger( "GRENADE_Vent_Hatch_2 Exploded", Map.Vent_Hatch_2_Exploded );
+	
+	RegionTrigger.Create(AABB(-2813.730,4694.037,281.150,-2451.782,4987.297,667.125), "DisableBotPush", "Ladder_to_catapult_");
+	RegionTrigger.Create(AABB(-6565.790,7798.983,-62.875,-6412.424,7913.097,54.467), "DisableCombatMovement", "SMOKEBOMB_Detonator_11");
+	RegionTrigger.Create(AABB(-6563.560,7423.125,-62.875,-6440.498,7599.179,38.158), "DisableCombatMovement", "SMOKEBOMB_Keycard_01");
+	RegionTrigger.Create(AABB(-4272.875,5884.172,-62.875,-4037.738,6104.488,56.449), "DisableCombatMovement", "SMOKEBOMB_RB_Gate_01");
+	RegionTrigger.Create(AABB(-7484.024,7113.057,-62.875,-7367.921,7214.948,19.125), "DisableCombatMovement", "Countdown_switch");
+	RegionTrigger.Create(AABB(1551.127,7339.004,1.125,1814.246,7582.803,119.539), "DisableCombatMovement", "Back_side_generator_door");
+	
+	Util.DisableGoal( ".*", true ); // all but routes
+	
+	//activation ALLIES
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"DEFEND_Allies_RB.*",
+		"ARTILLERY_S_Armory",
+		"CALLARTILLERY_Armory", 
+		".*t382_1",
+		".*CAB.*",
+	});
+	
+	//activation AXIS
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+	     "GRENADE_Metal.*",
+	     "SMOKEBOMB_AXIS_RB_Gate_01",
+	     ".*t382",
+	     "ATTACK_Axis_RB_Gate.*",
+	     "PLANT_rocket_base_gate",
+	     ".*CAB_.*",
+	     "ARTILLERY_S_Rocket.*", 
+	});
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "MOUNTMG42.*" );
+	Util.SetMaxUsers( 1, "ATTACK_.*" );
+	Util.SetMaxUsers( 1, "DEFEND.*" );
+	Util.SetMaxUsers( 1, "GRENADE_.*" );
+	Util.SetMaxUsers( 1, "REPAIRMG42_.*" );
+	Util.SetMaxUsers( 1, "SWITCH_Countdown" );
+	Util.SetMaxUsers( 1, "CALLARTILLERY.*" );
+	Util.SetMaxUsers( 2, "ROUTE_LadderToRoof" );
+	Util.SetMaxUsers( 1, "FLAG_gold.*" );
+      Util.UpdateSwitchData();
+	
+	// Camp times
+	SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90} );
+	SetMapGoalProperties( "ATTACK.*", {MinCampTime=40, MaxCampTime=80} );
+	SetMapGoalProperties( "DEFEND.*", {MinCampTime=40, MaxCampTime=80} );
+	
+	//SetPriority
+	SetGoalPriority( "PLANT_rocket_base_gate", 0.93, TEAM.AXIS );
+	SetGoalPriority( "FLAG_gold2", 0.95, TEAM.AXIS );
+	SetGoalPriority( "CALLARTILLERY_Rocket_Base_Gate", 0.93, TEAM.AXIS );
+	SetGoalPriority( "CALLARTILLERY_Armory", 0.93, TEAM.ALLIES );
+	Map.Switches.keycard_door_ins.LimitTeam = (1<<TEAM.AXIS) | (1<<TEAM.ALLIES);
+	Map.Switches.keycard_door_out.LimitTeam = (1<<TEAM.AXIS) | (1<<TEAM.ALLIES);
+	Map.start = false;
+	
+	Wp.SetWaypointFlag( "Door_1", "allies", true );
+	Wp.SetWaypointFlag( "Door_1", "door", true );
+	Wp.SetWaypointFlag( "Door_2", "allies", true );
+	Wp.SetWaypointFlag( "Door_2", "door", true );
+	Wp.SetWaypointFlag( "Door_3", "allies", true );
+	Wp.SetWaypointFlag( "Door_3", "door", true );
+	Wp.SetWaypointFlag( "Door_4", "allies", true );
+	Wp.SetWaypointFlag( "Door_4", "door", true );
+	Wp.SetWaypointFlag( "Door_5", "allies", true );
+	Wp.SetWaypointFlag( "Door_5", "door", true );
+	Wp.SetWaypointFlag( "Door_6", "allies", true );
+	Wp.SetWaypointFlag( "Door_6", "door", true );
+	
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	// Uncomment for shootable breakables
+	bot.TargetBreakableDist = 90.0;
+	// Only set MaxViewDistance on maps with limited sight (e.g. fog)
+	bot.MaxViewDistance = 2400;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		PLANT_rocket_base_gate =
+		{
+			ROUTE_FirstAxisSpawn =
+			{
+				ROUTE_LadderToRoof =
+				{
+					Weight = 3,
+					ROUTE_LadderToRoof =
+					{
+						ROUTE_RoofAboveRocketGate =
+						{
+							
+						},
+					},
+				},
+				ROUTE_AroundTurbines =
+				{
+					ROUTE_AroundMG42 =
+					{
+						
+					},
+				},
+				Weight = 2,
+				ROUTE_InWater1 =
+				{
+					ROUTE_InWater2 =
+					{
+						
+					},
+				},
+			},
+		},
+		FLAG_gold2 = 
+		{
+			ROUTE_FirstAxisSpawn  = 
+			{
+				ROUTE_AroundTurbines  = 
+				{
+					ROUTE_AroundMG42  = 
+					{
+						ROUTE_InWater2  = 
+						{
+							ROUTE_Rocket_Base_Gate  = 
+							{
+								ROUTE_SideWay1  = 
+								{
+									ROUTE_SideWay2  = 
+									{
+										ROUTE_LadderToDoor  = 
+										{
+											ROUTE_Platform  = 
+											{
+												ROUTE_Ledge  = 
+												{
+												},
+											},
+										},
+										ROUTE_WoodenBoxes  = 
+										{
+											ROUTE_Ledge  = 
+											{
+											},
+										},
+									},
+					                        Weight = 4,
+						                  ROUTE_StairsToDoor  = 
+						                       {
+							                        ROUTE_Ledge  = 
+							                        {
+							                        },
+						                       },
+					                        },
+								ROUTE_FrontWay  = 
+								{
+									ROUTE_LadderToDoor  = 
+									{
+										ROUTE_Platform  = 
+										{
+											ROUTE_Ledge  = 
+											{
+											},
+										},
+									},
+									ROUTE_WoodenBoxes  = 
+									{
+										ROUTE_Ledge  = 
+										{
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Door2 = 
+				{
+					ROUTE_SideWay1  = 
+					{
+					      Weight = 4,
+						ROUTE_StairsToDoor  = 
+						{
+							ROUTE_Ledge  = 
+							{
+							},
+						},
+					},
+					ROUTE_SideWay2  = 
+					{
+						ROUTE_LadderToDoor  = 
+						{
+							ROUTE_Platform  = 
+							{
+								ROUTE_Ledge  = 
+								{
+								},
+							},
+						},
+						ROUTE_WoodenBoxes  = 
+						{
+							ROUTE_Ledge  = 
+							{
+							},
+						},
+					},
+					ROUTE_FrontWay  = 
+					{
+						ROUTE_LadderToDoor  = 
+						{
+							ROUTE_Platform  = 
+							{
+								ROUTE_Ledge  = 
+								{
+								},
+							},
+						},
+						ROUTE_WoodenBoxes  = 
+						{
+							ROUTE_Ledge  = 
+							{
+							},
+						},
+					},
+				},
+				ROUTE_Rocket_Base_Gate =
+				{
+					ROUTE_SideWay1  = 
+					{
+					      Weight = 4,
+						ROUTE_StairsToDoor  = 
+						{
+							ROUTE_Ledge  = 
+							{
+							},
+						},
+						ROUTE_SideWay2  = 
+						{
+						      Weight = 3,
+							ROUTE_LadderToDoor  = 
+							{
+								ROUTE_Platform  = 
+								{
+									ROUTE_Ledge  = 
+									{
+									},
+								},
+							},
+							ROUTE_WoodenBoxes  = 
+							{
+								ROUTE_Ledge  = 
+								{
+								},
+							},
+						},
+					},
+					ROUTE_FrontWay  = 
+					{
+					      Weight = 3,
+						ROUTE_LadderToDoor  = 
+						{
+							ROUTE_Platform  = 
+							{
+								ROUTE_Ledge  = 
+								{
+								},
+							},
+						},
+						ROUTE_WoodenBoxes  = 
+						{
+							ROUTE_Ledge  = 
+							{
+							},
+						},
+					},
+				},
+			},
+		},
+		CAPPOINT_Armory = 
+		{
+			ROUTE_FlagPlace  = 
+			{ 		     
+    			      Weight = 4,
+				ROUTE_UpperVentShaft  = 
+				{
+					ROUTE_FrontWay  = 
+					{
+						ROUTE_Door3  = 
+						{
+							ROUTE_Side_Bridge  = 
+							{
+							},
+						},
+						ROUTE_Door2  = 
+						{
+							ROUTE_Door6  = 
+							{
+								ROUTE_InWater1  = 
+								{
+									ROUTE_AroundMG42  = 
+									{
+									},
+								},
+								ROUTE_FirstAxisSpawn  = 
+								{
+									ROUTE_AroundTurbines  = 
+									{
+										ROUTE_AroundMG42  = 
+										{
+										},
+									},
+								},
+							},
+						},
+						ROUTE_Rocket_Base_Gate  = 
+						{
+							ROUTE_InWater2  = 
+							{
+							},
+						},
+					},
+				},
+				ROUTE_SteelBeam  = 
+				{
+					ROUTE_FrontWay  = 
+					{
+					},
+					ROUTE_SideWay2  = 
+					{
+						ROUTE_SideWay1  = 
+						{
+							ROUTE_Door2  = 
+							{
+							},
+							ROUTE_Door3  = 
+							{
+							},
+							ROUTE_Rocket_Base_Gate  = 
+							{
+							},
+						},
+					},
+				},
+			},
+		},
+		CAPPOINT_Detonator = 
+		{
+			ROUTE_FlagPlaceDyno  = 
+			{
+				ROUTE_InWater2  = 
+				{
+					ROUTE_Rocket_Base_Gate  = 
+					{
+						ROUTE_FrontWay  = 
+						{
+							ROUTE_BackSideRocket  = 
+							{
+								ROUTE_BackSideRocket1  = 
+								{
+								},
+							},
+							ROUTE_Detonator_place  = 
+							{
+							},
+						},
+						ROUTE_SideWay1  = 
+						{
+							ROUTE_SideWay2  = 
+							{
+								ROUTE_BackSideRocket  = 
+								{
+									ROUTE_BackSideRocket1  = 
+									{
+									},
+								},
+								ROUTE_Detonator_place  = 
+								{
+								},
+							},
+							ROUTE_StairsToDoor  = 
+							{
+								ROUTE_Platform  = 
+								{
+								},
+							},
+						},
+					},
+				},
+				ROUTE_Side_Bridge  = 
+				{
+					ROUTE_Door3  = 
+					{
+						ROUTE_FrontWay  = 
+						{
+							ROUTE_Detonator_place  = 
+							{
+							},
+							ROUTE_BackSideRocket  = 
+							{
+								ROUTE_BackSideRocket1  = 
+								{
+								},
+							},
+						},
+						ROUTE_SideWay1  = 
+						{
+							ROUTE_SideWay2  = 
+							{
+								ROUTE_BackSideRocket  = 
+								{
+									ROUTE_BackSideRocket1  = 
+									{
+									},
+								},
+							},
+							ROUTE_StairsToDoor  = 
+							{
+								ROUTE_Platform  = 
+								{
+								},
+							},
+						},
+					},
+				},
+
+			},
+		},
+		DEFEND_Allies_Keycard_01 = 
+		{
+			ROUTE_Allied_BackRocketBaseSpawn  = 
+			{
+				ROUTE_JumpToAlliedPlatform  = 
+				{
+				      Weight = 3,
+					ROUTE_Ledge2  = 
+					{
+					},
+				},
+				ROUTE_Low_North_Door  = 
+				{
+				      Weight = 2,
+					ROUTE_LadderToDoor  = 
+					{
+						ROUTE_Platform  = 
+						{
+							ROUTE_Ledge  = 
+							{
+							},
+						},
+					},
+					ROUTE_WoodenBoxes  = 
+					{
+						ROUTE_Ledge  = 
+						{
+						},
+					},
+				},
+				ROUTE_Low_West_Door  = 
+				{
+				      Weight = 2,
+					ROUTE_LadderToDoor  = 
+					{
+						ROUTE_Platform  = 
+						{
+							ROUTE_Ledge  = 
+							{
+							},
+						},
+					},
+					ROUTE_WoodenBoxes  = 
+					{
+						ROUTE_Ledge  = 
+						{
+						},
+					},
+				},
+				ROUTE_Ledge1  = 
+				{
+					ROUTE_Platform  = 
+					{
+						ROUTE_Ledge  = 
+						{
+						},
+					},
+				},
+			},
+		},
+		DEFEND_Allies_Keycard_05 = 
+		{
+			ROUTE_Allied_BackRocketBaseSpawn  = 
+			{
+				ROUTE_JumpToAlliedPlatform  = 
+				{
+					ROUTE_Ledge2  = 
+					{
+						ROUTE_Ledge  = 
+						{
+							ROUTE_Platform  = 
+							{
+								ROUTE_Platform2  = 
+								{
+								},
+							},
+						},
+						ROUTE_UpperLedge  = 
+						{
+							ROUTE_Platform2  = 
+							{
+							},
+						},
+						ROUTE_UpperLedge2  = 
+						{
+							ROUTE_Platform2  = 
+							{
+							},
+						},
+					},
+					ROUTE_Ledge1  = 
+					{
+						ROUTE_Platform2  = 
+						{
+						},
+					},
+				},
+				ROUTE_Low_North_Door  = 
+				{
+					ROUTE_LadderToDoor  = 
+					{
+						ROUTE_Platform  = 
+						{
+							ROUTE_Platform2  = 
+							{
+							},
+						},
+					},
+				},
+				ROUTE_Low_West_Door  = 
+				{
+					ROUTE_LadderToDoor  = 
+					{
+						ROUTE_Platform  = 
+						{
+							ROUTE_Platform2  = 
+							{
+							},
+						},
+					},
+				},
+			},
+		},
+		FLAG_gold =
+		{
+		},
+		SWITCH_Countdown = 
+		{
+			ROUTE_FirstAxisSpawn  = 
+			{
+				ROUTE_Door6  = 
+				{
+					ROUTE_Door2  = 
+					{
+						ROUTE_SideWay1  = 
+						{
+							ROUTE_SideWay2  = 
+							{
+							},
+							ROUTE_StairsToDoor  = 
+							{
+							      Weight = 4,
+								ROUTE_Platform  = 
+								{
+									ROUTE_BackSideRocket1  = 
+									{
+									},
+									ROUTE_Detonator_place  = 
+									{
+									},
+								},
+							},
+						},
+						ROUTE_FrontWay  = 
+						{
+							ROUTE_BackSideRocket  = 
+							{
+								ROUTE_BackSideRocket1  = 
+								{
+								},
+							},
+							ROUTE_Detonator_place  = 
+							{
+							},
+						},
+					},
+					ROUTE_Rocket_Base_Gate  = 
+					{
+						ROUTE_FrontWay  = 
+						{
+							ROUTE_Detonator_place  = 
+							{
+							},
+							ROUTE_BackSideRocket  = 
+							{
+								ROUTE_BackSideRocket1  = 
+								{
+								},
+							},
+						},
+						ROUTE_SideWay1  = 
+						{
+							ROUTE_SideWay2  = 
+							{
+								ROUTE_Detonator_place  = 
+								{
+								},
+								ROUTE_BackSideRocket  = 
+								{
+									ROUTE_BackSideRocket1  = 
+									{
+									},
+								},
+							},
+							ROUTE_StairsToDoor  = 
+							{
+							      Weight = 4,
+								ROUTE_Platform  = 
+								{
+									ROUTE_BackSideRocket  = 
+									{
+									},
+									ROUTE_BackSideRocket1  = 
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		DEFEND_Allies_Armory_01 = 
+		{
+			ROUTE_Allied_BackRocketBaseSpawn  = 
+			{
+				ROUTE_Top_Spawn_Allies  = 
+				{
+				},
+			},
+		},	
+		DEFEND_Allies_Armory_06 = 
+		{
+			ROUTE_Allied_BackRocketBaseSpawn  = 
+			{
+				ROUTE_JumpToAlliedPlatform  = 
+				{
+					ROUTE_FrontWay  = 
+					{
+						ROUTE_Rocket_Base_Gate  = 
+						{
+							ROUTE_InWater2  = 
+							{
+							},
+							ROUTE_Side_Bridge  = 
+							{
+							},
+						},
+						ROUTE_Door3  = 
+						{
+							ROUTE_Side_Bridge  = 
+							{
+							},
+						},
+						ROUTE_Door2  = 
+						{
+							ROUTE_Door6  = 
+							{
+								ROUTE_InWater1  = 
+								{
+									ROUTE_AroundMG42  = 
+									{
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+};
+		MapRoutes["DEFEND_Allies_Detonator.*"] = 
+		{
+			ROUTE_Allied_BackRocketBaseSpawn  = 
+			{
+				ROUTE_JumpToAlliedPlatform  = 
+				{
+					ROUTE_Ledge2  = 
+					{
+					},
+					ROUTE_Ledge1  = 
+					{
+					},
+				},
+				ROUTE_Low_North_Door  = 
+				{
+				},
+				ROUTE_Low_West_Door  = 
+				{
+				},
+			},
+		};
+		MapRoutes["ATTACK_Axis_Detonator.*"] = 
+		{
+			ROUTE_FirstAxisSpawn  = 
+			{
+				ROUTE_Door6  = 
+				{
+					ROUTE_Door2  = 
+					{
+						ROUTE_SideWay1  = 
+						{
+							ROUTE_SideWay2  = 
+							{
+							},
+							ROUTE_StairsToDoor  = 
+							{
+								ROUTE_Platform  = 
+								{
+								},
+							},
+						},
+						ROUTE_FrontWay  = 
+						{
+						},
+					},
+					ROUTE_Rocket_Base_Gate  = 
+					{
+						ROUTE_SideWay1  = 
+						{
+							ROUTE_SideWay2  = 
+							{
+							},
+							ROUTE_StairsToDoor  = 
+							{
+								ROUTE_Platform  = 
+								{
+								},
+							},
+						},
+						ROUTE_FrontWay  = 
+						{
+						},
+					},
+				},
+			},
+		};
+			
+	MapRoutes["ATTACK_Axis_RB.*"] = MapRoutes.PLANT_rocket_base_gate;
+	MapRoutes["ATTACK_Axis_Keycard.*"] = MapRoutes.FLAG_gold2;
+	MapRoutes["ATTACK_Axis_Detonator.*"] = MapRoutes.SWITCH_Countdown;
+	MapRoutes.DEFEND_Allies_Keycard_02 = MapRoutes.DEFEND_Allies_Keycard_01;
+	MapRoutes.DEFEND_Allies_Keycard_03 = MapRoutes.DEFEND_Allies_Keycard_01;
+	MapRoutes.DEFEND_Allies_Keycard_04 = MapRoutes.DEFEND_Allies_Keycard_05;
+	MapRoutes.DEFEND_Allies_Keycard_05 = MapRoutes.DEFEND_Allies_Keycard_05;
+	MapRoutes.DEFEND_Allies_Keycard_06 = MapRoutes.DEFEND_Allies_Keycard_05;
+	MapRoutes.DEFEND_Allies_Keycard_07 = MapRoutes.DEFEND_Allies_Keycard_01;
+	MapRoutes.DEFEND_Allies_Keycard_08 = MapRoutes.DEFEND_Allies_Keycard_01;
+	MapRoutes.DEFEND_Allies_Keycard_09 = MapRoutes.DEFEND_Allies_Keycard_01;
+	MapRoutes.DEFEND_Allies_Keycard_10 = MapRoutes.DEFEND_Allies_Keycard_01;
+	MapRoutes.DEFEND_Allies_Armory_02 = MapRoutes.DEFEND_Allies_Armory_01;
+	MapRoutes.DEFEND_Allies_Armory_03 = MapRoutes.DEFEND_Allies_Armory_01;
+	MapRoutes.DEFEND_Allies_Armory_04 = MapRoutes.DEFEND_Allies_Armory_01;
+	MapRoutes.DEFEND_Allies_Armory_05 = MapRoutes.DEFEND_Allies_Armory_01;
+	MapRoutes.DEFEND_Allies_Armory_07 = MapRoutes.DEFEND_Allies_Armory_06;
+	MapRoutes.DEFEND_Allies_Armory_08 = MapRoutes.DEFEND_Allies_Armory_06;
+	MapRoutes.DEFEND_Allies_Armory_09 = MapRoutes.DEFEND_Allies_Armory_06;
+	MapRoutes.DEFEND_Allies_Armory_10 = MapRoutes.DEFEND_Allies_Armory_06;
+	Util.Routes(MapRoutes);
+};

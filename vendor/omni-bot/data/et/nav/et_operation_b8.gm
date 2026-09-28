@@ -1,0 +1,126 @@
+//==========================================================================================
+//
+//	Operation (Beta 8) - et_operation_b8.gm
+//
+//	Who			When			What
+//------------------------------------------------------------------------------------------
+//	Mateos		20 March 2024	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	Axis_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Built", true );
+	},
+
+	Allied_Command_Post_Built = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Built", true );
+	},
+
+	Side_Door_Built = function()
+	{
+		Util.MapDebugPrint( "Side_Door_Built", true );
+	},
+
+	Axis_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed", true );
+	},
+
+	Allied_Command_Post_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed", true );
+	},
+
+	Door_Controls_Destroyed = function()
+	{
+		sleep( .1 );
+		Wp.CheckBlockable();
+
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Side_Door" );
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"BUILD_Upper_CP_Door",
+			"PLANT_Allied_CP"
+		});
+
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Side_Door" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Allied_CP",
+			"CAPPOINT_Transmitter",
+			"FLAG_documents",
+			"PLANT_Upper_CP_Door"
+		});
+
+		Util.MapDebugPrint( "Door_Controls_Destroyed" );
+	},
+
+	Side_Door_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Side_Door_Destroyed", true );
+	},
+
+	Side_Wall_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Side_Wall_Destroyed", true );
+	},
+
+	documents_Taken = function()
+	{
+		Util.EnableGoal( "CAMP_Transmitter.*" );
+
+		Util.MapDebugPrint( "documents_Taken" );
+	},
+
+	documents_Dropped = function()
+	{
+		Util.MapDebugPrint( "documents_Dropped", true );
+	},
+
+	documents_Returned = function()
+	{
+		Util.DisableGoal( "CAMP_Transmitter.*" );
+
+		Util.MapDebugPrint( "documents_Returned" );
+	},
+
+	documents_Secured = function()
+	{
+		Util.MapDebugPrint( "documents_Secured", true );
+	}
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "^5Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "^1Allied Command Post constructed. Charge speed increased and Spawns un", Map.Allied_Command_Post_Built );
+	OnTrigger( "The Side Fence has been constructed.", Map.Side_Door_Built );
+	OnTrigger( "^1The Allied have destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "^5The Axis have destroyed the Allied Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "The Doors are opening!!", Map.Door_Controls_Destroyed );
+	OnTrigger( "The Side Fence has been destroyed.", Map.Side_Door_Destroyed );
+	OnTrigger( "Side Wall destroyed!", Map.Side_Wall_Destroyed );
+	OnTrigger( "The objective was stolen.", Map.documents_Taken );
+	OnTrigger( "The objective was dropped.", Map.documents_Dropped );
+	OnTrigger( "The objective was returned.", Map.documents_Returned );
+	OnTrigger( "Allied team has transmitted the documents!", Map.documents_Secured );
+
+	Util.DisableGoal( ".*", true ); // All but routes
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Side_Door" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"PLANT_Door_Controls",
+		//"PLANT_Side_Door",
+		//"PLANT_Side_Wall"
+	});
+
+	Util.MapDebugPrint( "Omni-bot 0.9x map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	bot.TargetBreakableDist = 90.0;
+};

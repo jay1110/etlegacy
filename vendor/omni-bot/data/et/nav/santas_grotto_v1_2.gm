@@ -13,12 +13,12 @@
 
 /****************************************************
 Path mapping updated and script by Mateos
-Correspondant WAY file hash: -
-Last update: 29th July 2025
+Correspondant WAY file size: 149 Ko (153 440 octets)
+Last update: 1st January 2019
 ****************************************************/
 
 global Spawns =
-{
+ {
 	OLD_FISHING_HOUSE = 1,
 	LANCASTER_BOMBER_DEPLOYMENT = 2,
 
@@ -48,11 +48,11 @@ global Spawns =
 			}
 		}
 	},
-};
+ };
 
 global Map =
 {
-	Movers = { "MOVER_gate3" }, // Required for GetGoal in Functions.AxisBotSuicideOnGateKeySecured to work
+	Debug = 0,  // Please set to zero before distributing your script
 
 	isFuseBoxBuilt = false,
 	isSackStolen = false,
@@ -168,13 +168,10 @@ global Map =
 	},
 
 	// *** TRIGGER CALLBACKS ***
-	First_Gate_Destroyed = function()
+	First_Gate_Destroyed = function( trigger )
 	{
-		SetGoalPriority( "DEFUSE_First_Gate.*", 0.0 );
-
 		// blockwall flags refresh
-		sleep( .5 );
-		Wp.CheckBlockable();
+		sleep( 2 );
 
 		Goals.First_Gate( false );
 
@@ -192,7 +189,7 @@ global Map =
 		Functions.Print( "First_Gate_Destroyed", true );
 	},
 
-	gate_key_Taken = function()
+	gate_key_Taken = function( trigger )
 	{
 		Util.EnableGoal( "ATTACK_SFB.*" );
 		Util.DisableGoal( "ATTACK_SG.*" );
@@ -203,7 +200,7 @@ global Map =
 		Util.MapDebugPrint( "gate_key_taken" );
 	},
 
-	gate_key_returned = function()
+	gate_key_returned = function( trigger )
 	{
 		Functions.AxisSuicideOnGateKeyReturned();
 
@@ -216,7 +213,7 @@ global Map =
 		Util.MapDebugPrint( "gate_key_returned" );
 	},
 
-	Secondgate_Captured = function()
+	Secondgate_Captured = function( trigger )
 	{
 		Functions.AxisSuicideOnGateKeySecured();
 
@@ -243,7 +240,7 @@ global Map =
 		Functions.Print( "Secondgate_Captured", true );
 	},
 
-	Second_Gate_Open = function()
+	Second_Gate_Open = function( trigger )
 	{
 		// blockwall flags refresh
 		sleep( 1 );
@@ -257,21 +254,21 @@ global Map =
 		Util.MapDebugPrint( "Second_Gate_Open" );
 	},
 
-	north_pole_flag_Axis_Captured = function()
+	north_pole_flag_Axis_Captured = function( trigger )
 	{
 		Map.northPoleTeam = TEAM.AXIS;
 
 		Util.MapDebugPrint( "north_pole_flag_Axis_Captured", true );
 	},
 
-	north_pole_flag_Allies_Captured = function()
+	north_pole_flag_Allies_Captured = function( trigger )
 	{
 		Map.northPoleTeam = TEAM.ALLIES;
 
 		Util.MapDebugPrint( "north_pole_flag_Allies_Captured", true );
 	},
 
-	Fuse_Box_Built = function()
+	Fuse_Box_Built = function( trigger )
 	{
 		Map.isFuseBoxBuilt = true;
 
@@ -298,7 +295,7 @@ global Map =
 		Functions.Print( "Fuse_Box_Built", true );
 	},
 
-	Third_Gate_Open = function()
+	Third_Gate_Open = function( trigger )
 	{
 		SetAvailableMapGoals( TEAM.ALLIES, true, {
 			"CAPPOINT_sackdest",
@@ -308,7 +305,7 @@ global Map =
 		Util.MapDebugPrint( "Third_Gate_Open" );
 	},
 
-	sack_Taken = function()
+	sack_Taken = function( trigger )
 	{
 		Map.isSackStolen = true;
 
@@ -334,7 +331,7 @@ global Map =
 		Util.MapDebugPrint( "sack_taken" );
 	},
 
-	sack_returned = function()
+	sack_returned = function( trigger )
 	{
 		Map.isSackStolen = false;
 
@@ -375,7 +372,7 @@ global Map =
 		Util.MapDebugPrint( "sack_returned" );
 	},
 
-	sack_secured = function()
+	sack_secured = function( trigger )
 	{
 		Functions.Print( "sack_secured", false );
 	},
@@ -813,30 +810,27 @@ global Functions =
 
 	/**
 	 * Upon Gate Key Secured event,
-	 * if an Axis bot is too far away from the Second Gate,
-	 * prevent him from missing the North Pole area action: just selfkill.
+	 * if an Axis bot is far away from the Second Gate,
+	 * and its spawn time is below 10 seconds, just selfkill.
 	 */
 	AxisSuicideOnGateKeySecured = function()
 	{
+		if ( !Functions.CanAxisSelfkill( 10 ) )
+		{
+			return;
+		}
+
 		foreach ( id and bot in BotTable )
 		{
-			if ( bot.GetTeam() != TEAM.AXIS ) { continue; }
-			thread( Functions.AxisBotSuicideOnGateKeySecured, bot );
-		}
-	},
-
-	// Note 1: called in a thread
-	// Note 2: 5 200 is to cover the whole area, including spawn room, between Gate #2 and Gate #3, and a bit beyond Gate #2
-	AxisBotSuicideOnGateKeySecured = function( bot )
-	{
-		ETUtil.WaitForSpawn( bot.GetTeam() );
-		if ( !bot.Name) { return; } // Disconnected meanwhile
-		dist = DistanceBetween( bot.GetPosition(), GetGoal( "MOVER_gate3" ).GetPosition() );
-		health = bot.Health;
-		if ( dist > 5200 || health <= 30 )
-		{
-			bot.ExecCommand( "kill" );
-			Util.MapDebugPrint( format( "%s%s selfkilled (distance: %f, health: %d)", bot.Name, Util.DebugColorString, dist, health ), true );
+			if ( bot.GetTeam() == TEAM.AXIS )
+			{
+				botPosition = bot.GetPosition();
+				if ( botPosition.x > 830. && botPosition.y > 3875. )
+				{
+					bot.ExecCommand( "kill" );
+					Util.MapDebugPrint( bot.Name + "^b selfkilled because he was too far away", true );
+				}
+			}
 		}
 	},
 
@@ -846,7 +840,7 @@ global Functions =
 	 */
 	CanAxisSelfkill = function( seconds )
 	{
-		axisReinforceTime = ETUtil.GetReinforceTime( TEAM.AXIS );
+		axisReinforceTime = ETUtil.GetReinforceTime(TEAM.AXIS);
 		selfkill = axisReinforceTime <= seconds;
 		Util.MapDebugPrint( "Axis reinforce time: " + axisReinforceTime + " => Suicide: " + selfkill, true );
 

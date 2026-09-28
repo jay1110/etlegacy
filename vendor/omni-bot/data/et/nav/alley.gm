@@ -1,56 +1,85 @@
 //==========================================================================================
 //
-//  alley.gm (opgunfire.pk3)
+//  alley.gm
 //
 // Who	When		What
 //------------------------------------------------------------------------------------------
 // YKM	09 March 2026	Initial Script
-// palota	17 June 2026	
+//
 //==========================================================================================
 //
 
 global Map =
 {
-	SaveCampTime=0,
-	
+	Debug = 1, // please set to zero before distributing your script
+
 	defend_cannon =
 	{
 		Name = "defend_cannon",
-		TriggerOnClass = CLASS.ANYPLAYER,
+		TriggerOnTeam = { TEAM.ALLIES },
 		OnEnter = function(ent)
 		{
-			if (GetEntTeam(ent) == TEAM.ALLIES )
-			{
-				SetAvailableMapGoals( TEAM.AXIS, true, {
-					"DEFEND_cannon.*",
-					"MOBILEMG42_cannon",
-				});
-				DeleteTriggerRegion("defend_cannon");
-				Util.MapDebugPrint( "defend_cannon" );
-			}
+			SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_cannon1" );
+			SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_cannon2" );
+			SetAvailableMapGoals( TEAM.AXIS, true, "MOBILEMG42_cannon" );
+			SetGoalPriority( "DEFEND_cannon1", 0.90, TEAM.AXIS );
+			SetGoalPriority( "DEFEND_cannon2", 0.90, TEAM.AXIS );
+			SetGoalPriority( "MOBILEMG42_cannon", 0.90, TEAM.AXIS );
+			Util.MapDebugPrint( "defend_cannon Enter" );
+		},
+		OnExit = function(ent)
+		{
+			Util.MapDebugPrint( "defend_cannon Exit" );
 		},
 	},
 
 	Gate_Built = function()
 	{
-		SetAvailableMapGoals(TEAM.ALLIES, false, "SMOKEBOMB_2");
+		SetGoalPriority( "PLANT_Gate", 0.98, TEAM.AXIS, CLASS.ENGINEER );
 		Util.MapDebugPrint("Gate_Built");
 	},
 
 	Gate_Destroyed = function()
 	{
-		SetAvailableMapGoals(TEAM.ALLIES, true, "SMOKEBOMB_2");
+		SetGoalPriority( "BUILD_Gate", 0.98, TEAM.ALLIES, CLASS.ENGINEER );
+		Util.EnableGoal("ROUTE_gate");
+		SetGoalPriority( "DEFEND_axis1", 0.95, TEAM.AXIS );
+		SetGoalPriority( "DEFEND_axis2", 0.95, TEAM.AXIS );
+		SetGoalPriority( "DEFEND_axis3", 0.95, TEAM.AXIS );
+		SetGoalPriority( "DEFEND_axis4", 0.95, TEAM.AXIS );
+		SetGoalPriority( "CALLARTILLERY_axis1", 0.95, TEAM.AXIS, CLASS.FIELDOPS );
 		Util.MapDebugPrint("Gate_Destroyed");
 	},
 
-	cannon_planted = function()
+	bridge_Destroyed = function()
 	{
-		SetGoalPriority( "DEFEND_cannon.*", 0.95 );
-		SetAvailableMapGoals(TEAM.AXIS, false, "ATTACK_axis1");
+		Util.MapDebugPrint("bridge_Destroyed");
+	},
+
+	flak_cannon_Destroyed = function()
+	{
+		Util.MapDebugPrint("flak_cannon_Destroyed");
+	},
+	
+	cannon_planted = function ()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "MOBILEMG42_cannon");
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_cannon2");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_cannon1");
+		SetGoalPriority( "DEFEND_cannon1", 0.95, TEAM.AXIS );
+		SetGoalPriority( "DEFEND_cannon2", 0.95, TEAM.AXIS );
+		SetGoalPriority( "MOBILEMG42_cannon", 0.95, TEAM.AXIS );
 		Util.MapDebugPrint("cannon_planted");
-		sleep(35);
-		SetGoalPriority( "DEFEND_cannon.*", 0.7 );
-		SetAvailableMapGoals(TEAM.AXIS, true, "ATTACK_axis1");
+	},
+	
+	gate_planted = function ()
+	{
+		Util.MapDebugPrint("gate_planted");
+	},
+	
+	bridge_planted = function ()
+	{
+		Util.MapDebugPrint("bridge_planted");
 	},
 
 };
@@ -59,47 +88,113 @@ global OnMapLoad = function()
 {
 	OnTrigger("Allies has rebuilt the Gate!", Map.Gate_Built);
 	OnTrigger("Axis have destroyed the Gate!", Map.Gate_Destroyed);
+	OnTrigger("MISSING_STRING", Map.bridge_Destroyed);
+	OnTrigger("MISSING_STRING", Map.flak_cannon_Destroyed);
 	OnTrigger("Planted at the flak cannon.", Map.cannon_planted);
+	OnTrigger("Planted at the Gate.", Map.gate_planted);
+	OnTrigger("Planted at the bridge.", Map.bridge_planted);
 
-	OnTriggerRegion(AABB(8170,-141,-136,8570,259,264), Map.defend_cannon);
+	defend_cannon = OnTriggerRegion(AABB(8170,-141,-136,8570,259,264), Map.defend_cannon);
 
-	Util.DisableGoal( ".*", true );
-	SetAvailableMapGoals(TEAM.AXIS, true, {
-		"ARTILLERY_D_axis1",
-		"CALLARTILLERY_axis1",
-		"ATTACK_axis1",
-		"CAMP_axis1",
-		"DEFEND_axis[12]",
-		"PLANT_Gate",
-		"PLANT_bridge",
-		"SMOKEBOMB_1",
-		".*MG42_289",
-	});
-	SetAvailableMapGoals(TEAM.ALLIES, true, {
-		"ATTACK_cannon.*",
-		"AIRSTRIKE_ally1",
-		"ARTILLERY_D_ally1",
-		"CALLARTILLERY_ally1",
-		"BUILD_Gate",
-		"PLANT_flak_cannon",
-		"SMOKEBOMB_3",
-		".*MG42_384",
-		".*MG42_493",
-	});
+	//~Util.DisableGoal(".*", true);
+	//~SetAvailableMapGoals(TEAM.AXIS, true, "ATTACK_.*");
+	//~SetAvailableMapGoals(TEAM.ALLIES, true, "ATTACK_.*");
+	
+	Util.EnableGoal("ROUTE_tunelally2");
+	Util.EnableGoal("ROUTE_tunelally1");
+	Util.EnableGoal("ROUTE_tunelally");
+	Util.EnableGoal("ROUTE_tunelaxis");
+	Util.EnableGoal("ROUTE_ladderaxis");
+	Util.EnableGoal("ROUTE_stairsally");
+	Util.EnableGoal("ROUTE_stairsaxis");
+	Util.EnableGoal("ROUTE_allyspawn");
+	Util.EnableGoal("ROUTE_axisspawn");
+	Util.EnableGoal("ROUTE_cannon1");
+	Util.EnableGoal("ROUTE_cannon2");
+	
+	// spawn routes - each team only gets their own
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_allyspawn" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_axisspawn" );
+	
+	// shared routes - both teams can use
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_tunelally" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_tunelally1" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_tunelally2" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_tunelaxis" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_ladderaxis" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_stairsally" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_stairsaxis" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_cannon1" );
+	SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_cannon2" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_tunelally" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_tunelally1" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_tunelally2" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_tunelaxis" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_ladderaxis" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_stairsally" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_stairsaxis" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_cannon1" );
+	SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_cannon2" );
+	
+	SetAvailableMapGoals(TEAM.AXIS,false, "MOBILEMG42_cannon");
+	SetAvailableMapGoals(TEAM.ALLIES, false, "MOBILEMG42_cannon");
+	SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_cannon1");
+	SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_cannon1");
+	SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_cannon2");
+	SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_cannon2");
+	SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_axis1");
+	SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_axis1");
+	SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_axis2");
+	SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_axis2");
+	SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_axis3");
+	SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_axis3");
+	SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_axis4");
+	SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_axis4");
+	SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_axis5");
+	SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_axis5");
+	SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_axis6");
+	SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_axis6");
+	SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_axis7");
+	SetAvailableMapGoals(TEAM.ALLIES, false, "DEFEND_axis7");
+	SetAvailableMapGoals(TEAM.AXIS, true, "SMOKEBOMB_1");
+	SetAvailableMapGoals(TEAM.ALLIES, false, "SMOKEBOMB_1");	
+	SetAvailableMapGoals(TEAM.AXIS, false, "SMOKEBOMB_2");
+	SetAvailableMapGoals(TEAM.ALLIES, true, "SMOKEBOMB_2");
+	SetAvailableMapGoals(TEAM.AXIS, false, "SMOKEBOMB_3");
+	SetAvailableMapGoals(TEAM.ALLIES, true, "SMOKEBOMB_3");	
+	SetAvailableMapGoals(TEAM.AXIS, true, "ATTACK_axis1");
+	Util.SetMaxUsers(2, "ATTACK_axis1");
+	SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_axis1");	
+	SetAvailableMapGoals(TEAM.AXIS, true, "CALLARTILLERY_axis1");
+	SetAvailableMapGoals(TEAM.ALLIES, false, "CALLARTILLERY_axis1");
+	SetAvailableMapGoals(TEAM.AXIS, true, "ARTILLERY_D_axis1");
+	SetAvailableMapGoals(TEAM.ALLIES, false, "ARTILLERY_D_axis1");
+	SetAvailableMapGoals(TEAM.AXIS, false, "CALLARTILLERY_ally1");
+	SetAvailableMapGoals(TEAM.ALLIES, true, "CALLARTILLERY_ally1");
+	SetAvailableMapGoals(TEAM.AXIS, false, "ARTILLERY_D_ally1");
+	SetAvailableMapGoals(TEAM.ALLIES, true, "ARTILLERY_D_ally1");	
+	SetAvailableMapGoals(TEAM.AXIS, false, "AIRSTRIKE_ally1");
+	SetAvailableMapGoals(TEAM.ALLIES, true, "AIRSTRIKE_ally1");
 
-	SetGoalPriority( "PLANT_Gate", 0.9, TEAM.AXIS, CLASS.ENGINEER );
-	SetGoalPriority( "DEFEND_cannon.*", 0.7 );
-	SetGoalPriority( "ATTACK_axis1", 0.7 );
+	SetGoalPriority( "PLANT_Gate", 0.98, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "BUILD_Gate", 0.98, TEAM.ALLIES, CLASS.ENGINEER );
+	SetGoalPriority( "ATTACK_axis1", 0.99, TEAM.AXIS );
+	
+	Util.AddUseWp("PLANT_Gate", "gate1");
+	Util.AddUseWp("PLANT_Gate", "gate2");
 
-	Util.SetMaxUsers(1, "MOUNTMG42.*");
-	Util.AddUseWp("PLANT_Gate", {"gate1", "gate2"});
+	//Util.SetMaxUsers(1, "MOUNTMG42_.*");
+
+	//SetMapGoalProperties("MOUNTMG42_.*", {MinCampTime=15, MaxCampTime=90});
+
 
 	Util.MapDebugPrint("Omni-bot map script for " + GetMapName() + " executed.");
 };
 
 global OnBotJoin = function(bot)
 {
-	bot.TargetBreakableDist = 150;
+	bot.TargetBreakableDist = 150.0;
+	//~bot.MaxViewDistance = 2400;
 };
 
 global InitializeRoutes = function()
@@ -110,17 +205,27 @@ global InitializeRoutes = function()
 		{
 			ROUTE_allyspawn =
 			{
-				/*ROUTE_tunelally2 =
+				ROUTE_tunelally2 =
 				{
 					Weight = 5,
 					ROUTE_tunelally1 =
 					{
 						ROUTE_tunelally =
 						{
-							ROUTE_tunelaxis = {},
+							ROUTE_water =
+							{
+								ROUTE_tunelaxis = 
+								{
+									ROUTE_ladderaxis =
+									{
+										ROUTE_cannon1 = {},
+										ROUTE_cannon2 = {},
+									},
+								},
+							},
 						},
 					},
-				},*/
+				},
 				ROUTE_gate =
 				{
 					ROUTE_cannon1 = {},
@@ -128,17 +233,39 @@ global InitializeRoutes = function()
 				},
 				ROUTE_stairsally =
 				{
-					Weight = 5,
 					ROUTE_tunelaxis =
 					{
 						ROUTE_ladderaxis =
-						{
-							ROUTE_cannon1 = {},
-							ROUTE_cannon2 = {},
-						},
+							{
+								ROUTE_cannon1 = {},
+								ROUTE_cannon2 = {},
+							},
+					},
+					ROUTE_stairsaxis =
+					{
+					ROUTE_cannon1 = {},
+					ROUTE_cannon2 = {},
 					},
 				},
 			},
+		},
+		PLANT_bridge =
+		{
+			ROUTE_axisspawn =
+			{
+				ROUTE_gate = {},
+				ROUTE_stairsaxis =
+				{
+					ROUTE_tunelally = {},
+					ROUTE_stairsally = {},
+				},
+			},
+		},
+		BUILD_Gate =
+		{
+		},
+		PLANT_Gate =
+		{
 		},
 		ATTACK_axis1 =
 		{
@@ -149,19 +276,32 @@ global InitializeRoutes = function()
 					Weight = 5,
 					ROUTE_tunelaxis =
 					{
-						ROUTE_tunelally =
+						ROUTE_water =
 						{
-							ROUTE_tunelally1 = {},
-						},
+							ROUTE_tunelally =
+							{
+								ROUTE_tunelally1 =
+								{
+									ROUTE_tunelally2 = {},
+								},
+							},
+						},	
 					},
 				},
-				ROUTE_stairsaxis =
+				ROUTE_stairsaxis = 
 				{
 					ROUTE_stairsally = {},
-					ROUTE_tunelally = {},
+					ROUTE_tunelally =
+					{
+						ROUTE_tunelally1 =
+						{
+							ROUTE_tunelally2 = {},
+						},
+					},
 				},
 			},
 		},
 	};
 	Util.Routes(MapRoutes);
+	Util.MapDebugPrint("Routes initialized");
 };

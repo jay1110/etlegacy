@@ -384,6 +384,8 @@ global TruckBuildOffset =
 
 global Map =
 {
+	Debug = 0,		// Please set to zero before distributing your script
+
 	// -------------------------------------------------------------------------
 
 	AXIS_NORTH_PATH_X,
@@ -586,14 +588,15 @@ global Map =
 		// Only care about bots...
 		// Class/weapon not taken into account (aka heavy weaps slowing down first movements)
 		// ---
-		// With the radius of the waypoint, managedBotNameList and the sleep in OnExit are 'required',
+		// With the radius of the waypoint, managedBotList and the sleep in OnExit are 'required',
 		// because the path through is triggered at least twice per bot told to not move...
 		// /bot waypoint_setproperty paththrough Navigation_PT:tank_spawn
 		tank_spawn =
 		{
+			closestBot,
 			mutex = false,
 			botList = {},
-			managedBotNameList = {}, // Avoids several navigate triggering on the same bot
+			managedBotList = {}, // Avoids several navigate triggering on the same bot
 			//t = Timer(),
 			navigate = function()
 			{
@@ -602,9 +605,8 @@ global Map =
 				bot = this.Bot;
 				if ( !bot ) { return; }
 
-				// OnExit being triggered as soon as navigate is over, bot would immediately re-enter the path through
 				// Bot already managed, let it go!
-				if ( Map.Navigation.tank_spawn.managedBotNameList[ bot.Name ] == 1 ) { return; }
+				if ( Map.Navigation.tank_spawn.managedBotList[ bot ] == 1 ) { return; }
 
 				//Util.MapDebugPrint( this.Bot.Name + Util.DebugColorString + " is considered for the tank_spawn path through", true );
 
@@ -630,7 +632,7 @@ global Map =
 
 				// Let the chosen bot exit the path through without being reconsidered until outside
 				// Keep it still in the list for closest bot, else the next one will exit the loop above
-				if ( bot ) { Map.Navigation.tank_spawn.managedBotNameList[ bot.Name ] = 1; }
+				if ( bot ) { Map.Navigation.tank_spawn.managedBotList[ bot ] = 1; }
 
 				/*Util.MapDebugPrint(
 					ToString( "(" + Map.Navigation.tank_spawn.t.GetElapsedTime() ) + ") Exiting mutex as it is " + bot.Name + Util.DebugColorString + "'s turn",
@@ -641,19 +643,18 @@ global Map =
 
 				// Allow the next one to be selected
 				if ( bot ) { Map.Navigation.tank_spawn.botList[ bot ] = null; }
-			},
-			OnExit = function() // OnExit is called after navigate finished or the bot has been killed/disconnected
-			{
-				//Util.MapDebugPrint( this.Bot.Name + Util.DebugColorString + " OnExit tank_spawn path through", true );
 
 				Map.Navigation.tank_spawn.mutex = false;
+			},
+			OnExit = function()
+			{
+				//Util.MapDebugPrint( this.Bot.Name + Util.DebugColorString + " OnExit tank_spawn path through", true );
 
 				// Reconsider the bot the next time it spawns...
 				// ... but allow it to exit the waypoint radius 1st
 				// Basic sleep and not a distance check
-				botName = this.Bot.Name;
-				sleep( 1.5 ); // sleep after the name retrieval to handle the disconnection case (this.Bot is null after yielding)
-				Map.Navigation.tank_spawn.managedBotNameList[ botName ] = null;
+				sleep( 1.5 );
+				Map.Navigation.tank_spawn.managedBotList[ this.Bot ] = null;
 			}
 		}
 	},
@@ -716,7 +717,7 @@ global Map =
 
 	// -------------------------------------------------------------------------
 
-	Allied_Command_Post_Built = function()
+	Allied_Command_Post_Built = function( trigger )
 	{
 		Map.CPStatus = TEAM.ALLIES;
 
@@ -764,7 +765,7 @@ global Map =
 		Util.MapDebugPrint( "Allied_Command_Post_Built", true );
 	},
 
-	Allied_Command_Post_Destroyed = function()
+	Allied_Command_Post_Destroyed = function( trigger )
 	{
 		Map.CPStatus = 0;
 
@@ -800,7 +801,7 @@ global Map =
 		Util.MapDebugPrint( "Allied_Command_Post_Destroyed", true );
 	},
 
-	Axis_Command_Post_Built = function()
+	Axis_Command_Post_Built = function( trigger )
 	{
 		Map.CPStatus = TEAM.AXIS;
 
@@ -811,7 +812,7 @@ global Map =
 		Util.MapDebugPrint( "Axis_Command_Post_Built", true );
 	},
 
-	Axis_Command_Post_Destroyed = function()
+	Axis_Command_Post_Destroyed = function( trigger )
 	{
 		Map.CPStatus = 0;
 
@@ -822,7 +823,7 @@ global Map =
 		Util.MapDebugPrint( "Axis_Command_Post_Destroyed", true );
 	},
 
-	Grate_Built = function()
+	Grate_Built = function( trigger )
 	{
 		Map.isGrateDestroyed = false;
 
@@ -831,7 +832,7 @@ global Map =
 		Util.MapDebugPrint( "Grate_Built", true );
 	},
 
-	Grate_Destroyed = function()
+	Grate_Destroyed = function( trigger )
 	{
 		Map.isGrateDestroyed = true;
 
@@ -840,12 +841,12 @@ global Map =
 		Util.MapDebugPrint( "Grate_Destroyed", true );
 	},
 
-	Tank_Built = function()
+	Tank_Built = function( trigger )
 	{
 		Util.MapDebugPrint( "Tank_Built", true );
 	},
 
-	Tank_Stolen = function()
+	Tank_Stolen = function( trigger )
 	{
 		MapStep.currentStep += 1;
 
@@ -902,7 +903,7 @@ global Map =
 		Util.MapDebugPrint( "Tank_Stolen" );
 	},
 
-	Tank_Past_First_House = function()
+	Tank_Past_First_House = function( trigger )
 	{
 		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_Charlie[2-9]" );
 		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_Bravo.*" );
@@ -912,7 +913,7 @@ global Map =
 		Util.MapDebugPrint( "Tank_Past_First_House" );
 	},
 
-	Tank_Near_Bridge = function()
+	Tank_Near_Bridge = function( trigger )
 	{
 		MapStep.currentStep += 1;
 
@@ -940,7 +941,7 @@ global Map =
 		Util.MapDebugPrint( "Tank_Near_Bridge" );
 	},
 
-	Truck_Gate_Destroyed = function()
+	Truck_Gate_Destroyed = function( trigger )
 	{
 		MapStep.currentStep += 1;
 
@@ -969,7 +970,7 @@ global Map =
 		Util.MapDebugPrint( "Truck_Gate_Destroyed" );
 	},
 
-	Truck_at_Bridge = function()
+	Truck_at_Bridge = function( trigger )
 	{
 		MapStep.currentStep += 1;
 
@@ -1001,7 +1002,7 @@ global Map =
 	},
 
 	// Move or split Allies at Farm, re-enable North Path related goals (Bridge is suicide)
-	Truck_at_Axis_Bunker = function()
+	Truck_at_Axis_Bunker = function( trigger )
 	{
 		MapStep.currentStep += 1;
 
@@ -1035,22 +1036,22 @@ global Map =
 		Util.MapDebugPrint( "Truck_at_Axis_Bunker" );
 	},
 
-	Tank_Destroyed = function()
+	Tank_Destroyed = function( trigger )
 	{
 		Util.MapDebugPrint( "Tank_Destroyed", true );
 	},
 
-	Truck_Built = function()
+	Truck_Built = function( trigger )
 	{
 		Util.MapDebugPrint( "Truck_Built", true );
 	},
 
-	Truck_Destroyed = function()
+	Truck_Destroyed = function( trigger )
 	{
 		Util.MapDebugPrint( "Truck_Destroyed", true );
 	},
 
-	Allied_Foot_Bridge_Built = function()
+	Allied_Foot_Bridge_Built = function( trigger )
 	{
 		sleep( .1 );
 		Wp.CheckBlockable();
@@ -1070,14 +1071,14 @@ global Map =
 		Util.MapDebugPrint( "Allied_Foot_Bridge_Built", true );
 	},
 
-	footbridge_Planted = function()
+	footbridge_Planted = function( trigger )
 	{
 		Util.SetGoalRange( "DEFUSE_footbridge.*", 2000 );
 
 		Util.MapDebugPrint( "footbridge_Planted", true );
 	},
 
-	Allied_Foot_Bridge_Destroyed = function()
+	Allied_Foot_Bridge_Destroyed = function( trigger )
 	{
 		SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Allied_Foot_Bridge" );
 
@@ -1089,17 +1090,17 @@ global Map =
 		Util.MapDebugPrint( "Allied_Foot_Bridge_Destroyed", true );
 	},
 
-	Axis_MG_Tower_Built = function()
+	Axis_MG_Tower_Built = function( trigger )
 	{
 		Util.MapDebugPrint( "Axis_MG_Tower_Built", true );
 	},
 
-	Axis_MG_Tower_Destroyed = function()
+	Axis_MG_Tower_Destroyed = function( trigger )
 	{
 		Util.MapDebugPrint( "Axis_MG_Tower_Destroyed", true );
 	},
 
-	Anti_Tank_Gun_Destroyed = function()
+	Anti_Tank_Gun_Destroyed = function( trigger )
 	{
 		// Avoid double-call
 		if ( Map.isATGDestroyed ) { return; }
@@ -1126,7 +1127,7 @@ global Map =
 		Util.MapDebugPrint( "Anti_Tank_Gun_Destroyed", true );
 	},
 
-	Axis_Ammo_Bunker_Destroyed = function()
+	Axis_Ammo_Bunker_Destroyed = function( trigger )
 	{
 		Map.isAxisAmmoBunkerDestroyed = true;
 
@@ -1135,7 +1136,7 @@ global Map =
 		Util.MapDebugPrint( "Axis_Ammo_Bunker_Destroyed", true );
 	},
 
-	Axis_North_Path_Built = function()
+	Axis_North_Path_Built = function( trigger )
 	{
 		Map.isAxisNorthPathDestroyed = false;
 
@@ -1156,7 +1157,7 @@ global Map =
 		Util.MapDebugPrint( "Axis_North_Path_Built", true );
 	},
 
-	Axis_North_Path_Destroyed = function()
+	Axis_North_Path_Destroyed = function( trigger )
 	{
 		Map.isAxisNorthPathDestroyed = true;
 
@@ -1513,13 +1514,13 @@ global Map =
 
 	// -------------------------------------------------------------------------
 
-	vehicle_at_location = function()
+	vehicle_at_location = function( trigger )
 	{
 		switch ( Map.VehicleLocation )
 		{
 			case 1:
 			{
-				Map.Truck_at_Bridge();
+				Map.Truck_at_Bridge( trigger );
 			}
 			case 2:
 			{
@@ -1527,7 +1528,7 @@ global Map =
 			}
 			case 3:
 			{
-				Map.Truck_at_Axis_Bunker();
+				Map.Truck_at_Axis_Bunker( trigger );
 			}
 		}
 

@@ -1,0 +1,284 @@
+//==========================================================================================
+//
+// Canyon Lake - canyonlake.gm
+//
+// Who		When			What
+//------------------------------------------------------------------------------------------
+// Mateos	24 June 2025	First pass on old 0.66 waypoints
+// Mateos	25 January 2026	Second pass: escort/mount Tank, path checked against cvp
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	Debug = 0,
+
+	TankStatus =
+	{
+		DESTROYED = 0,
+		REPAIRED  = 1
+	},
+
+	Movers =
+	{
+		"MOVER_Tank"
+	},
+
+	tankStatus, // Tank is repaired by default
+
+	Axis_Command_Post_Built = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Command_Post" );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Built" );
+	},
+
+	Scaffolding_Built = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Scaffolding" );
+
+		Util.MapDebugPrint( "Scaffolding_Built" );
+	},
+
+	Tank_Barrier_2_Built = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Tank_Barrier_2" );
+
+		Util.MapDebugPrint( "Tank_Barrier_2_Built" );
+	},
+
+	Tank_Barrier_1_Built = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Bridge" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Tank_Barrier_1" );
+		//SetAvailableMapGoals( TEAM.AXIS, true, Map.DEFEND_defense1 );
+
+		Util.MapDebugPrint( "Tank_Barrier_1_Built" );
+	},
+
+	Generator_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Generator_Built", true );
+	},
+
+	Tank_Built = function( trigger )
+	{
+		Map.tankStatus = Map.TankStatus.REPAIRED;
+
+		Util.MapDebugPrint( "Tank_Built", true );
+	},
+
+	Tank_Destroyed = function( trigger )
+	{
+		Map.tankStatus = Map.TankStatus.DESTROYED;
+
+//~		// Keep them focused on the Tank
+//~		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank" );
+
+		Util.MapDebugPrint( "Tank_Destroyed", true );
+	},
+
+	Bridge_Built = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Bridge" );
+		//SetAvailableMapGoals( TEAM.AXIS, false, Map.DEFEND_defense1 );
+
+		Util.MapDebugPrint( "Bridge_Built" );
+	},
+
+	Allied_Command_Post_Built = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Bridge" );
+
+		Util.MapDebugPrint( "Allied_Command_Post_Built" );
+	},
+
+	Side_Wall_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Side_Wall_Destroyed", true );
+	},
+
+	Tank_Barrier_2_Destroyed = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Generator" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Side_Wall" );
+
+		Util.MapDebugPrint( "Tank_Barrier_2_Destroyed" );
+	},
+
+	Bridge_Destroyed = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Bridge" );
+
+		Util.MapDebugPrint( "Bridge_Destroyed" );
+	},
+
+	Tank_Barrier_1_Destroyed = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Bridge" );
+
+		Util.MapDebugPrint( "Tank_Barrier_1_Destroyed" );
+	},
+
+	Axis_Command_Post_Destroyed = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Axis_Command_Post" );
+
+		Util.MapDebugPrint( "Axis_Command_Post_Destroyed" );
+	},
+
+	Generator_Destroyed = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Generator" );
+
+		Util.MapDebugPrint( "Generator_Destroyed" );
+	},
+
+	Allied_Command_Post_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Allied_Command_Post_Destroyed", true );
+	},
+
+	Scaffolding_Destroyed = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Scaffolding" );
+
+		Util.MapDebugPrint( "Scaffolding_Destroyed" );
+	},
+
+	Gun_2_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Gun_2_Destroyed", true );
+	},
+
+	Gun_1_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Gun_1_Destroyed", true );
+	},
+
+	Big_Wall_Destroyed = function( trigger )
+	{
+		sleep( .1 );
+		Wp.CheckBlockable();
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"BUILD_Scaffolding",
+			"FLAG_objective01_book"
+		});
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"BUILD_Axis_Command_Post",
+			"BUILD_Tank_Barrier_2"
+		});
+
+		Util.MapDebugPrint( "Big_Wall_Destroyed" );
+	},
+
+//~ 	Allies_Capture_Flag = function( trigger )
+//~ 	{
+//~ 		Util.MapDebugPrint( "Allies_Capture_Flag", true );
+//~ 	},
+
+//~ 	Axis_Capture_Flag = function( trigger )
+//~ 	{
+//~ 		Util.MapDebugPrint( "Axis_Capture_Flag", true );
+//~ 	},
+
+	Main_Facility_Wall_Destroyed = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, false, {
+			"BUILD_Tank",
+			"ESCORT_Tank",
+			"MOUNT_Tank"
+		});
+
+		Util.MapDebugPrint( "Main_Facility_Wall_Destroyed" );
+	}
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "Tank Barrier #1 has been constructed.", Map.Tank_Barrier_1_Built );
+	OnTrigger( "Axis repaired the Generator!", Map.Generator_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Axis_Command_Post_Built );
+	OnTrigger( "The Tank has been repaired!", Map.Tank_Built );
+	OnTrigger( "The Tank has been damaged!", Map.Tank_Destroyed );
+	OnTrigger( "Bridge Completed!", Map.Bridge_Built );
+	OnTrigger( "Tank Barrier #2 has been constructed.", Map.Tank_Barrier_2_Built );
+	OnTrigger( "Allies have built the Scaffolding!", Map.Scaffolding_Built );
+	OnTrigger( "Allies Command Post constructed. Charge speed increased!", Map.Allied_Command_Post_Built );
+	OnTrigger( "Axis have destroyed the Scaffolding!", Map.Scaffolding_Destroyed );
+	OnTrigger( "Allies have destroyed Gun #2!", Map.Gun_2_Destroyed );
+	OnTrigger( "Tank Barrier #2 has been destroyed.", Map.Tank_Barrier_2_Destroyed );
+	OnTrigger( "Bridge destroyed!", Map.Bridge_Destroyed );
+	OnTrigger( "Allies have destroyed Gun #1!", Map.Gun_1_Destroyed );
+	OnTrigger( "Allies have broken through the side wall!", Map.Side_Wall_Destroyed );
+	OnTrigger( "Tank Barrier #1 has been destroyed.", Map.Tank_Barrier_1_Destroyed );
+	OnTrigger( "Axis have destroyed the Allies Command Post!", Map.Allied_Command_Post_Destroyed );
+	OnTrigger( "Allies team has destroyed the Axis Command Post!", Map.Axis_Command_Post_Destroyed );
+	OnTrigger( "Allies have damaged the Generator!", Map.Generator_Destroyed );
+	OnTrigger( "Allies team has destroyed the Big Wall!", Map.Big_Wall_Destroyed );
+//~ 	OnTrigger( "MISSING_STRING", Map.Allies_Capture_Flag );
+//~ 	OnTrigger( "MISSING_STRING", Map.Axis_Capture_Flag );
+
+	OnTrigger( "Allies have broken through the main facility wall!", Map.Main_Facility_Wall_Destroyed );
+
+	Map.tankStatus = Map.TankStatus.REPAIRED; // Tank is repaired by default
+
+	//move the bridge and axis cp dynamite goal to correct position
+	Util.SetGoalPosition( 4094, 253, 170, "PLANT_Bridge" );
+	Util.SetGoalPosition( -4498, 4048, 1200, "PLANT_Axis_Command_Post" );
+
+	//move certain destructables to a better place
+	Util.SetGoalPosition( -4020, 2737, 688, "PLANT_Side_Wall" );
+	Util.SetGoalPosition( -4271, 3280, 662, "PLANT_Generator" );
+
+	// Move defense1 construct to a better postition
+	Util.SetGoalPosition( 1579, -5625, 193, "BUILD_Tank_Barrier_1" );
+
+	//Move Bridge Construction to a better place
+	Util.SetGoalPosition( 4498, -2186, 195, "BUILD_Bridge" );
+
+	// Disable Bots trying to Blow Guns 1 & 2 they are not required
+
+	// Disable Build side wall
+	//	Util.DisableGoal( "BUILD_Side_Wall" );
+
+	// Allies Goals
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"BUILD_Allied_Command_Post",
+		"BUILD_Bridge",
+		"BUILD_Tank",
+		"ESCORT_Tank",
+		"MOUNT_Tank"
+	});
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+		"BUILD_Scaffolding",
+		"FLAG_objective01_book",
+		"PLANT_1_Gun",
+		"PLANT_2_Gun",
+		"PLANT_Axis_Command_Post",
+		"PLANT_Generator",
+		"PLANT_Side_Wall"
+	});
+
+	// Axis Goals
+	SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Tank_Barrier_1" );
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+		"BUILD_Axis_Command_Post",
+		"BUILD_Generator",
+		"BUILD_Tank_Barrier_2",
+		"PLANT_Allied_Command_Post",
+		"PLANT_Bridge",
+		"PLANT_Scaffolding"
+	});
+
+	Util.MapDebugPrint( "^6Map script loaded successfully!" );
+};
+
+global OnBotJoin = function( bot )
+{
+	// Uncomment for shootable breakables
+	//~ bot.TargetBreakableDist = 300.0;
+	bot.MaxViewDistance = 4500;
+};

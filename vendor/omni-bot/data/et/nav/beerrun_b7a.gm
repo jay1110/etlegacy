@@ -1,0 +1,531 @@
+global Map =
+{
+	Quiet = true,
+	Debug = 0,
+	KeyStatus = false, //home
+	KeyCapturedStatus = false, //not capped
+	Keg1Status = false, //home
+	Keg2Status = false, //home
+	ControlsStatus = false, //destroyed
+	CardReturned = 0,
+	ChangingNumber = 0,
+
+	Checkpoint_forward_spawn = "CHECKPOINT_forward_spawn",
+	Flag_access_codes = "FLAG_access_codes",
+	Flag_axis_gold1 = "FLAG_axis_gold1",
+	Flag_axis_gold2 = "FLAG_axis_gold2",
+	Cappoint_keg = "CAPPOINT_keg",
+	Cappoint_keycodes = "CAPPOINT_keycodes",
+	Build_Axis_Controls = "BUILD_Axis_Controls",
+	Plant_Axis_Controls = "PLANT_Axis_Controls",
+
+	Axis_Controls_Built = function( trigger )
+	{
+		Map.ControlsStatus = true;
+
+		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Controls" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Axis_Controls" );
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_loading_area_1");
+		if(!Map.Keg1Status || !Map.Keg2Status)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, true, "PLANT_Axis_Controls");
+			sleep(6);
+			SetAvailableMapGoals(TEAM.ALLIES, false, "CAPPOINT_keg");
+		}
+		Util.MapDebugPrint("keg_1_status = " + Map.Keg1Status);
+		Util.MapDebugPrint("keg_2_status = " + Map.Keg2Status);
+		Util.MapDebugPrint( "Axis_Controls_Built" );
+	},
+
+	Axis_Controls_Destroyed = function( trigger )
+	{
+		Map.ControlsStatus = false;
+
+		if ( Map.KeyCapturedStatus )
+		{
+			SetAvailableMapGoals( TEAM.ALLIES, true, {
+				"CAPPOINT_keg",
+				"ATTACK_axis_control_04",
+			});
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"BUILD_Axis_Controls",
+		});
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_Controls" );
+		Util.MapDebugPrint( "Axis_Controls_Destroyed" );
+		sleep(1.5);
+		if(Map.Keg1Status || Map.Keg2Status)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_loading_area_1");
+			SetAvailableMapGoals(TEAM.ALLIES, true, "CAPPOINT_keg");
+		}
+	},
+
+	access_codes_Taken = function( trigger )
+	{
+
+		Map.KeyStatus = true;
+
+		SetAvailableMapGoals(TEAM.AXIS, true, {
+			"DEFEND_keycode_0.*",
+			"MOBILEMG42_defend_cappoint_keycodes_.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"CAPPOINT_keycodes",
+			"ATTACK_keg_cage_0.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, "FLAG_access_codes");
+		Util.MapDebugPrint( "access_codes_Taken" );
+	},
+	
+	access_card_Dropped = function( trigger )
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"DEFEND_keycode_0.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"ATTACK_keg_cage_0.*",
+		});
+		Util.MapDebugPrint( "access_card_Dropped" );
+	},
+
+	access_codes_Returned = function( trigger )
+	{
+		Map.KeyStatus = false;
+		Map.CardReturned += 1;
+		Util.MapDebugPrint("^3CardReturned = " + Map.CardReturned);
+		
+		if(Map.CardReturned == 1)
+		{
+			Map.ChangingNumber = (RandInt(2,4));
+			Util.MapDebugPrint("ChangingNumber = " + Map.ChangingNumber);
+		}
+		if(Map.ChangingNumber == Map.CardReturned)
+		{
+			Wp.SetWaypointFlag( "checkpoint_entrance", "closed", true );
+			Wp.SetWaypointFlag( "checkpoint_door", "closed", true );
+			SetAvailableMapGoals(TEAM.ALLIES, false, {
+			"CHECKPOINT.*",
+			"ATTACK_checkpoint.*",
+			});
+			Util.MapDebugPrint("^5Choose other path!");
+		}
+
+		SetAvailableMapGoals(TEAM.ALLIES, true, "FLAG_access_codes");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "CAPPOINT_keycodes");
+		SetAvailableMapGoals(TEAM.AXIS, false, "MOBILEMG42_defend_cappoint_keycodes_.*");
+		Util.MapDebugPrint( "access_codes_Returned" );
+	},
+	
+	keycodes_Captured = function( trigger )
+	{
+		Map.KeyCapturedStatus = true;
+		
+		if ( !Map.ControlsStatus )
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "BUILD_Axis_Controls");
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, true, "PLANT_Axis_Controls");
+		}
+
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"DEFEND_keycode_0.*",
+			"MOBILEMG42_defend_keycode_.*",
+		});
+		SetAvailableMapGoals(TEAM.AXIS, false, {
+			"MOBILEMG42_defend_checkpoint_.*",
+			"MOBILEMG42_defend_cappoint_keycodes_.*",
+			"DEFEND_checkpoint_0.*",
+		});
+
+        SetAvailableMapGoals( TEAM.ALLIES, false, {
+        	"CAPPOINT_keycodes",
+        	"FLAG_access_codes",
+			"ATTACK_checkpoint_0.*",
+        });
+		sleep(4);
+		SetAvailableMapGoals( TEAM.ALLIES, true, {
+			"FLAG_axis_gold1", 
+			"ATTACK_keg_cage_0.*",	
+		});
+
+		Util.MapDebugPrint( "keycodes_Captured" );
+	},
+
+	axis_gold1_Taken = function( trigger )
+	{
+		Map.Keg1Status = true;
+
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_loading_area_[2-9]");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "CAMP_keg.*");
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_keycode_0.*");
+		SetAvailableMapGoals(TEAM.AXIS, false, "MOBILEMG42_defend_keycode_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_keg_cage_0.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "FLAG_axis_gold1");
+		if(Map.ControlsStatus)
+		{
+			SetAvailableMapGoals(TEAM.ALLIES, true, {
+				"PLANT_Axis_Controls",
+			});
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_loading_area_1");
+			sleep(1.5);
+			SetAvailableMapGoals(TEAM.ALLIES, true, "CAPPOINT_keg");
+		}
+		Util.MapDebugPrint( "axis_gold1_Taken" );
+	},
+	
+	keg_dropped = function( trigger )
+	{
+		SetAvailableMapGoals(TEAM.ALLIES, false, "CAMP_keg_0.*");
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_loading_area_.*");
+		Util.MapDebugPrint( "beer_keg_dropped" );
+	},
+
+	axis_gold1_Returned = function( trigger )
+	{
+
+		Map.Keg1Status = false;
+		
+		SetAvailableMapGoals(TEAM.AXIS, true, "MOBILEMG42_defend_keycode_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "CAPPOINT_keg");
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_loading_area_.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_keycode_0.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "CAMP_keg.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "ATTACK_keg_cage_0.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, {
+			"FLAG_axis_gold1",
+			"ATTACK_keg_cage_0.*",
+		});
+
+		Util.MapDebugPrint( "axis_gold1_Returned" );
+	},
+	
+	keg1_Captured = function( trigger )
+	{
+
+		SetAvailableMapGoals(TEAM.AXIS, true, "MOBILEMG42_defend_keycode_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "CAPPOINT_keg");
+		SetAvailableMapGoals( TEAM.AXIS, true, "DEFEND_keycode_0.*" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "DEFEND_loading_area_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "CAMP_keg_0.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "FLAG_axis_gold1" );
+		SetAvailableMapGoals(TEAM.ALLIES, true, "ATTACK_keg_cage_0.*");
+		sleep(4);
+		SetAvailableMapGoals( TEAM.ALLIES, true, "FLAG_axis_gold2" );
+
+		Util.MapDebugPrint( "keg1_Captured" );
+	},
+
+	axis_gold2_Taken = function( trigger )
+	{
+		Map.Keg2Status = true;
+
+		SetAvailableMapGoals(TEAM.AXIS, false, "MOBILEMG42_defend_keycode_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "CAMP_keg.*");
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_keycode_0.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "ATTACK_keg_cage_0.*");
+		if(Map.ControlsStatus)
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_loading_area_[2-9]");
+			SetAvailableMapGoals(TEAM.ALLIES, true, {
+				"PLANT_Axis_Controls",
+			});
+		}
+		else
+		{
+			SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_loading_area_.*");
+			sleep(1.5);
+			SetAvailableMapGoals(TEAM.ALLIES, true, "CAPPOINT_keg");
+		}
+
+		Util.MapDebugPrint( "axis_gold2_Taken" );
+	},
+
+	axis_gold2_Returned = function( trigger )
+	{
+		Map.Keg2Status = false;
+		
+		SetAvailableMapGoals(TEAM.AXIS, true, "MOBILEMG42_defend_keycode_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "CAPPOINT_keg");
+		SetAvailableMapGoals(TEAM.AXIS, false, "DEFEND_loading_area_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "CAMP_keg.*");
+		SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_keycode_0.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "ATTACK_keg_cage_0.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "FLAG_axis_gold2");
+
+		Util.MapDebugPrint( "axis_gold2_Returned" );
+	},
+
+	keg2_Captured = function( trigger )
+	{
+		Util.MapDebugPrint( "keg2_Captured" );
+	},
+
+	forward_spawn_Axis_Captured = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT.*" );
+
+		Util.MapDebugPrint( "forward_spawn_Axis_Captured" );
+	},
+
+	forward_spawn_Allies_Captured = function( trigger )
+	{
+		SetAvailableMapGoals( TEAM.AXIS, true, {
+			"CHECKPOINT.*",
+		});
+		SetAvailableMapGoals(TEAM.ALLIES, false, "CHECKPOINT.*");
+		Util.MapDebugPrint( "forward_spawn_Allies_Captured" );
+	},
+	
+	Grenade_Trigger =
+	{
+		Name = "Grenade_Trigger",
+		TriggerOnClass = CLASS.SOLDIER,
+		playerList = {},
+		OnEnter = function(ent)
+		{
+			if ( GetEntTeam(ent) == TEAM.AXIS )
+			{
+				list = Map.Grenade_Trigger.playerList;
+				if (list[ent])
+				{
+					//overlapping regions
+					list[ent] += 1;
+				}
+				else
+				{
+					list[ent] = 1;
+					if ( tableCount(list) == 1 ) {
+						// enable GRENADE for allies
+						SetAvailableMapGoals(TEAM.ALLIES, true, "GRENADE_axis_MG42");
+					}
+				}
+			}
+		},
+		OnExit = function(ent)
+		{
+			list = Map.Grenade_Trigger.playerList;
+			if (list[ent])
+			{
+				if (list[ent] > 1)
+				{
+					//overlapping regions
+					list[ent] -= 1;
+				}
+				else
+				{
+					list[ent] = null;
+					if ( tableCount(list) == 0 ) {
+						// the trigger is empty
+						SetAvailableMapGoals(TEAM.ALLIES, false, "GRENADE_axis_MG42");
+					}
+				}
+			}
+		},	
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	OnTrigger( "beer_axis_controls_repaired", Map.Axis_Controls_Built );
+	OnTrigger( "beer_axis_controls_destroyed", Map.Axis_Controls_Destroyed );
+	OnTrigger( "The Allies have stolen the Key Card", Map.access_codes_Taken );
+    OnTrigger( "Flag returned access_codes!", Map.access_codes_Returned );
+	OnTrigger( "The Allies have stolen the 1st Beer Keg!", Map.axis_gold1_Taken );
+	OnTrigger( "Flag returned axis_gold1!", Map.axis_gold1_Returned );
+	OnTrigger( "The Allies have stolen the 2nd Beer Keg!", Map.axis_gold2_Taken );
+	OnTrigger( "Flag returned axis_gold2!", Map.axis_gold2_Returned );
+	OnTrigger( "Axis capture the Forward Bunker!", Map.forward_spawn_Axis_Captured );
+	OnTrigger( "Allies capture the Forward Bunker!", Map.forward_spawn_Allies_Captured );
+	OnTrigger( "The Allies have secured the 1st Beer Keg!", Map.keg1_Captured );
+	OnTrigger( "The Allies have secured the 2nd Beer Keg!", Map.keg2_Captured );
+	OnTrigger( "The Allies have unlocked the first Keg Vault", Map.keycodes_Captured );
+	OnTrigger( "the Access Card dropped.", Map.access_card_Dropped );
+	
+	Wp.SetWaypointFlag( "checkpoint_entrance", "closed", false );
+	Wp.SetWaypointFlag( "checkpoint_door", "closed", false );
+	
+	OnTriggerRegion(AABB(-756.213,1945.720,-358.875,-652.684,2078.368,-284.872), Map.Grenade_Trigger);
+	
+	SetGoalPriority("CAMP_keg.*", 0.9, TEAM.ALLIES, 0);
+	SetGoalPriority("PLANT_Axis_Controls", 1.3, TEAM.ALLIES,  CLASS.COVERTOPS);
+	SetGoalPriority("PLANT_Axis_Controls", 1.3, TEAM.ALLIES,  CLASS.ENGINEER);
+	SetGoalPriority( "FLAG.*", 1.1, TEAM.ALLIES, 0 );
+	SetGoalPriority("FLAG.*", 0.0, TEAM.ALLIES, CLASS.ENGINEER);
+	SetGoalPriority("FLAG.*", 0.0, TEAM.ALLIES, CLASS.COVERTOPS);
+	SetGoalPriority("CHECKPOINT.*", 0.0, 0, CLASS.ENGINEER);
+	
+	Util.SetMaxUsersInProgress( 3, "FLAG_access_codes" );
+	Util.SetGoalOffset( 0, -20, 0, "PLANT_Axis_Controls" );
+
+	//disable all goals at start
+	Util.DisableGoal(".*", true); //all but routes
+
+	//SetGoalPriority( "CALL.*", 1.0 );
+	//SetGoalPriority( "ARTILLLERY.*", 1.0 );
+	//SetGoalPriority( "DEFEND_axkeg.*", 1.0 );
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+		"CHECKPOINT.*",
+		"FLAG_access_codes",
+		"CAPPOINT_keycodes",
+		"PLANT_Axis_Controls",
+		"ATTACK_checkpoint_0.*",
+	});
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"CHECKPOINT.*",
+		"DEFEND_checkpoint_0.*",
+		"MOBILEMG42_defend_checkpoint_.*",
+	});
+};
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+ 		CHECKPOINT_forward_spawn =
+ 		{
+ 			ROUTE_allispawn =
+			{
+				ROUTE_alcp1 = 
+				{
+					ROUTE_wood_stairs = {},
+				},
+				ROUTE_alcp2 = {},
+			},
+			ROUTE_axispawn = 
+			{
+				ROUTE_brewhouse_storage = 
+				{
+					ROUTE_keycode = {},
+				},
+			},
+
+		},
+ 		CAPPOINT_keycodes =
+ 		{
+ 			ROUTE_key =
+			{
+				ROUTE_alcp1 = 
+				{
+					ROUTE_wood_stairs = {},
+				},
+				ROUTE_alcp2 = 
+				{
+					ROUTE_brewhouse_storage_1 = {},
+					ROUTE_checkpoint_all = {},
+				},
+			},
+		},
+		FLAG_axis_gold1 = 
+		{
+			ROUTE_checkpoint_all = 
+			{
+				ROUTE_axis_gold = {},
+				ROUTE_checkpoint_ax = 
+				{
+					ROUTE_triple_zilch = 
+					{
+						ROUTE_key_and_golds = {},
+					},
+				},
+				ROUTE_brewhouse_storage_1 = 
+				{
+					ROUTE_brewhouse_south = 
+					{
+						ROUTE_brewhouse_west = 
+						{
+							ROUTE_keycode = {},
+						},
+					},
+				},
+			},
+		},
+		CAPPOINT_keg = 
+		{
+			ROUTE_triple_zilch = 
+			{
+				ROUTE_brewhouse_south = 
+				{
+					ROUTE_brewhouse_east = 
+					{
+						ROUTE_loadingdock_west = {},
+					},
+				},
+			},
+			ROUTE_keycode = 
+			{
+				ROUTE_brewhouse_west = 
+				{
+					ROUTE_brewhouse_centre = 
+					{
+						ROUTE_brewhouse_north = 
+						{
+							ROUTE_loadingdock_north = {},
+						},
+					},
+				},
+			},
+			ROUTE_brewhouse_storage = 
+			{
+				ROUTE_axispawn = 
+				{
+					ROUTE_axiscontrol = 
+					{
+						ROUTE_axisspawn_ladder = 
+						{
+							ROUTE_loadingdock_east = {},
+						},
+					},
+					ROUTE_brewhouse_east_2 = 
+					{
+						ROUTE_loadingdock_west_2 = {},
+					},
+				},
+			},
+		},
+		CAMP_keg_01 = 
+		{
+			ROUTE_checkpoint_all = 
+			{
+				ROUTE_brewhouse_storage_1 =
+				{
+					ROUTE_brewhouse_south = 
+					{
+						ROUTE_brewhouse_east =
+						{
+							ROUTE_loadingdock_west = {},
+						},
+					},
+				},	
+			},
+		},
+		GRENADE_axis_MG42 = 
+		{
+			ROUTE_checkpoint_all = 
+			{
+				ROUTE_checkpoint_ax = 
+				{
+					ROUTE_brewhouse_storage_1 = 
+					{
+						ROUTE_brewhouse_south = 
+						{
+							ROUTE_brewhouse_west = {},
+						},
+					},
+				},
+			},
+		},
+    };
+	
+    Util.Routes(MapRoutes);
+
+	Util.MapDebugPrint( "OnMapLoad" );
+};

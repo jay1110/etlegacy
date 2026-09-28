@@ -1,0 +1,192 @@
+//==========================================================================================
+//
+//	trigger_or_treat_b1.gm
+//
+//	Who     	When		What
+//------------------------------------------------------------------------------------------
+//	TomekKromek	25 October 2025	Initial Script
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	Debug = 0, // please set to zero before distributing your script
+
+	Allied_button = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "SWITCH_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, false, "SWITCH_.*");
+
+		Util.MapDebugPrint( "^3Allied_button" );
+	},
+
+	Allied_scored = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "SWITCH_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "SWITCH_.*");
+
+		Util.MapDebugPrint( "^3Allied_scored" );
+	},
+
+	Axis_button = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, false, "SWITCH_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "SWITCH_.*");
+
+		Util.MapDebugPrint( "^3Axis_button" );
+	},
+
+	Axis_scored = function()
+	{
+		SetAvailableMapGoals(TEAM.AXIS, true, "SWITCH_.*");
+		SetAvailableMapGoals(TEAM.ALLIES, true, "SWITCH_.*");
+
+		Util.MapDebugPrint( "^3Axis_scored" );
+	},
+
+};
+
+global OnMapLoad = function()
+{
+	// Register callback functions
+	Util.DisableGoal( ".*", true ); // all but routes
+
+	// Max users per goal
+	Util.SetMaxUsers( 1, "SWITCH_.*" );
+
+	// Camp times
+	SetMapGoalProperties( "DEFEND_.*", {MinCampTime=30, MaxCampTime=60} );
+	SetMapGoalProperties( "SNIPE_.*", {MinCampTime=15, MaxCampTime=60} );
+	SetMapGoalProperties( "MOBILEMG42_.*", {MinCampTime=30, MaxCampTime=120} );
+	SetMapGoalProperties( "MOBILEMORTAR_.*", {MinCampTime=30, MaxCampTime=120} );
+
+	// switch
+	SetAvailableMapGoals(TEAM.AXIS, true, "SWITCH_.*");
+	SetAvailableMapGoals(TEAM.ALLIES, true, "SWITCH_.*");
+
+	SetAvailableMapGoals(TEAM.AXIS, true, ".*_axis_.*");
+	SetAvailableMapGoals(TEAM.AXIS, true, "DEFEND_controls_.*");
+	SetAvailableMapGoals(TEAM.AXIS, false, "GRENADE_axis_1");
+	SetAvailableMapGoals(TEAM.AXIS, true, "MOBILEMORTAR_axis_1");
+
+	SetAvailableMapGoals(TEAM.ALLIES, true, ".*_allied_.*");
+	SetAvailableMapGoals(TEAM.ALLIES, true, "DEFEND_controls_.*");
+	SetAvailableMapGoals(TEAM.ALLIES, false, "GRENADE_allied_1");
+	SetAvailableMapGoals(TEAM.ALLIES, true, "MOBILEMORTAR_allied_1");
+
+	OnTriggerRegion(AABB(1030.125,1885.125,-310.875,1466.248,2021.739,-173.227), RegionTrigger.KillTrigger);
+	OnTriggerRegion(AABB(1950.235,420.491,-310.875,2424.875,547.875,-152.132), RegionTrigger.KillTrigger);
+
+	OnTriggerRegion(AABB(629.335,1080.130,5.125,974.969,1351.847,500.016), RegionTrigger.DisableBotPush);
+	OnTriggerRegion(AABB(2474.896,1080.125,5.126,2832.310,1351.873,476.480), RegionTrigger.DisableBotPush);
+
+	OnTrigger( "^4!! the Allied team has pressed the button !!", Map.Allied_button );
+	OnTrigger( "^4Allies ^7scored a point!", Map.Allied_scored );
+	OnTrigger( "^1!! the Axis team has pressed the button !!", Map.Axis_button );
+	OnTrigger( "^1Axis ^7scored a point!", Map.Axis_scored );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		SWITCH_controls_1 = 
+		{
+			ROUTE_axis_spawn = 
+			{
+				ROUTE_axis_guillotine = 
+				{
+					Weight = 1,
+					ROUTE_ladder_axis = {},
+					ROUTE_ladder_allied = {},
+				},
+				ROUTE_west = 
+				{
+					ROUTE_ladder_axis = {},
+					ROUTE_ladder_allied = {},
+				},
+				ROUTE_east = 
+				{
+					ROUTE_ladder_axis = {},
+					ROUTE_ladder_allied = {},					
+				},
+
+			},
+			ROUTE_allied_spawn = 
+			{
+				ROUTE_allied_guillotine = 
+				{
+					Weight = 1,
+					ROUTE_ladder_axis = {},
+					ROUTE_ladder_allied = {},
+				},
+				ROUTE_west = 
+				{
+					ROUTE_ladder_axis = {},
+					ROUTE_ladder_allied = {},
+				},
+				ROUTE_east = 
+				{
+					ROUTE_ladder_axis = {},
+					ROUTE_ladder_allied = {},					
+				},
+
+			},
+		},
+
+		DEFEND_middle_axis_1 =
+		{
+			ROUTE_axis_spawn = 
+			{
+					ROUTE_axis_guillotine = {},
+					ROUTE_west = {},
+					ROUTE_east = {},
+			},
+		},
+
+		DEFEND_middle_allied_1 =
+		{
+			ROUTE_allied_spawn = 
+			{
+					ROUTE_allied_guillotine = {},
+					ROUTE_west = {},
+					ROUTE_east = {},
+			},
+		},
+
+		MOBILEMG42_axis_1 =
+		{
+			ROUTE_axis_spawn = 
+			{
+				ROUTE_axis_guillotine = {},
+			},
+		},
+
+		MOBILEMG42_allied_1 =
+		{
+			ROUTE_aallied_spawn = 
+			{
+				ROUTE_allied_guillotine = {},
+			},
+		},
+
+	};
+
+	MapRoutes["SWITCH_controls_.*"] = MapRoutes.SWITCH_controls_1;
+	MapRoutes["DEFEND_controls_.*"] = MapRoutes.SWITCH_controls_1;
+
+	MapRoutes["SNIPE_.*"] = MapRoutes.SWITCH_controls_1;
+	MapRoutes["AIRSTRIKE_.*"] = MapRoutes.SWITCH_controls_1;
+
+	MapRoutes["DEFEND_middle_axis_.*"] = MapRoutes.DEFEND_middle_axis_1;
+	MapRoutes["DEFEND_middle_allied_.*"] = MapRoutes.DEFEND_middle_allied_1;
+	
+	Util.Routes(MapRoutes);
+};

@@ -1,0 +1,707 @@
+//==========================================================================================
+//
+//	uje_rotterdam_xmas.gm
+//
+//	Who       	When		What
+//------------------------------------------------------------------------------------------
+//	^1[UJE]^3Niek	19 February 2015	Initial Script
+//	MickyP		    01 March 2015	    Script Basics
+// ^1[UJE]^3Captain	08 December 2015	Attack/Defense/improved waypoints
+//
+//==========================================================================================
+//
+
+global Map =
+{
+	Debug = 1, // please set to zero before distributing your script
+    ShowMovers = false,
+	Allied_Generator_Dyno = 0,
+	Command_Post_Dyno = 0,
+	Ship_Bridge_Dyno = 0,
+	Gate_Open = 0,
+	Documents_On_Boat = 0,
+	Boat_is_Built = 1,
+	Ship_Bridge_is_Built = 0,
+	Documents_Taken = 0,
+	LiftPos = "top",
+	
+	Lift = function(trigger)
+	{
+		Map.lift_Moving = "moving";
+		Util.MapDebugPrint("Lift moving");
+		Wp.SetWaypointFlag( "lift", "closed", true );
+		Util.DisableGoal("SWITCH.*");
+
+		vel = ToVector(trigger.Action);
+		if (vel.z < 0)
+		{
+			Map.lift_goto = "bottom";
+			Util.MapDebugPrint("Lift at bottom");
+		    if (Map.Documents_On_Boat == 1)
+			{
+			sleep(5);
+			Util.EnableGoal("SWITCH_lift_2"); 
+			Util.EnableGoal("SWITCH_lift_4"); 
+			}
+			sleep(1); 
+			Wp.SetWaypointFlag( "lift", "closed", false );
+
+		}
+		if (vel.z > 0)
+		{
+			Map.lift_goto = "top";
+			Util.MapDebugPrint("Lift at top");
+		    if (Map.Documents_On_Boat == 1)
+			{
+			Util.EnableGoal("SWITCH_lift_1"); 
+			sleep(4); 
+			Util.DisableGoal("RIDE_bottom");  
+			sleep(5); 
+			Util.EnableGoal("SWITCH_lift_3");
+			}
+
+		}
+	},
+	Allied_Generator_Built = function( trigger )
+	{
+		Map.Gate_Open = 0;
+        SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Allied_Generator" );
+
+		Util.MapDebugPrint( "Allied_Generator_Built" );
+	},
+
+	Allied_Generator_Destroyed = function( trigger )
+	{
+		    Map.Gate_Open = 1;
+			SetAvailableMapGoals( TEAM.AXIS, true, "ESCORT_boat" );
+			
+			SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Allied_Generator" );
+		
+		Util.MapDebugPrint( "Allied_Generator_Destroyed" );
+	},
+
+	Command_Post_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Command_Post_Destroyed" );
+	},
+	shipcrack_Destroyed = function( trigger )
+	{
+		Util.MapDebugPrint( "Shipcrack_Destroyed" );
+	},
+
+     Ship_Bridge_Destroyed = function( trigger )
+	{
+	      Map.Ship_Bridge_is_Built = 0;
+		  SetAvailableMapGoals( TEAM.AXIS, false, "GRENADE_Explode_shipcrack" );
+		  SetAvailableMapGoals( TEAM.AXIS, false, "FLAG_documents" );
+		
+	      SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Ship_Bridge" );
+		  SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allied_flag_.*" );
+		  if (Map.Documents_On_Boat == 0)
+		  {
+		  SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Ship_Bridge" );
+		  SetAvailableMapGoals( TEAM.AXIS, true, "SMOKEBOMB_at_ship_bridge" );
+          }
+		  if (Map.Documents_On_Boat == 1)
+		  {
+		  SetAvailableMapGoals( TEAM.AXIS, false, "SMOKEBOMB_at_ship_bridge" );
+		  SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Ship_Bridge" );
+		  
+          SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_flag_.*" );
+		  SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_bridge_.*" );
+		  SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_forward_spawn" );
+		  SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_flag_.*" );
+		  }
+		Util.MapDebugPrint( "Ship_Bridge_Destroyed" );
+	},
+
+	Boat_Built = function( trigger )
+	{
+		Map.Boat_is_Built = 1;
+			SetAvailableMapGoals( TEAM.AXIS, true, "RIDE_axis_boat" );
+			SetAvailableMapGoals( TEAM.AXIS, true, "ESCORT_boat" );
+			SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_boat" );
+		if (Map.Documents_On_Boat == 1)
+			{
+			SetAvailableMapGoals( TEAM.AXIS, true, "RIDE_axis_boat" );
+			SetAvailableMapGoals( TEAM.AXIS, true, "ESCORT_boat" );
+			}
+			
+		Util.MapDebugPrint( "Boat_Built" );
+	},
+
+	Command_Post_Built = function( trigger )
+	{
+		Util.MapDebugPrint( "Command_Post_Built" );
+	},
+
+	Ship_Bridge_Built = function( trigger )
+	{
+	    Map.Ship_Bridge_is_Built = 1;
+		sleep(5);
+		SetAvailableMapGoals( TEAM.AXIS, true, "FLAG_documents" );
+		sleep(0.1);
+		SetAvailableMapGoals( TEAM.AXIS, true, "GRENADE_Explode_shipcrack"  );
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Ship_Bridge" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "SMOKEBOMB_at_ship_bridge" );
+
+	    SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Ship_Bridge" );
+		if (Map.Documents_On_Boat == 0)
+			{
+		sleep(0.1);
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allied_ship_bridge_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allied_ship_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "MOBILEMG42_Allied_ship_bridge" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_flag_.*" );
+		}
+		
+		if (Map.Documents_On_Boat == 1)
+			{
+		sleep(0.1);
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_bridge_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "MOBILEMG42_Allied_ship_bridge" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_flag_.*" );
+		}
+		
+		Util.MapDebugPrint( "Ship_Bridge_Built" );
+	},
+
+	shipcrack_Built = function( trigger )
+	{
+	SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_shipcrack" );
+
+	if (Map.Ship_Bridge_is_Built == 0)
+	{
+	SetAvailableMapGoals( TEAM.AXIS, false, "GRENADE_Explode_shipcrack" );
+	}
+	if (Map.Ship_Bridge_is_Built == 1)
+	{
+	SetAvailableMapGoals( TEAM.AXIS, true, "GRENADE_Explode_shipcrack" );
+	}
+		Util.MapDebugPrint( "shipcrack_Built" );
+	},
+	Allied_Generator_Planted = function( trigger )
+	{
+		Map.Allied_Generator_Dyno += 1;
+		Util.MapDebugPrint( "Allied_Generator_Planted" );
+	},
+
+	Command_Post_Planted = function( trigger )
+	{
+		Map.Command_Post_Dyno += 1;
+		Util.MapDebugPrint( "Command_Post_Planted" );
+	},
+
+	Ship_Bridge_Planted = function( trigger )
+	{
+		Map.Ship_Bridge_Dyno += 1;
+		Util.MapDebugPrint( "Ship_Bridge_Planted" );
+	},
+
+	Allied_Generator_Defused = function( trigger )
+	{
+		Map.Allied_Generator_Dyno -= 1;
+		Util.MapDebugPrint( "Allied_Generator_Defused" );
+	},
+
+	Command_Post_Defused = function( trigger )
+	{
+		Map.Command_Post_Dyno -= 1;
+		Util.MapDebugPrint( "Command_Post_Defused" );
+	},
+
+	Ship_Bridge_Defused = function( trigger )
+	{
+		Map.Ship_Bridge_Dyno -= 1;
+		Util.MapDebugPrint( "Ship_Bridge_Defused" );
+	},
+	Axis_Passed_Doors = function( trigger )
+	{
+	        SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_AXIS_after_doors_.*" );
+			SetAvailableMapGoals( TEAM.AXIS, true, "RIDE_axis_boat" );
+			SetAvailableMapGoals( TEAM.AXIS, true, "ESCORT_boat" );
+			SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_AXIS_generator_.*" );
+			SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_forward_spawn" );
+	   
+	        SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allied_after_doors_.*" );
+	        SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_generator_.*" );
+	        SetAvailableMapGoals( TEAM.ALLIES, false, "MOBILEMG42_Allied_generator_.*" );
+			SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_forward_spawn" );
+		Util.MapDebugPrint( "Axis_Passed_Doors" );
+	},
+
+	Boat_Damaged = function( trigger )
+	{
+		Map.Boat_is_Built = 0;
+		if (Map.Documents_On_Boat == 0)
+			{
+			SetAvailableMapGoals( TEAM.AXIS, false, "RIDE_axis_boat" );
+			SetAvailableMapGoals( TEAM.AXIS, false, "ESCORT_boat" );
+			SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_boat" );
+			}
+	    if (Map.Documents_On_Boat == 1)
+			{
+			SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_boat" );
+			SetAvailableMapGoals( TEAM.AXIS, true, "RIDE_axis_boat" );
+			SetAvailableMapGoals( TEAM.AXIS, false, "ESCORT_boat" );
+			}
+		Util.MapDebugPrint( "Boat_Damaged" );
+	},
+
+	shipcrack_Destroyed = function( trigger )
+	{
+	  SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_shipcrack" );
+	  
+	  SetAvailableMapGoals( TEAM.AXIS, false, "GRENADE_Explode_shipcrack" );
+
+		Util.MapDebugPrint( "Shipcrack_Destroyed" );
+	},
+
+	documents_Taken = function( trigger )
+	{
+	   Map.Documents_Taken = 1;
+	   SetAvailableMapGoals( TEAM.AXIS, true, "CAPPOINT_.*" );
+	   SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Axis_docks_.*" );
+	   SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_ship_bridge_.*" );
+	   SetAvailableMapGoals( TEAM.AXIS, false, "FLAG_documents" );
+	   
+
+	   SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allied_boat_at_docks_.*" );
+	   SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_bridge_.*" );
+	   SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_.*" );
+	   SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_flag_.*" );
+	
+		Util.MapDebugPrint( "documents_Taken" );
+	},
+
+	documents_Returned = function( trigger )
+	{
+	  Map.Documents_Taken = 0;
+	  SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT_.*" );
+	  if (Map.Ship_Bridge_is_Built == 0)
+	  {
+	   SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Ship_Bridge" );
+	   SetAvailableMapGoals( TEAM.AXIS, false, "FLAG_documents" );
+	   SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Axis_ship_bridge_.*" );
+	   SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_docks_.*" );
+	   
+	   SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_boat_at_docks_.*" );
+	   SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_bridge_.*" );
+	   SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_.*" );
+	  
+      }
+      if (Map.Ship_Bridge_is_Built == 1)
+	  {
+      SetAvailableMapGoals( TEAM.AXIS, true, "FLAG_documents" );
+	  SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Axis_ship_bridge_.*" );
+	  SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_docks_.*" );
+	  SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Ship_Bridge" );
+	  
+	  SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allied_ship_bridge_.*" );
+	  SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allied_ship_.*" );
+	  SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_boat_at_docks_.*" );
+	   
+      }
+		Util.MapDebugPrint( "documents_Returned" );
+	},
+
+	documents_Secured = function( trigger )
+	{
+		Map.Documents_On_Boat = 1;
+		SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Boat" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "RIDE_axis_boat" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Allied_Generator" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Axis_docks_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "FLAG_documents" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "CAPPOINT_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_ship_bridge_.*" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_lift_1" );
+		SetAvailableMapGoals( TEAM.AXIS, true, "SWITCH_lift_3" );
+		
+		SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allied_boat_at_docks_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lift_1" );
+		SetAvailableMapGoals( TEAM.ALLIES, true, "SWITCH_lift_3" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "MOBILEMG42_Allied_ship_bridge" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_bridge_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_flag_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_.*" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "BUILD_Shipcrack" );
+		
+		if (Map.Boat_is_Built == 1)
+			{
+			SetAvailableMapGoals( TEAM.AXIS, true, "ESCORT_boat" );
+			SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_boat" );
+			}
+		Util.MapDebugPrint( "documents_Secured" );
+	},
+
+	forward_spawn_Axis_Captured = function( trigger )
+	{
+		 
+	     if ( Map.Ship_Bridge_is_Built == 0 && Map.Documents_On_Boat == 0 && Map.Documents_Taken == 0 )
+		 {
+		 SetAvailableMapGoals( TEAM.AXIS, false, "CHECKPOINT_.*" );
+		 sleep(5);
+		 SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_flag_.*" );
+		 SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Axis_ship_bridge_.*" );
+		 SetAvailableMapGoals( TEAM.AXIS, true, "BUILD_Ship_Bridge" );
+		 sleep(0.1);
+		 SetAvailableMapGoals( TEAM.ALLIES, true, "PLANTMINE_ship_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allied_ship_bridge.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allied_ship_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_flag_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_flag_.*" );
+         }
+		 if ( Map.Ship_Bridge_is_Built == 0 && Map.Documents_On_Boat == 0 && Map.Documents_Taken == 1 )
+		 {
+		 sleep(5);
+		 SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Axis_docks_.*" );
+		 SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_flag_.*" );
+		 SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_ship_bridge_.*" );
+		 sleep(0.1);
+		 SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allied_boat_at_docks_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_flag_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_flag_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_ship_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_bridge_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_.*" );
+         }
+         if ( Map.Ship_Bridge_is_Built == 1 && Map.Documents_On_Boat == 1 )
+		 {
+		 SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_flag_.*" );
+		 SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_ship_bridge_.*" );
+		 SetAvailableMapGoals( TEAM.AXIS, false, "SMOKEBOMB_at_ship_bridge" );
+		 
+		 SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_forward_spawn" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_flag_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_flag_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_ship_.*" );
+		 }
+		 if ( Map.Ship_Bridge_is_Built == 0 && Map.Documents_On_Boat == 1 )
+		 {
+		 SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_flag_.*" );
+		 SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_ship_bridge_.*" );
+		 SetAvailableMapGoals( TEAM.AXIS, false, "SMOKEBOMB_at_ship_bridge" );
+		 
+		 SetAvailableMapGoals( TEAM.ALLIES, true, "CHECKPOINT_forward_spawn" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_flag_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_flag_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_ship_.*" );
+		 }
+		Util.MapDebugPrint( "forward_spawn_Axis_Captured" );
+	},
+
+	forward_spawn_Allies_Captured = function( trigger )
+	{
+	     SetAvailableMapGoals( TEAM.ALLIES, false, "CHECKPOINT_.*" );
+		 
+	   
+	    if ( Map.Ship_Bridge_is_Built == 0 && Map.Documents_On_Boat == 0 && Map.Documents_Taken == 0 )
+		 {
+		 SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_forward_spawn" );
+		 sleep(5);
+		 SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Axis_flag_.*" );
+		 SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_ship_bridge_.*" );
+		 sleep(0.1);
+		 SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allied_flag_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, true, "PLANTMINE_flag_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, true, "PLANTMINE_ship_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_bridge.*" );
+         }
+		 if ( Map.Ship_Bridge_is_Built == 0 && Map.Documents_On_Boat == 0 && Map.Documents_Taken == 1 )
+		 {
+		 SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_forward_spawn" );
+		 sleep(5);
+		 SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Axis_docks_.*" );
+		 SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_flag_.*" );
+		 SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_ship_bridge_.*" );
+		 sleep(0.1);
+		 SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allied_boat_at_docks_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_flag_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_flag_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_ship_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_bridge_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_.*" );
+         }
+		 
+		 if ( Map.Ship_Bridge_is_Built == 1 && Map.Documents_On_Boat == 0 )
+		 {
+		 SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_forward_spawn" );
+		 SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Axis_ship_bridge_.*" );
+		 SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_flag_.*" );
+		 
+		 SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allied_ship_bridge.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, true, "PLANTMINE_ship_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_flag_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_flag_.*" );
+         }
+         if ( Map.Ship_Bridge_is_Built == 1 && Map.Documents_On_Boat == 1 )
+		 {
+		 SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_forward_spawn" );
+		 SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_flag_.*" );
+		 
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_bridge.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_flag_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_ship_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_flag_.*" );
+		 }
+		 if ( Map.Ship_Bridge_is_Built == 0 && Map.Documents_On_Boat == 1 )
+		 {
+		 SetAvailableMapGoals( TEAM.AXIS, true, "CHECKPOINT_forward_spawn" );
+		 SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_flag_.*" );
+		 SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_ship_bridge_.*" );
+		 
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_ship_bridge.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_flag_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, true, "PLANTMINE_ship_.*" );
+		 SetAvailableMapGoals( TEAM.ALLIES, false, "PLANTMINE_flag_.*" );
+		 }
+		Util.MapDebugPrint( "forward_spawn_Allies_Captured" );
+	},
+
+
+    boat_at_shipcrack = function()
+	{
+				SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_docks_.*" );
+				SetAvailableMapGoals( TEAM.ALLIES, true, "PLANTMINE_generator_.*" );
+			    SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allied_generator_.*" );
+				SetAvailableMapGoals( TEAM.ALLIES, true, "MOBILEMG42_Allied_generator_.*" );
+				SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_boat_at_docks_.*" );
+				
+		Util.MapDebugPrint("boat_at_shipcrack");
+	},
+ 
+	boat_at_doors = function()
+	{
+		if ( Map.Gate_Open == 0 )
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_AXIS_generator_.*" );
+				SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_boat" );
+			    SetAvailableMapGoals( TEAM.AXIS, false, "RIDE_axis_boat" );
+			    SetAvailableMapGoals( TEAM.AXIS, false, "ESCORT_boat" );
+				SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_docks_.*" );
+
+			}
+			
+		Util.MapDebugPrint("boat_at_doors");
+	},
+    boat_at_bridge = function()
+	{
+				SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_Axis_boat_final_.*" );
+				SetAvailableMapGoals( TEAM.AXIS, true, "ESCORT_boat" );
+				SetAvailableMapGoals( TEAM.AXIS, false, "ATTACK_Axis_after_doors_.*" );
+				
+			    SetAvailableMapGoals( TEAM.ALLIES, true, "DEFEND_Allied_boat_final_.*" );
+				SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Allied_after_doors_.*" );
+				
+		Util.MapDebugPrint("boat_at_bridge" );
+	},
+	vehicle_at_location = function( trigger )
+	{
+		switch(Map.VehicleLocation)
+		{
+			case 1:
+			{
+				
+				Map.boat_at_shipcrack ();
+			}
+			case 2:
+			{
+
+				
+				Map.boat_at_doors();
+			}
+				case 3:
+			{
+
+				Map.boat_at_bridge();
+			}
+		}
+		Util.MapDebugPrint("vehicle at location " + Map.VehicleLocation, true);
+	},
+};
+global OnMapLoad = function()
+{
+	// Register callback functions
+	OnTrigger( "boat at location", Map.vehicle_at_location );
+	OnTrigger( "Allies have build the Generator!", Map.Allied_Generator_Built );
+	OnTrigger( "The Boat has been repaired!", Map.Boat_Built );
+	OnTrigger( "Allied Command Post constructed. Charge speed increased!", Map.Command_Post_Built );
+	OnTrigger( "Axis Command Post constructed. Charge speed increased!", Map.Command_Post_Built );
+	OnTrigger( "^1The Bridge has been build.", Map.Ship_Bridge_Built );
+	OnTrigger( "the shipcrack has been contructed", Map.shipcrack_Built );
+	OnTrigger( "^7Axis are past the Doors!", Map.Axis_Passed_Doors );
+	OnTrigger( "The Boat has been damaged!", Map.Boat_Damaged );
+	OnTrigger( "the ShipCrack has been destroyed", Map.shipcrack_Destroyed );
+	OnTrigger( "Axis team has destroyed the Generator!", Map.Allied_Generator_Destroyed );
+	OnTrigger( "Axis team has destroyed the Allied Command Post!", Map.Command_Post_Destroyed );
+	OnTrigger( "Allied team has destroyed the Axis Command Post!", Map.Command_Post_Destroyed );
+	OnTrigger( "^1The Bridge has been destroyed.", Map.Ship_Bridge_Destroyed );
+	OnTrigger( "^7Axis have stolen the secret war documents!", Map.documents_Taken );
+	OnTrigger( "^7Documents returned!", Map.documents_Returned );
+	OnTrigger( "^7Axis have secured the secret war documents!", Map.documents_Secured );
+	OnTrigger( "Axis capture the Forward Spawn!", Map.forward_spawn_Axis_Captured );
+	OnTrigger( "Allies capture the Forward Spawn!", Map.forward_spawn_Allies_Captured );
+	OnTriggerRegion(AABB(-1041.667,2153.388,606.694,-613.578,2386.562,684.267), RegionTrigger.VehicleTrigger);
+	OnTriggerRegion(AABB(-1663.501,4171.629,627.585,-888.448,4230.137,781.803), RegionTrigger.VehicleTrigger);
+	OnTriggerRegion(AABB(387.363,6213.611,541.794,561.928,6784.875,779.125), RegionTrigger.VehicleTrigger);
+	OnTrigger( "lift_goto", Map.Lift );
+
+	//Util.DisableGoal( ".*", true ); // all but routes
+	Wp.SetWaypointFlag( "lift", "closed", true );
+	//~SetAvailableMapGoals( TEAM.AXIS, true, "ATTACK_.*" );
+	//~SetAvailableMapGoals( TEAM.ALLIES, true, "ATTACK_.*" );
+	
+	
+	SetAvailableMapGoals( TEAM.AXIS, true, {
+		"ATTACK_Axis_flag_.*",
+	});
+	
+	SetAvailableMapGoals( TEAM.AXIS, false, {
+	"DEFEND_.*",
+	"MOBILEMG42_.*",
+	"PLANTMINE_.*",
+	"ESCORT_boat",
+	"RIDE_.*",
+	"CAPPOINT_.*",
+	"SMOKEBOMB_.*",
+	"SWITCH.*",
+	"FLAG_documents",
+	"GRENADE_Explode_shipcrack",
+	"PLANT_Allied_Generator",
+	"ATTACK_Axis_ship_bridge_.*",
+	"ATTACK_Axis_docks_.*",
+	"ATTACK_Axis_generator_.*", 
+	"ATTACK_Axis_after_doors_.*",
+	"ATTACK_Axis_boat_final_.*",
+	});
+	
+	SetAvailableMapGoals( TEAM.ALLIES, true, {
+	"DEFEND_Allied_flag_.*",
+	"PLANTMINE_ship_.*",
+	"PLANTMINE_flag_.*",
+	}); 
+	
+	SetAvailableMapGoals( TEAM.ALLIES, false, {
+	"ATTACK_.*",
+	"RIDE_.*",
+	"ESCORT_boat",
+	"CAPPOINT_.*",
+	"SMOKEBOMB_.*",
+	"PLANTMINE_generator_.*",
+	"SWITCH.*",
+	"GRENADE_Explode_shipcrack",
+	"BUILD_Allied_Generator",
+	"DEFEND_Allied_ship_.*",
+    "DEFEND_Allied_boat_at_docks_.*",
+	"DEFEND_Allied_generator_.*",
+	"DEFEND_Allied_after_doors.*",
+	"DEFEND_Allied_boat_final_.*",
+	"MOBILEMG42_Allied_.*",
+	}); 
+	
+	// Max users per goal
+	Util.SetMaxUsers( 1, "RIDE_.*" );
+	Util.SetMaxUsers( 1, "PLANT_.*" );
+	Util.SetMaxUsers( 1, "SWITCH_.*" );
+	Util.SetMaxUsers( 2, "ESCORT_boat" );
+	Util.SetMaxUsers( 1, "DEFEND_.*" );
+	Util.SetMaxUsers( 1, "ATTACK_.*" );
+	Util.SetMaxUsers( 1, "BUILD_.*" );
+	Util.SetMaxUsers( 1, "GRENADE_.*" );
+	Util.SetMaxUsers( 1, "MOBILEMG42_.*" );
+	Util.SetMaxUsers( 2, "CHECKPOINT_forward_spawn" );
+	Util.SetMaxUsers( 3, "FLAG_documents" );
+	
+	// *** PRIORITY ***
+	SetGoalPriority( "BUILD_Allied_Generator", 0.91, TEAM.ALLIES, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Ship_Bridge", 0.90, TEAM.ALLIES, CLASS.ENGINEER );
+	SetGoalPriority( "BUILD_Command_.*", 0.80, TEAM.ALLIES, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Command_.*", 0.80, TEAM.ALLIES, CLASS.ENGINEER );
+
+	SetGoalPriority( "BUILD_Ship_Bridge", 0.91, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "BUILD_Boat", 0.90, TEAM.AXIS, CLASS.ENGINEER );
+    SetGoalPriority( "PLANT_Allied_Generator", 0.84, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "BUILD_Command_.*", 0.80, TEAM.AXIS, CLASS.ENGINEER );
+	SetGoalPriority( "PLANT_Command_.*", 0.80, TEAM.AXIS, CLASS.ENGINEER );
+
+	// Camp times
+	//SetMapGoalProperties( "MOUNTMG42_.*", {MinCampTime=60, MaxCampTime=120} );
+	SetMapGoalProperties( "MOBILEMG42_.*", {MinCampTime=90, MaxCampTime=120} );
+	SetMapGoalProperties( "DEFEND_.*", {MinCampTime=60, MaxCampTime=120} );
+	SetMapGoalProperties( "ATTACK_.*", {MinCampTime=60, MaxCampTime=120} );
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
+
+global OnBotJoin = function( bot )
+{
+	// Uncomment for shootable breakables
+	bot.TargetBreakableDist = 90.0;
+	// Only set MaxViewDistance on maps with limited sight (e.g. fog)
+	bot.MaxViewDistance = 2400;
+};
+
+global InitializeRoutes = function()
+{
+	MapRoutes =
+	{
+		BUILD_Command_Post =
+		{
+		},
+		PLANT_Command_Post =
+		{
+		},
+		CHECKPOINT_forward_spawn = 
+		{
+			ROUTE_spawn_axis_first  = 
+			   {Weight = 3,
+				ROUTE_right  = 
+				{
+					ROUTE_split_right  = 
+					{
+						ROUTE_right_dock  = 
+						{
+						},
+						ROUTE_door  = 
+						{
+						},
+					},
+				},
+			},
+		},
+
+		BUILD_Boat =
+		{
+		},
+		FLAG_documents =
+		{
+		},
+		BUILD_Allied_Generator =
+		{
+		},
+		PLANT_Allied_Generator =
+		{
+		},
+		BUILD_Ship_Bridge =
+		{
+		},
+		PLANT_Ship_Bridge =
+		{
+		},
+		BUILD_shipcrack =
+		{
+		},
+	};
+	MapRoutes.ATTACK_Axis_flag_01 = MapRoutes.CHECKPOINT_forward_spawn;
+	MapRoutes.ATTACK_Axis_flag_02 = MapRoutes.CHECKPOINT_forward_spawn;
+	MapRoutes.ATTACK_Axis_flag_03 = MapRoutes.CHECKPOINT_forward_spawn;
+	MapRoutes.ATTACK_Axis_flag_04 = MapRoutes.CHECKPOINT_forward_spawn;
+	MapRoutes.ATTACK_Axis_flag_05 = MapRoutes.CHECKPOINT_forward_spawn;
+	MapRoutes.ATTACK_Axis_flag_06 = MapRoutes.CHECKPOINT_forward_spawn;
+
+	Util.Routes(MapRoutes);
+};

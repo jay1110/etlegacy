@@ -14,11 +14,7 @@
 //                                  Fixed bot stuckage at Monastery with crates
 //                                  Script clearing
 //    ^4Tardis 23/08/14 - fixes - stuck bots, disable bell plant after ring toll bell, cover spots added
-// VargaTom		7th	July	2024 (for v3)	- fixes
-//											- some new goals
-//											- some new waypoints
-//											- allies bot can open all switch operated doors
-//				2nd  Okt	2025			- CovertOps can destroy Garden Gate and game get feedback from it
+//	VargaTom 07/07/2024 ( for version 3 )- fixes - some new goals - some new waypoints - allies bot can open all doors
 //==========================================================================================
 //
 
@@ -35,6 +31,7 @@ Last update: 18th December 2022
 
 global Map =
 {
+    Debug = false,
     Quiet = true,
     Talk = true, // Set Talk to false if you don't want the bots talking ingame
 
@@ -273,7 +270,7 @@ global Map =
 
 	GhspawnTrigger =
 	{
-		Name = "GhspawnTrigger",
+		Name = "GhspawnTrigger",			//thx for Mateos
 		TriggerOnClass = CLASS.ANYPLAYER,
 
 		OnEnter = function(ent)
@@ -288,12 +285,13 @@ global Map =
 				else
 				{
 					Map.GardenGate = false;
-
-					DeleteTriggerRegion("GhspawnTrigger");
-					SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_gardengate" );
-					SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_gardengate" );
-					SetAvailableMapGoals( TEAM.AXIS, false, "PLANT_Garden_Gate" );
-					Util.MapDebugPrint("Garden Gate is false");
+					if(!Map.Message)
+					{
+						DeleteTriggerRegion("GhspawnTrigger");
+						Util.MapDebugPrint("Garden Gate is false");
+						Util.MapDebugPrint("Map.GardenGate = "+Map.GardenGate+"");
+						Map.Message = true;
+					}
 				}
 			}
 		},
@@ -485,6 +483,7 @@ global Map =
         SetAvailableMapGoals( TEAM.AXIS, true, {
   //      	"ATTACK_a_Abbey_Main_Gate_.*",
   //      	"BUILD_Command_Post",
+			"PLANT_Generator",
  //       	"PLANT_Abbey_Main_Gate",
         });
 
@@ -525,11 +524,8 @@ global Map =
 		
 		if(Map.Generator)
 		{
-			SetAvailableMapGoals(TEAM.AXIS, true, {
-				"MOBILEMG42_First_FX_4"
-				"ATTACK_Generator_.*",
-				"PLANT_Generator",
-			});
+			SetAvailableMapGoals(TEAM.AXIS, true, "ATTACK_Generator_.*");
+			SetAvailableMapGoals(TEAM.AXIS, true, "MOBILEMG42_First_FX_4");
 		}
 		else
 		{
@@ -557,7 +553,6 @@ global Map =
     Abbey_Main_Gate_Destroyed = function( trigger )
     {
         SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_abbeygate_destroyed" );
-		SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_abbeygate_destroyed" );
 		Util.MapDebugPrint( "Abbey_Main_Gate_Destroyed" );
 		Wp.SetWaypointFlag( "depot_door_in", "allies", false );
 		Wp.SetWaypointFlag( "depot_door_out", "allies", false );
@@ -633,6 +628,11 @@ global Map =
         
 		Util.MapDebugPrint( "depot_door_in_switch Disabled" );
 		Util.MapDebugPrint( "depot_door_out_switch Disabled" );
+		
+		if(!Map.GardenGate)
+		{
+			DeleteTriggerRegion("flagspawn");
+		}
     },
 
     Bell_Mechanism_Built = function( trigger )
@@ -733,7 +733,6 @@ global Map =
     Crypt_Gate_Destroyed = function( trigger )
     {
         SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_crypt" );
-		SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_crypt" );
 		SetAvailableMapGoals(TEAM.AXIS, false, "PLANT_Crypt_Gate");
 		SetAvailableMapGoals(TEAM.AXIS, false, "DEFUSE_Crypt_Gate_.*");
 
@@ -748,10 +747,6 @@ global Map =
     {
 		Map.GardenGate = false;
         SetAvailableMapGoals( TEAM.AXIS, true, "ROUTE_gardengate" );
-		SetAvailableMapGoals( TEAM.ALLIES, true, "ROUTE_gardengate" );
-		SetAvailableMapGoals(TEAM.AXIS, false, "PLANT_Garden_Gate");
-		
-		DeleteTriggerRegion("GhspawnTrigger");
 
         Util.MapDebugPrint( "Garden_Gate_Destroyed" );
     },
@@ -893,11 +888,6 @@ global OnMapLoad = function()
     	"ROUTE_gardengate",
     	"ROUTE_crypt",
     });
-    SetAvailableMapGoals( TEAM.ALLIES, false, {
-    	"ROUTE_abbeygate_destroyed",
-    	"ROUTE_gardengate",
-    	"ROUTE_crypt",
-    });
 
     // Fix as some mod's breaking
     Util.AddUseWp("PLANT_Generator", "hidden");
@@ -959,8 +949,6 @@ global OnMapLoad = function()
     SetGoalPriority( "DEFEND_Abbey_6", 0.52 );
     SetGoalPriority( "DEFEND_BellMechanism_5", 0.52 );
 	SetGoalPriority( "DEFEND_Book_Place_.*", 1.3, TEAM.ALLIES, 0 );
-	SetGoalPriority( "DEFEND_.*", 0.0, 0, CLASS.ENGINEER );
-	SetGoalPriority( "ATTACK_.*", 0.0, 0, CLASS.ENGINEER );
 
     SetGoalPriority( "DEFUSE_Bell_Mechanism_.*", 1.10, TEAM.AXIS, CLASS.ENGINEER, true );
 
@@ -1042,10 +1030,6 @@ global InitializeRoutes = function()
 						{
 							ROUTE_gardengate = {},
 						},
-					},
-					ROUTE_abbeyroad = 
-					{
-						ROUTE_garden = {},
 					},
 				},
 			},

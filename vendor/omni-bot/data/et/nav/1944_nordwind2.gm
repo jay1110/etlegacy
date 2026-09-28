@@ -13,12 +13,14 @@
 /****************************************************
 Path mapping and script by Mateos
 Correspondant WAY file hash: -
-Last update: 25th July 2025
+Last update: 2nd June 2025
 ****************************************************/
 
-/* TODO:
- * Routing through Cracked Wall?
- */
+// TODO: When copying from vanilla, pay attention to:
+// Axis CP (governs spawn), MOUNT_Tank aim modes (First_Truck_Barrier_Available), Map.OpenTruckBarrierPaththrough, Barn spawn
+// Vehicle offsets (there's more in 2 than vanilla)
+// Support for PLANT_Cracked_Wall from 2.0?
+// Function that tells if Warehouse Spawn is available
 
 global MapStep =
 {
@@ -47,11 +49,6 @@ global Spawn =
 
 	isAxisSplitOn	= false,
 
-	IsWarehouseSpawnAvailable = function()
-	{
-		return Map.isNordwind2 && Map.isAxisCPBuilt || !Map.isNordwind2 && Map.isWarehouseGateDestroyed;
-	},
-
 	SetBotSpawn = function( bot, spawnId )
 	{
 		// Usage of yield() here
@@ -71,20 +68,30 @@ global Spawn =
 		}
 	},
 
-	// TODO: Backport
-	MoveAlliesToCPExceptedDefender1IfNoWarehouseSpawnAndDefender2 = function()
+	MoveAlliesToCPExceptedSoldierForMG42WithRoleAndMortar = function()
 	{
 		Util.ChangeSpawnForRole( TEAM.ALLIES, ROLE.DEFENDER, Spawn.iCPSpawn );
 
-		if ( Spawn.IsWarehouseSpawnAvailable() )
+		// Move everyone but:
+		// - The bot being a Soldier with role DEFENDER1, if any (MG42)
+		// - Bots using Mortar, if any
+		count = 0;
+		total = 0;
+		foreach ( bot in BotTable )
 		{
-			Util.ChangeSpawnForRole( TEAM.ALLIES, ROLE.DEFENDER1, Spawn.iCPSpawn );
+			if ( bot.GetTeam() == TEAM.AXIS ) { continue; }
+			total += 1;
+			if ( bot.HasWeapon( WEAPON.MORTAR ) || bot.HasRole( ROLE.DEFENDER1 ) && bot.GetClass() == CLASS.SOLDIER ) { continue; }
+			count += 1;
+			Spawn.SetBotSpawn( bot, Spawn.iCPSpawn );
 		}
+
+		Util.MapDebugPrint( ToString( count ) + "/" + total + " Allied bots moved to CP Spawn", true );
 	},
 
 	SplitAxis = function()
 	{
-		if ( Spawn.isAxisSplitOn || !Spawn.IsWarehouseSpawnAvailable() || Map.step < MapStep.TRUCK_EXITS_TUNNEL ) { return; }
+		if ( Spawn.isAxisSplitOn || !Map.isAxisCPBuilt || Map.step < MapStep.TRUCK_EXITS_TUNNEL ) { return; }
 
 		Spawn.isAxisSplitOn = true;
 		foreach ( bot in BotTable ) { Spawn.SetSplitAxisSpawn( bot ); }
@@ -183,7 +190,7 @@ global TruckBuildOffset =
 		}
 		else if ( Map.step < MapStep.TRUCK_EXITS_TUNNEL )
 		{
-			if ( Spawn.IsWarehouseSpawnAvailable() )
+			if ( Map.isAxisCPBuilt )
 			{
 				offset = TruckBuildOffset.BACK;
 			}
@@ -213,6 +220,8 @@ global TruckBuildOffset =
 
 global Map =
 {
+	Debug = 0,					// Please set to zero before distributing your script
+
 	// ------------------------------------------------------------------------
 
 	initialised = false,
@@ -352,14 +361,13 @@ global Map =
 	// ------------------------------------------------------------------------
 
 	// *** TRIGGER CALLBACKS ***
-	Allied_Command_Post_Built = function()
+	Allied_Command_Post_Built = function( trigger )
 	{
 		Map.isAlliedCPBuilt = true; // CP Spawn available for Allies
 
-		// Nordwind 2 has the Barn spawn
-		if ( Map.step < MapStep.TANK_PAST_DEPOT_AREA || ( !Map.isNordwind2 && Map.step >= MapStep.TRUCK_PAST_FIRST_TRUCK_BARRIER ) )
+		if ( Map.step < MapStep.TANK_PAST_DEPOT_AREA || Map.step >= MapStep.TRUCK_PAST_FIRST_TRUCK_BARRIER )
 		{
-			Spawn.MoveAlliesToCPExceptedDefender1IfNoWarehouseSpawnAndDefender2();
+			Spawn.MoveAlliesToCPExceptedSoldierForMG42WithRoleAndMortar();
 		}
 
 		TankBuildOffset.SetOffset();
@@ -367,24 +375,22 @@ global Map =
 		Util.MapDebugPrint( "Allied_Command_Post_Built", true );
 	},
 
-	Axis_Command_Post_Built = function()
+	Axis_Command_Post_Built = function( trigger )
 	{
 		Map.isAxisCPBuilt = true;
 
 		// Move there if Truck is not yet past the Tunnel
-		if ( Map.step < MapStep.TRUCK_EXITS_TUNNEL )
+		if ( Map.isAxisCPBuilt && Map.step < MapStep.TRUCK_AT_BARN )
 		{
 			Util.ChangeSpawn( TEAM.AXIS, Spawn.iWarehouseSpawn );
 		}
 
 		Spawn.SplitAxis();
 
-		Util.DisableGroup( Groups.WAREHOUSE_ALLIES, TEAM.ALLIES );
-
 		Util.MapDebugPrint( "Axis_Command_Post_Built", true );
 	},
 
-	Allied_Command_Post_Destroyed = function()
+	Allied_Command_Post_Destroyed = function( trigger )
 	{
 		Map.isAlliedCPBuilt = false;	// CP Spawn unavailable for Allies
 
@@ -393,14 +399,14 @@ global Map =
 		Util.MapDebugPrint( "Allied_Command_Post_Destroyed", true );
 	},
 
-	Axis_Command_Post_Destroyed = function()
+	Axis_Command_Post_Destroyed = function( trigger )
 	{
 		Map.isAxisCPBuilt = false;
 
 		Util.MapDebugPrint( "Axis_Command_Post_Destroyed", true );
 	},
 
-	Warehouse_Gate_Destroyed = function()
+	Warehouse_Gate_Destroyed = function( trigger )
 	{
 		Map.isWarehouseGateDestroyed = true;
 
@@ -419,7 +425,7 @@ global Map =
 		// or the Truck is past its (first) barrier
 		if ( Map.step < MapStep.TANK_ENTERS_TUNNEL || Map.step >= MapStep.TRUCK_PAST_FIRST_TRUCK_BARRIER )
 		{
-			Spawn.MoveAlliesToCPExceptedDefender1IfNoWarehouseSpawnAndDefender2();
+			Spawn.MoveAlliesToCPExceptedSoldierForMG42WithRoleAndMortar();
 		}
 
 		SetAvailableMapGoals( TEAM.ALLIES, true, "PLANT_Axis_Command_Post" );
@@ -445,18 +451,12 @@ global Map =
 
 		TruckBuildOffset.SetOffset();
 
-		if ( Map.isNordwind2 && GetGoal( "PLANT_Cracked_Wall" ) != null )
-		{
-			// Note: removed starting from First Playable 3
-			SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Cracked_Wall" );
-		}
-
 		Util.MapDebugPrint( "Warehouse_Gate_Destroyed" );
 	},
 
 	// ---
 
-	Jagdpanther_Built = function()
+	Jagdpanther_Built = function( trigger )
 	{
 		// According to the Wiki, must be set to false when the vehicle is repaired
 		Util.ForceRouting( Map.sBUILD_Tank, false );
@@ -473,7 +473,7 @@ global Map =
 		Util.MapDebugPrint( "Jagdpanther_Built", true );
 	},
 
-	Jagdpanther_Damaged = function()
+	Jagdpanther_Damaged = function( trigger )
 	{
 		Util.ForceRouting( Map.sBUILD_Tank, true );
 
@@ -486,7 +486,7 @@ global Map =
 		Util.MapDebugPrint( "Jagdpanther_Damaged", true );
 	},
 
-	Jagdpanther_Stolen = function()
+	Jagdpanther_Stolen = function( trigger )
 	{
 		Map.step = MapStep.TANK_STOLEN;
 
@@ -506,17 +506,15 @@ global Map =
 		Util.MapDebugPrint( "Jagdpanther_Stolen" );
 	},
 
-	Tank_Barrier_Built = function()
+	Tank_Barrier_Built = function( trigger )
 	{
 		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Tank_Barrier" );
 
 		Util.MapDebugPrint( "Tank_Barrier_Built", true );
 	},
 
-	Tank_Barrier_Destroyed = function()
+	Tank_Barrier_Destroyed = function( trigger )
 	{
-		Map.AbortDefusing( TEAM.ALLIES, "Tank_Barrier" );
-
 		Util.MapDebugPrint( "Tank_Barrier_Destroyed", true );
 	},
 
@@ -524,7 +522,7 @@ global Map =
 	// -> Move Warehouse bots there, including MG42 one
 	// -> Clear roles for DEFEND spots
 	// -> Arty/Mortar at the Barn
-	Tank_Past_Barrier = function()
+	Tank_Past_Barrier = function( trigger )
 	{
 		Map.step = MapStep.TANK_PAST_DEPOT_AREA;
 
@@ -548,7 +546,7 @@ global Map =
 	// -> Clear roles for DEFEND spots (already done above in the end)
 	// -> Move forward MG42 (new one)
 	// -> Arty/Mortar at the other side of the tunnel
-	Tank_Enters_Tunnel = function()
+	Tank_Enters_Tunnel = function( trigger )
 	{
 		Map.step = MapStep.TANK_ENTERS_TUNNEL;
 
@@ -567,7 +565,7 @@ global Map =
 		// TODO DEFEND_Barn should also, perhaps, stay on if Warehouse Door isn't destroyed -> In this case, no spawn move (A)
 		Util.ChangeSpawn( TEAM.ALLIES, Spawn.iAlliedSpawn );
 
-		if ( !Spawn.IsWarehouseSpawnAvailable() )
+		if ( !Map.isAxisCPBuilt )
 		{
 			ClearGoalRole( ".*", ROLE.DEFENDER1 );
 			Util.EnableGroup( Groups.WAREHOUSE_ALLIES, TEAM.ALLIES );
@@ -596,7 +594,7 @@ global Map =
 		Util.MapDebugPrint( "Tank_Enters_Tunnel" );
 	},
 
-	Tank_Exits_Tunnel = function()
+	Tank_Exits_Tunnel = function( trigger )
 	{
 		Map.step = MapStep.TANK_EXITS_TUNNEL;
 
@@ -620,13 +618,13 @@ global Map =
 		Util.MapDebugPrint( "Tank_Exits_Tunnel" );
 	},
 
-	First_Truck_Barrier_Available = function()
+	First_Truck_Barrier_Available = function( trigger )
 	{
 		Map.step = MapStep.TANK_PAST_FIRST_TRUCK_BARRIER;
 
 		// Tank can't get damaged where these waypoints are, open them
 		// No worry for Truck
-		Map.OpenMiddleOfRoad();
+		Wp.SetWaypointFlag( "MiddleOfRoad[12]", "closed", false );
 
 		Util.EnableGoal( "ROUTE_Warehouse[12]" );
 		SetAvailableMapGoals( TEAM.ALLIES, true, {
@@ -641,10 +639,10 @@ global Map =
 		ETUtil.SetAimModeForMount(
 			"MOUNT_Tank",
 			{
-				Vec3(  420, -375,  64 ), // Behind (1st) Truck Barrier
-				Vec3( -215,   50,  45 ), // Hut doorway
-				Vec3( -975, 1185, 240 ), // Mountain top
-				Vec3( -435,  725,  32 )  // Allied Mortars spot
+				Vec3(   206,  -55,  32 ), // Behind (1st) Truck Barrier
+				Vec3(  -190,   55,  32 ), // Hut doorway
+				Vec3(  -666, 1475, 320 ), // Mountain top
+				Vec3( -1300,  725,  32 )  // Allied Mortars spot
 			}
 		);
 
@@ -658,7 +656,7 @@ global Map =
 		Util.MapDebugPrint( "First_Truck_Barrier_Available" );
 	},
 
-	Truckyard_Gate_Destroyed = function()
+	Truckyard_Gate_Destroyed = function( trigger )
 	{
 		Map.step = MapStep.TRUCKYARD_GATE_DESTROYED;
 
@@ -675,7 +673,7 @@ global Map =
 		if ( Map.isGoldCaptured )
 		{
 			Util.MapDebugPrint( "Truckyard_Gate_Destroyed, calling Gold_Bars_Captured...", true );
-			Map.Gold_Bars_Captured();
+			Map.Gold_Bars_Captured( trigger );
 			return;
 		}
 
@@ -696,17 +694,17 @@ global Map =
 		Util.MapDebugPrint( "Truckyard_Gate_Destroyed" );
 	},
 
-	Gold_Crate_Taken = function()
+	Gold_Crate_Taken = function( trigger )
 	{
 		Util.MapDebugPrint( "Gold_Crate_Taken", true );
 	},
 
-	Gold_Crate_Returned = function()
+	Gold_Crate_Returned = function( trigger )
 	{
 		Util.MapDebugPrint( "Gold_Crate_Returned", true );
 	},
 
-	First_Gold_Crate_Secured = function()
+	First_Gold_Crate_Secured = function( trigger )
 	{
 		Map.iGoldSecuredCounter += 1;
 
@@ -722,7 +720,7 @@ global Map =
 		}
 	},
 
-	Gold_Crate_Secured = function()
+	Gold_Crate_Secured = function( trigger )
 	{
 		Map.isGoldCaptured = true;
 
@@ -764,7 +762,7 @@ global Map =
 		Util.MapDebugPrint( "Gold_Crate_Secured" );
 	},
 
-	Truck_Built = function()
+	Truck_Built = function( trigger )
 	{
 		Map.isTruckBuilt = true;
 
@@ -778,7 +776,7 @@ global Map =
 		Util.MapDebugPrint( "Truck_Built", true );
 	},
 
-	Truck_Damaged = function()
+	Truck_Damaged = function( trigger )
 	{
 		Map.isTruckBuilt = false;
 
@@ -791,16 +789,16 @@ global Map =
 		Util.MapDebugPrint( "Truck_Damaged", true );
 	},
 
-	Truck_Barrier_1_Built = function()
+	Truck_Barrier_1_Built = function( trigger )
 	{
 		Map.isTruckBarrierDestroyed = false;
 
 		Map.OpenTruckBarrierPaththrough();
 
-		Util.MapDebugPrint( "Truck_Barrier_1_Built", true );
+		Util.MapDebugPrint( "Truck_Barrier_1_Built" );
 	},
 
-	Truck_Barrier_1_Planted = function()
+	Truck_Barrier_1_Planted = function( trigger )
 	{
 		Util.MapDebugPrint( "Truck_Barrier_1_Planted", true );
 
@@ -843,7 +841,7 @@ global Map =
 		Map.truck_barrier_1_mutex = false;
 	},
 
-	Truck_Barrier_1_Destroyed = function()
+	Truck_Barrier_1_Destroyed = function( trigger )
 	{
 		Map.isTruckBarrierDestroyed = true;
 
@@ -857,10 +855,10 @@ global Map =
 
 		Map.CloseTruckBarrierPaththrough();
 
-		Util.MapDebugPrint( "Truck_Barrier_1_Destroyed", true );
+		Util.MapDebugPrint( "Truck_Barrier_1_Destroyed" );
 	},
 
-	Truck_Past_First_Truck_Barrier = function()
+	Truck_Past_First_Truck_Barrier = function( trigger )
 	{
 		Map.step = MapStep.TRUCK_PAST_FIRST_TRUCK_BARRIER;
 
@@ -872,32 +870,14 @@ global Map =
 			"ATTACK_Foxtrot.*",
 			Map.sBUILD_Tank, // This is here in case mounting was kept on until now
 			"MOBILEMORTAR_AxisSpawn2",
-			"PLANT_Truck_Barrier_1"
+			"PLANT_Truck_Barrier"
 		});
 
-			// (Nordwind) If Allies don't own it, it's quite critical at this step...
-			// (Nordwind 2) Allies don't need to maintain it
-			Map.ManageCommandPost();
+		// Better move to a closer spawn now
+		Spawn.MoveAlliesToCPExceptedMortar(); // If available
 
-		if ( !Map.isNordwind2 )
-		{
-			// Better move to a closer spawn now
-			Spawn.MoveAlliesToCPExceptedMortar(); // If available
-		}
-		else
-		{
-			// Spawn at the Barn
-			Util.ChangeSpawn( TEAM.ALLIES, Spawn.iBarnSpawn );
-
-			SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Truck_Barrier_2" );
-			SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Truck_Barrier_2" );
-
-			Map.CloseMiddleOfRoad();
-
-			// Move MOBILEMORTAR_Vehicle over there
-			VehicleTrackingSystem.MORTAR_GOAL.SetPosition( Vec3( 3965, -2520, 280 ) );
-			VehicleTrackingSystem.ManageMortar();
-		}
+		// If Allies don't own it, it's quite critical at this step...
+		Map.ManageCommandPost();
 
 		// Note:
 		// If the Warehouse Gate is still not yet destroyed,
@@ -905,31 +885,23 @@ global Map =
 		Util.EnableGroup( Groups.BARN_ALLIES, TEAM.ALLIES );
 		SetAvailableMapGoals( TEAM.ALLIES, false, {
 			"ARTILLERY_S_Truck_Barrier",
-			"BUILD_Truck_Barrier_1", // Glitched, bots think it's still there
+			"BUILD_Truck_Barrier", // Glitched, bots think it's still there
 			"CALLARTILLERY_Truck_Barrier.*",
 			"DEFEND_Hut.*",
 			"MOBILEMG42_AlliedMobileMG1",
 			"MOBILEMG42_Truck_Barrier"
 		});
 
-		// Barn goals have roles
-		// If the Warehouse entrance is still up, goals are available but without role
-		// Handle that here
-		if ( !Map.isWarehouseGateDestroyed )
+		if ( Map.isNordwind2 )
 		{
-			SetGoalRole( { "CALLARTILLERY_Tunnel.*", "DEFEND_Warehouse.*" }, ROLE.DEFENDER1 );
-		}
-		else
-		{
-			// There may be bots with DEFENDER1 role, and they'll have nothing to do...
-			// Dispatch between DEFENDER and DEFENDER3
-			Map.DispatchDefender1BetweenDefenderAndDefender3();
+			SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Truck_Barrier_2" );
+			SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Truck_Barrier_2" );
 		}
 
 		Util.MapDebugPrint( "Truck_Past_First_Truck_Barrier" );
 	},
 
-	Truck_Enters_Tunnel = function()
+	Truck_Enters_Tunnel = function( trigger )
 	{
 		Map.step = MapStep.TRUCK_ENTERS_TUNNEL;
 
@@ -946,13 +918,10 @@ global Map =
 
 		TruckBuildOffset.SetOffset();
 
-		// Same role dispatch as in Truck_Past_First_Truck_Barrier
-		Map.DispatchDefender1BetweenDefenderAndDefender3();
-
 		Util.MapDebugPrint( "Truck_Enters_Tunnel" );
 	},
 
-	Truck_Exits_Tunnel = function()
+	Truck_Exits_Tunnel = function( trigger )
 	{
 		Map.step = MapStep.TRUCK_EXITS_TUNNEL;
 
@@ -971,44 +940,29 @@ global Map =
 		//SetAvailableMapGoals( TEAM.ALLIES, false, "DEFEND_Warehouse[123]" );
 		SetAvailableMapGoals( TEAM.ALLIES, false, "MOBILEMG42_AlliedMobileMG2" );
 
-		// Barrier over Truck
-		SetGoalPriority( "BUILD_Truck", 0.8 );
-
 		Spawn.SplitAxis();
 		TruckBuildOffset.SetOffset();
-
-		if ( Map.isNordwind2 )
-		{
-			// If Warehouse is still up or Axis CP gets destroyed, don't try to reach that far
-			// Focus on the Truck and its last barrier
-			SetAvailableMapGoals( TEAM.AXIS, false, {
-				"BUILD_Axis_Command_Post",
-				Map.sPLANT_Warehouse_Door
-			});
-			SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_Command_Post" );
-		}
 
 		Util.MapDebugPrint( "Truck_Exits_Tunnel" );
 	},
 
-	Truck_Barrier_2_Built = function()
+	Truck_Barrier_2_Built = function( trigger )
 	{
 		Util.MapDebugPrint( "Truck_Barrier_2_Built", true );
 	},
 
-	Truck_Barrier_2_Destroyed = function()
+	Truck_Barrier_2_Destroyed = function( trigger )
 	{
 		Util.MapDebugPrint( "Truck_Barrier_2_Destroyed", true );
 	},
 
-	// Note: The Truck Barrier #2 materials disappear one spline before the wm_announce
-	Truck_Past_Second_Barrier = function()
+	Truck_Past_Second_Barrier = function( trigger )
 	{
-		Map.Truck_At_Barn();
 		Util.MapDebugPrint( "Truck_Past_Second_Barrier", true );
 	},
 
-	Truck_At_Barn = function()
+	// TODO: Merge into Truck_Past_Second_Barrier and remove related region trigger?
+	Truck_At_Barn = function( trigger )
 	{
 		Map.step = MapStep.TRUCK_AT_BARN;
 
@@ -1018,28 +972,35 @@ global Map =
 		Util.EnableGroup( Groups.END_ALLIES, TEAM.ALLIES );
 		Util.DisableGroup( Groups.BARN_ALLIES, TEAM.ALLIES );
 
+		SetAvailableMapGoals( TEAM.AXIS, false, "BUILD_Axis_Command_Post" );
+		SetAvailableMapGoals( TEAM.ALLIES, false, "PLANT_Axis_Command_Post" );
+
 		Util.MapDebugPrint( "Truck_At_Barn" );
 	},
 
-	vehicle_at_location = function()
+	vehicle_at_location = function( trigger )
 	{
 		switch ( Map.VehicleLocation )
 		{
 			case 1:
 			{
-				Map.Tank_Enters_Tunnel();
+				Map.Tank_Enters_Tunnel( trigger );
 			}
 			case 2:
 			{
-				Map.Tank_Exits_Tunnel();
+				Map.Tank_Exits_Tunnel( trigger );
 			}
 			case 3:
 			{
-				Map.Truck_Enters_Tunnel();
+				Map.Truck_Enters_Tunnel( trigger );
 			}
 			case 4:
 			{
-				Map.Truck_Exits_Tunnel();
+				Map.Truck_Exits_Tunnel( trigger );
+			}
+			case 5:
+			{
+				Map.Truck_At_Barn( trigger );
 			}
 		}
 
@@ -1074,7 +1035,6 @@ global Map =
 		foreach ( cn in cabs )
 		{
 			c = GetGoal( cn );
-			if ( c == null ) { return; } // Older versions, just exit... TODO: Review Groups building to support all? With goal existence check
 			foreach ( g in goals )
 			{
 				// Exclude some goal(s)
@@ -1099,26 +1059,6 @@ global Map =
 		print( Util.DebugColorString + cab.GetName(), "->", goal.GetName(), "=", dist );
 
 		DrawDebugLine( cab.GetPosition(), goal.GetPosition(), COLOR.CYAN, 20 );
-	},
-
-	// TODO: What about DEFENDER2?
-	DispatchDefender1BetweenDefenderAndDefender3 = function()
-	{
-		foreach ( bot in BotTable )
-		{
-			if ( bot.HasRole( ROLE.DEFENDER1 ) )
-			{
-				bot.ClearRoles( ROLE.DEFENDER1 );
-				if ( RandInt( 0, 9 ) < 5 )
-				{
-					bot.SetRoles( ROLE.DEFENDER );
-				}
-				else
-				{
-					bot.SetRoles( ROLE.DEFENDER3 );
-				}
-			}
-		}
 	},
 
 	// TODO Roles?
@@ -1158,19 +1098,15 @@ global Map =
 		}
 		else
 		{
-			// TODO: See for a common function?
+			// TODO: See for a common function? - Find out why the CP TRIPMINE does not work...
 			SetAvailableMapGoals( TEAM.AXIS, Map.step < MapStep.TANK_PAST_DEPOT_AREA, {
 				"PLANT_Allied_Command_Post",
 				"TRIPMINE_CommandPost"
 			});
-			SetAvailableMapGoals( TEAM.ALLIES, Map.step < MapStep.TRUCK_PAST_FIRST_TRUCK_BARRIER, {
-				"BUILD_Allied_Command_Post",
-				"TRIPMINE_CommandPost"
-			});
+			SetAvailableMapGoals( TEAM.ALLIES, true, { "BUILD_Allied_Command_Post", "TRIPMINE_CommandPost" } );
 
 			// Plantmine is 0.79, Plant is 0.81, Build is 0.90, Defuse is 1.00
 			SetGoalPriority( "BUILD_Allied_Command_Post", 0.91 );
-			SetGoalPriority( "BUILD_Axis_Command_Post", 0.91 );
 			SetGoalPriority( "PLANT_Allied_Command_Post", 0.78, TEAM.AXIS, CLASS.ENGINEER );
 
 			if ( Map.step == MapStep.TANK_PAST_DEPOT_AREA || Map.step >= MapStep.GOLD_BARS_CAPTURED )
@@ -1188,21 +1124,6 @@ global Map =
 				Util.SetMaxUsersInProgress( 1, "BUILD_Allied_Command_Post" );
 			}
 		}
-	},
-
-	OpenMiddleOfRoad = function()
-	{
-		Map.ManageMiddleOfRoadClosedFlag( false );
-	},
-
-	CloseMiddleOfRoad = function()
-	{
-		Map.ManageMiddleOfRoadClosedFlag( true );
-	},
-
-	ManageMiddleOfRoadClosedFlag = function( closed )
-	{
-		Wp.SetWaypointFlag( "MiddleOfRoad[12]", "closed", closed );
 	},
 
 	OpenTruckBarrierPaththrough = function()
@@ -1318,8 +1239,6 @@ global OnMapLoad = function()
 	OnTrigger( "tank at location", Map.vehicle_at_location );
 	OnTrigger( "truck at location", Map.vehicle_at_location );
 
-	Map.CloseMiddleOfRoad();
-
 	if ( !Map.isNordwind2 )
 	{
 		// 1944 Nordwind and Summer Edition
@@ -1338,6 +1257,7 @@ global OnMapLoad = function()
 
 		Util.AddUsePoint( "BUILD_Truck_Barrier", Vec3( 190, -115, 32 ) );
 		Util.SetGoalPosition( 5.000, 162.759, 40.125, "AMMOCAB_north_ammocabinet_1" ); // Avoid bots jumping on it
+		Wp.SetWaypointFlag( "MiddleOfRoad[12]", "closed", true );
 		Map.CloseTruckBarrierPaththrough();
 	}
 	else
@@ -1354,11 +1274,11 @@ global OnMapLoad = function()
 		SetAvailableMapGoals( TEAM.AXIS, true, "PLANT_Tank_Barrier" );
 		SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank_Barrier" );
 
-		OnTriggerRegion( AABB( 2675.000,  -892.048, 25.125, 2685.000, -655.524,  99.125),	RegionTrigger.VehicleTrigger);
+		OnTriggerRegion( AABB( 2276.878,  -892.048, 25.125, 2816.812, -655.524,	 99.125),	RegionTrigger.VehicleTrigger);
 		OnTriggerRegion( AABB( 1533.283,  -755.030, 25.125, 1748.345, -535.450, 105.231),	RegionTrigger.VehicleTrigger);
+		OnTriggerRegion( AABB( 3036.612, -1513.127, 25.125, 3214.440, -1102.901, 99.125),	RegionTrigger.VehicleTrigger);
 
-		Util.AddUsePoint( "PLANT_Truck_Barrier_1", Vec3( 435, -290, 65 ) );
-		Util.AddUsePoint( "PLANT_Truck_Barrier_2", Vec3( -2995, -1410, 35 ) );// West of it, to use it as cover
+		Wp.SetWaypointFlag( "MiddleOfRoad[12]", "closed", true );
 	}
 
 	// Roughly the same in Nordwind 2
@@ -1369,7 +1289,6 @@ global OnMapLoad = function()
 	TankBuildOffset.SetOffset(); // TODO Ask palota for both routing and offsets to work together ^^"
 
 	Util.SetGoalRange( "PLANTMINE_Axis.*", 2750 ); // Prevent Axis from travelling from Tank Depot to Hut area by the Allied spawn
-	ETUtil.SetAimModeForMount( "MOUNT_Tank", "velocity" );
 	ETUtil.SetAimModeForMount( "MOUNT_Tank_Allies", "velocity" );
 
 	// Wait for the bots before checking NumBots
@@ -1443,7 +1362,7 @@ global OnBotJoin = function( bot )
 	yield();
 
 	// Axis bots spawn at the Warehouse if they join during the map progress
-	if ( bot.GetTeam() == TEAM.AXIS && Spawn.IsWarehouseSpawnAvailable() && Map.step < MapStep.TRUCK_AT_BARN )
+	if ( bot.GetTeam() == TEAM.AXIS && Map.isAxisCPBuilt && Map.step < MapStep.TRUCK_AT_BARN )
 	{
 		Spawn.SetBotSpawn( bot, Spawn.iWarehouseSpawn );
 	}
@@ -1796,7 +1715,6 @@ global VehicleTrackingSystem =
 
 		// Note: No need to force DontShootMortar, as it is not saved in _goals.gm file
 		VehicleTrackingSystem.MORTAR_GOAL = GetGoal( mortarMapGoalName );
-		VehicleTrackingSystem.MORTAR_GOAL.SetPosition( Vec3( -372.793, 1001.579, 12.077 ) );
 
 		VehicleTrackingSystem.CHECK_INTERVAL = 0.1;
 

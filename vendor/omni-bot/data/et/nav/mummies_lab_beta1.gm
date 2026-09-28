@@ -1,0 +1,154 @@
+//==========================================================================================
+//
+//	mummies_lab_beta1.gm
+//
+//	Who               	When		What
+//------------------------------------------------------------------------------------------
+//	LightRay@ets-clan.com	04 March 2022	Initial Script
+//	palota	6 July 2025
+//==========================================================================================
+//
+
+global Map =
+{
+	SaveGroups = 0,
+	
+	Tank_Built = function()
+	{
+		if (!Map.First_Tank_Build) {
+			Map.First_Tank_Build = 1;
+			Util.EnableGroup("al1", TEAM.ALLIES);
+		};
+
+		Util.MapDebugPrint( "Tank_Built" );
+	},
+
+	Foot_Bridge_Built = function()
+	{
+		Util.MapDebugPrint( "Foot_Bridge_Built" );
+	},
+
+	Foot_Bridge_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Foot_Bridge_Destroyed" );
+	},
+
+	Cave_Barrier_Built = function()
+	{
+		Util.MapDebugPrint( "Cave_Barrier_Built" );
+	},
+
+	Cave_Barrier_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Cave_Barrier_Destroyed" );
+	},
+
+	Bank_Doors_Destroyed = function()
+	{
+		Util.DisableGroup("ax1");
+		Util.DisableGroup("al1");
+		Util.EnableGoal("AMMO.*");
+
+		SetAvailableMapGoals( TEAM.ALLIES, 1, {
+			".*Command_Post",
+			"PLANT_Axis_Supply_Room",
+			"PLANT_Genesis_Machine",
+			"PLANT_Weak_Wall"
+		});
+
+		SetAvailableMapGoals( TEAM.AXIS, 0, "MOUNTMG42_Axis_MG42_Construction");
+
+		Util.MapDebugPrint( "Bank_Doors_Destroyed" );
+	},
+
+	Axis_Supply_Room_Destroyed = function()
+	{
+		SetAvailableMapGoals( TEAM.ALLIES, 0, "PLANT_Weak_Wall" );
+		Util.MapDebugPrint( "Axis_Supply_Room_Destroyed" );
+	},
+
+	Weak_Wall_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Weak_Wall_Destroyed" );
+	},
+
+	Genesis_Machine_Destroyed = function()
+	{
+		Util.MapDebugPrint( "Genesis_Machine_Destroyed" );
+	},
+
+	tank_at_location = function()
+	{
+		switch(Map.VehicleLocation)
+		{
+			case 1: // Tank at E3 tunnel entrance
+			{
+				SetAvailableMapGoals( TEAM.AXIS, true, "MOUNTMG42_Axis_MG42_Construction");
+			}
+		}
+
+		Util.MapDebugPrint("vehicle at location " + Map.VehicleLocation, true);
+	},
+
+};
+
+global OnMapLoad = function ()
+{
+	OnTrigger( "The Tank has been repaired!", Map.Tank_Built );
+
+	OnTrigger( "Axis team has constructed the Cave Barrier!", Map.Cave_Barrier_Built );
+	OnTrigger( "Allied team has destroyed the cave barrier!", Map.Cave_Barrier_Destroyed );
+
+	OnTrigger( "The Allied team has constructed the Foot Bridge!", Map.Foot_Bridge_Built );
+	OnTrigger( "The axis team has destroyed the foot bridge!", Map.Foot_Bridge_Destroyed );
+
+	OnTrigger( "Allied team has destroyed the Bank Doors!", Map.Bank_Doors_Destroyed );
+	OnTrigger( "The Allies have lessened the Axis supply stock!  Axis Respawn time increased by +5 seconds!", Map.Axis_Supply_Room_Destroyed );
+	OnTrigger( "The Allies have destroyed the weak wall!", Map.Weak_Wall_Destroyed );
+	OnTrigger( "The Allied team has disabled the Genesis Device!", Map.Genesis_Machine_Destroyed );
+
+	OnTriggerRegion(AABB(714.000,737.008,5.792,890.066,1063.563,101.438), RegionTrigger.VehicleTrigger);
+	OnTrigger( "tank at location", Map.tank_at_location );
+
+	Util.DisableGoal( ".*", true );
+
+	SetAvailableMapGoals( TEAM.AXIS, true, ".*Command_Post");
+
+	SetGoalGroup({
+		"DEFEND_S1_.*",
+		"BUILD_Axis_MG42_Construction",
+		"BUILD_Cave_Barrier",
+		"ESCORT_Tank",
+		"MOUNT_Tank",
+	}, "ax1");
+	Util.EnableGroup("ax1", TEAM.AXIS);
+
+	SetAvailableMapGoals( TEAM.ALLIES, true, "BUILD_Tank");
+
+	SetGoalGroup({
+		"BUILD_Tank",
+		"ESCORT_Tank",
+		"MOUNT_Tank",
+		"BUILD_Foot_Bridge",
+		"BUILD_Guard_Tower",
+		"BUILD_Allied_MG42_Construction",
+		"PLANT_Cave_Barrier",
+	}, "al1");
+
+	Util.LimitToClass("PLANT_Command_Post", 0, CLASS.COVERTOPS);
+
+	SetGoalPriority("BUILD_Tank", 0.91 );
+	SetGoalPriority("BUILD_Command_Post", 0.81);
+	SetGoalPriority("BUILD_Allied_MG42_Construction", 0.85);
+	SetGoalPriority("BUILD_Cave_Barrier", 0.85);
+	SetGoalPriority("ESCORT_Tank", 0.5, TEAM.AXIS);
+
+	Util.SetMaxUsers( 1, "MOUNTMG42_.*" );
+
+	SetMapGoalProperties("MOUNTMG42_.*", {MinCampTime=30, MaxCampTime=300} );
+	SetMapGoalProperties("DEFEND.*", {MinCampTime=30, MaxCampTime=60});
+	
+	Util.AddUsePoint("PLANT_Cave_Barrier", {Vec3(2776, 1332, 22), Vec3(2779, 1157, 28)});
+
+	Util.MapDebugPrint( "Omni-bot map script for " + GetMapName() + " executed." );
+};
