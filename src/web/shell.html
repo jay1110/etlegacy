@@ -11330,6 +11330,28 @@
             // Value of the "Random map" entry in both map pickers.
             var RANDOM_MAP = '__random__';
 
+            // TC:E only accepts obj_ maps. The six original maps are inside
+            // the mod paks; additional obj_ maps can still come from maplist.
+            var TRUECOMBAT_STOCK_MAPS = [
+                'obj_delta', 'obj_northport', 'obj_railhouse',
+                'obj_snow', 'obj_stadtrand', 'obj_village'
+            ];
+
+            function isTrueCombatMod(modKey) {
+                return modKey === 'tce2' || modKey === 'tcetest';
+            }
+
+            function hostMapNames(modKey) {
+                var names = mapNames().slice();
+                if (!isTrueCombatMod(modKey)) { return names; }
+                TRUECOMBAT_STOCK_MAPS.forEach(function (name) {
+                    if (names.indexOf(name) === -1) { names.push(name); }
+                });
+                return names.filter(function (name) {
+                    return /^obj_/i.test(name);
+                }).sort();
+            }
+
             // --- Map rotation ---------------------------------------------
             // A hosted game plays a list of up to ten maps one after another
             // and starts over at the top. The engine already has everything
@@ -11841,7 +11863,7 @@
 
             // Fill a <select> with the map list. withRandom adds the "Random
             // map" entry the host can pick instead of a specific map.
-            function fillMapSelect(select, selected, withRandom, query) {
+            function fillMapSelect(select, selected, withRandom, query, names) {
                 select.innerHTML = '';
                 query = String(query || '').toLowerCase().trim();
                 if (withRandom && !query) {
@@ -11850,7 +11872,7 @@
                     random.textContent = 'Random map';
                     select.appendChild(random);
                 }
-                mapNames().forEach(function (name) {
+                (names || mapNames()).forEach(function (name) {
                     if (query && name.toLowerCase().indexOf(query) === -1) { return; }
                     var opt = document.createElement('option');
                     opt.value = name;
@@ -11862,12 +11884,13 @@
                 })) { select.value = selected; }
             }
 
-            function setupMapSearch(inputId, selectId, withRandom) {
+            function setupMapSearch(inputId, selectId, withRandom, names) {
                 var input = byId(inputId);
                 var select = byId(selectId);
                 if (!input || !select) { return; }
                 input.oninput = function () {
-                    fillMapSelect(select, select.value, withRandom, input.value);
+                    fillMapSelect(select, select.value, withRandom, input.value,
+                        typeof names === 'function' ? names() : names);
                 };
             }
 
@@ -13342,13 +13365,22 @@
                                 renderHostRotation();
                                 scheduleHostAutosave();
                             });
+                        var shownMap = hostRotation[0] ||
+                            document.getElementById('host-map').value || 'oasis';
+                        var mode = document.getElementById('host-mapmode');
+                        mode.options[0].textContent = 'Normal: map ' + shownMap;
+                        mode.options[1].textContent = 'Developer: devmap ' +
+                            shownMap + ' (sv_cheats 1)';
                     }
 
                     document.getElementById('host-map-add').onclick = function () {
                         var select = document.getElementById('host-map');
                         var map = select.value;
-                        if (map === RANDOM_MAP) { map = randomMapName(); }
-                        if (mapNames().indexOf(map) === -1) { return; }
+                        var allowedMaps = hostMapNames(hostModKey());
+                        if (map === RANDOM_MAP) {
+                            map = allowedMaps[Math.floor(Math.random() * allowedMaps.length)];
+                        }
+                        if (allowedMaps.indexOf(map) === -1) { return; }
                         if (hostRotation.length >= MAX_ROTATION_MAPS) {
                             document.getElementById('host-hint').textContent =
                                 'A rotation holds at most ' + MAX_ROTATION_MAPS +
@@ -13437,8 +13469,10 @@
                     var hostAutosaveTimer = null;
 
                     function defaultHostProfile(modKey) {
-                        var firstMap = mapNames().indexOf('oasis') !== -1
-                            ? 'oasis' : mapNames()[0];
+                        var allowedMaps = hostMapNames(modKey);
+                        var preferred = isTrueCombatMod(modKey) ? 'obj_delta' : 'oasis';
+                        var firstMap = allowedMaps.indexOf(preferred) !== -1
+                            ? preferred : allowedMaps[0];
                         return {
                             name: 'ET:Legacy Web Host', map: firstMap,
                             rotation: firstMap ? [firstMap] : [], rotationIndex: 0,
@@ -13455,7 +13489,19 @@
 
                     function applyHostProfile(settings) {
                         hostModSelect.value = settings.mod;
-                        hostRotation = (settings.rotation || [settings.map]).slice();
+                        var allowedMaps = hostMapNames(settings.mod);
+                        hostRotation = (settings.rotation || [settings.map]).filter(function (map) {
+                            return allowedMaps.indexOf(map) !== -1;
+                        }).slice(0, MAX_ROTATION_MAPS);
+                        if (!hostRotation.length) {
+                            hostRotation = [isTrueCombatMod(settings.mod) ?
+                                'obj_delta' : (allowedMaps.indexOf('oasis') !== -1 ?
+                                    'oasis' : allowedMaps[0])];
+                        }
+                        settings.map = hostRotation[0];
+                        fillMapSelect(document.getElementById('host-map'), settings.map,
+                            true, document.getElementById('host-map-search').value,
+                            allowedMaps);
                         writeHostSettings('host-', settings);
                         renderHostRotation();
                         renderHostCvars(settings.cvars || {});
@@ -13950,10 +13996,12 @@
                     // exists discards every hosted custom map and makes this
                     // tab follow its own ?join= link as if it were a client.
                     loadMapList().then(function () {
-                        fillMapSelect(document.getElementById('host-map'), 'oasis', true);
+                        fillMapSelect(document.getElementById('host-map'), 'oasis', true,
+                            '', hostMapNames(hostModKey()));
                         fillMapSelect(document.getElementById('quick-map'), 'oasis', true);
                         fillMapSelect(document.getElementById('game-map'), null, true);
-                        setupMapSearch('host-map-search', 'host-map', true);
+                        setupMapSearch('host-map-search', 'host-map', true,
+                            function () { return hostMapNames(hostModKey()); });
                         setupMapSearch('quick-map-search', 'quick-map', true);
 
                         // What this tab was doing before it reloaded (hosting a
