@@ -5114,7 +5114,7 @@
             // folder named after its fs_game directory - e.g. "xmod/" holding
             // xmod-2.0.3.pk3 and the three *.mp.wasm32.so modules. A deployment
             // can still supply an explicit base for a particular mod.
-            function modAssets(fsGame, pk3s, base) {
+            function modAssets(fsGame, pk3s, base, staticPk3s) {
                 var url = base || (ETL_MIRROR_BASE + fsGame + '/');
                 if (url.charAt(url.length - 1) !== '/') { url += '/'; }
                 return {
@@ -5122,6 +5122,7 @@
                     base: url,
                     dir: INSTALL_DIR + '/' + fsGame,
                     pk3s: pk3s || [],
+                    staticPk3s: staticPk3s || [],
                     moduleDirs: [HOME_ETL_DIR + '/' + fsGame,
                                  INSTALL_DIR + '/' + fsGame]
                 };
@@ -5977,9 +5978,10 @@
             }
 
             // Download one file of a mod's folder into that mod's directory.
-            // Unlike the huge retail paks, the mod files are always revalidated
-            // against the server: they contain the cgame/ui game-logic side
-            // modules, which must exactly match the engine build being served.
+            // Executable/versioned mod packages are revalidated against the
+            // server because their cgame/ui game-logic must match the engine.
+            // Official immutable data packages (for example TCE pak0-pak4) are
+            // installed once into fs_basepath and then restored from IDBFS.
             // Reusing a stale IndexedDB copy after a site update pairs old
             // modules with a new engine, which crashes at runtime (see
             // downloadInto).
@@ -5987,8 +5989,9 @@
                 // Only etmain/legacy/home exist up front (mountCache); another
                 // mod's folder is created the first time something is put in it.
                 try { Module.FS.mkdirTree(assets.dir); } catch (e) { /* exists */ }
+                var refresh = assets.staticPk3s.indexOf(name) === -1;
                 return downloadInto(assets.base + name, assets.dir + '/' + name, name,
-                    { refresh: true });
+                    refresh ? { refresh: true } : undefined);
             }
 
             // --- Minimal ZIP reader -------------------------------------------
@@ -7891,6 +7894,8 @@
                              base: ETL_MIRROR_BASE + 'tjmod/' },
                 tce2:      { name: 'TrueCombat: Elite 2', fsGame: 'tce2', available: true,
                              requireOwnLogic: true,
+                             staticPk3s: ['pak0.pk3', 'pak1.pk3', 'pak2.pk3',
+                                          'pak3.pk3', 'pak4.pk3'],
                              pk3s: ['pak0.pk3',
                                     'pak1.pk3',
                                     'pak2.pk3',
@@ -7901,6 +7906,8 @@
                              base: ETL_MIRROR_BASE + 'tce2/' },
                 tcetest:   { name: 'TrueCombat: Elite Test', fsGame: 'tcetest', available: true,
                              requireOwnLogic: true,
+                             staticPk3s: ['pak0.pk3', 'pak1.pk3', 'pak2.pk3',
+                                          'pak3.pk3', 'pak4.pk3'],
                              pk3s: ['pak0.pk3',
                                     'pak1.pk3',
                                     'pak2.pk3',
@@ -10768,7 +10775,8 @@
                     modPk3Names(params.get('modpk3'));
                 return modAssets(mod.fsGame,
                     pk3s || (mod.pk3s || []),
-                    params.get('modbase') || mod.base || null);
+                    params.get('modbase') || mod.base || null,
+                    mod.staticPk3s || []);
             }
 
             // Resolves once the mod's game logic is in place; rejects with a
