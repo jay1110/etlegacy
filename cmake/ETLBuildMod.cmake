@@ -216,6 +216,12 @@ if(EMSCRIPTEN AND BUILD_CLIENT_MOD AND TARGET etl)
 			COPYONLY
 		)
 	endforeach()
+	file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tce2/omni-bot")
+	configure_file(
+		"${PROJECT_SOURCE_DIR}/src/web/tce2/omni-bot/omni-bot-data.zip"
+		"${CMAKE_CURRENT_BINARY_DIR}/tce2/omni-bot/omni-bot-data.zip"
+		COPYONLY
+	)
 endif()
 
 #

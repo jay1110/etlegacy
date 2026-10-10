@@ -2433,6 +2433,15 @@
                     <option value="map">Normal: map oasis</option>
                     <option value="devmap">Developer: devmap oasis (sv_cheats 1)</option>
                 </select>
+                <div id="game-tce-gametype-row" style="display:none">
+                    <label for="game-gametype">TCE game type</label>
+                    <select id="game-gametype">
+                        <option value="2">2 - Objective capture</option>
+                        <option value="5" selected>5 - Objective bomb</option>
+                        <option value="7">7 - Bodycount</option>
+                    </select>
+                    <div class="setting-hint">TrueCombat: Elite servers support game types 2, 5 and 7.</div>
+                </div>
                 <label for="game-name">Room name</label>
                 <input id="game-name" type="text" maxlength="64" autocomplete="off">
                 <label for="game-maxplayers">Max players (2 - 32)</label>
@@ -2599,6 +2608,8 @@
             <option value="silent">silEnT</option>
             <option value="etrun">ETrun 2.0.1</option>
             <option value="tjmod">TJMod 1.6.6</option>
+            <option value="tce2">TrueCombat: Elite 2</option>
+            <option value="tcetest">TrueCombat: Elite Test</option>
         </select>
         <div class="hint">The page asks the server which mod it runs before starting. Choose a mod here only when that query is blocked or the server does not answer it.</div>
         <div class="panel-actions">
@@ -2697,7 +2708,8 @@
                         <div class="home-section-desc">
                             Join Public Servers. Available mods: Legacy, Nitmod,
                             ETJump, ETPub, No Quarter, XMod, ETBloat, Jaymod,
-                            silEnT, ETrun and TJMod.
+                            silEnT, ETrun, TJMod, TrueCombat: Elite 2 and
+                            TrueCombat: Elite Test.
                         </div>
                         <div class="home-compact-row two">
                             <button class="launcher-btn" type="button" id="menu-servers">
@@ -2812,6 +2824,8 @@
                     <option value="silent">silEnT</option>
                     <option value="etrun">ETrun 2.0.1</option>
                     <option value="tjmod">TJMod 1.6.6</option>
+                    <option value="tce2">TrueCombat: Elite 2</option>
+                    <option value="tcetest">TrueCombat: Elite Test</option>
                 </select>
                 <div class="launcher-hint" id="servers-hint">
                     The server's mod is normally detected before the game starts.
@@ -2858,6 +2872,15 @@
                         <option value="map" selected>Normal: map oasis</option>
                         <option value="devmap">Developer: devmap oasis (sv_cheats 1)</option>
                     </select>
+                    <div id="host-tce-gametype-row" style="display:none">
+                        <label for="host-gametype">TCE game type</label>
+                        <select id="host-gametype">
+                            <option value="2">2 - Objective capture</option>
+                            <option value="5" selected>5 - Objective bomb</option>
+                            <option value="7">7 - Bodycount</option>
+                        </select>
+                        <div class="setting-hint">Required by TrueCombat: Elite 2. Choose Bodycount, Objective or Capture the Flag.</div>
+                    </div>
                     <div class="setting-hint">
                         Developer mode loads every map with <code>devmap</code> and
                         enables <code>sv_cheats 1</code> for the entire rotation.
@@ -2901,6 +2924,8 @@
                         <option value="silent">silEnT</option>
                         <option value="etrun">ETrun 2.0.1</option>
                         <option value="tjmod">TJMod 1.6.6</option>
+                        <option value="tce2">TrueCombat: Elite 2</option>
+                        <option value="tcetest">TrueCombat: Elite Test</option>
                     </select>
                     <div class="setting-hint" id="host-mod-hint">
                         The mod the hosted game runs. It is downloaded the first
@@ -3163,6 +3188,8 @@
                         <li><strong>silEnT 0.9.0</strong> &ndash; includes its own client, UI and server game code for WebAssembly.</li>
                         <li><strong>ETrun 2.0.1</strong> &ndash; a timerun mod using <code>ETrun-2.0.1.pk3</code> and its own WebAssembly game modules.</li>
                         <li><strong>TJMod 1.6.6</strong> &ndash; the original trickjump mod using <code>tjmod-1_6_6.pk3</code> and its own WebAssembly game modules.</li>
+                        <li><strong>TrueCombat: Elite 2</strong> &ndash; the complete TCE2 data set and its own client, UI and server WebAssembly modules.</li>
+                        <li><strong>TrueCombat: Elite Test</strong> &ndash; the original TC:E test data set with its own client, UI and server WebAssembly modules.</li>
                     </ul>
                 </section>
                 <section class="guide-block">
@@ -5129,6 +5156,21 @@
             // directory on each visit is fast.
             var OMNIBOT_DIR = INSTALL_DIR + '/omni-bot';
 
+            function omniBotAssets(modKey) {
+                if (modKey === 'tce2') {
+                    return {
+                        dir: INSTALL_DIR + '/tce2/omni-bot',
+                        base: ETL_MIRROR_BASE + 'tce2/omni-bot/',
+                        cache: HOME_ETL_DIR + '/tce2/omni-bot/' + OMNIBOT_DATA_PACK
+                    };
+                }
+                return {
+                    dir: OMNIBOT_DIR,
+                    base: LEGACY_BASE + 'omni-bot/',
+                    cache: LEGACY_DIR + '/' + OMNIBOT_DATA_PACK
+                };
+            }
+
             // --- Relay / lobby defaults ----------------------------------
             // The two services that serve this deployment:
             //
@@ -5334,6 +5376,8 @@
             function liveServerMod(server) {
                 var raw = stripEtColors(server.gamename || server.mod || '').toLowerCase();
                 if (raw === 'nq' || raw.indexOf('noquarter') !== -1) { return 'noquarter'; }
+                if (raw === 'tcetest' || raw.indexOf('tce test') !== -1) { return 'tcetest'; }
+                if (raw === 'tce' || raw.indexOf('truecombat') !== -1) { return 'tce2'; }
                 if (raw.indexOf('legacy') !== -1) { return 'legacy'; }
                 var keys = Object.keys(HOST_MODS);
                 for (var i = 0; i < keys.length; i++) {
@@ -6854,7 +6898,7 @@
                 // Omni-bot bridge. Loading it into their qagame would be
                 // misleading and can fail across their distinct module ABIs.
                 return modKey !== 'etjump' && modKey !== 'etrun' &&
-                    modKey !== 'tjmod';
+                    modKey !== 'tjmod' && modKey !== 'tcetest';
             }
 
             function renderOmniBotSettings(prefix, values, modKey, bots) {
@@ -6993,22 +7037,25 @@
             // installed - the caller then starts the game without bots rather
             // than not at all (the engine would otherwise sit in a map with an
             // Omni-bot that cannot load its scripts).
-            var omniBotInstall = null;
-            function setupOmniBot(bots, options) {
-                if (omniBotInstall) {
+            var omniBotInstalls = {};
+            function setupOmniBot(bots, options, modKey) {
+                var installKey = modKey === 'tce2' ? 'tce2' : 'legacy';
+                var omni = omniBotAssets(installKey);
+                if (omniBotInstalls[installKey]) {
                     // Already installed (or being installed): only the bot count
                     // may have changed since, so apply that and reuse the rest.
-                    return omniBotInstall.then(function (ready) {
+                    return omniBotInstalls[installKey].then(function (ready) {
                         if (ready) { writeOmniBotConfig(bots, options); }
                         return ready;
                     });
                 }
 
-                var moduleUrl = LEGACY_BASE + 'omni-bot/' + OMNIBOT_MODULE;
-                var packUrl = LEGACY_BASE + 'omni-bot/' + OMNIBOT_DATA_PACK;
-                var packCache = LEGACY_DIR + '/' + OMNIBOT_DATA_PACK;
+                var moduleUrl = omni.base + OMNIBOT_MODULE;
+                var packUrl = omni.base + OMNIBOT_DATA_PACK;
+                var packCache = omni.cache;
 
-                omniBotInstall = Promise.resolve().then(function () {
+                omniBotInstalls[installKey] = Promise.resolve().then(function () {
+                    Module.FS.mkdirTree(packCache.slice(0, packCache.lastIndexOf('/')));
                     Module.setStatus('Loading Omni-bot');
                     // The library is a side module like cgame/ui/qagame, so it
                     // has to go through the wasm preload plugin as well: qagame
@@ -7026,7 +7073,7 @@
                     if (!hasWasmMagic(bytes)) {
                         throw new Error(moduleUrl + ' is not usable: ' + describeNonWasm(bytes));
                     }
-                    return createPreloadedSideModule(OMNIBOT_DIR, OMNIBOT_MODULE, bytes);
+                    return createPreloadedSideModule(omni.dir, OMNIBOT_MODULE, bytes);
                 }).then(function () {
                     // Cache the (single) zip in the IndexedDB-backed legacy dir,
                     // then unpack it next to the library.
@@ -7045,7 +7092,7 @@
                         if (error) { throw error; }
                     }) : undefined;
                 }).then(function () {
-                    return unzipInto(Module.FS.readFile(packCache), OMNIBOT_DIR);
+                    return unzipInto(Module.FS.readFile(packCache), omni.dir);
                 }).then(function () {
                     writeOmniBotConfig(bots, options);
                     return true;
@@ -7063,7 +7110,7 @@
                     } catch (e) { /* nothing cached */ }
                     return false;
                 });
-                return omniBotInstall;
+                return omniBotInstalls[installKey];
             }
 
             // IDBFS warns and can do redundant transactions when two callers
@@ -7842,6 +7889,26 @@
                              releasePrefix: 'tjmod-',
                              pk3s: ['tjmod-1_6_6.pk3'],
                              base: ETL_MIRROR_BASE + 'tjmod/' },
+                tce2:      { name: 'TrueCombat: Elite 2', fsGame: 'tce2', available: true,
+                             requireOwnLogic: true,
+                             pk3s: ['pak0.pk3',
+                                    'pak1.pk3',
+                                    'pak2.pk3',
+                                    'pak3.pk3',
+                                    'pak4.pk3',
+                                    'tce2-1.0.0.pk3',
+                                    'zzzzzzzzzzzzzz_ServerListFix.pk3'],
+                             base: ETL_MIRROR_BASE + 'tce2/' },
+                tcetest:   { name: 'TrueCombat: Elite Test', fsGame: 'tcetest', available: true,
+                             requireOwnLogic: true,
+                             pk3s: ['pak0.pk3',
+                                    'pak1.pk3',
+                                    'pak2.pk3',
+                                    'pak3.pk3',
+                                    'pak4.pk3',
+                                    'mp_bin.pk3',
+                                    'zzzzzzzzzzzzzz_ServerListFix.pk3'],
+                             base: ETL_MIRROR_BASE + 'tcetest/' },
             };
             var DEFAULT_MOD = 'legacy';
 
@@ -10124,6 +10191,29 @@
                 ["lua_allowedModules","s","","server"],
             ];
 
+            // TrueCombat: Elite-specific server cvars from true-combat's
+            // src/game/g_main.c. The shared ET server controls come from the
+            // Legacy table below; these rows are the TCE additions and TCE
+            // defaults that a host actually needs to configure.
+            var CVARS_TCE2 = [
+                ["sv_gametype", "i", "0", "match"],
+                ["sv_official", "b", "1", "server"],
+                ["g_newbbox", "b", "1", "server"],
+                ["g_leanmode", "i", "1", "server"],
+                ["g_killmessage", "i", "0", "chat"],
+                ["g_starthonor", "i", "0", "xp"],
+                ["g_realism", "b", "1", "weapons", true],
+                ["g_aabasetime", "i", "5", "match"],
+                ["g_botvar", "f", "1.0", "bots"],
+                ["bot_editWaypoints", "b", "0", "bots"],
+                ["g_maxGameClients", "i", "0", "teams", true],
+                ["g_minGameClients", "i", "8", "teams"],
+                ["g_landminetimeout", "b", "1", "weapons"],
+                ["g_warmupLatch", "b", "1", "match"],
+                ["g_noTeamSwitching", "b", "0", "teams"],
+                ["g_showHeadshotRatio", "b", "0", "xp"]
+            ];
+
             function mergeCvarTables() {
                 var merged = {};
                 Array.prototype.slice.call(arguments).forEach(function (table) {
@@ -10148,11 +10238,12 @@
 
             [CVARS_ETPUB, CVARS_NITMOD, CVARS_ETJUMP, CVARS_ETBLOAT,
              CVARS_JAYMOD_FULL, CVARS_XMOD_FULL, CVARS_NOQUARTER,
-             CVARS_SILENT]
+             CVARS_SILENT, CVARS_TCE2]
                 .forEach(inferGeneratedCvarTypes);
 
             var SHELL_MANAGED_CVARS = {
-                fs_game: 1, g_gametype: 1, sv_maxclients: 1, sv_hostname: 1,
+                fs_game: 1, g_gametype: 1, sv_gametype: 1,
+                sv_maxclients: 1, sv_hostname: 1,
                 g_redlimbotime: 1, g_bluelimbotime: 1, g_warmup: 1,
                 g_dowarmup: 1, g_friendlyfire: 1, g_teamforcebalance: 1,
                 timelimit: 1
@@ -10183,7 +10274,9 @@
                 nitmod: hostUsefulCvarTable(CVARS_NITMOD),
                 silent: hostUsefulCvarTable(CVARS_SILENT),
                 etrun: [],
-                tjmod: []
+                tjmod: [],
+                tce2: hostUsefulCvarTable(mergeCvarTables(CVARS_LEGACY, CVARS_TCE2)),
+                tcetest: hostUsefulCvarTable(mergeCvarTables(CVARS_LEGACY, CVARS_TCE2))
             };
 
             // The groups the settings are shown in, in this order. A category
@@ -10778,7 +10871,7 @@
                 var key = knownModKey(raw);
                 if (!key) {
                     throw new Error('Unknown connectmod "' + raw +
-                        '". Use legacy, xmod, jaymod, etjump, etpub, noquarter, etbloat, nitmod, silent, etrun or tjmod.');
+                        '". Use legacy, xmod, jaymod, etjump, etpub, noquarter, etbloat, nitmod, silent, etrun, tjmod, tce2 or tcetest.');
                 }
                 return key;
             }
@@ -10992,7 +11085,7 @@
                         var forced = knownModKey(explicitMod);
                         if (!forced) {
                             throw new Error('Unknown server mod "' + explicitMod +
-                                '". Use legacy, xmod, jaymod, etjump, etpub, noquarter, etbloat, nitmod, silent, etrun or tjmod.');
+                                '". Use legacy, xmod, jaymod, etjump, etpub, noquarter, etbloat, nitmod, silent, etrun, tjmod, tce2 or tcetest.');
                         }
                         return forced;
                     }
@@ -11072,7 +11165,7 @@
                     configLine('sv_maxclients', settings.maxPlayers),
                     configLine('sv_pure', '0'),
                     configLine('sv_cheats', settings.developerMode ? '1' : '0'),
-                    configLine('g_gametype', '2'),
+                    configLine('g_gametype', settings.gameType || 2),
                     configLine('g_userTimeLimit', settings.timeLimit),
                     configLine('g_teamForceBalance', settings.balancedTeams ? '1' : '0'),
                     configLine('g_doWarmup', settings.doWarmup === false ? '0' : '1'),
@@ -11095,6 +11188,12 @@
                         configLine('jxac_enable', '0'),
                         configLine('g_spectator', '7')
                     ];
+                }
+                if (modKey === 'tce2' || modKey === 'tcetest') {
+                    // TCE copies g_gametype into sv_gametype when this override
+                    // is zero. Keeping the override clear makes the dedicated
+                    // 2/5/7 selector authoritative even when a preset was run.
+                    return [configLine('sv_gametype', '0')];
                 }
                 // These browser builds do not load the Legacy Omni-bot module.
                 if (!modSupportsOmniBot(modKey)) {
@@ -11137,7 +11236,7 @@
                 var args = ['+set', 'dedicated', '0',
                             '+set', 'sv_hostname', hostname,
                             '+set', 'sv_maxclients', String(settings.maxPlayers),
-                            '+set', 'g_gametype', '2',
+                            '+set', 'g_gametype', String(settings.gameType || 2),
                             '+set', 'sv_pure', '0',
                             '+set', 'sv_allowDownload', '1',
                             '+set', 'sv_cheats', settings.developerMode ? '1' : '0',
@@ -11158,6 +11257,9 @@
                 if (settings.mod === 'xmod') {
                     args.push('+set', 'jxac_enable', '0');
                     args.push('+set', 'g_spectator', '7');
+                }
+                if (settings.mod === 'tce2' || settings.mod === 'tcetest') {
+                    args.push('+set', 'sv_gametype', '0');
                 }
                 args.push('+set', 'g_teamForceBalance', settings.balancedTeams ? '1' : '0');
                 args.push('+set', 'g_doWarmup', settings.doWarmup === false ? '0' : '1');
@@ -11182,7 +11284,8 @@
                     // Legacy Omni-bot side module. Do not fetch, mount, or
                     // enable it for an ETJump browser host.
                     if (!supportsOmniBot) { return false; }
-                    return setupOmniBot(settings.bots, settings.omniBot);
+                    return setupOmniBot(settings.bots, settings.omniBot,
+                        settings.mod);
                 }).then(function (ready) {
                     if (!ready) {
                         // Omni-bot could not be installed: the game starts
@@ -11194,7 +11297,8 @@
                     args.push('+set', 'omnibot_enable',
                         (supportsOmniBot && ready && settings.bots > 0) ? '1' : '0');
                     if (ready) {
-                        args.push('+set', 'omnibot_path', OMNIBOT_DIR);
+                        args.push('+set', 'omnibot_path',
+                            omniBotAssets(settings.mod).dir);
                     }
                     // The mod's own settings: the preset the deployment serves
                     // first, then the ones picked in the panel. Both are config
@@ -11412,6 +11516,9 @@
 
                 var mod = el('mod') ? el('mod').value : DEFAULT_MOD;
                 if (!HOST_MODS[mod] || !HOST_MODS[mod].available) { mod = DEFAULT_MOD; }
+                var gameType = (mod === 'tce2' || mod === 'tcetest')
+                    ? num('gametype', 5, 2, 7) : 2;
+                if ([2, 5, 7].indexOf(gameType) < 0) { gameType = 5; }
 
                 return {
                     name: (el('name').value.trim() || 'ET:Legacy Web Host').slice(0, 64),
@@ -11424,6 +11531,7 @@
                     private: !!el('private').checked,
                     developerMode: !!(el('mapmode') && el('mapmode').value === 'devmap'),
                     mod: mod,
+                    gameType: gameType,
                     balancedTeams: bool('balancedteams', false),
                     doWarmup: bool('dowarmup', true),
                     friendlyFire: bool('friendlyfire', true),
@@ -11463,6 +11571,12 @@
                 setValue('mapmode', settings.developerMode ? 'devmap' : 'map');
                 if (el('map') && settings.map) { el('map').value = settings.map; }
                 if (el('mod')) { el('mod').value = settings.mod; }
+                setValue('gametype', settings.gameType || 5);
+                var tceRow = el('tce-gametype-row');
+                if (tceRow) {
+                    tceRow.style.display = (settings.mod === 'tce2' ||
+                        settings.mod === 'tcetest') ? 'block' : 'none';
+                }
                 setChecked('balancedteams', settings.balancedTeams);
                 setChecked('dowarmup', settings.doWarmup);
                 setChecked('friendlyfire', settings.friendlyFire);
@@ -11518,6 +11632,7 @@
                     private: !!settings.private,
                     developerMode: !!settings.developerMode,
                     mod: settings.mod || DEFAULT_MOD,
+                    gameType: settings.gameType || 2,
                     balancedTeams: !!settings.balancedTeams,
                     doWarmup: settings.doWarmup !== false,
                     friendlyFire: settings.friendlyFire !== false,
@@ -11659,6 +11774,12 @@
                     mod = undefined;
                 }
                 var modKey = mod === undefined ? DEFAULT_MOD : mod;
+                var gameType = (modKey === 'tce2' || modKey === 'tcetest')
+                    ? num('gameType', 5, 2, 7) : 2;
+                if ([2, 5, 7].indexOf(gameType) < 0) {
+                    warnings.push('"gameType" must be 2, 5 or 7 for TrueCombat; Objective (5) is used.');
+                    gameType = 5;
+                }
 
                 var maxPlayers = num('maxPlayers', 8, 2, 32);
                 var bots = num('bots', 0, 0, 31);
@@ -11699,6 +11820,7 @@
                         private: bool('private', false),
                         developerMode: bool('developerMode', false),
                         mod: modKey,
+                        gameType: gameType,
                         balancedTeams: bool('balancedTeams', false),
                         doWarmup: bool('doWarmup', true),
                         friendlyFire: bool('friendlyFire', true),
@@ -12142,6 +12264,9 @@
                         modKey = DEFAULT_MOD;
                     }
                     byId('game-mod').value = HOST_MODS[modKey].name;
+                    byId('game-gametype').value = String(settings.gameType || 5);
+                    byId('game-tce-gametype-row').style.display =
+                        (modKey === 'tce2' || modKey === 'tcetest') ? 'block' : 'none';
                     byId('game-balancedteams').checked = !!settings.balancedTeams;
                     byId('game-dowarmup').checked = settings.doWarmup !== false;
                     byId('game-friendlyfire').checked = settings.friendlyFire !== false;
@@ -12421,6 +12546,8 @@
                     // The mod is the one exception: fs_game is picked when the
                     // engine starts, so a running game keeps the one it has.
                     mod: settings.mod || DEFAULT_MOD,
+                    gameType: (settings.mod === 'tce2' || settings.mod === 'tcetest')
+                        ? num('game-gametype', settings.gameType || 5, 2, 7) : 2,
                     balancedTeams: !!byId('game-balancedteams').checked,
                     doWarmup: !!byId('game-dowarmup').checked,
                     friendlyFire: !!byId('game-friendlyfire').checked,
@@ -12437,6 +12564,10 @@
                     omniBot: readOmniBotSettings('game-')
                 };
                 next.bots = Math.min(next.bots, next.maxPlayers - 1);
+                if ((next.mod === 'tce2' || next.mod === 'tcetest') &&
+                        [2, 5, 7].indexOf(next.gameType) < 0) {
+                    next.gameType = 5;
+                }
                 if (next.mod === 'xmod') {
                     // JXAC cannot operate through the browser relay and XMod's
                     // spectator cvar is a three-bit mask. Do not let a stale
@@ -12469,10 +12600,15 @@
                               next.axisRespawn !== settings.axisRespawn ||
                               cvarUpdate.latched;
                 var mapModeChanged = next.developerMode !== !!settings.developerMode;
+                var gameTypeChanged = next.gameType !== (settings.gameType || 2);
 
                 etlSendCommand('sv_hostname "' + next.name.replace(/["\\]/g, '') + '"');
                 etlSendCommand('g_userTimeLimit ' + next.timeLimit);
                 etlSendCommand('sv_maxclients ' + next.maxPlayers);
+                etlSendCommand('g_gametype ' + next.gameType);
+                if (next.mod === 'tce2' || next.mod === 'tcetest') {
+                    etlSendCommand('sv_gametype 0');
+                }
                 // g_balancedteams itself is read-only (CVAR_ROM): the game
                 // derives it from g_teamForceBalance, so that is what is set.
                 etlSendCommand('g_teamForceBalance ' + (next.balancedTeams ? '1' : '0'));
@@ -12512,7 +12648,7 @@
                             (entry[2] === 'b' ? (value ? 'true' : 'false') : value));
                     });
                 }
-                if (restart && !mapModeChanged && !playAfterApply) {
+                if (restart && !mapModeChanged && !gameTypeChanged && !playAfterApply) {
                     etlSendCommand('map_restart');
                 }
 
@@ -12547,6 +12683,12 @@
                 }
                 if (mapModeChanged) {
                     gameMessage('Settings applied. Reloading the current map...');
+                    playMap(next.map);
+                    return;
+                }
+                if (gameTypeChanged) {
+                    gameMessage('Settings applied. Loading game type ' +
+                        next.gameType + '...');
                     playMap(next.map);
                     return;
                 }
@@ -12683,6 +12825,7 @@
                         rotationIndexFor(rotation, map, settings.rotationIndex),
                         developerMode);
                     etlSendCommand('set sv_cheats "' + (developerMode ? '1' : '0') + '"');
+                    etlSendCommand('set g_gametype "' + (settings.gameType || 2) + '"');
                     etlSendCommand(mapLoadCommand(map, developerMode));
                     gameMessage('Changing the map to "' + map + '"...');
                     // A hosted map change normally reloads the page immediately.
@@ -13301,7 +13444,9 @@
                             rotation: firstMap ? [firstMap] : [], rotationIndex: 0,
                             maxPlayers: 8, bots: modSupportsOmniBot(modKey) ? 4 : 0,
                             timeLimit: 0, private: false, developerMode: false,
-                            mod: modKey, balancedTeams: false, doWarmup: true,
+                            mod: modKey,
+                            gameType: (modKey === 'tce2' || modKey === 'tcetest') ? 5 : 2,
+                            balancedTeams: false, doWarmup: true,
                             friendlyFire: true, warmup: 60, alliedRespawn: 0,
                             axisRespawn: 0, cvars: {}, customCvars: {},
                             omniBot: omniBotDefaults()

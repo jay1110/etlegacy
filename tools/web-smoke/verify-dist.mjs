@@ -344,6 +344,27 @@ if (exists('etl.html')) {
         'TJMod is offered by direct connect, server filters and browser hosting');
     check(/function modSupportsOmniBot\(modKey\)[\s\S]*modKey !== 'tjmod'/.test(html),
         'TJMod hosting does not load the incompatible Legacy Omni-bot module');
+    check(/tce2:\s*\{[^}]*fsGame:\s*'tce2'[^}]*requireOwnLogic:\s*true[^}]*pak0\.pk3[^}]*pak4\.pk3[^}]*tce2-1\.0\.0\.pk3[^}]*zzzzzzzzzzzzzz_ServerListFix\.pk3/s.test(html),
+        'TrueCombat: Elite 2 is enabled with all seven data packages and its own WASM game logic');
+    check((html.match(/<option value="tce2">/g) || []).length === 3,
+        'TCE2 is offered by direct connect, server filters and browser hosting');
+    check(/function omniBotAssets\(modKey\)[\s\S]*INSTALL_DIR \+ '\/tce2\/omni-bot'[\s\S]*ETL_MIRROR_BASE \+ 'tce2\/omni-bot\/'/.test(html) &&
+          /setupOmniBot\(settings\.bots, settings\.omniBot,\s*settings\.mod\)/.test(html),
+        'TCE2 hosting loads its own Omni-bot module and data from tce2/omni-bot');
+    check(/var CVARS_TCE2 = \[[\s\S]*sv_gametype[\s\S]*g_newbbox[\s\S]*g_realism[\s\S]*bot_editWaypoints[\s\S]*\];/.test(html) &&
+          /tce2:\s*hostUsefulCvarTable\(mergeCvarTables\(CVARS_LEGACY, CVARS_TCE2\)\)/.test(html),
+        'TCE2-specific server CVars are exposed in Advanced host settings');
+    check(/id="host-gametype"[\s\S]*value="2"[\s\S]*value="5"[\s\S]*value="7"/.test(html) &&
+          /configLine\('g_gametype', settings\.gameType \|\| 2\)/.test(html),
+        'TCE2 hosting requires and applies game type 2, 5 or 7');
+    check(/raw === 'tce' \|\| raw\.indexOf\('truecombat'\) !== -1/.test(html),
+        'TCE and TrueCombat server gamenames are recognized as TCE2');
+    check(/tcetest:\s*\{[^}]*fsGame:\s*'tcetest'[^}]*requireOwnLogic:\s*true[^}]*pak0\.pk3[^}]*pak4\.pk3[^}]*mp_bin\.pk3[^}]*zzzzzzzzzzzzzz_ServerListFix\.pk3/s.test(html),
+        'TrueCombat: Elite Test is enabled with all seven packages and its own WASM game logic');
+    check((html.match(/<option value="tcetest">/g) || []).length === 3,
+        'TCETest is offered by direct connect, server filters and browser hosting');
+    check(/function modSupportsOmniBot\(modKey\)[\s\S]*modKey !== 'tcetest'/.test(html),
+        'TCETest hosting does not load the incompatible Omni-bot module');
     check(/function createPreloadedSideModulePaths\(dirs, name, source\)[\s\S]*createPreloadedSideModule\(dirs\[0\], name, source\)[\s\S]*aliasPreloadedSideModule\(primaryTarget, dirs\[i\], name, source\)/.test(html),
         'side modules are instantiated once and aliased across engine search paths');
     check((html.match(/return createPreloadedSideModulePaths\(\s*assets\.moduleDirs, name, bytes\);/g) || []).length === 2,
