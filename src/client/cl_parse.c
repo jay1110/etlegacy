@@ -49,6 +49,40 @@ const char *svc_strings[32] =
 	"svc_EOF"
 };
 
+#ifdef __EMSCRIPTEN__
+/**
+ * @brief Repair the protocol-less wwwBaseURL emitted by some older servers.
+ *
+ * Native download libraries commonly accept a host/path without a scheme or
+ * otherwise recover it. A browser resolves that string relative to the page,
+ * producing a local 404 before falling back to the very slow UDP downloader.
+ * A WWW redirect is meant to be an absolute web URL, so prefer HTTPS when the
+ * server omitted the scheme. The normal http:// and https:// forms are kept
+ * byte-for-byte unchanged.
+ */
+static void CL_NormalizeWebDownloadURL(char *url, size_t urlSize)
+{
+	char absolute[MAX_OSPATH];
+
+	if (!url[0] || !Q_stricmpn(url, "http://", 7) || !Q_stricmpn(url, "https://", 8))
+	{
+		return;
+	}
+
+	if (!Q_stricmpn(url, "//", 2))
+	{
+		Com_sprintf(absolute, sizeof(absolute), "https:%s", url);
+	}
+	else
+	{
+		Com_sprintf(absolute, sizeof(absolute), "https://%s", url);
+	}
+
+	Q_strncpyz(url, absolute, urlSize);
+	Com_Printf("Normalized protocol-less WWW download URL: %s\n", url);
+}
+#endif
+
 /**
  * @brief SHOWNET
  * @param[in] msg
@@ -898,6 +932,9 @@ void CL_ParseDownload(msg_t *msg)
 			// server is sending us a www download
 			Q_strncpyz(cls.download.originalDownloadName, cls.download.downloadName, sizeof(cls.download.originalDownloadName));
 			Q_strncpyz(cls.download.downloadName, MSG_ReadString(msg), sizeof(cls.download.downloadName));
+#ifdef __EMSCRIPTEN__
+			CL_NormalizeWebDownloadURL(cls.download.downloadName, sizeof(cls.download.downloadName));
+#endif
 			cls.download.downloadSize  = MSG_ReadLong(msg);
 			cls.download.downloadFlags = MSG_ReadLong(msg);
 			if (cls.download.downloadFlags & BIT(DL_FLAG_URL))
