@@ -363,8 +363,9 @@ if (exists('etl.html')) {
         'TrueCombat: Elite Test is enabled with all seven packages and its own WASM game logic');
     check((html.match(/<option value="tcetest">/g) || []).length === 3,
         'TCETest is offered by direct connect, server filters and browser hosting');
-    check(/function modSupportsOmniBot\(modKey\)[\s\S]*modKey !== 'tcetest'/.test(html),
-        'TCETest hosting does not load the incompatible Omni-bot module');
+    check(/if \(modKey === 'tce2' \|\| modKey === 'tcetest'\)[\s\S]*INSTALL_DIR \+ '\/tce2\/omni-bot'/.test(html) &&
+          !/modKey !== 'tcetest'/.test(html),
+        'TCETest hosting uses the shared TCE Omni-bot module and data');
     check(/function createPreloadedSideModulePaths\(dirs, name, source\)[\s\S]*createPreloadedSideModule\(dirs\[0\], name, source\)[\s\S]*aliasPreloadedSideModule\(primaryTarget, dirs\[i\], name, source\)/.test(html),
         'side modules are instantiated once and aliased across engine search paths');
     check((html.match(/return createPreloadedSideModulePaths\(\s*assets\.moduleDirs, name, bytes\);/g) || []).length === 2,

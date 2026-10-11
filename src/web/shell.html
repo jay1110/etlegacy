@@ -2420,6 +2420,16 @@
 
             <div class="settings-group active" id="game-basic" role="tabpanel"
                  aria-labelledby="game-tab-basic">
+                <div id="game-tce-gametype-row" style="display:none">
+                    <label for="game-gametype">TCE game type</label>
+                    <select id="game-gametype">
+                        <option value="" selected>Choose a game type first</option>
+                        <option value="2">2 - Objective capture</option>
+                        <option value="5">5 - Objective bomb</option>
+                        <option value="7">7 - Bodycount</option>
+                    </select>
+                    <div class="setting-hint">Choose the game type first. Only maps with the matching TCE script are shown.</div>
+                </div>
                 <label for="game-map">Map rotation (up to 10 maps)</label>
                 <input id="game-map-search" class="map-search" type="search"
                        placeholder="Search maps (for example: oas)" autocomplete="off">
@@ -2433,15 +2443,6 @@
                     <option value="map">Normal: map oasis</option>
                     <option value="devmap">Developer: devmap oasis (sv_cheats 1)</option>
                 </select>
-                <div id="game-tce-gametype-row" style="display:none">
-                    <label for="game-gametype">TCE game type</label>
-                    <select id="game-gametype">
-                        <option value="2">2 - Objective capture</option>
-                        <option value="5" selected>5 - Objective bomb</option>
-                        <option value="7">7 - Bodycount</option>
-                    </select>
-                    <div class="setting-hint">TrueCombat: Elite servers support game types 2, 5 and 7.</div>
-                </div>
                 <label for="game-name">Room name</label>
                 <input id="game-name" type="text" maxlength="64" autocomplete="off">
                 <label for="game-maxplayers">Max players (2 - 32)</label>
@@ -2859,6 +2860,16 @@
 
                 <div class="settings-group active" id="host-basic" role="tabpanel"
                      aria-labelledby="host-tab-basic">
+                    <div id="host-tce-gametype-row" style="display:none">
+                        <label for="host-gametype">TCE game type</label>
+                        <select id="host-gametype">
+                            <option value="" selected>Choose a game type first</option>
+                            <option value="2">2 - Objective capture</option>
+                            <option value="5">5 - Objective bomb</option>
+                            <option value="7">7 - Bodycount</option>
+                        </select>
+                        <div class="setting-hint">Choose the game type first. Only maps with the matching TCE script are shown.</div>
+                    </div>
                     <label for="host-map">Map rotation (up to 10 maps)</label>
                     <input id="host-map-search" class="map-search" type="search"
                            placeholder="Search maps (for example: oas)" autocomplete="off">
@@ -2872,15 +2883,6 @@
                         <option value="map" selected>Normal: map oasis</option>
                         <option value="devmap">Developer: devmap oasis (sv_cheats 1)</option>
                     </select>
-                    <div id="host-tce-gametype-row" style="display:none">
-                        <label for="host-gametype">TCE game type</label>
-                        <select id="host-gametype">
-                            <option value="2">2 - Objective capture</option>
-                            <option value="5" selected>5 - Objective bomb</option>
-                            <option value="7">7 - Bodycount</option>
-                        </select>
-                        <div class="setting-hint">Required by TrueCombat: Elite 2. Choose Bodycount, Objective or Capture the Flag.</div>
-                    </div>
                     <div class="setting-hint">
                         Developer mode loads every map with <code>devmap</code> and
                         enables <code>sv_cheats 1</code> for the entire rotation.
@@ -5158,7 +5160,10 @@
             var OMNIBOT_DIR = INSTALL_DIR + '/omni-bot';
 
             function omniBotAssets(modKey) {
-                if (modKey === 'tce2') {
+                // TCETest and TCE2 use the same ET/TCE Omni-bot runtime and
+                // navigation data. The deployment keeps that sizeable shared
+                // payload in tce2/omni-bot instead of storing a second copy.
+                if (modKey === 'tce2' || modKey === 'tcetest') {
                     return {
                         dir: INSTALL_DIR + '/tce2/omni-bot',
                         base: ETL_MIRROR_BASE + 'tce2/omni-bot/',
@@ -5725,8 +5730,8 @@
                 return Object.keys(mapList || FALLBACK_MAPLIST);
             }
 
-            function randomMapName() {
-                var names = mapNames();
+            function randomMapName(allowedNames) {
+                var names = allowedNames || mapNames();
                 return names[Math.floor(Math.random() * names.length)];
             }
 
@@ -6098,6 +6103,20 @@
             function unzipInto(bytes, destDir) {
                 var entries = listZipEntries(bytes);
                 Module.FS.mkdirTree(destDir);
+                function writeEntry(target, name, data) {
+                    Module.FS.writeFile(target, data);
+                    // The native Windows bot runtime finds navigation files
+                    // case-insensitively. MEMFS is case-sensitive, while the
+                    // engine normalises `map obj_AllExpTest` to
+                    // `obj_allexptest`; provide the equivalent lowercase name
+                    // so the same data pack works in the browser as well.
+                    if (/^et\/nav\/[^/]+\.way$/i.test(name)) {
+                        var lower = name.toLowerCase();
+                        if (lower !== name) {
+                            Module.FS.writeFile(destDir + '/' + lower, data);
+                        }
+                    }
+                }
                 return entries.reduce(function (chain, entry) {
                     return chain.then(function () {
                         var name = entry.name.replace(/\\/g, '/');
@@ -6113,7 +6132,7 @@
                         Module.FS.mkdirTree(target.slice(0, target.lastIndexOf('/')));
                         var raw = zipEntryData(bytes, entry);
                         if (entry.method === 0) {
-                            Module.FS.writeFile(target, raw);
+                            writeEntry(target, name, raw);
                             return;
                         }
                         if (entry.method !== 8) {
@@ -6121,7 +6140,7 @@
                                 entry.method + ' for ' + entry.name);
                         }
                         return inflateRaw(raw).then(function (data) {
-                            Module.FS.writeFile(target, data);
+                            writeEntry(target, name, data);
                         });
                     });
                 }, Promise.resolve());
@@ -6379,8 +6398,15 @@
             // mod pk3. 'no-cache' forces HTTP revalidation so a stale
             // browser-cached copy from a previous deployment is not silently
             // reused.
-            function fetchStandaloneSideModule(name, assets) {
-                return fetch(downloadFetchUrl(assets.base + name), { cache: 'no-cache' }).then(function (response) {
+            function fetchStandaloneSideModule(name, assets, cacheBust) {
+                var moduleUrl = assets.base + name;
+                if (cacheBust) {
+                    moduleUrl += (moduleUrl.indexOf('?') === -1 ? '?' : '&') +
+                        'etl_module=' + Date.now();
+                }
+                return fetch(downloadFetchUrl(moduleUrl), {
+                    cache: cacheBust ? 'no-store' : 'no-cache'
+                }).then(function (response) {
                     if (!response.ok) {
                         throw new Error('HTTP ' + response.status + ' for ' +
                             assets.base + name);
@@ -6405,6 +6431,17 @@
                 return !!bytes && bytes.length >= 4 &&
                     bytes[0] === 0x00 && bytes[1] === 0x61 &&
                     bytes[2] === 0x73 && bytes[3] === 0x6d;
+            }
+
+            function bytesContainAscii(bytes, text) {
+                if (!bytes || !text || bytes.length < text.length) { return false; }
+                outer: for (var i = 0; i <= bytes.length - text.length; i++) {
+                    for (var j = 0; j < text.length; j++) {
+                        if (bytes[i + j] !== text.charCodeAt(j)) { continue outer; }
+                    }
+                    return true;
+                }
+                return false;
             }
 
             function describeNonWasm(bytes) {
@@ -6706,6 +6743,29 @@
             // to the pk3. Rejects with a message naming what is wrong with each
             // source, so a deployment problem can actually be fixed.
             function sideModuleBytes(name, assets) {
+                // TCETest's official mp_bin.pk3 carries the historic web
+                // modules.  The private browser port is deployed as loose
+                // cgame/ui/qagame files next to those immutable data pk3s, so
+                // taking qagame from mp_bin would silently discard fixes such
+                // as the Omni-bot bridge.  Unlike the normal fallback below,
+                // these standalone files are the authoritative TCETest build.
+                if (assets.fsGame === 'tcetest') {
+                    return fetchStandaloneSideModule(name, assets, true).then(function (bytes) {
+                        var standaloneProblem = describeModuleProblem(bytes);
+                        if (standaloneProblem) {
+                            throw new Error('the standalone TCETest copy at ' +
+                                assets.base + name + ' is not usable: ' +
+                                standaloneProblem);
+                        }
+                        if (name === 'qagame.mp.wasm32.so' &&
+                            !bytesContainAscii(bytes, 'TCETest web Omni-bot bootstrap')) {
+                            throw new Error('the standalone TCETest qagame is an old ' +
+                                'build without the browser Omni-bot bootstrap');
+                        }
+                        noteUndeclaredVmAbi(name, assets, 'folder', bytes);
+                        return bytes;
+                    });
+                }
                 return extractSideModuleFromPk3(name, assets).then(function (bytes) {
                     var pk3Problem = bytes ? describeModuleProblem(bytes) : null;
                     if (bytes && !pk3Problem) {
@@ -6901,7 +6961,7 @@
                 // Omni-bot bridge. Loading it into their qagame would be
                 // misleading and can fail across their distinct module ABIs.
                 return modKey !== 'etjump' && modKey !== 'etrun' &&
-                    modKey !== 'tjmod' && modKey !== 'tcetest';
+                    modKey !== 'tjmod';
             }
 
             function renderOmniBotSettings(prefix, values, modKey, bots) {
@@ -7001,7 +7061,7 @@
             // The launcher's choice is authoritative, so an existing file has
             // its two counts rewritten in place - everything else Omni-bot may
             // have stored there (and the player's other settings) is kept.
-            function writeOmniBotConfig(bots, options) {
+            function writeOmniBotConfig(bots, options, modKey) {
                 var cfg = HOME_ETL_DIR + '/omni-bot.cfg';
                 try {
                     Module.FS.mkdirTree(HOME_ETL_DIR);
@@ -7011,6 +7071,14 @@
                         lines.push('', '[' + category + ']');
                         if (category === 'ServerManager') {
                             lines.push('MaxBots=' + bots, 'MinBots=' + bots);
+                            // TC rounds with no team players can end before
+                            // Omni-bot's normal 2.1 second startup delay.  The
+                            // browser host has already chosen the desired bot
+                            // count, so let its ServerManager fill those slots
+                            // on the first update.
+                            if (modKey === 'tcetest') {
+                                lines.push('InitialDelayTime=0');
+                            }
                         }
                         OMNIBOT_SETTINGS.forEach(function (entry) {
                             if (entry[0] !== category) { return; }
@@ -7042,13 +7110,14 @@
             // Omni-bot that cannot load its scripts).
             var omniBotInstalls = {};
             function setupOmniBot(bots, options, modKey) {
-                var installKey = modKey === 'tce2' ? 'tce2' : 'legacy';
+                var installKey = (modKey === 'tce2' || modKey === 'tcetest')
+                    ? 'tce2' : 'legacy';
                 var omni = omniBotAssets(installKey);
                 if (omniBotInstalls[installKey]) {
                     // Already installed (or being installed): only the bot count
                     // may have changed since, so apply that and reuse the rest.
                     return omniBotInstalls[installKey].then(function (ready) {
-                        if (ready) { writeOmniBotConfig(bots, options); }
+                        if (ready) { writeOmniBotConfig(bots, options, modKey); }
                         return ready;
                     });
                 }
@@ -7097,7 +7166,7 @@
                 }).then(function () {
                     return unzipInto(Module.FS.readFile(packCache), omni.dir);
                 }).then(function () {
-                    writeOmniBotConfig(bots, options);
+                    writeOmniBotConfig(bots, options, modKey);
                     return true;
                 }).catch(function (err) {
                     if (console && console.warn) {
@@ -11236,6 +11305,17 @@
             // Resolves with the argument list, since installing the mod and
             // Omni-bot needs the network.
             function hostedGameArgs(settings) {
+                if (isTrueCombatMod(settings.mod) &&
+                    !trueCombatGameType(settings.gameType)) {
+                    return Promise.reject(new Error(
+                        'Choose TCE game type 2, 5 or 7 before starting the server.'));
+                }
+                if (isTrueCombatMod(settings.mod) &&
+                    hostMapNames(settings.mod, settings.gameType)
+                        .indexOf(settings.map) === -1) {
+                    return Promise.reject(new Error('The selected map has no game type ' +
+                        settings.gameType + ' script and cannot be hosted in this mode.'));
+                }
                 // The name goes onto the engine's command line, where a quote
                 // of its own would end the argument and let the rest of it be
                 // read as more arguments.
@@ -11268,6 +11348,9 @@
                 }
                 if (settings.mod === 'tce2' || settings.mod === 'tcetest') {
                     args.push('+set', 'sv_gametype', '0');
+                }
+                if (settings.mod === 'tcetest') {
+                    args.push('+set', 'omnibot_webbots', String(settings.bots));
                 }
                 args.push('+set', 'g_teamForceBalance', settings.balancedTeams ? '1' : '0');
                 args.push('+set', 'g_doWarmup', settings.doWarmup === false ? '0' : '1');
@@ -11338,26 +11421,706 @@
             // Value of the "Random map" entry in both map pickers.
             var RANDOM_MAP = '__random__';
 
-            // TC:E only accepts obj_ maps. The six original maps are inside
-            // the mod paks; additional obj_ maps can still come from maplist.
-            var TRUECOMBAT_STOCK_MAPS = [
-                'obj_delta', 'obj_northport', 'obj_railhouse',
-                'obj_snow', 'obj_stadtrand', 'obj_village'
-            ];
+            // The lists were produced from the actual maps/<name>_gtN.script
+            // entries in the supplied TC:E pk3 inventory. GT2 and GT5 require a
+            // non-empty matching script. GT7 (Bodycount) additionally accepts
+            // the supplied obj_ maps that do not provide any game-type script.
+            var TRUECOMBAT_MAPS_BY_GAMETYPE = {
+                      "2": [
+                                "obj_360",
+                                "obj_akn12",
+                                "obj_alcatraz_b3",
+                                "obj_alcatraz_ext",
+                                "obj_allExpTest",
+                                "obj_allExpTest_maze",
+                                "obj_allExpTest_maze_2f",
+                                "obj_appfactory",
+                                "obj_arc",
+                                "obj_assault_ext_08c_BETA",
+                                "obj_assault_ext_09_BETA",
+                                "obj_bad_hills",
+                                "obj_bahamut_final",
+                                "obj_berlinwall_b3",
+                                "obj_berlinwall_final_b",
+                                "obj_bigbridge_b2",
+                                "obj_black_desert",
+                                "obj_bloc",
+                                "obj_block_fort",
+                                "obj_blockmaze",
+                                "obj_botShootingRange",
+                                "obj_botShootingRange2",
+                                "obj_boxbox",
+                                "obj_car_chase",
+                                "obj_cargoship_b4",
+                                "obj_cargoship_b5",
+                                "obj_CarRepairShop",
+                                "obj_CarRepairShop_120",
+                                "obj_chlite",
+                                "obj_closecombat",
+                                "obj_closecombat_se",
+                                "obj_closedown",
+                                "obj_complexity",
+                                "OBJ_CROSSING_FOGGY2",
+                                "obj_crossing_foggy3",
+                                "obj_deadly_different",
+                                "obj_desert_b1_1",
+                                "obj_desert_final",
+                                "obj_desert_town_beta1",
+                                "obj_destructo_a2",
+                                "obj_dock",
+                                "obj_doomsbay",
+                                "obj_downs",
+                                "obj_dpo13",
+                                "obj_dropop",
+                                "obj_echo",
+                                "obj_EGAHOUSE",
+                                "obj_ersatz048",
+                                "obj_extend_classic",
+                                "obj_factory-beta",
+                                "obj_firebeta1",
+                                "obj_forsaken",
+                                "obj_fractalsample",
+                                "obj_fracture",
+                                "obj_fracture_v2",
+                                "obj_garden_beta2",
+                                "obj_garden_v1",
+                                "obj_GardenInTheSky_110",
+                                "obj_gasthofdfp",
+                                "obj_GreatPyramid",
+                                "obj_gs_03",
+                                "obj_hall",
+                                "obj_hbn_b3",
+                                "obj_HeisaKuukan048",
+                                "obj_heliport",
+                                "obj_heliport_bynight",
+                                "obj_hide_hotel",
+                                "obj_hideout_rc2",
+                                "obj_higurasi_school",
+                                "obj_hitman2",
+                                "obj_invasion_v1",
+                                "obj_invasion_v2",
+                                "obj_jackalsnest_beta",
+                                "obj_jackalsnest_beta2",
+                                "obj_jackalsnest_re_v2",
+                                "obj_jackalsnest_v2",
+                                "obj_japan8",
+                                "obj_jetslidedx",
+                                "obj_jjj_bootcamp_b2",
+                                "obj_karakuri01",
+                                "obj_konaa_yukiii",
+                                "obj_kowloon_05",
+                                "obj_libat",
+                                "obj_lost_powerstation",
+                                "obj_lostchildren",
+                                "obj_lumberyard_b1",
+                                "obj_magcity",
+                                "obj_mario",
+                                "obj_mirrortown5",
+                                "obj_mout",
+                                "obj_mukasi",
+                                "obj_must_5",
+                                "obj_mustamaa_beta",
+                                "obj_mustamaa_beta2",
+                                "obj_nbn22",
+                                "obj_nbn23",
+                                "obj_nbn23_se_b1",
+                                "obj_neighbourhood",
+                                "obj_newtown_square",
+                                "obj_noname",
+                                "obj_northport048",
+                                "obj_office",
+                                "obj_oilrig",
+                                "obj_old_school",
+                                "obj_old_school_v2",
+                                "obj_old_school_v3",
+                                "obj_oldtowne_a1",
+                                "obj_oldtowne_b4",
+                                "obj_othello",
+                                "obj_paradiso",
+                                "obj_Portal_of_Town",
+                                "obj_Prison",
+                                "obj_Pyramide",
+                                "obj_Pyramide_beta",
+                                "obj_railhouse048",
+                                "obj_railhouse048_dom",
+                                "obj_railhouse_r35",
+                                "obj_railyard4",
+                                "obj_railyard_beta3",
+                                "obj_rain",
+                                "obj_ring",
+                                "obj_ruins2010",
+                                "obj_S_H_station",
+                                "obj_sewers",
+                                "obj_ship_s",
+                                "obj_shipriv",
+                                "obj_shooting_range",
+                                "obj_shozen",
+                                "obj_shozen2",
+                                "obj_shozen3",
+                                "obj_shozen_beta2",
+                                "obj_siege2",
+                                "obj_sigma",
+                                "obj_skirmish",
+                                "obj_slider_on_my_load",
+                                "obj_snow48_kai",
+                                "obj_snowtown",
+                                "obj_southport",
+                                "obj_suburban_a3",
+                                "obj_suburban_a3fix",
+                                "obj_superknife",
+                                "obj_superknife3",
+                                "obj_superknife5",
+                                "obj_tanker",
+                                "obj_tarpra",
+                                "obj_terror",
+                                "obj_thall2",
+                                "obj_tm_bank_b1",
+                                "obj_tm_darfur_b3a",
+                                "obj_tm_garage_b2",
+                                "obj_tm_karbala_b2",
+                                "obj_tm_killhouse_b1",
+                                "obj_tm_matrix_b1",
+                                "obj_tm_service_b7",
+                                "obj_tokachi",
+                                "obj_ToriaezuSorehaSoredeOk",
+                                "obj_town_and_metro_final",
+                                "obj_tumble_down(night_vision)",
+                                "obj_urwald",
+                                "obj_urwald_beta2",
+                                "obj_vacant",
+                                "obj_villa",
+                                "obj_villa2",
+                                "obj_villa2_1",
+                                "obj_vorort",
+                                "obj_vorort_b",
+                                "obj_wall049",
+                                "obj_Warehouse",
+                                "obj_Warehouse2_2012",
+                                "obj_Warehouse_140",
+                                "obj_water8",
+                                "obj_werk_ost",
+                                "obj_werk_ost_beta3"
+                      ],
+                      "5": [
+                                "obj_360",
+                                "obj_3by3",
+                                "obj_akn12",
+                                "obj_alcatraz_b3",
+                                "obj_alcatraz_ext",
+                                "obj_allExpTest",
+                                "obj_allExpTest_maze",
+                                "obj_allExpTest_maze_2f",
+                                "obj_appfactory",
+                                "obj_arc",
+                                "obj_assault_ext_08c_BETA",
+                                "obj_assault_ext_09_BETA",
+                                "obj_bad_hills",
+                                "obj_bahamut_final",
+                                "obj_berlinwall_b3",
+                                "obj_berlinwall_final_b",
+                                "obj_bigbridge_b2",
+                                "obj_bloc",
+                                "obj_block_fort",
+                                "obj_blockmaze",
+                                "obj_botShootingRange",
+                                "obj_botShootingRange2",
+                                "obj_boxbox",
+                                "obj_car_chase",
+                                "obj_cargoship_b4",
+                                "obj_cargoship_b5",
+                                "obj_CarRepairShop",
+                                "obj_CarRepairShop_120",
+                                "obj_chlite",
+                                "obj_close_q",
+                                "obj_closecombat",
+                                "obj_closecombat_se",
+                                "obj_closedown",
+                                "obj_complexity",
+                                "OBJ_CROSSING_FOGGY2",
+                                "obj_crossing_foggy3",
+                                "obj_ctrl_c_v",
+                                "obj_darky",
+                                "obj_deadly_different",
+                                "obj_dedust",
+                                "obj_dedust_final",
+                                "obj_Depot-.49-Beta9",
+                                "obj_Depot-49-Beta9_1_merlin",
+                                "obj_depot_2014",
+                                "obj_depotV2",
+                                "obj_depotv21",
+                                "obj_desert_b1_1",
+                                "obj_desert_final",
+                                "obj_desert_town_beta1",
+                                "obj_destructo_a2",
+                                "obj_dock",
+                                "obj_doomsbay",
+                                "obj_downs",
+                                "obj_dpo13",
+                                "obj_dropop",
+                                "obj_dustlike-rmk2",
+                                "obj_dustlike2-rmk",
+                                "obj_dustlike2-rmk2",
+                                "obj_echo",
+                                "obj_EGAHOUSE",
+                                "obj_ennsyuuzyou",
+                                "obj_ersatz048",
+                                "obj_ersta",
+                                "obj_extend_classic",
+                                "obj_extended",
+                                "obj_factory-beta",
+                                "obj_firebeta1",
+                                "obj_forsaken",
+                                "obj_fortress-beta",
+                                "obj_fractalsample",
+                                "obj_fracture",
+                                "obj_fracture_v2",
+                                "obj_frostbite",
+                                "obj_frostbite_101",
+                                "obj_garden_beta2",
+                                "obj_garden_v1",
+                                "obj_GardenInTheSky_110",
+                                "obj_gasthofdfp",
+                                "obj_gavan_b1",
+                                "obj_ghosttown",
+                                "obj_gk50dayo",
+                                "obj_gk50o",
+                                "obj_GreatPyramid",
+                                "obj_gs_03",
+                                "obj_guh_beta1",
+                                "obj_hall",
+                                "obj_hbn_b3",
+                                "obj_HeisaKuukan048",
+                                "obj_heliport",
+                                "obj_heliport_bynight",
+                                "obj_hide_hotel",
+                                "obj_hideout_rc2",
+                                "obj_highjump_Alpha1",
+                                "obj_higurasi_school",
+                                "obj_hitman2",
+                                "obj_horise",
+                                "obj_invasion_v1",
+                                "obj_invasion_v2",
+                                "obj_jackalsnest_beta",
+                                "obj_jackalsnest_beta2",
+                                "obj_jackalsnest_re_v2",
+                                "obj_jackalsnest_v2",
+                                "obj_japan8",
+                                "obj_jetslidedx",
+                                "obj_jjj_bootcamp_b2",
+                                "obj_JJJ_jump_b4",
+                                "obj_karakuri01",
+                                "obj_konaa_yukiii",
+                                "obj_kowloon_05",
+                                "obj_libat",
+                                "obj_library",
+                                "obj_library_beta2",
+                                "obj_library_beta3",
+                                "obj_lighty_a1",
+                                "obj_lost_powerstation",
+                                "obj_lostchildren",
+                                "obj_lumberyard_b1",
+                                "obj_magcity",
+                                "obj_mario",
+                                "obj_mirrortown5",
+                                "obj_moists_vil_bn1",
+                                "obj_mout",
+                                "obj_mp_office",
+                                "obj_mukasi",
+                                "obj_must_5",
+                                "obj_mustamaa_beta",
+                                "obj_mustamaa_beta2",
+                                "obj_nbn22",
+                                "obj_nbn23",
+                                "obj_nbn23_se_b1",
+                                "obj_neighbourhood",
+                                "obj_newtown_square",
+                                "obj_northport048",
+                                "obj_np2-048dp",
+                                "obj_nuclear_delta",
+                                "obj_office",
+                                "obj_oilrig",
+                                "obj_old_school",
+                                "obj_old_school_v2",
+                                "obj_old_school_v3",
+                                "obj_oldtowne_a1",
+                                "obj_oldtowne_b4",
+                                "obj_othello",
+                                "obj_overkill",
+                                "obj_paradiso",
+                                "obj_Portal_of_Town",
+                                "obj_Prison",
+                                "obj_prison_test",
+                                "obj_Pyramide",
+                                "obj_Pyramide_beta",
+                                "obj_raid_beta2",
+                                "obj_railhouse048",
+                                "obj_railhouse_r35",
+                                "obj_railyard4",
+                                "obj_railyard_beta2",
+                                "obj_railyard_beta3",
+                                "obj_rain",
+                                "obj_repot_b1",
+                                "obj_ring",
+                                "obj_ruins2010",
+                                "obj_S_H_station",
+                                "obj_school_lite_b2a",
+                                "obj_sewers",
+                                "obj_ship_s",
+                                "obj_shipment_d",
+                                "obj_shipment_d2",
+                                "obj_shipriv",
+                                "obj_shooting_range",
+                                "obj_shozen",
+                                "obj_shozen2",
+                                "obj_shozen3",
+                                "obj_shozen_beta2",
+                                "obj_siege_r-v1",
+                                "obj_sigma",
+                                "obj_skirmish",
+                                "obj_slider_on_my_load",
+                                "obj_slums-wip",
+                                "obj_slums-wip3",
+                                "obj_slums_dim",
+                                "obj_slums_dim_day",
+                                "obj_small",
+                                "obj_SmallStreet",
+                                "obj_SmallStreets_2vs2",
+                                "obj_SmallStreets_public",
+                                "obj_snow48_kai",
+                                "obj_snowtown",
+                                "obj_southport",
+                                "obj_speed-048dp",
+                                "obj_streams",
+                                "obj_suburban_a3",
+                                "obj_suburban_a3fix",
+                                "obj_tanker",
+                                "obj_tarpra",
+                                "obj_terror",
+                                "obj_thall2",
+                                "obj_thewoods",
+                                "obj_tm_bank_b1",
+                                "obj_tm_darfur_b2",
+                                "obj_tm_darfur_b3a",
+                                "obj_tm_garage_b2",
+                                "obj_tm_karbala_b2",
+                                "obj_tm_killhouse_b1",
+                                "obj_tm_matrix_b1",
+                                "obj_tm_service_b7",
+                                "obj_tokachi",
+                                "obj_ToriaezuSorehaSoredeOk",
+                                "obj_town_and_metro_final",
+                                "obj_tumble_down(night_vision)",
+                                "obj_UG-slim04-048dp",
+                                "obj_urban_riot_beta",
+                                "obj_urwald",
+                                "obj_urwald_beta2",
+                                "obj_vacant",
+                                "obj_villa",
+                                "obj_villa2",
+                                "obj_villa2_1",
+                                "obj_vorort",
+                                "obj_vorort_b",
+                                "obj_wall049",
+                                "obj_Warehouse",
+                                "obj_Warehouse2_2012",
+                                "obj_Warehouse_140",
+                                "obj_weapon_depot_beta",
+                                "obj_well",
+                                "obj_werk_ost",
+                                "obj_werk_ost_beta3",
+                                "obj_wfacility",
+                                "obj_Zebra's-Attack"
+                      ],
+                      "7": [
+                                "obj_360",
+                                "obj_3by3",
+                                "obj_akn12",
+                                "obj_alcatraz_b3",
+                                "obj_alcatraz_ext",
+                                "obj_allExpTest",
+                                "obj_allExpTest_maze",
+                                "obj_allExpTest_maze_2f",
+                                "obj_appfactory",
+                                "obj_arc",
+                                "obj_assault_ext_08c_BETA",
+                                "obj_assault_ext_09_BETA",
+                                "obj_bad_hills",
+                                "obj_bahamut_final",
+                                "obj_berlinwall_b3",
+                                "obj_berlinwall_final_b",
+                                "obj_bigbridge_b2",
+                                "obj_bloc",
+                                "obj_block_fort",
+                                "obj_blockmaze",
+                                "obj_botShootingRange",
+                                "obj_botShootingRange2",
+                                "obj_boxbox",
+                                "obj_car_chase",
+                                "obj_cargoship_b4",
+                                "obj_cargoship_b5",
+                                "obj_CarRepairShop",
+                                "obj_CarRepairShop_120",
+                                "obj_chlite",
+                                "obj_close_q",
+                                "obj_closecombat",
+                                "obj_closecombat_se",
+                                "obj_closedown",
+                                "obj_complexity",
+                                "OBJ_CROSSING_FOGGY2",
+                                "obj_crossing_foggy3",
+                                "obj_ctrl_c_v",
+                                "obj_darky",
+                                "obj_deadly_different",
+                                "obj_dedust",
+                                "obj_dedust_final",
+                                "obj_Depot-.49-Beta9",
+                                "obj_Depot-49-Beta9_1_merlin",
+                                "obj_depot_2014",
+                                "obj_depotV2",
+                                "obj_depotv21",
+                                "obj_desert_b1_1",
+                                "obj_desert_final",
+                                "obj_desert_town_beta1",
+                                "obj_destructo_a2",
+                                "obj_dock",
+                                "obj_doomsbay",
+                                "obj_downs",
+                                "obj_dpo13",
+                                "obj_dropop",
+                                "obj_dustlike-rmk2",
+                                "obj_dustlike2-rmk",
+                                "obj_dustlike2-rmk2",
+                                "obj_echo",
+                                "obj_EGAHOUSE",
+                                "obj_ennsyuuzyou",
+                                "obj_ersatz048",
+                                "obj_ersta",
+                                "obj_extend_classic",
+                                "obj_extended",
+                                "obj_factory-beta",
+                                "obj_fdc-pt",
+                                "obj_firebeta1",
+                                "obj_forsaken",
+                                "obj_fortress-beta",
+                                "obj_fractalsample",
+                                "obj_fracture",
+                                "obj_fracture_v2",
+                                "obj_freerun",
+                                "obj_frostbite",
+                                "obj_frostbite_101",
+                                "obj_gake_areawar",
+                                "obj_garden_beta2",
+                                "obj_garden_v1",
+                                "obj_GardenInTheSky_110",
+                                "obj_gasthofdfp",
+                                "obj_gavan_b1",
+                                "obj_ghosttown",
+                                "obj_gk50dayo",
+                                "obj_gk50o",
+                                "obj_GreatPyramid",
+                                "obj_gs_03",
+                                "obj_guh_beta1",
+                                "obj_hall",
+                                "obj_hbn_b3",
+                                "obj_HeisaKuukan048",
+                                "obj_heliport",
+                                "obj_heliport_bynight",
+                                "obj_hide_hotel",
+                                "obj_hideout_rc2",
+                                "obj_highjump",
+                                "obj_highjump_Alpha1",
+                                "obj_higurasi_school",
+                                "obj_hitman",
+                                "obj_hitman2",
+                                "obj_horise",
+                                "obj_invasion_v1",
+                                "obj_invasion_v2",
+                                "obj_jackalsnest_beta",
+                                "obj_jackalsnest_beta2",
+                                "obj_jackalsnest_re_v2",
+                                "obj_jackalsnest_v2",
+                                "obj_japan8",
+                                "obj_jetslidedx",
+                                "obj_jjj_bootcamp_b2",
+                                "obj_JJJ_jump_b4",
+                                "obj_JJJJump-6",
+                                "obj_karakuri01",
+                                "obj_konaa_yukiii",
+                                "obj_kowloon_05",
+                                "obj_libat",
+                                "obj_library",
+                                "obj_library_beta2",
+                                "obj_library_beta3",
+                                "obj_lighty_a1",
+                                "obj_lost_powerstation",
+                                "obj_lostchildren",
+                                "obj_lumberyard_b1",
+                                "obj_magcity",
+                                "obj_mario",
+                                "obj_mirrortown5",
+                                "obj_moists_vil_bn1",
+                                "obj_mout",
+                                "obj_mp_office",
+                                "obj_mukasi",
+                                "obj_must_5",
+                                "obj_mustamaa_beta",
+                                "obj_mustamaa_beta2",
+                                "obj_nbn22",
+                                "obj_nbn23",
+                                "obj_nbn23_se_b1",
+                                "obj_neighbourhood",
+                                "obj_newtown_square",
+                                "obj_noname",
+                                "obj_northport048",
+                                "obj_np2-048dp",
+                                "obj_nuclear_delta",
+                                "obj_office",
+                                "obj_oilrig",
+                                "obj_old_school",
+                                "obj_old_school_v2",
+                                "obj_old_school_v3",
+                                "obj_oldtowne_a1",
+                                "obj_oldtowne_b4",
+                                "obj_othello",
+                                "obj_overkill",
+                                "obj_paradiso",
+                                "obj_Portal_of_Town",
+                                "obj_Prison",
+                                "obj_prison_test",
+                                "obj_Pyramide",
+                                "obj_Pyramide_beta",
+                                "obj_railhouse048",
+                                "obj_railhouse_r35",
+                                "obj_railyard4",
+                                "obj_railyard_beta2",
+                                "obj_railyard_beta3",
+                                "obj_rain",
+                                "obj_repot_b1",
+                                "obj_ring",
+                                "obj_ruins2010",
+                                "obj_S_H_station",
+                                "obj_school_lite_b2a",
+                                "obj_seige2",
+                                "obj_sewers",
+                                "obj_ship_s",
+                                "obj_shipment_d",
+                                "obj_shipment_d2",
+                                "obj_shipriv",
+                                "obj_shooting_range",
+                                "obj_shozen",
+                                "obj_shozen2",
+                                "obj_shozen3",
+                                "obj_shozen_beta2",
+                                "obj_siege2",
+                                "obj_siege_r-v1",
+                                "obj_sigma",
+                                "obj_simple1_u",
+                                "obj_simple2_s",
+                                "obj_simple3_h",
+                                "obj_skiing_race",
+                                "obj_skirmish",
+                                "obj_slider_on_my_load",
+                                "obj_slums-wip",
+                                "obj_slums_dim",
+                                "obj_slums_dim_day",
+                                "obj_small",
+                                "obj_SmallStreet",
+                                "obj_SmallStreets_2vs2",
+                                "obj_SmallStreets_public",
+                                "obj_snow48_kai",
+                                "obj_snowtown",
+                                "obj_southport",
+                                "obj_speed-048dp",
+                                "obj_streams",
+                                "obj_suburban_a3fix",
+                                "obj_superknife",
+                                "obj_superknife3",
+                                "obj_superknife5",
+                                "obj_tanker",
+                                "obj_tarpra",
+                                "obj_terror",
+                                "obj_thall2",
+                                "obj_thewoods",
+                                "obj_tm_bank_b1",
+                                "obj_tm_darfur_b2",
+                                "obj_tm_darfur_b3a",
+                                "obj_tm_garage_b2",
+                                "obj_tm_karbala_b2",
+                                "obj_tm_killhouse_b1",
+                                "obj_tm_matrix_b1",
+                                "obj_tm_service_b7",
+                                "obj_tokachi",
+                                "obj_TonGariCone2",
+                                "obj_ToriaezuSorehaSoredeOk",
+                                "obj_town_and_metro_final",
+                                "obj_tumble_down(night_vision)",
+                                "obj_UG-slim04-048dp",
+                                "obj_urwald",
+                                "obj_urwald_beta2",
+                                "obj_vacant",
+                                "obj_villa",
+                                "obj_villa2",
+                                "obj_villa2_1",
+                                "obj_vorort",
+                                "obj_vorort_b",
+                                "obj_wall049",
+                                "obj_Warehouse",
+                                "obj_Warehouse2_2012",
+                                "obj_Warehouse_140",
+                                "obj_water8",
+                                "obj_weapon_depot_beta",
+                                "obj_werk_ost",
+                                "obj_werk_ost_beta3",
+                                "obj_wfacility",
+                                "obj_winter_palace_b1",
+                                "obj_yuuenti",
+                                "obj_Zebra's-Attack",
+                                "obj_ae_sniper",
+                                "obj_ae_sniper_b",
+                                "obj_central_barn",
+                                "obj_closecombat_day",
+                                "obj_crossing_foggy1",
+                                "obj_dust",
+                                "obj_favela_b3",
+                                "obj_favela_rc",
+                                "obj_HicksTown",
+                                "obj_omg9",
+                                "obj_ruins",
+                                "obj_scouser",
+                                "obj_slums_b3",
+                                "obj_sniper_Lake_b2",
+                                "obj_sniper_marina_b2",
+                                "obj_stonehenge_koth",
+                                "obj_summer_palace_b1",
+                                "obj_tm_killhouse2_3",
+                                "obj_ujejungle_sniper",
+                                "obj_ujewarzone_sniper"
+                      ]
+            };
 
             function isTrueCombatMod(modKey) {
                 return modKey === 'tce2' || modKey === 'tcetest';
             }
 
-            function hostMapNames(modKey) {
+            function trueCombatGameType(value) {
+                value = parseInt(value, 10);
+                return [2, 5, 7].indexOf(value) !== -1 ? value : 0;
+            }
+
+            function hostMapNames(modKey, gameType) {
                 var names = mapNames().slice();
                 if (!isTrueCombatMod(modKey)) { return names; }
-                TRUECOMBAT_STOCK_MAPS.forEach(function (name) {
-                    if (names.indexOf(name) === -1) { names.push(name); }
+                gameType = trueCombatGameType(gameType);
+                if (!gameType) { return []; }
+                var allowed = Object.create(null);
+                TRUECOMBAT_MAPS_BY_GAMETYPE[gameType].forEach(function (name) {
+                    allowed[name.toLowerCase()] = true;
                 });
                 return names.filter(function (name) {
-                    return /^obj_/i.test(name);
-                }).sort();
+                    return !!allowed[name.toLowerCase()];
+                }).sort(function (a, b) {
+                    return a.toLowerCase().localeCompare(b.toLowerCase());
+                });
             }
 
             // --- Map rotation ---------------------------------------------
@@ -11372,12 +12135,12 @@
 
             // Keep only maps that really exist in the map list, resolve the
             // "Random map" entry and cap the length.
-            function sanitiseRotation(list, fallback) {
-                var names = mapNames();
+            function sanitiseRotation(list, fallback, allowedNames) {
+                var names = allowedNames || mapNames();
                 var clean = [];
                 (list || []).forEach(function (entry) {
                     if (clean.length >= MAX_ROTATION_MAPS) { return; }
-                    var map = (entry === RANDOM_MAP) ? randomMapName() : entry;
+                    var map = (entry === RANDOM_MAP) ? randomMapName(names) : entry;
                     if (names.indexOf(map) === -1) { return; }
                     clean.push(map);
                 });
@@ -11540,15 +12303,14 @@
                 var bots = Math.min(num('bots', 0, 0, 31), maxPlayers - 1);
                 var timeLimit = num('timelimit', 0, 0, 1440);
 
-                var maps = sanitiseRotation(
-                    (rotation && rotation.length) ? rotation : [el('map').value],
-                    mapNames()[0]);
-
                 var mod = el('mod') ? el('mod').value : DEFAULT_MOD;
                 if (!HOST_MODS[mod] || !HOST_MODS[mod].available) { mod = DEFAULT_MOD; }
-                var gameType = (mod === 'tce2' || mod === 'tcetest')
-                    ? num('gametype', 5, 2, 7) : 2;
-                if ([2, 5, 7].indexOf(gameType) < 0) { gameType = 5; }
+                var gameType = isTrueCombatMod(mod)
+                    ? trueCombatGameType(el('gametype').value) : 2;
+                var allowedMaps = hostMapNames(mod, gameType);
+                var maps = sanitiseRotation(
+                    (rotation && rotation.length) ? rotation : [el('map').value],
+                    allowedMaps[0], allowedMaps);
 
                 return {
                     name: (el('name').value.trim() || 'ET:Legacy Web Host').slice(0, 64),
@@ -11601,7 +12363,8 @@
                 setValue('mapmode', settings.developerMode ? 'devmap' : 'map');
                 if (el('map') && settings.map) { el('map').value = settings.map; }
                 if (el('mod')) { el('mod').value = settings.mod; }
-                setValue('gametype', settings.gameType || 5);
+                setValue('gametype', isTrueCombatMod(settings.mod)
+                    ? trueCombatGameType(settings.gameType) : 2);
                 var tceRow = el('tce-gametype-row');
                 if (tceRow) {
                     tceRow.style.display = (settings.mod === 'tce2' ||
@@ -11810,6 +12573,17 @@
                     warnings.push('"gameType" must be 2, 5 or 7 for TrueCombat; Objective (5) is used.');
                     gameType = 5;
                 }
+                if (isTrueCombatMod(modKey)) {
+                    var tceMaps = hostMapNames(modKey, gameType);
+                    rotation = rotation.filter(function (entry) {
+                        if (entry === RANDOM_MAP) { return true; }
+                        if (tceMaps.indexOf(entry) !== -1) { return true; }
+                        warnings.push('Map "' + entry + '" has no game type ' +
+                            gameType + ' script and was skipped.');
+                        return false;
+                    });
+                    known = tceMaps;
+                }
 
                 var maxPlayers = num('maxPlayers', 8, 2, 32);
                 var bots = num('bots', 0, 0, 31);
@@ -11995,6 +12769,21 @@
                 try {
                     var url = new URL(inviteUrl, location.href);
                     if (url.origin !== location.origin) { return; }
+
+                    // Keep an explicit private/local module mirror while the
+                    // cosmetic lobby invite replaces the address bar.  Without
+                    // this the host starts with ?modbase=..., advertises its
+                    // room, and then a later module fetch/reload unexpectedly
+                    // falls back to the public deployment.
+                    var current = new URL(location.href);
+                    if (current.searchParams.has('modbase')) {
+                        url.searchParams.set('modbase',
+                            current.searchParams.get('modbase'));
+                    }
+                    if (current.searchParams.has('diag')) {
+                        url.searchParams.set('diag',
+                            current.searchParams.get('diag'));
+                    }
                     history.replaceState(null, '', url.pathname + url.search);
                 } catch (e) { /* the address bar is cosmetic */ }
             }
@@ -12273,8 +13062,14 @@
                 var host = session && session.role !== 'client';
                 byId('game-host-settings').style.display = host ? 'block' : 'none';
                 if (host && settings) {
+                    var modKey = settings.mod || DEFAULT_MOD;
+                    if (!Object.prototype.hasOwnProperty.call(HOST_MODS, modKey)) {
+                        modKey = DEFAULT_MOD;
+                    }
                     byId('game-map-search').value = '';
-                    fillMapSelect(byId('game-map'), settings.map, true);
+                    fillMapSelect(byId('game-map'), settings.map,
+                        !isTrueCombatMod(modKey), '',
+                        hostMapNames(modKey, settings.gameType));
                     editedRotation = (settings.rotation || [settings.map]).slice();
                     renderEditedRotation();
                     byId('game-name').value = settings.name;
@@ -12290,12 +13085,9 @@
                     // ones the host page offers, minus the mod: that one is
                     // decided by the command line the engine was started with,
                     // so it is only shown.
-                    var modKey = settings.mod || DEFAULT_MOD;
-                    if (!Object.prototype.hasOwnProperty.call(HOST_MODS, modKey)) {
-                        modKey = DEFAULT_MOD;
-                    }
                     byId('game-mod').value = HOST_MODS[modKey].name;
-                    byId('game-gametype').value = String(settings.gameType || 5);
+                    byId('game-gametype').value = String(
+                        trueCombatGameType(settings.gameType) || '');
                     byId('game-tce-gametype-row').style.display =
                         (modKey === 'tce2' || modKey === 'tcetest') ? 'block' : 'none';
                     byId('game-balancedteams').checked = !!settings.balancedTeams;
@@ -12516,8 +13308,21 @@
                 var settings = gameSettings();
                 if (!settings) { return; }
 
+                var editedGameType = isTrueCombatMod(settings.mod)
+                    ? trueCombatGameType(byId('game-gametype').value) : 2;
+                if (isTrueCombatMod(settings.mod) && !editedGameType) {
+                    gameMessage('Choose TCE game type 2, 5 or 7 first.');
+                    byId('game-gametype').focus();
+                    return;
+                }
+                var allowedMaps = hostMapNames(settings.mod, editedGameType);
                 var rotation = sanitiseRotation(editedRotation || settings.rotation,
-                    settings.map);
+                    settings.map, allowedMaps);
+                if (!rotation.length) {
+                    gameMessage('Add at least one map that supports game type ' +
+                        editedGameType + '.');
+                    return;
+                }
 
                 // Maps added while the server is already running were not
                 // part of startHosting()'s initial download. Do not publish or
@@ -12577,8 +13382,7 @@
                     // The mod is the one exception: fs_game is picked when the
                     // engine starts, so a running game keeps the one it has.
                     mod: settings.mod || DEFAULT_MOD,
-                    gameType: (settings.mod === 'tce2' || settings.mod === 'tcetest')
-                        ? num('game-gametype', settings.gameType || 5, 2, 7) : 2,
+                    gameType: editedGameType,
                     balancedTeams: !!byId('game-balancedteams').checked,
                     doWarmup: !!byId('game-dowarmup').checked,
                     friendlyFire: !!byId('game-friendlyfire').checked,
@@ -13087,9 +13891,18 @@
                 showGameTab('game-tab-basic');
 
                 byId('game-map-add').onclick = function () {
+                    var settings = gameSettings();
+                    var gameType = settings && isTrueCombatMod(settings.mod)
+                        ? trueCombatGameType(byId('game-gametype').value) : 2;
+                    var allowedMaps = settings
+                        ? hostMapNames(settings.mod, gameType) : mapNames();
+                    if (settings && isTrueCombatMod(settings.mod) && !gameType) {
+                        gameMessage('Choose TCE game type 2, 5 or 7 first.');
+                        return;
+                    }
                     var map = byId('game-map').value;
-                    if (map === RANDOM_MAP) { map = randomMapName(); }
-                    if (mapNames().indexOf(map) === -1) { return; }
+                    if (map === RANDOM_MAP) { map = randomMapName(allowedMaps); }
+                    if (allowedMaps.indexOf(map) === -1) { return; }
                     editedRotation = editedRotation || [];
                     if (editedRotation.length >= MAX_ROTATION_MAPS) {
                         gameMessage('A rotation holds at most ' +
@@ -13104,7 +13917,27 @@
                     addCustomCvarRow('game-');
                 };
 
-                setupMapSearch('game-map-search', 'game-map', true);
+                setupMapSearch('game-map-search', 'game-map', true, function () {
+                    var settings = gameSettings();
+                    return settings ? hostMapNames(settings.mod,
+                        byId('game-gametype').value) : mapNames();
+                });
+                byId('game-gametype').onchange = function () {
+                    var settings = gameSettings();
+                    if (!settings || !isTrueCombatMod(settings.mod)) { return; }
+                    var gameType = trueCombatGameType(this.value);
+                    var allowedMaps = hostMapNames(settings.mod, gameType);
+                    editedRotation = (editedRotation || []).filter(function (map) {
+                        return allowedMaps.indexOf(map) !== -1;
+                    });
+                    fillMapSelect(byId('game-map'), editedRotation[0] || '', false,
+                        byId('game-map-search').value, allowedMaps);
+                    renderEditedRotation();
+                    gameMessage(gameType
+                        ? (allowedMaps.length + ' maps support game type ' + gameType +
+                           '. Press "Apply" to use the change.')
+                        : 'Choose TCE game type 2, 5 or 7 first.');
+                };
                 byId('game-bots').oninput = function () {
                     var settings = gameSettings();
                     if (!settings || !modSupportsOmniBot(settings.mod)) { return; }
@@ -13374,7 +14207,8 @@
                                 scheduleHostAutosave();
                             });
                         var shownMap = hostRotation[0] ||
-                            document.getElementById('host-map').value || 'oasis';
+                            document.getElementById('host-map').value ||
+                            (isTrueCombatMod(hostModKey()) ? '(choose game type)' : 'oasis');
                         var mode = document.getElementById('host-mapmode');
                         mode.options[0].textContent = 'Normal: map ' + shownMap;
                         mode.options[1].textContent = 'Developer: devmap ' +
@@ -13384,7 +14218,15 @@
                     document.getElementById('host-map-add').onclick = function () {
                         var select = document.getElementById('host-map');
                         var map = select.value;
-                        var allowedMaps = hostMapNames(hostModKey());
+                        var gameType = trueCombatGameType(
+                            document.getElementById('host-gametype').value);
+                        var allowedMaps = hostMapNames(hostModKey(), gameType);
+                        if (isTrueCombatMod(hostModKey()) && !gameType) {
+                            document.getElementById('host-hint').textContent =
+                                'Choose TCE game type 2, 5 or 7 first.';
+                            document.getElementById('host-gametype').focus();
+                            return;
+                        }
                         if (map === RANDOM_MAP) {
                             map = allowedMaps[Math.floor(Math.random() * allowedMaps.length)];
                         }
@@ -13477,8 +14319,9 @@
                     var hostAutosaveTimer = null;
 
                     function defaultHostProfile(modKey) {
-                        var allowedMaps = hostMapNames(modKey);
-                        var preferred = isTrueCombatMod(modKey) ? 'obj_delta' : 'oasis';
+                        var gameType = isTrueCombatMod(modKey) ? 0 : 2;
+                        var allowedMaps = hostMapNames(modKey, gameType);
+                        var preferred = 'oasis';
                         var firstMap = allowedMaps.indexOf(preferred) !== -1
                             ? preferred : allowedMaps[0];
                         return {
@@ -13487,7 +14330,7 @@
                             maxPlayers: 8, bots: modSupportsOmniBot(modKey) ? 4 : 0,
                             timeLimit: 0, private: false, developerMode: false,
                             mod: modKey,
-                            gameType: (modKey === 'tce2' || modKey === 'tcetest') ? 5 : 2,
+                            gameType: gameType,
                             balancedTeams: false, doWarmup: true,
                             friendlyFire: true, warmup: 60, alliedRespawn: 0,
                             axisRespawn: 0, cvars: {}, customCvars: {},
@@ -13497,24 +14340,50 @@
 
                     function applyHostProfile(settings) {
                         hostModSelect.value = settings.mod;
-                        var allowedMaps = hostMapNames(settings.mod);
+                        var gameType = isTrueCombatMod(settings.mod)
+                            ? trueCombatGameType(settings.gameType) : 2;
+                        settings.gameType = gameType;
+                        var allowedMaps = hostMapNames(settings.mod, gameType);
                         hostRotation = (settings.rotation || [settings.map]).filter(function (map) {
                             return allowedMaps.indexOf(map) !== -1;
                         }).slice(0, MAX_ROTATION_MAPS);
-                        if (!hostRotation.length) {
-                            hostRotation = [isTrueCombatMod(settings.mod) ?
-                                'obj_delta' : (allowedMaps.indexOf('oasis') !== -1 ?
-                                    'oasis' : allowedMaps[0])];
+                        if (!hostRotation.length && allowedMaps.length) {
+                            hostRotation = [allowedMaps.indexOf('oasis') !== -1 ?
+                                'oasis' : allowedMaps[0]];
                         }
-                        settings.map = hostRotation[0];
+                        settings.map = hostRotation[0] || '';
                         fillMapSelect(document.getElementById('host-map'), settings.map,
-                            true, document.getElementById('host-map-search').value,
+                            !isTrueCombatMod(settings.mod),
+                            document.getElementById('host-map-search').value,
                             allowedMaps);
+                        document.getElementById('host-map').disabled =
+                            isTrueCombatMod(settings.mod) && !gameType;
+                        document.getElementById('host-map-add').disabled =
+                            isTrueCombatMod(settings.mod) && !gameType;
                         writeHostSettings('host-', settings);
                         renderHostRotation();
                         renderHostCvars(settings.cvars || {});
                         clampHostBots();
                     }
+
+                    document.getElementById('host-gametype').onchange = function () {
+                        var gameType = trueCombatGameType(this.value);
+                        var allowedMaps = hostMapNames(hostModKey(), gameType);
+                        hostRotation = hostRotation.filter(function (map) {
+                            return allowedMaps.indexOf(map) !== -1;
+                        });
+                        fillMapSelect(document.getElementById('host-map'),
+                            hostRotation[0] || '', false,
+                            document.getElementById('host-map-search').value,
+                            allowedMaps);
+                        document.getElementById('host-map').disabled = !gameType;
+                        document.getElementById('host-map-add').disabled = !gameType;
+                        renderHostRotation();
+                        document.getElementById('host-hint').textContent = gameType
+                            ? (allowedMaps.length + ' maps support game type ' + gameType + '.')
+                            : 'Choose TCE game type 2, 5 or 7 first.';
+                        scheduleHostAutosave();
+                    };
 
                     function scheduleHostAutosave() {
                         var snapshot = readHostSettings('host-', hostRotation);
@@ -13993,6 +14862,17 @@
                     };
                     document.getElementById('host-start').onclick = function () {
                         var settings = readHostSettings('host-', hostRotation);
+                        if (isTrueCombatMod(settings.mod) && !settings.gameType) {
+                            document.getElementById('host-hint').textContent =
+                                'Choose TCE game type 2, 5 or 7 before starting.';
+                            document.getElementById('host-gametype').focus();
+                            return;
+                        }
+                        if (!settings.map) {
+                            document.getElementById('host-hint').textContent =
+                                'Add at least one map that supports the selected game type.';
+                            return;
+                        }
                         saveHostProfileSnapshot(settings);
                         startFlow(startHosting(settings),
                             'launcher-host', 'host-hint');
@@ -14005,11 +14885,15 @@
                     // tab follow its own ?join= link as if it were a client.
                     loadMapList().then(function () {
                         fillMapSelect(document.getElementById('host-map'), 'oasis', true,
-                            '', hostMapNames(hostModKey()));
+                            '', hostMapNames(hostModKey(),
+                                document.getElementById('host-gametype').value));
                         fillMapSelect(document.getElementById('quick-map'), 'oasis', true);
                         fillMapSelect(document.getElementById('game-map'), null, true);
                         setupMapSearch('host-map-search', 'host-map', true,
-                            function () { return hostMapNames(hostModKey()); });
+                            function () {
+                                return hostMapNames(hostModKey(),
+                                    document.getElementById('host-gametype').value);
+                            });
                         setupMapSearch('quick-map-search', 'quick-map', true);
 
                         // What this tab was doing before it reloaded (hosting a

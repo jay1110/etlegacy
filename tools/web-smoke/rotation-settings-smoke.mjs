@@ -54,6 +54,8 @@ const context = vm.createContext({
     DEFAULT_MOD: 'legacy',
     HOST_MODS: { legacy: { available: true } },
     mapNames: () => maps.slice(),
+    isTrueCombatMod: () => false,
+    hostMapNames: () => maps.slice(),
     cleanCvarSet: value => value || {},
     cleanCustomCvarSet: value => value || {},
     cleanOmniBotSettings: value => value || {}
